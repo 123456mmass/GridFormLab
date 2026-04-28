@@ -1,0 +1,562 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{graphicx}
+
+\geometry{margin=1in}
+\emergencystretch=1.5em
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false
+}
+
+\title{\textbf{Update Report}\\
+\large N-Bus Power Flow Analysis}
+\author{Technical Report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents the analytical and system-level upgrades made to a MATLAB-based n-bus power system analysis toolkit. The report focuses on solver architecture, the shared case-normalization and result-assembly pipeline, continuation power flow capability, economic dispatch support, benchmark and textbook-reference coverage, and automated regression validation. Its scope is restricted to the solver, core, case, testing, reporting, and export layers; GUI architecture and interaction features are intentionally excluded. The present implementation includes Newton-Raphson and Gauss-Seidel AC power flow, load-scaling and predictor-corrector continuation power flow, and one-bus equivalent economic dispatch. All implemented methods operate on a common analytical pipeline. At the time of writing, the automated regression suite passes all 12 of 12 tests.
+\end{abstract}
+
+\section{Scope of This Report}
+
+This document covers only the analytical system layer:
+\begin{itemize}[leftmargin=1.5em]
+    \item power flow solvers (Newton-Raphson, Gauss-Seidel),
+    \item continuation power flow methods (load scaling, predictor-corrector),
+    \item economic dispatch OPF support,
+    \item shared case modeling, normalization, and result assembly,
+    \item benchmark and reference case data,
+    \item automated regression tests and validation results,
+    \item reporting and export utilities used by the analytical core.
+\end{itemize}
+\newpage
+
+
+\section{Summary of Analytical Updates}
+
+The analytical core has been evolved from a single-method load-flow script into a reusable n-bus toolkit with common preprocessing and postprocessing stages. The principal updates are as follows:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item A shared case-preparation pipeline was introduced so that all solvers operate on the same normalized system model, net injections, and admittance matrix.
+    \item The Newton-Raphson solver was retained as the primary AC power flow method with iterative PV-to-PQ reactive limit switching.
+    \item A Gauss-Seidel solver was added with constant acceleration factor support and full convergence tracking.
+    \item Two continuation power flow variants were implemented:
+    \begin{itemize}[leftmargin=1.5em]
+        \item load-scaling CPF using repeated Newton-Raphson solves with adaptive step control,
+        \item predictor-corrector CPF using tangent prediction and Newton-based corrector with pseudo-arclength parameterization.
+    \end{itemize}
+    \item Economic dispatch examples from Hadi Saadat Chapter 7 were added as one-bus equivalent OPF benchmark cases using the lambda-iteration method.
+    \item Regression tests were expanded to cover IEEE cases, Saadat textbook cases, CPF nose-point detection, reference catalog integrity, and Q-limit switching behavior.
+    \item Reporting and export utilities were centralized so that power balance, line flows, convergence history, and summary metrics are generated consistently across all methods.
+\end{enumerate}
+
+\section{Unified Data and Model Logic}
+
+\subsection{Bus Data Format and Net Injection}
+
+The toolkit accepts bus data in the format
+\[
+[\text{BusNo} \;\; \text{Type} \;\; |V| \;\; \theta^\circ \;\; P_{\text{gen}} \;\; Q_{\text{gen}} \;\; P_{\text{load}} \;\; Q_{\text{load}}]
+\]
+with optional columns for shunt conductance $G_{\text{sh}}$, shunt susceptance $B_{\text{sh}}$, and reactive power limits $Q_{\min}$, $Q_{\max}$. The case-preparation pipeline automatically pads 8-column and 10-column formats to the full 12-column representation.
+
+Mixed generation and load at the same bus is handled through net injection:
+\[
+P_{\text{spec}} = P_{\text{gen}} - P_{\text{load}}, \qquad
+Q_{\text{spec}} = Q_{\text{gen}} - Q_{\text{load}}.
+\]
+This convention ensures that a PV bus with local demand, or a PQ bus with embedded generation, does not require a special bus type; instead, the corresponding net injection is used directly in the mismatch equations.
+
+\subsection{Shared Preparation Pipeline}
+
+All solvers call a common preparation function that performs three phases:
+
+\textbf{Normalization.} Bus data is expanded to 12 columns by padding missing shunt and reactive-limit fields with defaults ($G_{\text{sh}}=0$, $B_{\text{sh}}=0$, $Q_{\min}=-\infty$, $Q_{\max}=+\infty$). Line data is expanded to 7 columns by padding missing half-line charging, tap ratio, and phase-shift fields ($B_{\text{half}}=0$, tap$=1$, phase$=0^\circ$). The default system base is $S_{\text{base}}=100$ MVA, $V_{\text{base}}=230$ kV, $f=60$ Hz.
+
+\textbf{Validation.} The pipeline checks: exactly one slack bus, unique bus identifiers, bus types in $\{1,2,3\}$, positive voltage magnitudes, $Q_{\min} \le Q_{\max}$ for every bus, and no zero-impedance lines.
+
+\textbf{Model construction.} The $Y_{\text{bus}}$ matrix is assembled using the standard $\pi$-model with support for phase-shifting transformers: $y_{\text{series}} = 1/(R+jX)$, with tap ratio incorporated as $\text{tap} = t \cdot e^{j\phi}$. Bus shunt admittances are added to the diagonal. The pipeline produces a unified model struct containing bus classification indices, net injections, admittance matrix components, state-vector dimensions, and line endpoint mappings.
+
+\subsection{State Vector Convention}
+
+The Newton-Raphson state vector is
+\[
+\mathbf{x} = \begin{bmatrix} \delta_{\text{PV+PQ}} \\ |V|_{\text{PQ}} \end{bmatrix}
+\]
+of length $n_{\text{total}} = n_\delta + n_V$, where $n_\delta$ is the number of non-slack buses (PV and PQ) and $n_V$ is the number of PQ buses. Slack bus angles and voltages, and PV bus voltages, are treated as fixed knowns. Two helper functions manage the mapping between the compact state vector and the full bus-length angle and voltage vectors.
+
+\section{Implemented Methods}
+
+\subsection{Newton-Raphson Power Flow}
+
+The Newton-Raphson solver is retained as the primary AC load-flow method. At each iteration, it evaluates the mismatch vector and solves the linearized system
+\[
+\begin{bmatrix} \Delta P \\ \Delta Q \end{bmatrix}
+= J
+\begin{bmatrix} \Delta\delta \\ \Delta|V| \end{bmatrix},
+\]
+where \(J\) denotes the reduced Newton-Raphson Jacobian associated with the non-slack voltage-angle states and PQ-bus voltage-magnitude states.
+Convergence is assessed using the infinity norm criterion $\max|\Delta P, \Delta Q| < \text{tolerance}$ (default \(10^{-6}\)). Voltage magnitudes that would otherwise become non-positive are clamped to 0.1 pu as a numerical safeguard.
+
+Key properties:
+\begin{itemize}[leftmargin=1.5em]
+    \item shared mismatch evaluation and Jacobian assembly via the core helpers,
+    \item support for general n-bus systems including transformers and bus shunts,
+    \item convergence history stored per iteration in the result structure,
+    \item result postprocessing includes bus voltages, angles, generation, load, line flows, and total losses.
+\end{itemize}
+
+\subsection{Reactive Power Limit Switching}
+
+The Newton-Raphson solver implements iterative PV-to-PQ switching to enforce reactive power limits. After each converged NR solve, the algorithm checks all PV buses for reactive generation violations against \(Q_{\min}\) and \(Q_{\max}\) within a configurable tolerance. Any violating PV bus is converted to a PQ bus with reactive generation fixed at the violated limit, and the NR solve is repeated. This outer loop continues until no further violations remain or a maximum number of switching rounds is reached.
+
+The switching behavior is validated through the Saadat three-bus PV case under constrained reactive limits, confirming that:
+\begin{itemize}[leftmargin=1.5em]
+    \item a PV bus is converted to PQ when $Q_{\max}$ is exceeded,
+    \item the reactive generation is clamped at the limit value,
+    \item the bus type in the result structure reflects the switch.
+\end{itemize}
+
+\subsection{Gauss-Seidel Power Flow}
+
+The Gauss-Seidel solver updates bus voltages sequentially using the classical formula obtained from \(S = V \cdot I^*\) and \(I = Y_{\text{bus}}V\):
+\[
+V_i^{\text{raw}} = \frac{1}{Y_{ii}} \left( \frac{S_i^*}{V_i^*} - \sum_{j \ne i} Y_{ij} V_j \right).
+\]
+A constant acceleration factor \(\alpha\) (default 1.4) is applied through successive over-relaxation:
+\[
+V_i^{\text{new}} = V_i^{\text{old}} + \alpha \left( V_i^{\text{raw}} - V_i^{\text{old}} \right).
+\]
+
+For PV buses, reactive power is recomputed from the current network state at each iteration, and the voltage magnitude is reset to the scheduled value after the update. Convergence is checked at the end of each full sweep using the same infinity-norm criterion as the NR solver.
+
+Key differences from Newton-Raphson:
+\begin{itemize}[leftmargin=1.5em]
+    \item no Jacobian is formed or factored---each bus update is $O(n)$ instead of $O(n^3)$ per iteration,
+    \item convergence is linear rather than quadratic, requiring more iterations (typically 50--200 versus 3--8 for NR),
+    \item uses the same case-preparation and result-building pipeline for consistent output format.
+\end{itemize}
+
+\subsection{Continuation Power Flow: Load Scaling}
+
+The load-scaling CPF method increases system loading using a continuation parameter $\lambda$:
+\[
+P_{\text{load}}(\lambda) = P_{\text{load}}^0 + \lambda \, dP, \qquad
+Q_{\text{load}}(\lambda) = Q_{\text{load}}^0 + \lambda \, dQ,
+\]
+where $dP$ and $dQ$ default to the base load profile at each bus. At each step, a full Newton-Raphson solve is performed on the scaled system, with the previous solution used as a warm start.
+
+\textbf{Adaptive step control.} If an NR solve fails to converge, the $\lambda$ step is halved and retried, down to a minimum step size of $\lambda_{\text{step}}/16$. If the solve succeeds, the step is increased by a factor of 1.2 (up to the maximum step size). This provides robust tracing near the nose point without requiring explicit Jacobian augmentation.
+
+\textbf{Termination conditions.} The method stops when: $\lambda \ge \lambda_{\max}$, NR fails at the minimum step size, the minimum bus voltage drops below a threshold (default 0.65 pu), or the maximum step count is exceeded.
+
+\textbf{Nose-point detection.} The nose point is identified after the fact as the operating point with maximum $\lambda$ before convergence failure or voltage collapse---it is not detected during the continuation process itself.
+
+\subsection{Continuation Power Flow: Predictor-Corrector}
+
+The predictor-corrector CPF implements full pseudo-arclength continuation, enabling the trace to pass through the nose point and continue onto the lower-voltage branch. The augmented state is $\mathbf{z} = [\mathbf{x}; \lambda]$.
+
+\textbf{Tangent prediction.} At each continuation point, let $\mathbf{J} = \partial\mathbf{S}_{\text{calc}}/\partial\mathbf{x}$ be the power-flow Jacobian and $\mathbf{f}(\mathbf{x},\lambda) = \mathbf{S}_{\text{spec}}(\lambda) - \mathbf{S}_{\text{calc}}(\mathbf{x})$ be the mismatch. The sensitivity of the state to $\lambda$ is obtained by solving
+\[
+\mathbf{t}_x = \mathbf{J}^{-1} \frac{\partial \mathbf{S}_{\text{spec}}}{\partial \lambda},
+\]
+where $\partial \mathbf{S}_{\text{spec}}/\partial \lambda = [-P_{\text{dir}};\; -Q_{\text{dir}}]$ is the loading direction vector. The full tangent $[\mathbf{t}_x; 1]$ is normalized to unit length. Direction consistency is enforced by flipping the tangent if its $\lambda$-component would reverse direction relative to the previous step (checked via dot product). The predicted point is $\mathbf{z}_{\text{pred}} = \mathbf{z} + \Delta s \cdot \mathbf{t}$.
+
+\textbf{Newton corrector.} The corrector solves an augmented system that combines the power mismatch equations with an arclength constraint:
+\[
+\begin{bmatrix} \mathbf{J} & -\partial\mathbf{S}_{\text{spec}}/\partial\lambda \\ \mathbf{t}^\top \end{bmatrix}
+\begin{bmatrix} \Delta\mathbf{x} \\ \Delta\lambda \end{bmatrix}
+= \begin{bmatrix} \mathbf{f}(\mathbf{x},\lambda) \\ -\Delta s_{\text{arc}} \end{bmatrix},
+\]
+where the bottom row is the full tangent $\mathbf{t}^\top = [\mathbf{t}_x^\top,\; t_\lambda]$ and $\Delta s_{\text{arc}} = \mathbf{t}^\top (\mathbf{z} - \mathbf{z}_{\text{pred}})$ keeps the correction on the hyperplane perpendicular to the tangent. Convergence requires $\max|\mathbf{f}, \Delta s_{\text{arc}}| < \text{tolerance}$.
+
+\textbf{Adaptive step control.} If the corrector fails to converge, the arclength step is halved and the predictor is retried. On success, the step is increased by a factor of 1.2. This is the same adaptive strategy as load scaling, but applied to the arclength parameter.
+
+\textbf{Nose-point detection.} The nose is detected when the tangent's $\lambda$-component changes sign from positive to negative---this is the exact turning point where $d\lambda/ds = 0$, not a post-hoc estimate.
+
+Compared with simple load scaling, the predictor-corrector method can continue beyond the nose point and is therefore more appropriate for full voltage-stability tracing.
+
+\subsection{Economic Dispatch OPF}
+
+The economic dispatch solver implements the classical generation-cost minimization problem for the one-bus equivalent cases presented in Hadi Saadat Chapter 7:
+\[
+\min \sum_{i=1}^{N_G} \left(\alpha_i + \beta_i P_i + \gamma_i P_i^2\right)
+\]
+subject to the total demand balance $\sum P_i = P_{\text{demand}}$ and optional generator limits $P_{\min,i} \le P_i \le P_{\max,i}$.
+
+The method uses the \textbf{lambda-iteration (equal incremental cost)} approach. The optimality condition gives
+\[
+\lambda = \beta_i + 2\gamma_i P_i \quad \forall i,
+\]
+which, combined with the power balance, yields the analytical solution
+\[
+\lambda = \frac{P_{\text{demand}} + \sum_i \beta_i/(2\gamma_i)}{\sum_i 1/(2\gamma_i)}, \qquad
+P_i = \frac{\lambda - \beta_i}{2\gamma_i}.
+\]
+Generator limits are handled using an iterative fix-and-solve strategy: any violating unit is fixed at its active-power limit, the remaining demand is reduced accordingly, and \(\lambda\) is recomputed for the unfixed generators. In the present formulation, this process converges in at most \(N_G\) iterations.
+
+This economic-dispatch benchmark is \textbf{not} a full AC OPF. Specifically:
+\begin{itemize}[leftmargin=1.5em]
+    \item it optimizes real-power dispatch only---no reactive power, no voltage optimization,
+    \item it does not include network constraints or branch-flow limits,
+    \item it is designed for textbook economic dispatch validation and instructional comparison.
+\end{itemize}
+
+\subsection{Full-Network AC OPF}
+
+The project also includes a separate full-network AC OPF solver,
+\texttt{ac\_optimal\_power\_flow}. It minimizes quadratic generator cost while
+enforcing AC power-flow feasibility through the project's own Newton-Raphson
+solver. The outer optimization is a self-written coordinate pattern search over
+controllable generator real-power setpoints and generator voltage setpoints.
+No MATLAB Optimization Toolbox, MATPOWER, or other ready-made PF/OPF solver is
+used.
+
+The AC OPF enforces:
+\begin{itemize}[leftmargin=1.5em]
+    \item nonlinear AC real/reactive power balance through internal NR solves,
+    \item generator \(P_{\min}/P_{\max}\) and \(Q_{\min}/Q_{\max}\) limits,
+    \item bus voltage limits,
+    \item optional branch MVA limits.
+\end{itemize}
+
+The Saadat IEEE 30-bus case is the primary AC OPF regression case.
+
+\section{Reference Cases and Benchmark Coverage}
+
+\subsection{IEEE Standard Cases}
+
+The toolkit currently includes two IEEE standard benchmark cases:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{IEEE 5-bus}: 5 buses (1 slack, 1 PV, 3 PQ), 7 lines, total load $P=1.65$ pu, $Q=0.40$ pu. No transformers.
+    \item \textbf{IEEE 14-bus}: 14 buses (1 slack, 4 PV, 8 PQ, but note bus 3 is classified as PV in this implementation), 20 branches including 3 off-nominal transformers (tap ratios 0.978, 0.969, 0.932). Source: MATPOWER case14 converted from IEEE CDF. Base: 100 MVA, 400 kV, 60 Hz. Bus 9 includes a capacitor bank ($B_{\text{sh}}=0.19$).
+\end{itemize}
+
+\subsection{Saadat Textbook Reference Cases}
+
+The project includes a formal catalog of implemented Hadi Saadat textbook references. The catalog currently contains nine entries covering Chapter 6 power flow examples and Chapter 7 economic dispatch examples:
+
+\begin{center}
+\begin{tabular}{lllll}
+\toprule
+ID & Chapter & Description & Type & Buses \\
+\midrule
+ex6\_7 & 6 & Three-Bus PQ Load Flow & PF & 3 \\
+ex6\_8 & 6 & Three-Bus PV Load Flow & PF & 3 \\
+ex6\_9 & 6 & IEEE 30-Bus Load Flow & PF & 30 \\
+ex6\_10 & 6 & NR Three-Bus & PF & 3 \\
+ex6\_11 & 6 & IEEE 30-Bus NR & PF & 30 \\
+ex6\_13 & 6 & IEEE 30-Bus Fast Decoupled & PF & 30 \\
+ex7\_4 & 7 & Economic Dispatch No Limits & OPF & 1 \\
+ex7\_5 & 7 & Dispatch Program No Limits & OPF & 1 \\
+ex7\_6 & 7 & Economic Dispatch With Limits & OPF & 1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Entries ex6\_10, ex6\_11, and ex6\_13 reuse the same underlying case data as ex6\_8 and ex6\_9 respectively, reflecting the textbook's presentation of multiple solution methods on the same network. The OPF entries are one-bus equivalent economic dispatch problems with no network model.
+
+\section{Representative Numerical Results}
+
+\subsection{Saadat IEEE 30-Bus Newton-Raphson Reference Case}
+
+The Saadat IEEE 30-bus case is used as the principal large-system reference in this report because it is the most representative benchmark among the implemented textbook AC power-flow cases. The exported Newton-Raphson run converges in four iterations and yields the system totals summarized in Table~\ref{tab:ieee30-summary}.
+
+\begin{table}[htbp]
+\centering
+\caption{Representative exported results for the Saadat IEEE 30-bus Newton-Raphson case.}
+\label{tab:ieee30-summary}
+\begin{tabular}{lr}
+\toprule
+Quantity & Value \\
+\midrule
+Converged & 1 \\
+Iterations & 4 \\
+Total \(P\) generation & 3.00989027 pu \\
+Total \(Q\) generation & 1.23036390 pu \\
+Total \(P\) load & 2.83400000 pu \\
+Total \(Q\) load & 1.26200000 pu \\
+Total \(P\) loss & 0.17589086 pu \\
+Total \(Q\) loss & 0.22142048 pu \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+To make the bus-level solution more explicit, Table~\ref{tab:ieee30-bus-sample} lists representative bus results extracted from the exported 30-bus result file.
+
+\begin{table}[htbp]
+\centering
+\caption{Selected bus results from the exported Saadat IEEE 30-bus Newton-Raphson solution.}
+\label{tab:ieee30-bus-sample}
+\begin{tabular}{rrrrr}
+\toprule
+Bus & Type & \(|V|\) (pu) & Angle (deg) & \(Q_{gen}\) (pu) \\
+\midrule
+1 & 1 & 1.0600 & 0.0000 & -0.1711 \\
+2 & 2 & 1.0430 & -5.4965 & 0.4857 \\
+5 & 2 & 1.0100 & -14.3799 & 0.3586 \\
+8 & 2 & 1.0100 & -12.1144 & 0.3019 \\
+11 & 2 & 1.0820 & -14.4412 & 0.1558 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:ieee30-nr-plot} presents the exported Newton-Raphson plot for the same 30-bus case. This figure is included as the primary AC power-flow visualization in the report, complementing the numerical summaries in Tables~\ref{tab:ieee30-summary} and \ref{tab:ieee30-bus-sample}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\textwidth]{../../output/Saadat_Example_6_9_IEEE_30_Bus_System_Newton_Raphson_plots.png}
+\caption{Exported Newton-Raphson plot for the Saadat IEEE 30-bus reference case, showing the bus-voltage profile and convergence history of the AC power-flow solution.}
+\label{fig:ieee30-nr-plot}
+\end{figure}
+
+\subsection{IEEE 5-Bus Regression Reference}
+
+The IEEE 5-bus case is retained as a compact regression reference for solver consistency. It is still used in the automated test suite to verify that Newton-Raphson converges in four iterations with total active-power loss approximately equal to \(0.061474\) pu, and that the Gauss-Seidel solution remains numerically consistent with the Newton-Raphson voltage solution. However, because this case was documented previously, it is not treated as the principal illustrative result in the present report.
+
+\subsection{IEEE 14-Bus Newton-Raphson}
+
+The IEEE 14-bus case verifies the n-bus pipeline on a larger standard network with off-nominal transformers:
+\begin{itemize}[leftmargin=1.5em]
+    \item convergence success,
+    \item total active power loss $P_{\text{loss}} \approx \mathbf{0.133933}$ pu (tolerance $5 \times 10^{-6}$).
+\end{itemize}
+
+\subsection{Saadat Chapter 6 Benchmarks}
+
+The three-bus PQ (Example 6.7) and three-bus PV (Example 6.8) cases are validated against textbook reference values for bus voltage magnitudes, bus voltage angles, slack-bus generation, and PV-bus reactive generation. The strictest tolerance in the suite is \(10^{-8}\) pu for the PV-bus voltage in Example 6.8.
+
+The IEEE 30-bus case (Example 6.9) is validated against selected voltage, angle, and generation values with tolerances ranging from $10^{-3}$ to $5 \times 10^{-2}$.
+
+\subsection{IEEE 5-Bus Batch Comparison: Newton-Raphson versus Gauss-Seidel}
+
+In addition to the standalone solver regressions, the batch-run workflow provides a direct side-by-side comparison of the two power-flow methods on the IEEE 5-bus case. The batch summary reports:
+\begin{itemize}[leftmargin=1.5em]
+    \item Newton-Raphson convergence in 4 iterations,
+    \item Gauss-Seidel convergence in 16 iterations,
+    \item identical total active-power loss to six decimal places,
+    \item maximum bus-voltage difference \(3.315921 \times 10^{-9}\) pu.
+\end{itemize}
+
+Figure~\ref{fig:nr-gs-batch} visualizes this comparison using the exported batch-run metrics and serves as the main compact cross-method comparison included in this report.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\textwidth]{../../output/batch_run_nr_vs_gs_comparison.png}
+\caption{Batch-run comparison of Newton-Raphson and Gauss-Seidel on the IEEE 5-bus case, showing convergence iterations, total active-power loss, and agreement metrics.}
+\label{fig:nr-gs-batch}
+\end{figure}
+
+\subsection{Economic Dispatch OPF}
+
+The three Saadat Chapter 7 examples are validated to within $10^{-8}$ for:
+\begin{itemize}[leftmargin=1.5em]
+    \item incremental cost (system $\lambda$),
+    \item per-generator dispatch,
+    \item total operating cost.
+\end{itemize}
+
+Table~\ref{tab:opf76-dispatch} presents the exported dispatch result for Saadat Example 7.6, which includes generator active-power limits.
+
+\begin{table}[htbp]
+\centering
+\caption{Exported economic-dispatch result for Saadat Example 7.6.}
+\label{tab:opf76-dispatch}
+\begin{tabular}{lrrrr}
+\toprule
+Generator & \(P\) (MW) & Incremental Cost & Cost (\$/h) & Active Limit \\
+\midrule
+1 & 450 & 8.9 & 3695.00 & max \\
+2 & 325 & 9.4 & 2821.25 & free \\
+3 & 200 & 9.4 & 1720.00 & free \\
+\midrule
+System \(\lambda\) & \multicolumn{4}{r}{9.40000000 \$/MWh} \\
+Total cost & \multicolumn{4}{r}{8236.25000000 \$/h} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{CPF Predictor-Corrector on IEEE 30-Bus}
+
+The predictor-corrector CPF is tested on the Saadat IEEE 30-bus case with a loading range sufficient to capture the nose point. The test verifies that:
+\begin{itemize}[leftmargin=1.5em]
+    \item the method produces multiple continuation points,
+    \item a nose point is detected via tangent sign change,
+    \item the continuation traces beyond the nose onto the lower-voltage branch.
+\end{itemize}
+
+This distinguishes the predictor-corrector method from simple load scaling, which generally terminates before the full P--V curve structure is obtained.
+
+Table~\ref{tab:cpf-ieee30-reference} summarizes the principal reference quantities extracted from the computed IEEE 30-bus CPF run, and Fig.~\ref{fig:cpf-ieee30} shows the actual plot exported by the program for that same continuation result.
+
+\begin{table}[htbp]
+\centering
+\caption{Reference quantities from the computed predictor-corrector CPF run on the Saadat IEEE 30-bus case.}
+\label{tab:cpf-ieee30-reference}
+\begin{tabular}{lr}
+\toprule
+Quantity & Value \\
+\midrule
+Target bus & 30 \\
+\(\lambda_0\) reference point & 0.583 \\
+\(\lambda_1\) reference point & 1.124 \\
+Nose \(\lambda\) & 2.048 \\
+Nose \(|V|\) at target bus & 0.5165 pu \\
+Last traced lower-branch \(\lambda\) & 1.606 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.90\textwidth]{../../output/cpf_plot_nose_ieee30.png}
+\caption{Actual predictor-corrector CPF plot exported by the program for the Saadat IEEE 30-bus case, showing the target-bus P--V curve together with voltage-magnitude and angle corridors across the continuation trajectory.}
+\label{fig:cpf-ieee30}
+\end{figure}
+
+\section{Automated Validation Status}
+
+The regression suite currently consists of twelve tests covering power flow, CPF, OPF, Q-limit behavior, and reference-catalog integrity:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\# & Test & Method / Case \\
+\midrule
+1 & IEEE 5-bus NR regression & Newton-Raphson \\
+2 & IEEE 5-bus GS matches NR & Gauss-Seidel vs.\ NR \\
+3 & IEEE 14-bus NR regression & Newton-Raphson \\
+4 & IEEE 300-bus NR regression & Newton-Raphson \\
+5 & Saadat Example 6.7 validation & Gauss-Seidel \\
+6 & Saadat Example 6.8 validation & Gauss-Seidel \\
+7 & Saadat IEEE 30-bus selected values & Newton-Raphson \\
+8 & Saadat OPF examples & Economic Dispatch \\
+9 & Saadat IEEE 30-bus AC OPF & AC Optimal Power Flow \\
+10 & Saadat reference catalog integrity & Catalog validation \\
+11 & Q-limit switching behavior & Newton-Raphson \\
+12 & CPF methods & Load Scaling + Predictor-Corrector \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+
+Test tolerances range from $10^{-8}$ (OPF dispatch, PV bus voltage) to $5 \times 10^{-2}$ (IEEE 30-bus angles), reflecting the differing precision of the underlying reference data.
+
+\section{Analytical Architecture}
+
+\subsection{Public Entry Points}
+
+All solver functions accept a case-data struct and an options struct:
+\begin{lstlisting}
+powerflow_newton_raphson(case_data, options)
+powerflow_gauss_seidel(case_data, options)
+cpf_load_scaling(case_data, options)
+cpf_predictor_corrector(case_data, options)
+economic_dispatch_opf(case_data, options)
+run_powerflow_tests()
+\end{lstlisting}
+\newpage
+\subsection{Internal Package Layout}
+
+The analytical codebase is organized across the following packages and directories:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Location & Responsibility \\
+\midrule
+\texttt{+pfsolver} & Solver implementations (NR, GS, CPF, OPF) \\
+\texttt{internal/core} & Case preparation, mismatch, Jacobian, result assembly \\
+\texttt{internal/reports} & Textual report formatting (format + console print) \\
+\texttt{internal/export} & CSV/TXT/PDF/PNG export orchestration \\
+\texttt{internal/plotting} & Result visualization (PF, convergence, CPF curves) \\
+\texttt{+cases} & Benchmark and reference case loaders \\
+\texttt{+pfchecks} & Automated regression test suite \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Shared Pipeline Flow}
+
+Every solver follows the same pipeline:
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Prepare}: normalize, validate, build $Y_{\text{bus}}$, construct model struct.
+    \item \textbf{Initialize}: set initial state vector from specified voltages and angles.
+    \item \textbf{Solve}: iterate (NR, GS, or CPF steps) using shared mismatch and Jacobian helpers.
+    \item \textbf{Assemble}: build the standardized result struct (52 fields) from the final voltages, including line flows, losses, and totals.
+    \item \textbf{Output}: format reports, export files, and generate plots using the common result structure.
+\end{enumerate}
+
+The result struct is the universal output format---it is identical regardless of which solver produced it, enabling direct solver-to-solver comparison and shared export/plotting code.
+
+\section{Reference Basis and Data Provenance}
+
+The results and benchmarks presented in this report draw on three categories of source material, distinguished here to clarify the origin of each numerical value.
+
+\textbf{Published textbook references.}
+The Hadi Saadat benchmark cases (Chapter 6 power-flow examples and Chapter 7 economic-dispatch examples) were implemented from the reference values and problem statements in \cite{saadat1999}. The case data were encoded into the project's local case library and are version-tracked through the Saadat reference catalog \texttt{saadat\_reference\_catalog()}. These textbook examples serve as the primary validation basis for both the power-flow and economic-dispatch solvers.
+
+\textbf{IEEE standard test-system data.}
+The IEEE 14-bus case was adapted from the MATPOWER \texttt{case14} dataset, itself converted from an IEEE Common Data Format file \cite{matpowercase14,matpower2011}. The local case loader records this lineage explicitly in its header comment and in the case-data construction.
+
+\textbf{Toolkit-computed outputs.}
+All numerical tables and figures in this report were generated by the present toolkit, not copied from external publications. Specifically, the IEEE 30-bus Newton-Raphson results (Tables~\ref{tab:ieee30-summary} and~\ref{tab:ieee30-bus-sample}), the predictor-corrector CPF plot (Fig.~\ref{fig:cpf-ieee30}), the economic-dispatch results (Table~\ref{tab:opf76-dispatch}), and the NR--GS comparison (Fig.~\ref{fig:nr-gs-batch}) were produced from the project's own solver implementations and export pipeline \cite{localproject2026}.
+
+\section{References}
+
+\begin{thebibliography}{9}
+
+\bibitem{saadat1999}
+H.~Saadat, \textit{Power System Analysis}.
+Boston, MA, USA: WCB/McGraw-Hill, 1999.
+
+\bibitem{matpower2011}
+R.~D.~Zimmerman, C.~E.~Murillo-S\'{a}nchez, and R.~J.~Thomas,
+``MATPOWER: Steady-state operations, planning, and analysis tools for power systems research and education,''
+\textit{IEEE Trans.\ Power Syst.}, vol.~26, no.~1, pp.~12--19, Feb.~2011.
+
+\bibitem{matpowercase14}
+MATPOWER, ``case14---power flow data for the IEEE 14-bus test case,''
+online function reference, MATPOWER 6.0 documentation.
+[Online]. Available: \url{https://matpower.org/docs/ref/matpower6.0/case14.html}
+
+\bibitem{localproject2026}
+\textit{N-Bus Power Flow Analysis Toolkit}, local project sources and
+exported results, Apr.~2026.
+Key files: \texttt{+cases/}, \texttt{+pfchecks/}, \texttt{output/}.
+
+\end{thebibliography}
+
+\section{Conclusion}
+
+In summary, the analytical side of the n-bus toolkit has been upgraded into a structured, regression-tested MATLAB framework for steady-state power system analysis. The current implementation supports five analytical methods built on a common preparation and result-building pipeline, two CPF variants with different continuation characteristics, textbook-backed economic dispatch capability, and benchmark validation against IEEE and Hadi Saadat references. The fact that all twelve regression tests currently pass provides evidence of internal consistency across the implemented solver stack.
+
+\end{document}

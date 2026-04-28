@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(matlab -batch \"cd\\('C:\\\\Users\\\\qwert\\\\OneDrive\\\\Desktop\\\\api\\\\n_bus_clone'\\); summary=run_powerflow_tests\\(\\); fprintf\\('SUMMARY passed=%d failed=%d\\\\n',summary.passed,summary.failed\\);\")",
+      "Bash(matlab -batch \"cd\\('C:\\\\Users\\\\qwert\\\\OneDrive\\\\Desktop\\\\api\\\\n_bus_clone'\\); app=run_powerflow_gui\\(\\); pause\\(1\\); delete\\(findall\\(groot,'Type','figure'\\)\\); fprintf\\('gui ok\\\\n'\\);\")",
+      "Bash(xargs -I{} basename {})",
+      "Bash(echo \"# Power-flow\")",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
+    ]
+  }
+}

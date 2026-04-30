@@ -56,7 +56,7 @@ for iter = 1:max_iter
             V_new = model.V_spec(bus_i) * exp(1i * angle(V_new));
         end
 
-        if abs(V_new) <= 0
+        if abs(V_new) <= 0 || ~isfinite(abs(V_new))
             V_new = 0.1 * exp(1i * angle(Vc(bus_i)));
         end
 

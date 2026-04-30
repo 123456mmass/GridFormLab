@@ -13,6 +13,9 @@ app.last_suite = [];
 app.last_opf = [];
 app.last_case_data = [];
 [app.case_labels, app.case_loaders] = pfapp.make_case_registry();
+% Reserve one slot at the end for custom loaded case
+app.case_labels{end + 1} = 'Custom n-bus: (none)';
+app.case_loaders{end + 1} = [];
 app.custom_case_data = [];
 app.progress_dialog = [];
 
@@ -40,7 +43,7 @@ pfapp.plot_empty_state(app);
     end
 
     function export_last()
-        pfapp.export_last_action(app, fig);
+        app = pfapp.export_last_action(app, fig);
     end
 
     function open_separate_plots()
@@ -48,11 +51,11 @@ pfapp.plot_empty_state(app);
     end
 
     function open_analysis_plots()
-        pfapp.open_analysis_plots_action(app, fig);
+        app = pfapp.open_analysis_plots_action(app, fig);
     end
 
     function run_tests()
-        pfapp.run_tests_action(app, fig);
+        app = pfapp.run_tests_action(app, fig);
     end
 
     function case_data = load_selected_case()
@@ -61,6 +64,10 @@ pfapp.plot_empty_state(app);
 
     function browse_custom_case()
         app = pfapp.browse_custom_case(app, fig);
+        % Keep dropdown Items in sync after custom case load
+        if isfield(app, 'case_labels')
+            app.case_dropdown.Items = app.case_labels;
+        end
     end
 
     function options = cpf_options(case_data, method)

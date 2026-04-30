@@ -31,8 +31,16 @@ if ~isempty(axis_info.note)
 end
 
 pfapp.reset_axes_state(app.ax_conv);
-semilogy(app.ax_conv, 1:numel(suite.newton_raphson.mismatch_history), suite.newton_raphson.mismatch_history, '-o', ...
-    1:numel(suite.gauss_seidel.mismatch_history), suite.gauss_seidel.mismatch_history, '-s', 'LineWidth', 1.6);
+if ~isempty(suite.newton_raphson.mismatch_history)
+    semilogy(app.ax_conv, 1:numel(suite.newton_raphson.mismatch_history), ...
+        suite.newton_raphson.mismatch_history, '-o', 'LineWidth', 1.6);
+end
+if ~isempty(suite.gauss_seidel.mismatch_history)
+    hold(app.ax_conv, 'on');
+    semilogy(app.ax_conv, 1:numel(suite.gauss_seidel.mismatch_history), ...
+        suite.gauss_seidel.mismatch_history, '-s', 'LineWidth', 1.6);
+    hold(app.ax_conv, 'off');
+end
 title(app.ax_conv, 'NR vs GS Convergence');
 xlabel(app.ax_conv, 'Iteration');
 ylabel(app.ax_conv, 'Max mismatch');

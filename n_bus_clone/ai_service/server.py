@@ -1,11 +1,13 @@
 """Power-system AI analysis service.
 
 Endpoints:
-    GET  /health           — service status
-    POST /analyze          — analyze power flow results
-    POST /analyze/cpf      — analyze CPF results
-    POST /analyze/opf      — analyze OPF results
-    POST /ask              — free-form question about results
+    GET  /health              — service status
+    POST /analyze             — analyze power flow results (NR, GS)
+    POST /analyze/cpf         — analyze CPF results
+    POST /analyze/opf         — analyze OPF / economic dispatch
+    POST /compare             — compare two solver results
+    POST /report              — generate comprehensive report
+    POST /ask                 — free-form question about results
 
 Run:
     cd ai_service
@@ -15,121 +17,151 @@ Run:
 
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any
+import logging
+import time
 
-from openai import OpenAI
-from fastapi import FastAPI, HTTPException
+from openai import AsyncOpenAI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
 
 import config
+import models
 import prompts
+import utils
 
-# ── Client ──────────────────────────────────────────────────
+# ── Logging ──────────────────────────────────────────────────
 
-client = OpenAI(api_key=config.API_KEY, base_url=config.BASE_URL)
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("ai_service")
 
-app = FastAPI(title="Power-System AI Analyst (GPT)", version="0.1.0")
+# ── Client ───────────────────────────────────────────────────
+
+client = AsyncOpenAI(api_key=config.API_KEY, base_url=config.BASE_URL)
+
+app = FastAPI(title="Power-System AI Analyst", version="1.0.0")
+
+# ── CORS ─────────────────────────────────────────────────────
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
-# ── Helpers ─────────────────────────────────────────────────
+# ── Auth middleware ──────────────────────────────────────────
 
-def _call_gpt(system: str, user_msg: str) -> str:
-    """Send a single-turn request and return the text response."""
-    resp = client.chat.completions.create(
-        model=config.MODEL,
-        max_tokens=config.MAX_TOKENS,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_msg},
-        ],
-    )
-    return resp.choices[0].message.content
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if config.API_AUTH_TOKEN:
+        auth_header = request.headers.get("Authorization", "")
+        expected = f"Bearer {config.API_AUTH_TOKEN}"
+        if auth_header != expected:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Unauthorized. Provide a valid Bearer token."},
+            )
+    return await call_next(request)
 
 
-def _format_bus_table(bus_data: dict) -> str:
-    """Pretty-print bus results as a text table."""
-    lines = ["Bus  Type     V(pu)    Angle(deg)  Pgen(pu)  Qgen(pu)  Pload(pu) Qload(pu)"]
-    for i in range(len(bus_data.get("bus", []))):
-        lines.append(
-            f"{bus_data['bus'][i]:>3}  {bus_data.get('type',[''])[i]:<6}  "
-            f"{bus_data.get('voltage',[0])[i]:>7.4f}  "
-            f"{bus_data.get('angle',[0])[i]:>10.3f}  "
-            f"{bus_data.get('Pgen',[0])[i]:>8.4f}  "
-            f"{bus_data.get('Qgen',[0])[i]:>8.4f}  "
-            f"{bus_data.get('Pload',[0])[i]:>8.4f}  "
-            f"{bus_data.get('Qload',[0])[i]:>8.4f}"
+# ── Rate limiting ────────────────────────────────────────────
+
+_rate_limit_store: dict[str, list[float]] = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not config.API_AUTH_TOKEN:
+        # No rate limiting when auth is disabled (dev mode)
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    window = config.RATE_LIMIT_WINDOW_SEC
+    max_requests = config.RATE_LIMIT_REQUESTS
+
+    timestamps = _rate_limit_store.get(client_ip, [])
+    timestamps = [t for t in timestamps if now - t < window]
+    _rate_limit_store[client_ip] = timestamps
+
+    if len(timestamps) >= max_requests:
+        logger.warning("Rate limit exceeded for %s", client_ip)
+        return JSONResponse(
+            status_code=429,
+            content={"error": f"Rate limit exceeded ({max_requests} requests per {window}s)."},
         )
-    return "\n".join(lines)
+
+    timestamps.append(now)
+    return await call_next(request)
 
 
-# ── Request models ──────────────────────────────────────────
+# ── Exception handler ────────────────────────────────────────
 
-class AnalyzeRequest(BaseModel):
-    method: str = Field(..., description="Solver method name")
-    system_name: str = Field("Unknown", description="System identifier")
-    num_buses: int = Field(0)
-    num_lines: int = Field(0)
-    iterations: int = Field(0)
-    converged: bool = Field(True)
-    P_loss_total: float = Field(0.0, description="Total active power loss (pu)")
-    Q_loss_total: float = Field(0.0, description="Total reactive power loss (pu)")
-    bus_data: dict | None = Field(None, description="Bus voltage/angle/generation data")
-    mismatch_history: list[float] | None = Field(None)
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error"},
+    )
 
 
-class CPFRequest(BaseModel):
-    method: str = Field("CPF Predictor-Corrector")
-    system_name: str = Field("Unknown")
-    num_buses: int = Field(0)
-    target_bus: int = Field(0)
-    num_points: int = Field(0)
-    nose_detected: bool = Field(False)
-    lambda_min: float = Field(0.0)
-    lambda_max: float = Field(0.0)
-    voltage_min: float = Field(0.0)
-    voltage_max: float = Field(0.0)
-    stop_reason: str = Field("")
-    lambdas: list[float] | None = Field(None)
-    target_voltage: list[float] | None = Field(None)
+# ── GPT helpers ──────────────────────────────────────────────
+
+async def _call_gpt(system: str, user_msg: str) -> str:
+    """Single-turn async GPT call with retry and null-output guard."""
+
+    async def _do_call() -> str:
+        resp = await client.chat.completions.create(
+            model=config.MODEL,
+            max_tokens=config.MAX_TOKENS,
+            temperature=0.1,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        if not resp.choices:
+            logger.warning("GPT returned empty choices list")
+            return ""
+        content = resp.choices[0].message.content
+        return content if content is not None else ""
+
+    text = await utils.retry_gpt_call(_do_call)
+    if not text:
+        logger.warning("GPT returned empty response")
+        return ""
+    logger.debug("GPT response length: %d chars", len(text))
+    return text
 
 
-class OPFRequest(BaseModel):
-    system_name: str = Field("Unknown")
-    demand_MW: float = Field(0.0)
-    total_cost: float = Field(0.0)
-    lambda_cost: float = Field(0.0, description="Incremental cost $/MWh")
-    balance_residual: float = Field(0.0)
-    generators: list[dict] | None = Field(None, description="Per-gen: {id, P_MW, cost, limit}")
+def _sanitize_user_input(text: str, max_len: int = 10000) -> str:
+    """Truncate user-provided text to prevent prompt overflow."""
+    return utils.validate_user_input(text, max_len)
 
 
-class AskRequest(BaseModel):
-    question: str = Field(..., description="Free-form question")
-    results_json: str | None = Field(None, description="Optional results JSON for context")
+# ── Endpoints ────────────────────────────────────────────────
+
+@app.get("/health", response_model=models.HealthResponse)
+async def health():
+    return models.HealthResponse(status="ok", version="1.0.0")
 
 
-# ── Endpoints ───────────────────────────────────────────────
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "model": config.MODEL,
-        "base_url": config.BASE_URL,
-    }
-
-
-@app.post("/analyze")
-def analyze(req: AnalyzeRequest):
+@app.post("/analyze", response_model=models.AnalysisResponse)
+async def analyze(req: models.AnalyzeRequest):
     """Analyze power flow results (NR or GS)."""
-    # Build result summary
     parts = [
         f"Converged: {req.converged}",
         f"Iterations: {req.iterations}",
@@ -137,31 +169,33 @@ def analyze(req: AnalyzeRequest):
         f"Q_loss: {req.Q_loss_total:.6f} pu",
     ]
     if req.bus_data:
-        parts.append("\nBus results:\n" + _format_bus_table(req.bus_data))
+        parts.append("\nBus results:\n" + utils.format_bus_table(req.bus_data))
     if req.mismatch_history:
         parts.append(f"\nMismatch history (last 5): {req.mismatch_history[-5:]}")
 
     prompt = prompts.ANALYZE_PROMPT_TEMPLATE.format(
-        method=req.method,
-        system_name=req.system_name,
+        method=_sanitize_user_input(req.method),
+        system_name=_sanitize_user_input(req.system_name),
         num_buses=req.num_buses,
         num_lines=req.num_lines,
         result_data="\n".join(parts),
     )
 
     try:
-        text = _call_gpt(prompts.SYSTEM_PROMPT,prompt)
-        return {"analysis": text}
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, prompt)
+        structured = _parse_analyzer_finding(text)
+        return models.AnalysisResponse(analysis=text, structured=structured)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
-@app.post("/analyze/cpf")
-def analyze_cpf(req: CPFRequest):
+@app.post("/analyze/cpf", response_model=models.CPFAnalysisResponse)
+async def analyze_cpf(req: models.CPFRequest):
     """Analyze CPF results for voltage stability."""
     prompt = prompts.CPF_PROMPT_TEMPLATE.format(
-        method=req.method,
-        system_name=req.system_name,
+        method=_sanitize_user_input(req.method),
+        system_name=_sanitize_user_input(req.system_name),
         num_buses=req.num_buses,
         target_bus=req.target_bus,
         num_points=req.num_points,
@@ -170,29 +204,31 @@ def analyze_cpf(req: CPFRequest):
         lambda_max=req.lambda_max,
         voltage_min=req.voltage_min,
         voltage_max=req.voltage_max,
-        stop_reason=req.stop_reason,
+        stop_reason=_sanitize_user_input(req.stop_reason),
     )
 
     try:
-        text = _call_gpt(prompts.SYSTEM_PROMPT,prompt)
-        return {"analysis": text}
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, prompt)
+        structured = _parse_cpf_finding(text)
+        return models.CPFAnalysisResponse(analysis=text, structured=structured)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
-@app.post("/analyze/opf")
-def analyze_opf(req: OPFRequest):
+@app.post("/analyze/opf", response_model=models.OPFAnalysisResponse)
+async def analyze_opf(req: models.OPFRequest):
     """Analyze economic dispatch results."""
     dispatch_lines = []
     if req.generators:
         for g in req.generators:
             dispatch_lines.append(
-                f"  Gen {g.get('id','?')}: {g.get('P_MW',0):.2f} MW, "
-                f"cost={g.get('cost',0):.2f} $/h, limit={g.get('limit','free')}"
+                f"  Gen {g.get('id', '?')}: {g.get('P_MW', 0):.2f} MW, "
+                f"cost={g.get('cost', 0):.2f} $/h, limit={g.get('limit', 'free')}"
             )
 
     prompt = prompts.OPF_PROMPT_TEMPLATE.format(
-        system_name=req.system_name,
+        system_name=_sanitize_user_input(req.system_name),
         demand=req.demand_MW,
         total_cost=req.total_cost,
         lambda_cost=req.lambda_cost,
@@ -201,31 +237,186 @@ def analyze_opf(req: OPFRequest):
     )
 
     try:
-        text = _call_gpt(prompts.SYSTEM_PROMPT,prompt)
-        return {"analysis": text}
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, prompt)
+        structured = _parse_opf_finding(text)
+        return models.OPFAnalysisResponse(analysis=text, structured=structured)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
-@app.post("/ask")
-def ask(req: AskRequest):
-    """Free-form question, optionally with results context."""
-    user_msg = req.question
-    if req.results_json:
-        user_msg += f"\n\nRelevant results data:\n{req.results_json}"
+@app.post("/compare", response_model=models.CompareResponse)
+async def compare(req: models.CompareRequest):
+    """Compare two solver results side-by-side."""
+    def _summarize(r: models.AnalyzeRequest) -> str:
+        parts = [
+            f"Converged: {r.converged}",
+            f"Iterations: {r.iterations}",
+            f"P_loss: {r.P_loss_total:.6f} pu",
+            f"Q_loss: {r.Q_loss_total:.6f} pu",
+        ]
+        if r.bus_data:
+            parts.append("\nBus results:\n" + utils.format_bus_table(r.bus_data))
+        if r.mismatch_history:
+            parts.append(f"\nMismatch history (last 5): {r.mismatch_history[-5:]}")
+        return "\n".join(parts)
+
+    prompt = prompts.COMPARE_PROMPT_TEMPLATE.format(
+        method_a=_sanitize_user_input(req.method_a),
+        system_a=_sanitize_user_input(req.results_a.system_name),
+        buses_a=req.results_a.num_buses,
+        lines_a=req.results_a.num_lines,
+        data_a=_summarize(req.results_a),
+        method_b=_sanitize_user_input(req.method_b),
+        system_b=_sanitize_user_input(req.results_b.system_name),
+        buses_b=req.results_b.num_buses,
+        lines_b=req.results_b.num_lines,
+        data_b=_summarize(req.results_b),
+    )
 
     try:
-        text = _call_gpt(prompts.SYSTEM_PROMPT,user_msg)
-        return {"analysis": text}
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, prompt)
+        parsed = utils.extract_json_block(text) or {}
+        return models.CompareResponse(
+            analysis=text,
+            winner=parsed.get("winner"),
+            comparison_table=parsed.get("comparison"),
+        )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
-# ── Main ────────────────────────────────────────────────────
+@app.post("/report", response_model=models.ReportResponse)
+async def report(req: models.ReportRequest):
+    """Generate a comprehensive power system analysis report."""
+    sections = []
+
+    for method_result in req.methods:
+        parts = [
+            f"Method: {_sanitize_user_input(method_result.method)}",
+            f"Converged: {method_result.converged}",
+            f"Iterations: {method_result.iterations}",
+            f"P_loss: {method_result.P_loss_total:.6f} pu",
+            f"Q_loss: {method_result.Q_loss_total:.6f} pu",
+        ]
+        if method_result.bus_data:
+            parts.append("\nBus results:\n" + utils.format_bus_table(method_result.bus_data))
+        sections.append(f"### Results for {method_result.method}\n" + "\n".join(parts))
+
+    cpf_section = "### Continuation Power Flow\nNo CPF data provided."
+    if req.cpf_result:
+        cpf_section = (
+            f"### Continuation Power Flow\n"
+            f"Target bus: {req.cpf_result.target_bus}\n"
+            f"Nose detected: {req.cpf_result.nose_detected}\n"
+            f"Lambda range: {req.cpf_result.lambda_min:.4f} – {req.cpf_result.lambda_max:.4f}\n"
+            f"Voltage range: {req.cpf_result.voltage_min:.4f} – {req.cpf_result.voltage_max:.4f} pu\n"
+            f"Stop reason: {req.cpf_result.stop_reason}"
+        )
+
+    opf_section = "### Economic Dispatch\nNo OPF data provided."
+    if req.opf_result:
+        gen_lines = []
+        if req.opf_result.generators:
+            for g in req.opf_result.generators:
+                gen_lines.append(
+                    f"  Gen {g.get('id', '?')}: {g.get('P_MW', 0):.2f} MW, "
+                    f"cost={g.get('cost', 0):.2f} $/h"
+                )
+        opf_section = (
+            f"### Economic Dispatch\n"
+            f"Total demand: {req.opf_result.demand_MW:.2f} MW\n"
+            f"Total cost: {req.opf_result.total_cost:.2f} $/h\n"
+            f"Incremental cost: {req.opf_result.lambda_cost:.4f} $/MWh\n"
+            f"Generator dispatch:\n" + "\n".join(gen_lines)
+        )
+
+    prompt = prompts.REPORT_PROMPT_TEMPLATE.format(
+        system_name=_sanitize_user_input(req.system_name),
+        results_sections="\n\n".join(sections),
+        cpf_section=cpf_section,
+        opf_section=opf_section,
+        language=req.language,
+        include_recommendations=req.include_recommendations,
+    )
+
+    try:
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, prompt)
+        return models.ReportResponse(report=text)
+    except Exception as e:
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
+
+
+@app.post("/ask", response_model=models.AskResponse)
+async def ask(req: models.AskRequest):
+    """Free-form question, optionally with results context.
+
+    User input is wrapped in delimiters to structurally separate it
+    from system instructions and mitigate prompt injection.
+    """
+    user_msg = f"[USER_QUESTION_START]\n{_sanitize_user_input(req.question)}\n[USER_QUESTION_END]"
+    if req.results_json:
+        safe_json = _sanitize_user_input(req.results_json, max_len=50000)
+        user_msg += (
+            f"\n\n[DATA_CONTEXT_START]\n{safe_json}\n[DATA_CONTEXT_END]"
+        )
+
+    try:
+        text = await _call_gpt(prompts.SYSTEM_PROMPT, user_msg)
+        return models.AskResponse(answer=text)
+    except Exception as e:
+        logger.error("GPT call failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
+
+
+# ── Structured output parsers ────────────────────────────────
+
+def _parse_analyzer_finding(text: str) -> models.AnalyzerFinding | None:
+    parsed = utils.extract_json_block(text)
+    if not parsed:
+        logger.debug("No JSON block found in analyzer response")
+        return None
+    try:
+        return models.AnalyzerFinding(**parsed)
+    except Exception as e:
+        logger.warning("Failed to parse analyzer finding: %s", e)
+        return None
+
+
+def _parse_cpf_finding(text: str) -> models.CPFFinding | None:
+    parsed = utils.extract_json_block(text)
+    if not parsed:
+        logger.debug("No JSON block found in CPF response")
+        return None
+    try:
+        return models.CPFFinding(**parsed)
+    except Exception as e:
+        logger.warning("Failed to parse CPF finding: %s", e)
+        return None
+
+
+def _parse_opf_finding(text: str) -> models.OPFFinding | None:
+    parsed = utils.extract_json_block(text)
+    if not parsed:
+        logger.debug("No JSON block found in OPF response")
+        return None
+    try:
+        return models.OPFFinding(**parsed)
+    except Exception as e:
+        logger.warning("Failed to parse OPF finding: %s", e)
+        return None
+
+
+# ── Main ─────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
+
+    auth_status = "enabled" if config.API_AUTH_TOKEN else "DISABLED (dev mode)"
     print(f"Starting AI analysis service on http://{config.HOST}:{config.PORT}")
     print(f"Model: {config.MODEL}")
+    print(f"Auth: {auth_status}")
     print(f"Docs:  http://{config.HOST}:{config.PORT}/docs")
-    uvicorn.run(app, host=config.HOST, port=config.PORT)
+    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level=config.LOG_LEVEL.lower())

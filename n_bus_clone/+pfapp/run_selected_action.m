@@ -1,9 +1,9 @@
 function app = run_selected_action(app, fig)
 %RUN_SELECTED_ACTION Main Run button dispatch. Returns modified app.
 
-pfapp.set_busy(app, true);
-pfapp.start_progress(app, fig, 'Running power-flow solver ...', 'Please wait while the selected method is solving.');
-cleanup = onCleanup(@() pfapp.set_busy(app, false));
+app = pfapp.set_busy(app, true);
+app = pfapp.start_progress(app, fig, 'Running power-flow solver ...', ...
+    'Please wait while the selected method is solving.');
 try
     case_data = pfapp.load_selected_case(app);
     app.last_case_data = case_data;
@@ -92,6 +92,10 @@ try
     end
 catch err
     pfapp.append_log(app, sprintf('ERROR: %s', err.message));
-    uialert(fig, err.message, 'Run Failed');
+    try
+        uialert(fig, err.message, 'Run Failed');
+    catch
+    end
 end
+app = pfapp.set_busy(app, false);
 end

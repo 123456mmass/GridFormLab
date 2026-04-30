@@ -1,7 +1,8 @@
-function start_progress(app, fig, title_text, message_text)
+function app = start_progress(app, fig, title_text, message_text)
 %START_PROGRESS Open an indeterminate progress dialog.
+%   Returns modified app struct.
 
-pfapp.stop_progress(app);
+app = pfapp.stop_progress(app);
 try
     app.progress_dialog = uiprogressdlg(fig, ...
         'Title', title_text, ...

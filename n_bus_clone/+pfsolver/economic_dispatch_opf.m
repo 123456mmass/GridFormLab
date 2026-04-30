@@ -102,12 +102,15 @@ end
 if any(opf.P_min_MW > opf.P_max_MW)
     error('Each OPF P_min_MW must be <= P_max_MW.');
 end
-if opf.P_demand_MW < sum(opf.P_min_MW(isfinite(opf.P_min_MW))) || opf.P_demand_MW > sum(opf.P_max_MW(isfinite(opf.P_max_MW)))
-    finite_min = all(isfinite(opf.P_min_MW));
-    finite_max = all(isfinite(opf.P_max_MW));
-    if finite_min || finite_max
-        error('OPF demand %.6g MW is outside the finite generator limit range.', opf.P_demand_MW);
-    end
+finite_sum_min = sum(opf.P_min_MW(isfinite(opf.P_min_MW)));
+finite_sum_max = sum(opf.P_max_MW(isfinite(opf.P_max_MW)));
+if opf.P_demand_MW < finite_sum_min && all(isfinite(opf.P_min_MW))
+    error('OPF demand %.6g MW is below minimum possible generation (sum Pmin = %.6g MW).', ...
+        opf.P_demand_MW, finite_sum_min);
+end
+if opf.P_demand_MW > finite_sum_max && all(isfinite(opf.P_max_MW))
+    error('OPF demand %.6g MW exceeds maximum possible generation (sum Pmax = %.6g MW).', ...
+        opf.P_demand_MW, finite_sum_max);
 end
 end
 

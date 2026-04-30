@@ -8,6 +8,12 @@ else
     candidate_idx = setdiff((1:model.num_buses).', model.slack_buses);
     reason = 'weakest non-slack';
 end
+
+if isempty(candidate_idx)
+    error('Cannot choose auto target bus: no eligible buses found ' ...
+          '(all buses may be slack).');
+end
+
 [~, local_idx] = min(base_pf.bus_voltage(candidate_idx));
 target_idx = candidate_idx(local_idx);
 end

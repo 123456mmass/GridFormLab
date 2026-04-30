@@ -52,7 +52,7 @@ previous_result = [];
 lambda = 0;
 current_step = min(lambda_step, max_lambda_step);
 step_count = 0;
-while lambda <= lambda_max + 1e-12 && step_count <= max_steps
+while lambda <= lambda_max + 1e-12 && step_count < max_steps
     scaled_case = apply_load_scaling(base_model.case_data, base_model, P_direction, Q_direction, lambda, previous_result);
     nr_options = struct('max_iter', nr_max_iter, 'tolerance', tolerance, 'plot_results', false, 'verbose', false);
     result = powerflow_newton_raphson(scaled_case, nr_options);

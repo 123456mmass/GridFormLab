@@ -1,13 +1,15 @@
 """Power-system AI analysis service.
 
 Endpoints:
-    GET  /health              — service status
+    GET  /health              — service status with dependency check
+    GET  /metrics             — Prometheus-compatible metrics
     POST /analyze             — analyze power flow results (NR, GS)
     POST /analyze/cpf         — analyze CPF results
     POST /analyze/opf         — analyze OPF / economic dispatch
     POST /compare             — compare two solver results
     POST /report              — generate comprehensive report
-    POST /ask                 — free-form question about results
+    POST /ask                 — free-form question with conversation history
+    POST /ask/stream          — streaming SSE response for /ask
 
 Run:
     cd ai_service
@@ -18,14 +20,18 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
+import uuid
+from collections import defaultdict
+from typing import Any
 
 from openai import AsyncOpenAI
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 import config
 import models
@@ -44,6 +50,18 @@ logger = logging.getLogger("ai_service")
 # ── Client ───────────────────────────────────────────────────
 
 client = AsyncOpenAI(api_key=config.API_KEY, base_url=config.BASE_URL)
+
+# ── Conversation store ───────────────────────────────────────
+
+_conversations: dict[str, list[dict[str, str]]] = defaultdict(list)
+MAX_CONVERSATION_TURNS = 20
+CONVERSATION_TTL_SEC = 3600  # 1 hour
+_conversation_timestamps: dict[str, float] = {}
+
+# ── Metrics counters ─────────────────────────────────────────
+
+_metrics: dict[str, int] = defaultdict(int)
+_start_time = time.time()
 
 app = FastAPI(title="Power-System AI Analyst", version="1.0.0")
 
@@ -156,7 +174,37 @@ def _sanitize_user_input(text: str, max_len: int = 10000) -> str:
 
 @app.get("/health", response_model=models.HealthResponse)
 async def health():
-    return models.HealthResponse(status="ok", version="1.0.0")
+    """Health check with LLM API connectivity test."""
+    api_status = "unknown"
+    try:
+        test_resp = await asyncio.wait_for(
+            client.models.list(), timeout=5.0
+        )
+        api_status = "connected" if test_resp else "empty_response"
+    except asyncio.TimeoutError:
+        api_status = "timeout"
+    except Exception as e:
+        api_status = f"error: {type(e).__name__}"
+
+    uptime_sec = time.time() - _start_time
+    return models.HealthResponse(
+        status="ok" if api_status == "connected" else "degraded",
+        version="2.0.0",
+        api_status=api_status,
+        uptime_sec=round(uptime_sec, 1),
+    )
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus-compatible metrics endpoint."""
+    lines = []
+    for name, value in _metrics.items():
+        safe_name = name.replace(".", "_").replace("-", "_")
+        lines.append(f"nbus_{safe_name}_total {value}")
+    lines.append(f"nbus_uptime_seconds {time.time() - _start_time:.1f}")
+    lines.append(f"nbus_conversations_active {len(_conversations)}")
+    return JSONResponse(content="\n".join(lines) + "\n")
 
 
 @app.post("/analyze", response_model=models.AnalysisResponse)
@@ -349,26 +397,128 @@ async def report(req: models.ReportRequest):
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
 
 
+def _get_or_create_conversation(conv_id: str | None) -> tuple[str, list[dict[str, str]]]:
+    """Get existing conversation or create a new one. Returns (conv_id, history)."""
+    now = time.time()
+    if conv_id and conv_id in _conversations:
+        # Check TTL
+        if now - _conversation_timestamps.get(conv_id, 0) < CONVERSATION_TTL_SEC:
+            _conversation_timestamps[conv_id] = now
+            return conv_id, _conversations[conv_id]
+        else:
+            del _conversations[conv_id]
+    new_id = uuid.uuid4().hex[:12]
+    _conversations[new_id] = []
+    _conversation_timestamps[new_id] = now
+    return new_id, _conversations[new_id]
+
+
+def _cleanup_expired_conversations():
+    """Remove expired conversations."""
+    now = time.time()
+    expired = [
+        cid for cid, ts in _conversation_timestamps.items()
+        if now - ts > CONVERSATION_TTL_SEC
+    ]
+    for cid in expired:
+        del _conversations[cid]
+        del _conversation_timestamps[cid]
+
+
 @app.post("/ask", response_model=models.AskResponse)
 async def ask(req: models.AskRequest):
-    """Free-form question, optionally with results context.
+    """Free-form question with conversation history support.
 
-    User input is wrapped in delimiters to structurally separate it
-    from system instructions and mitigate prompt injection.
+    Pass conversation_id to continue a previous conversation.
+    User input is wrapped in delimiters to mitigate prompt injection.
     """
+    _metrics["ask_requests"] += 1
+    _cleanup_expired_conversations()
+
+    conv_id, history = _get_or_create_conversation(req.conversation_id)
+
     user_msg = f"[USER_QUESTION_START]\n{_sanitize_user_input(req.question)}\n[USER_QUESTION_END]"
     if req.results_json:
         safe_json = _sanitize_user_input(req.results_json, max_len=50000)
-        user_msg += (
-            f"\n\n[DATA_CONTEXT_START]\n{safe_json}\n[DATA_CONTEXT_END]"
-        )
+        user_msg += f"\n\n[DATA_CONTEXT_START]\n{safe_json}\n[DATA_CONTEXT_END]"
+
+    # Build messages with conversation history
+    messages = [{"role": "system", "content": prompts.SYSTEM_PROMPT}]
+    # Include last N turns from history
+    recent = history[-(MAX_CONVERSATION_TURNS * 2):]
+    messages.extend(recent)
+    messages.append({"role": "user", "content": user_msg})
 
     try:
-        text = await _call_gpt(prompts.SYSTEM_PROMPT, user_msg)
-        return models.AskResponse(answer=text)
+        resp = await client.chat.completions.create(
+            model=config.MODEL,
+            max_tokens=config.MAX_TOKENS,
+            temperature=0.1,
+            messages=messages,
+        )
+        text = resp.choices[0].message.content if resp.choices else ""
+        if text is None:
+            text = ""
+
+        # Store in conversation history
+        history.append({"role": "user", "content": user_msg})
+        history.append({"role": "assistant", "content": text})
+        if len(history) > MAX_CONVERSATION_TURNS * 2:
+            history[:] = history[-(MAX_CONVERSATION_TURNS * 2):]
+
+        return models.AskResponse(answer=text, conversation_id=conv_id)
     except Exception as e:
-        logger.error("GPT call failed: %s", e)
+        logger.error("/ask GPT call failed: %s", e)
+        _metrics["ask_errors"] += 1
         raise HTTPException(status_code=502, detail="AI service temporarily unavailable")
+
+
+@app.post("/ask/stream")
+async def ask_stream(req: models.AskRequest):
+    """Streaming version of /ask using Server-Sent Events."""
+    _metrics["ask_stream_requests"] += 1
+    _cleanup_expired_conversations()
+
+    conv_id, history = _get_or_create_conversation(req.conversation_id)
+
+    user_msg = f"[USER_QUESTION_START]\n{_sanitize_user_input(req.question)}\n[USER_QUESTION_END]"
+    if req.results_json:
+        safe_json = _sanitize_user_input(req.results_json, max_len=50000)
+        user_msg += f"\n\n[DATA_CONTEXT_START]\n{safe_json}\n[DATA_CONTEXT_END]"
+
+    messages = [{"role": "system", "content": prompts.SYSTEM_PROMPT}]
+    recent = history[-(MAX_CONVERSATION_TURNS * 2):]
+    messages.extend(recent)
+    messages.append({"role": "user", "content": user_msg})
+
+    async def generate():
+        full_text = ""
+        try:
+            stream = await client.chat.completions.create(
+                model=config.MODEL,
+                max_tokens=config.MAX_TOKENS,
+                temperature=0.1,
+                messages=messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    delta = chunk.choices[0].delta.content
+                    full_text += delta
+                    yield f"data: {json.dumps({'token': delta})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'conversation_id': conv_id})}\n\n"
+
+            # Store in history
+            history.append({"role": "user", "content": user_msg})
+            history.append({"role": "assistant", "content": full_text})
+            if len(history) > MAX_CONVERSATION_TURNS * 2:
+                history[:] = history[-(MAX_CONVERSATION_TURNS * 2):]
+        except Exception as e:
+            logger.error("/ask/stream failed: %s", e)
+            _metrics["ask_stream_errors"] += 1
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ── Structured output parsers ────────────────────────────────

@@ -137,8 +137,11 @@ class ReportResponse(BaseModel):
 
 class AskResponse(BaseModel):
     answer: str = Field(..., description="Answer to the question")
+    conversation_id: str | None = Field(None, description="Conversation ID for follow-up questions")
 
 
 class HealthResponse(BaseModel):
     status: str = Field("ok")
-    version: str = Field("1.0.0")
+    version: str = Field("2.0.0")
+    api_status: str = Field("unknown", description="LLM API connectivity status")
+    uptime_sec: float = Field(0.0, description="Service uptime in seconds")

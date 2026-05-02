@@ -1,0 +1,11 @@
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+tests/__pycache__/
+.pytest_cache/
+.codex-run/
+frontend/.next/
+frontend/node_modules/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.pw-output-review/

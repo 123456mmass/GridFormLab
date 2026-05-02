@@ -1,10 +1,8 @@
 function app = run_powerflow_gui()
 %RUN_POWERFLOW_GUI Interactive GUI launcher for the n-bus power-flow toolkit.
-%   Run from MATLAB:
-%       cd('C:\Users\qwert\OneDrive\Desktop\api\n_bus_clone')
-%       run_powerflow_gui
 
 pf_init_paths();
+pfapp.start_ai_service();
 
 app = struct();
 app.last_result = [];
@@ -13,30 +11,39 @@ app.last_suite = [];
 app.last_opf = [];
 app.last_case_data = [];
 [app.case_labels, app.case_loaders] = pfapp.make_case_registry();
-% Reserve one slot at the end for custom loaded case
 app.case_labels{end + 1} = 'Custom n-bus: (none)';
 app.case_loaders{end + 1} = [];
 app.custom_case_data = [];
 app.progress_dialog = [];
 
 [fig, app] = pfapp.create_gui_layout(app);
+fig.CloseRequestFcn = @(src, event) close_gui();
 
-% --- Wire callbacks ---
+% ── Wire callbacks ──
 app.method_dropdown.ValueChangedFcn = @(src, event) update_method_state();
 app.auto_cpf_checkbox.ValueChangedFcn = @(src, event) update_method_state();
 app.browse_case_button.ButtonPushedFcn = @(src, event) browse_custom_case();
 app.run_button.ButtonPushedFcn = @(src, event) run_selected();
 app.export_button.ButtonPushedFcn = @(src, event) export_last();
+app.export_json_button.ButtonPushedFcn = @(src, event) export_json();
+app.export_html_button.ButtonPushedFcn = @(src, event) export_html();
 app.tests_button.ButtonPushedFcn = @(src, event) run_tests();
 app.clear_button.ButtonPushedFcn = @(src, event) set(app.log_area, 'Value', {'Ready.'});
 app.separate_plot_button.ButtonPushedFcn = @(src, event) open_separate_plots();
 app.analysis_plot_button.ButtonPushedFcn = @(src, event) open_analysis_plots();
 app.open_output_button.ButtonPushedFcn = @(src, event) pfapp.append_log(app, fullfile(pwd, 'output'));
+app.theme_toggle.ButtonPushedFcn = @(src, event) toggle_theme();
+app.log_toggle.ButtonPushedFcn = @(src, event) toggle_log();
+app.ai_send_button.ButtonPushedFcn = @(src, event) ai_chat();
+app.ai_analyze_button.ButtonPushedFcn = @(src, event) ai_analyze();
 
 pfapp.update_method_state(app);
 pfapp.plot_empty_state(app);
 
-% --- Thin nested wrappers (closures over app/fig) ---
+% ── Load saved preferences ──
+app = pfapp.load_preferences(app);
+
+% ── Nested callbacks ──
 
     function run_selected()
         app = pfapp.run_selected_action(app, fig);
@@ -44,6 +51,14 @@ pfapp.plot_empty_state(app);
 
     function export_last()
         app = pfapp.export_last_action(app, fig);
+    end
+
+    function export_json()
+        app = pfapp.export_json_action(app, fig);
+    end
+
+    function export_html()
+        app = pfapp.export_html_action(app, fig);
     end
 
     function open_separate_plots()
@@ -58,35 +73,48 @@ pfapp.plot_empty_state(app);
         app = pfapp.run_tests_action(app, fig);
     end
 
-    function case_data = load_selected_case()
-        case_data = pfapp.load_selected_case(app);
-    end
-
     function browse_custom_case()
         app = pfapp.browse_custom_case(app, fig);
-        % Keep dropdown Items in sync after custom case load
         if isfield(app, 'case_labels')
             app.case_dropdown.Items = app.case_labels;
         end
-    end
-
-    function options = cpf_options(case_data, method)
-        options = pfapp.build_cpf_options(app, case_data, method);
-    end
-
-    function suite = run_suite_headless()
-        suite = pfapp.run_suite_headless(app);
     end
 
     function update_method_state()
         pfapp.update_method_state(app);
     end
 
-    function [options, setup] = auto_calibrate_cpf(case_data, method)
-        [options, setup] = pfapp.auto_calibrate_cpf(app, case_data, method);
+    function toggle_theme()
+        app = pfapp.toggle_theme(app, fig);
     end
 
-    function apply_cpf_setup(setup)
-        pfapp.apply_cpf_setup(app, setup);
+    function toggle_log()
+        app = pfapp.toggle_log_panel(app);
+    end
+
+    function ai_chat()
+        app = pfapp.ai_chat_action(app);
+    end
+
+    function ai_analyze()
+        app = pfapp.ai_analyze_action(app, fig);
+    end
+
+    function close_gui()
+        pidfile = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'ai_service', 'ai_service.pid');
+        if isfile(pidfile)
+            try
+                pid = fileread(pidfile);
+                pid = strtrim(pid);
+                if ispc
+                    system(sprintf('taskkill /PID %s /F 2>nul', pid));
+                else
+                    system(sprintf('kill %s 2>/dev/null', pid));
+                end
+                delete(pidfile);
+            catch
+            end
+        end
+        delete(fig);
     end
 end

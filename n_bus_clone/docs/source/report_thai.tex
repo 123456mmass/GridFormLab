@@ -1,7 +1,7 @@
 \documentclass[12pt,a4paper]{article}
 
 \usepackage{fontspec}
-\setmainfont{TH SarabunPSK}
+\setmainfont{TH Sarabun PSK}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -48,7 +48,7 @@
 \title{\textbf{N-Bus Power Flow Analysis}\\
 \large Generic MATLAB-Based Power Flow Solver สำหรับระบบ Power System}
 \author{N-Bus Power Flow Analysis}
-\date{\today}
+\date{May 2, 2026}
 
 \begin{document}
 
@@ -72,7 +72,6 @@ Power flow analysis (หรือ load flow analysis) เป็นเครื�
     \item เพื่อ implement solution method หลายรูปแบบ: Newton-Raphson, Gauss-Seidel และ Continuation Power Flow
     \item เพื่อเพิ่ม Q-limit switching สำหรับ reactive power constraints ของ generator
     \item เพื่อตรวจสอบความถูกต้องกับระบบทดสอบมาตรฐาน MATPOWER IEEE 30-bus (Alsac \& Stott, 1974)
-    \item เพื่อพัฒนา GUI สำหรับเลือก case ตั้งค่า method และแสดงผลลัพธ์
     \item เพื่อ implement automated regression testing เทียบกับ reference solution
 \end{enumerate}
 
@@ -214,8 +213,6 @@ n_bus_clone/
 |   +-- case_saadat_opf_example_7_6.m % OPF with MW limits
 |   +-- case_template_nbus.m          % Template for new cases
 +-- Entry Scripts
-|   +-- run_gui.m                     % GUI launcher
-|   +-- run_powerflow_gui.m           % Full GUI (964 lines)
 |   +-- run_powerflow_suite.m         % NR + GS + CPF suite
 |   +-- run_powerflow_tests.m         % 12 regression tests
 |   +-- run_nbus_example.m            % 5-bus demo
@@ -577,10 +574,6 @@ suite = run_powerflow_suite();
 
 \begin{lstlisting}[language=Matlab, caption={Running automated tests}]
 summary = run_powerflow_tests();
-\end{lstlisting}
-
-\begin{lstlisting}[language=Matlab, caption={Launching the GUI}]
-run_gui
 \end{lstlisting}
 
 \begin{lstlisting}[language=Matlab, caption={Exporting results}]

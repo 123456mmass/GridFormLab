@@ -49,7 +49,7 @@
 \title{\textbf{N-Bus Power Flow Analysis}\\
 \large A Generic MATLAB-Based Solver for Power System Analysis}
 \author{N-Bus Power Flow Analysis}
-\date{\today}
+\date{May 2, 2026}
 
 \begin{document}
 
@@ -73,7 +73,6 @@ This project develops a generic n-bus power flow analysis framework that support
     \item To implement multiple solution methods: Newton-Raphson, Gauss-Seidel, and Continuation Power Flow
     \item To include Q-limit switching for generator reactive power constraints
     \item To provide benchmark validation against the MATPOWER IEEE 30-bus test system (Alsac \& Stott, 1974)
-    \item To develop an interactive GUI for case selection, method configuration, and result visualization
     \item To implement automated regression testing against known reference solutions
 \end{enumerate}
 
@@ -215,8 +214,6 @@ n_bus_clone/
 |   +-- case_saadat_opf_example_7_6.m % OPF with MW limits
 |   +-- case_template_nbus.m          % Template for new cases
 +-- Entry Scripts
-|   +-- run_gui.m                     % GUI launcher
-|   +-- run_powerflow_gui.m           % Full GUI (964 lines)
 |   +-- run_powerflow_suite.m         % NR + GS + CPF suite
 |   +-- run_powerflow_tests.m         % 12 regression tests
 |   +-- run_nbus_example.m            % 5-bus demo
@@ -578,10 +575,6 @@ suite = run_powerflow_suite();
 
 \begin{lstlisting}[language=Matlab, caption={Running automated tests}]
 summary = run_powerflow_tests();
-\end{lstlisting}
-
-\begin{lstlisting}[language=Matlab, caption={Launching the GUI}]
-run_gui
 \end{lstlisting}
 
 \begin{lstlisting}[language=Matlab, caption={Exporting results}]

@@ -31,6 +31,8 @@ try
             app.last_opf.system_name, app.last_opf.method));
         paths = pf_export_opf_results(app.last_opf, output_dir, prefix);
         pfapp.append_log(app, sprintf('Exported OPF: %s', paths.summary_txt));
+    elseif ~isempty(app.last_smib)
+        app = pfapp.export_smib_result(app, output_dir);
     else
         pfapp.append_log(app, 'Nothing to export yet. Run a method first.');
     end

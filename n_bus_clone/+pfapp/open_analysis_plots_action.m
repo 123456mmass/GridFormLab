@@ -6,6 +6,12 @@ app = pfapp.set_busy(app, true);
 app = pfapp.start_progress(app, fig, 'Building analysis plots ...', ...
     'Generating benchmark and CPF reference figures.');
 try
+    case_data = pfapp.load_selected_case(app);
+    if pfapp.is_smib_case(case_data)
+        pfapp.append_log(app, 'Analysis Plots are for steady-state cases. Use Separate Plots for SMIB figures.');
+        app = pfapp.set_busy(app, false);
+        return;
+    end
     pfapp.append_log(app, 'Building 3D benchmark and CPF reference plots ...');
     benchmark_idx = cellfun(@(loader) ~isempty(loader) ...
         && pfapp.is_powerflow_case_loader(loader), app.case_loaders);
@@ -15,7 +21,6 @@ try
     if ~isempty(app.last_cpf)
         pfapp.open_cpf_reference_figure(app.last_cpf);
     else
-        case_data = pfapp.load_selected_case(app);
         cpf_defaults = pfapp.build_cpf_options(app, case_data, 'CPF Predictor-Corrector');
         cpf_defaults.plot_results = false;
         cpf_defaults.verbose = false;

@@ -8,6 +8,28 @@ try
     case_data = pfapp.load_selected_case(app);
     app.last_case_data = case_data;
     method = app.method_dropdown.Value;
+
+    % SMIB analysis is dispatched separately (it shares no steady-state
+    % solver machinery), so hand off and return.
+    if strcmp(method, 'SMIB Stability Analysis')
+        app = pfapp.run_smib_action(app, fig);
+        return;
+    end
+
+    % Guard against a power-flow method running on an SMIB case.
+    if pfapp.is_smib_case(case_data)
+        error('run:badCase', ...
+            ['"%s" is a Kundur SMIB case. Select the "SMIB Stability Analysis" ' ...
+            'method for it.'], case_data.system_name);
+    end
+
+    % Steady-state run: drop any previous SMIB result and clear its table so
+    % the SMIB Stability tab does not show stale eigenvalues.
+    app.last_smib = [];
+    if isfield(app, 'smib_table') && isvalid(app.smib_table)
+        app.smib_table.Data = [];
+    end
+
     pfapp.append_log(app, sprintf('Running %s on %s ...', method, case_data.system_name));
 
     switch method

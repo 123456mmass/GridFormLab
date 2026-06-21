@@ -2,7 +2,10 @@ function open_separate_plots_action(app, fig)
 %OPEN_SEPARATE_PLOTS_ACTION Open standalone figures for the last result.
 
 try
-    if ~isempty(app.last_suite)
+    if ~isempty(app.last_smib)
+        pfapp.open_smib_figure(app);
+        return;
+    elseif ~isempty(app.last_suite)
         pfapp.open_suite_figure(app.last_suite);
         pfapp.append_log(app, 'Opened separate suite plots.');
     elseif ~isempty(app.last_result)

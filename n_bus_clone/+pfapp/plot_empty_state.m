@@ -6,6 +6,8 @@ axes_cfg = {
     'ax_conv',    'Convergence',     'Iteration history appears here';
     'ax_cpf',     'CPF / PV Curve',  'CPF nose curve appears here';
     'ax_opf',     'OPF Dispatch',    'Economic dispatch chart appears here';
+    'ax_smib_plane', 'SMIB s-plane', 'Eigenvalues appear after an SMIB run';
+    'ax_smib_step',  'SMIB Response', 'Time-domain response appears after an SMIB run';
 };
 
 for i = 1:size(axes_cfg, 1)
@@ -23,10 +25,10 @@ for i = 1:size(axes_cfg, 1)
         ax.YLim = [0 1];
         text(ax, 0.5, 0.58, title_text, ...
             'HorizontalAlignment', 'center', 'FontName', 'Segoe UI', ...
-            'FontSize', 14, 'FontWeight', 'bold', 'Color', [0.09 0.13 0.20]);
-        text(ax, 0.5, 0.40, sub_text, ...
+            'FontSize', 13, 'FontWeight', 'bold', 'Color', [0.09 0.13 0.20]);
+        text(ax, 0.5, 0.42, sub_text, ...
             'HorizontalAlignment', 'center', 'FontName', 'Segoe UI', ...
-            'FontSize', 10, 'Color', [0.39 0.45 0.55]);
+            'FontSize', 9, 'Color', [0.39 0.45 0.55]);
         title(ax, '');
         box(ax, 'on');
     end

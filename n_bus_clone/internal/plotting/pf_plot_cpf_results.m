@@ -195,11 +195,19 @@ end
 end
 
 function style_axis(ax)
+plot_ink = [0.10 0.10 0.10];
 grid(ax, 'on');
-ax.GridAlpha = 0.16;
-ax.MinorGridAlpha = 0.08;
-ax.Box = 'off';
-ax.Color = [0.985 0.988 0.992];
+ax.GridAlpha = 0.55;
+ax.MinorGridAlpha = 0.35;
+ax.GridColor = [0.82 0.82 0.82];
+ax.MinorGridColor = [0.90 0.90 0.90];
+ax.Box = 'on';
+ax.Color = [1 1 1];
+ax.XColor = plot_ink;
+ax.YColor = plot_ink;
+ax.Title.Color = plot_ink;
+ax.XLabel.Color = plot_ink;
+ax.YLabel.Color = plot_ink;
 ax.Layer = 'top';
 end
 

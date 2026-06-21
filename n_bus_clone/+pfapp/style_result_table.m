@@ -30,6 +30,17 @@ try
             method_style = uistyle('BackgroundColor', [0.93 0.95 1.00], ...
                 'FontColor', [0.16 0.21 0.36], 'FontWeight', 'bold');
             addStyle(app.result_table, method_style, 'column', 1);
+
+        case 'smib'
+            eig_style = uistyle('BackgroundColor', [0.93 0.96 0.94], ...
+                'FontColor', [0.10 0.38 0.20], 'FontWeight', 'bold');
+            stable_style = uistyle('BackgroundColor', [0.90 0.97 1.00], ...
+                'FontColor', [0.02 0.31 0.44], 'FontWeight', 'bold');
+            if isfield(app, 'smib_table') && isvalid(app.smib_table)
+                try; removeStyle(app.smib_table); catch; end
+                addStyle(app.smib_table, eig_style, 'column', 1);
+                addStyle(app.smib_table, stable_style, 'column', 6);
+            end
     end
 catch
     % Styling is cosmetic; never fail result rendering because of it.

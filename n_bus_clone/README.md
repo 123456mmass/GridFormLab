@@ -1,41 +1,24 @@
 # N-Bus Power Flow Studio
 
-MATLAB toolkit for power system analysis — Newton-Raphson, Gauss-Seidel, Continuation Power Flow (CPF), Optimal Power Flow (OPF), and AI-assisted analysis.
+MATLAB toolkit for power system analysis — Newton-Raphson, Gauss-Seidel, Continuation Power Flow (CPF), Optimal Power Flow (OPF), and SMIB small-signal stability (Kundur Ch.12).
 
 ## Features
 
 - **Power Flow Solvers**: Newton-Raphson and Gauss-Seidel with Q-limit enforcement
 - **Continuation Power Flow**: Load scaling and predictor-corrector methods for voltage stability
 - **Economic Dispatch / OPF**: Classical quadratic-cost optimization with generator limits
-- **AI Analysis Service**: FastAPI + LLM integration for automated result interpretation
-- **Modern MATLAB GUI**: Theme-switchable web-app-inspired interface
+- **SMIB Small-Signal Stability**: Kundur Ch.12 — classical, field-circuit, AVR, and PSS models with eigen-analysis
+- **Modern MATLAB GUI**: Theme-switchable (light/dark), in-place rebuild, metric cards, SMIB Stability tab
 - **Multi-format Export**: CSV, JSON, HTML, PDF, PNG
 - **Benchmark Mode**: Headless multi-method comparison with timing
-- **Test Suite**: MATLAB unit tests + Python pytest for AI service
+- **Test Suite**: MATLAB unit tests
 
 ## Quick Start
 
 ### MATLAB GUI
 
 ```matlab
-cd('C:\Users\qwert\OneDrive\Desktop\api\n_bus_clone')
 run_powerflow_gui
-```
-
-### AI Service
-
-```bash
-cd ai_service
-cp .env.example .env   # edit with your API key
-pip install -r requirements.txt
-python server.py
-```
-
-### Docker
-
-```bash
-cd ai_service
-docker compose up -d
 ```
 
 ### Headless Benchmark
@@ -45,18 +28,27 @@ pf_init_paths();
 results = benchmark_all_methods(case_ieee5bus());
 ```
 
+### SMIB Stability Analysis
+
+```matlab
+run_smib_example   % standalone, prints golden-reference checks
+% or pick a Kundur SMIB case + "SMIB Stability Analysis" method in the GUI
+```
+
 ## Project Structure
 
 ```
 n_bus_clone/
 ├── +pfapp/              # GUI application package
 │   ├── run_powerflow_gui.m       # GUI launcher
-│   ├── create_gui_layout.m       # Modern themed layout
-│   ├── run_selected_action.m     # Solver dispatch
-│   ├── export_json_action.m      # JSON export
-│   ├── export_html_action.m      # HTML report export
-│   ├── build_html_report.m       # HTML report generator
-│   ├── toggle_theme.m            # Light/dark theme
+│   ├── create_gui_layout.m       # Themed layout (rebuild-in-place)
+│   ├── wire_callbacks.m          # Central callback wiring
+│   ├── cb.m                      # GUI callback dispatcher
+│   ├── run_selected_action.m     # Solver dispatch + SMIB hand-off
+│   ├── run_smib_action.m         # SMIB analysis dispatch
+│   ├── show_smib_result.m        # SMIB eigenvalue/s-plane render
+│   ├── open_smib_figure.m        # Standalone SMIB figures
+│   ├── toggle_theme.m            # Light/dark rebuild
 │   ├── save_preferences.m        # Persist user settings
 │   ├── load_preferences.m        # Restore user settings
 │   ├── discover_cases.m          # Auto-scan +cases/
@@ -71,58 +63,32 @@ n_bus_clone/
 │   ├── economic_dispatch_opf.m
 │   ├── ac_optimal_power_flow.m
 │   └── benchmark_all_methods.m   # Headless benchmark
-├── +cases/              # IEEE/Saadat test cases
-├── +ai_client/          # MATLAB client for AI service
-├── ai_service/          # FastAPI AI analysis service
-│   ├── server.py                 # Main server
-│   ├── config.py                 # Configuration
-│   ├── models.py                 # Pydantic models
-│   ├── prompts.py                # LLM prompts
-│   ├── utils.py                  # Utilities
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── tests/                    # Python tests
-├── internal/            # Shared internal utilities
-│   ├── pf_export_*.m            # Export functions
-│   └── plotting/                # Plotting functions
+├── +cases/              # IEEE/Saadat + Kundur SMIB test cases
+├── +smib/               # SMIB stability (K-constants, state matrices, analyze)
+├── internal/            # Shared internal utilities (export, plotting)
+│   └── plotting/                # PF + SMIB plot functions
 ├── tests/               # MATLAB unit tests
 │   ├── test_nr_solver.m
 │   ├── test_gs_solver.m
 │   ├── test_cpf.m
-│   └── test_opf.m
+│   ├── test_opf.m
+│   └── test_smib.m
 ├── .github/workflows/   # CI/CD
 │   └── ci.yml
 └── output/              # Generated reports and plots
 ```
 
-## AI Service API
+## GUI Overview
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check + API status |
-| GET | `/metrics` | Prometheus metrics |
-| POST | `/analyze` | Analyze power flow results |
-| POST | `/analyze/cpf` | Analyze CPF results |
-| POST | `/analyze/opf` | Analyze OPF results |
-| POST | `/compare` | Compare two solvers |
-| POST | `/report` | Generate comprehensive report |
-| POST | `/ask` | Free-form Q&A with history |
-| POST | `/ask/stream` | Streaming SSE response |
+| Tab | Content |
+|-----|---------|
+| Analysis | Voltage profile + convergence history (PF/CPF/OPF) |
+| Results Table | Bus / dispatch / CPF data table |
+| Advanced Plots | CPF PV-curve + OPF dispatch charts |
+| SMIB Stability | s-plane eigenvalues + impulse response + eigenvalue table |
 
-## Configuration
-
-### AI Service (.env)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_API_KEY` | *required* | DeepSeek/OpenAI API key |
-| `LLM_BASE_URL` | `https://api.deepseek.com` | API base URL |
-| `LLM_MODEL` | `deepseek-v4-flash` | Model name |
-| `API_AUTH_TOKEN` | (empty) | Bearer token for auth |
-| `PORT` | `8000` | Server port |
-| `MAX_TOKENS` | `4096` | Max response tokens |
-| `RATE_LIMIT_REQUESTS` | `30` | Rate limit per window |
-| `RATE_LIMIT_WINDOW_SEC` | `60` | Rate limit window |
+The dashboard shows four live metric cards (status / case / method / result).
+Selecting a Kundur SMIB case auto-switches the method to *SMIB Stability Analysis*.
 
 ## Test Cases
 
@@ -135,6 +101,10 @@ n_bus_clone/
 | Saadat 3-bus PQ | 3 | PF | Saadat Ex 6.7 |
 | Saadat 3-bus PV | 3 | PF | Saadat Ex 6.8 |
 | Saadat OPF Ex 7.4-7.6 | var | OPF | Saadat Ch.7 |
+| Kundur SMIB classical | 1 | SMIB Model A | Kundur Ex 12.2 |
+| Kundur SMIB field circuit | 1 | SMIB Model B | Kundur Ex 12.3 |
+| Kundur SMIB + AVR | 1 | SMIB Model C | Kundur Sec 12.4 |
+| Kundur SMIB + PSS | 1 | SMIB Model D | Kundur Ex 12.6 |
 
 ## Running Tests
 
@@ -145,13 +115,6 @@ import matlab.unittest.TestRunner
 suite = TestSuite.fromFolder('tests');
 runner = TestRunner.withTextOutput();
 runner.run(suite);
-```
-
-### Python
-```bash
-cd ai_service
-pip install pytest pytest-asyncio httpx
-python -m pytest tests/ -v
 ```
 
 ## License

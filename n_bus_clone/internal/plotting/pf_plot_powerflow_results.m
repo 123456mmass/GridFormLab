@@ -24,7 +24,7 @@ ylabel('|V| (pu)');
 title('Voltage Magnitude');
 grid on;
 ylim([min(0.85, min(bus_voltage) - 0.05), max(1.12, max(bus_voltage) + 0.05)]);
-set(gca, 'GridAlpha', 0.18);
+style_axis(gca);
 if ~isempty(axis_info.note)
     text(0.01, 0.96, axis_info.note, 'Units', 'normalized', ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
@@ -37,7 +37,7 @@ xlabel(axis_info.xlabel);
 ylabel('Angle (degree)');
 title('Voltage Angle');
 grid on;
-set(gca, 'GridAlpha', 0.18);
+style_axis(gca);
 
 nexttile([1 2]);
 if isempty(mismatch_plot)
@@ -54,7 +54,21 @@ xlabel('Iteration');
 ylabel('Max Mismatch (pu)');
 title(sprintf('%s Convergence', results.method), 'Interpreter', 'none');
 grid on;
-set(gca, 'GridAlpha', 0.18);
+style_axis(gca);
 
-sgtitle(sprintf('%s - %s', results.system_name, results.method), 'Interpreter', 'none', 'FontWeight', 'bold');
+st = sgtitle(sprintf('%s - %s', results.system_name, results.method), 'Interpreter', 'none', 'FontWeight', 'bold');
+st.Color = [0.10 0.10 0.10];
+end
+
+function style_axis(ax)
+plot_ink = [0.10 0.10 0.10];
+ax.Color = [1 1 1];
+ax.XColor = plot_ink;
+ax.YColor = plot_ink;
+ax.GridColor = [0.82 0.82 0.82];
+ax.GridAlpha = 0.55;
+ax.FontSize = 10;
+ax.Title.Color = plot_ink;
+ax.XLabel.Color = plot_ink;
+ax.YLabel.Color = plot_ink;
 end

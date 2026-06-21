@@ -73,6 +73,21 @@ elseif ~isempty(app.last_opf)
         data.generator_cost = r.generator_cost(:)';
     end
 
+elseif ~isempty(app.last_smib)
+    s = app.last_smib;
+    r = s.analyze;
+    data.system_name = char(s.case.system_name);
+    data.method = sprintf('SMIB Model %s', s.model);
+    data.model = s.model;
+    data.stable = r.is_stable;
+    data.num_states = numel(r.state_names);
+    data.state_names = r.state_names;
+    lam = r.eigenvalues;
+    data.eigenvalues_re = real(lam).';
+    data.eigenvalues_im = imag(lam).';
+    data.damping = r.damping.';
+    data.freq_Hz = r.freq_Hz.';
+
 elseif ~isempty(app.last_suite)
     data.system_name = '5-Bus-Suite';
     data.method = 'Full 5-bus Suite';

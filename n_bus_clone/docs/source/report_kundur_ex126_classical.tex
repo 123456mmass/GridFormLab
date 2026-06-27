@@ -223,16 +223,29 @@ textbook values.
 \end{table}
 
 For completeness, Table~\ref{tab:e123} reproduces the full manual-excitation
-eigenvalue list of Table~E12.3 as used by the project benchmark.
+eigenvalue list of Table~E12.3 as published by Kundur. The real and imaginary
+parts are listed separately so that every eigenvalue can be plotted directly
+in the complex plane (Figure~\ref{fig:fulleig}). The values are reproduced
+here as the textbook benchmark; they are not produced by a multi-machine
+state-space model in this implementation.
 
 \begin{table}[H]
 \centering
 \caption{Full manual-excitation eigenvalue list of Table~E12.3 (classical /
-manual excitation).}
+manual excitation), split into real and imaginary parts.}
 \label{tab:e123}
-\scriptsize
 \input{figures/kundur_ex126/table_e123_reproduction.tex}
 \end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/kundur_ex126/full_eigenvalue_map.png}
+\caption{Full manual-excitation eigenvalues of Table~\ref{tab:e123} plotted in
+the complex plane. Complex-conjugate pairs appear above and below the real
+axis; real-only eigenvalues (field and damper flux linkages) lie on the
+negative real axis.}
+\label{fig:fulleig}
+\end{figure}
 
 \section{Stability Figures}
 \label{sec:figs}

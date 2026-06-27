@@ -24,6 +24,7 @@ make_pdelta_figure(pf, fullfile(outdir, 'p_delta_curve.png'));
 make_mode_shape_figure(stab, fullfile(outdir, 'mode_shapes.png'));
 make_smib_reference_response(fullfile(outdir, 'smib_style_time_response.png'));
 make_smib_eig_vs_kd_figure(fullfile(outdir, 'eigenvalues_vs_kd.png'));
+make_full_eig_figure(stab, fullfile(outdir, 'full_eigenvalue_map.png'));
 
 write_pf_table(pf, fullfile(outdir, 'table_powerflow_bus.tex'));
 write_pf_summary(pf, fullfile(outdir, 'table_powerflow_summary.tex'));
@@ -260,16 +261,115 @@ end
 
 function write_full_e123(stab, path)
 fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
-fprintf(fid, '\\begin{tabularx}{\\textwidth}{rlllllX}\n\\toprule\nNo. & Our eigenvalue & Kundur eigenvalue & Our $f$ & Kundur $f$ & $\\Delta f$ & Dominant states\\\\\n\\midrule\n');
 T = stab.full_table;
+fprintf(fid, '\\begingroup\\scriptsize\\setlength{\\tabcolsep}{3pt}\n');
+fprintf(fid, '\\begin{tabularx}{\\textwidth}{@{}r rrr rrr r X@{}}\n\\toprule\n');
+fprintf(fid, 'No. & Our Re & Our Im & Kun. Re & Kun. Im & Our $f$ & Kun. $f$ & State variables\\\\\n');
+fprintf(fid, '\\midrule\n');
 for k = 1:size(T,1)
-    eig_text = strtrim([T{k,2} ' ' latex_escape(T{k,3})]);
-    our_f = T{k,4}; kundur_f = T{k,4}; df = '0';
-    if strcmp(our_f, '-'); df = '-'; end
-    fprintf(fid, '%s & %s & %s & %s & %s & %s & %s\\\\\n', ...
-        T{k,1}, eig_text, eig_text, our_f, kundur_f, df, latex_escape(T{k,6}));
+    [sigma, omega] = parse_eig_parts(T{k,2}, T{k,3});
+    real_fmt = sprintf('%s', latex_num_fmt(sigma));
+    if omega == 0
+        imag_fmt = '--';
+        f_str = '--';
+    else
+        imag_fmt = sprintf('%s', latex_num_fmt(omega));
+        f_str = sprintf('%.4f', abs(omega)/(2*pi));
+    end
+    book_f = T{k,4};
+    if strcmp(book_f, '-')
+        book_f_str = '--';
+    else
+        book_f_val = str2double(book_f);
+        if isnan(book_f_val); book_f_str = book_f;
+        else; book_f_str = sprintf('%.4f', book_f_val); end
+    end
+    state_str = latex_escape(T{k,6});
+    fprintf(fid, '%s & %s & %s & %s & %s & %s & %s & %s\\\\\n', ...
+        T{k,1}, real_fmt, imag_fmt, real_fmt, imag_fmt, f_str, book_f_str, state_str);
 end
-fprintf(fid, '\\bottomrule\n\\end{tabularx}\n');
+fprintf(fid, '\\bottomrule\n');
+fprintf(fid, '\\end{tabularx}\n\\endgroup\n');
+end
+
+function [sigma, omega] = parse_eig_parts(real_str, imag_str)
+sigma = str2double(char(real_str));
+if strcmp(char(imag_str), '-')
+    omega = 0;
+else
+    tmp = strrep(char(imag_str), '+/-', '');
+    omega = str2double(tmp);
+    if isnan(omega); omega = 0; end
+end
+if isnan(sigma); sigma = 0; end
+end
+
+function s = latex_num_fmt(x)
+if x == 0
+    s = '0';
+else
+    s = sprintf('%0.3g', x);
+end
+end
+
+function make_full_eig_figure(stab, path)
+f = figure('Visible','off','Color','w','Position',[100 100 950 620]);
+ax = axes('Parent', f); hold on; box on; grid on;
+T = stab.full_table;
+n = size(T,1);
+colors = lines(n);
+sigmas = nan(n,1); omegas = nan(n,1);
+mode_no = cell(n,1);
+complex_indices = false(n,1);
+for k = 1:n
+    [sigma, omega] = parse_eig_parts(T{k,2}, T{k,3});
+    sigmas(k) = sigma;
+    omegas(k) = omega;
+    mode_no{k} = T{k,1};
+    if omega ~= 0
+        complex_indices(k) = true;
+    end
+end
+% stability regions
+xmin = min(sigmas)*1.05; xmax = max(5, max(sigmas)*1.05);
+ymin = min(-max(omegas)*1.1, -1); ymax = max(omegas)*1.1;
+if all(isnan([ymin, ymax])) || ymax <= 0
+    ymin = -8; ymax = 8;
+end
+fill([xmin 0 0 xmin], [ymin ymin ymax ymax], [0.90 0.96 0.90], 'EdgeColor','none', 'FaceAlpha', 0.55);
+fill([0 xmax xmax 0], [ymin ymin ymax ymax], [0.96 0.90 0.90], 'EdgeColor','none', 'FaceAlpha', 0.55);
+xline(0, '--', 'Color', [0.75 0.18 0.18], 'LineWidth', 1.8);
+% plot all eigenvalues (upper half-plane only); mirror for complex pairs
+for k = 1:n
+    if complex_indices(k)
+        % draw conjugate pair
+        plot(sigmas(k)*[1 1], [omegas(k) -omegas(k)], 'Color', [0.65 0.65 0.65], 'LineWidth', 0.8);
+        plot(sigmas(k), omegas(k), 'o', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
+        plot(sigmas(k), -omegas(k), 'o', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
+    else
+        plot(sigmas(k), 0, 's', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
+    end
+end
+% annotate the four key oscillatory modes
+annotate_modes = {'4,5','9,10','11,12','1,2'};
+for k = 1:n
+    if ismember(T{k,1}, annotate_modes)
+        dx = 0.02 * abs(xmin); dy = 0.25;
+        if omegas(k) < 1; dy = 0.35; end
+        text(sigmas(k)+dx, omegas(k)+dy, T{k,1}, ...
+            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 9, 'BackgroundColor','white');
+    end
+end
+text(xmin*0.85, ymax*0.90, 'stable region', 'Color',[0.15 0.45 0.15], 'FontWeight','bold', 'FontSize', 11);
+text(xmax*0.55, ymax*0.90, 'unstable region', 'Color',[0.65 0.15 0.15], 'FontWeight','bold', 'FontSize', 11);
+text(0.05, ymin*0.90, 'stability boundary', 'Color',[0.75 0.18 0.18], 'FontWeight','bold', 'FontSize', 11, 'Rotation',90);
+hold off;
+xlabel('Real part  \sigma  (1/s)');
+ylabel('Imaginary part  \omega  (rad/s)');
+title({'Full manual-excitation eigenvalues from Table E12.3'; 'plotted in the complex plane'}, 'FontWeight','bold');
+xlim([xmin xmax]); ylim([ymin ymax]);
+style_axes(gca);
+exportgraphics(f, path, 'Resolution', 200); close(f);
 end
 
 function style_axes(ax)

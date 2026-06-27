@@ -41,9 +41,9 @@ result.modes = rows;
 % Full Table E12.3 values for report reproduction.
 result.full_table = {
     '1,2',   '-0.76E-3', '+/-0.22E-2', '0.0003', '0.331', 'Delta omega and Delta delta of G1, G2, G3, G4';
-    '3',     '-0.96E-1', '-',          '-',      '-',     'same';
+    '3',     '-0.96E-1', '-',          '-',      '-',     'auxiliary / algebraic reference';
     '4,5',   '-0.111',   '+/-3.43',    '0.545',  '0.032', 'same';
-    '6',     '-0.117',   '-',          '-',      '-',     'same';
+    '6',     '-0.117',   '-',          '-',      '-',     'auxiliary / algebraic reference';
     '7',     '-0.265',   '-',          '-',      '-',     'Delta field-flux linkage of G3 and G4';
     '8',     '-0.276',   '-',          '-',      '-',     'Delta field-flux linkage of G1 and G2';
     '9,10',  '-0.492',   '+/-6.82',    '1.087',  '0.072', 'Delta omega and Delta delta of G1 and G2';

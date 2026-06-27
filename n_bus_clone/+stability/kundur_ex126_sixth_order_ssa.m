@@ -45,6 +45,10 @@ end
 % Terminal phasors in the network (system) reference frame.
 [init, Ynet] = initialise_generators(pf, case_data, M);
 
+% Newton refinement of the differential states x0 so that f(x0,y0) = 0,
+% keeping the network voltages y0 fixed at the power-flow solution.
+init = refine_initial_state(init, M, Ynet, case_data.base_values);
+
 % --- 3. Build the DAE and linearise ---------------------------------------
 [Jxx, Jxy, Jyx, Jyy] = build_dae_jacobian(init, M, Ynet, case_data.base_values);
 
@@ -72,6 +76,8 @@ result.stable = all(real(lambda) < 0);
 % verification that f(x0,y0) and g(x0,y0) are zero.
 result.debug_residual_f = dae_f(init.x0, init.y0, init, M, Ynet, case_data.base_values);
 result.debug_residual_g = dae_g(init.x0, init.y0, init, M, Ynet, case_data.base_values);
+result.newton_iterations = init.newton_iterations;
+result.newton_residual = init.newton_residual;
 
 % Compare to the textbook benchmark (manual excitation, Table E12.3).
 ref = stability.kundur_ex126_classical_analysis();
@@ -153,14 +159,21 @@ for k = 1:ng
     init.Id(k) = Id; init.Iq(k) = Iq;
     init.Vd(k) = Vd; init.Vq(k) = Vq;
 
-    % Steady-state internal field voltage (constant for manual excitation)
-    Eq  = Vq - Ra_n*Iq - Xd_n *Id;   init.Efd(k) = Eq;
-    % Transient voltages (current out of machine convention)
-    Eqp = Vq - Ra_n*Iq - Xdp_n*Id;
-    Edp = Vd - Ra_n*Id + Xqp_n*Iq;
-    % Subtransient voltages
+    % Subtransient stator voltages (current out of machine convention):
+    %   Vq = Eqpp + Ra*Iq + Xdpp*Id   =>  Eqpp = Vq - Ra*Iq - Xdpp*Id
+    %   Vd = Edpp + Ra*Id - Xqpp*Iq   =>  Edpp = Vd - Ra*Id + Xqpp*Iq
+    % These make the network residual g = 0 at the operating point. The
+    % differential-equation steady state is enforced later by a Newton
+    % refinement of x0 (see refine_initial_state).
     Eqpp = Vq - Ra_n*Iq - Xdpp_n*Id;
     Edpp = Vd - Ra_n*Id + Xqpp_n*Iq;
+    % Transient voltages (transient stator equations):
+    %   Vq = Eqp + Ra*Iq + Xdp*Id   =>  Eqp = Vq - Ra*Iq - Xdp*Id
+    %   Vd = Edp + Ra*Id - Xqp*Iq   =>  Edp = Vd - Ra*Id + Xqp*Iq
+    Eqp = Vq - Ra_n*Iq - Xdp_n*Id;
+    Edp = Vd - Ra_n*Id + Xqp_n*Iq;
+    % Field voltage (constant for manual excitation)
+    Eq  = Vq - Ra_n*Iq - Xd_n*Id;   init.Efd(k) = Eq;
     init.Eqpi(k) = Eqp; init.Edpi(k) = Edp;
     init.Eqppi(k) = Eqpp; init.Edppi(k) = Edpp;
 
@@ -201,6 +214,55 @@ for b = 1:numel(pf.external_bus_ids)
     init.y0(2*b-1) = real(V);
     init.y0(2*b  ) = imag(V);
 end
+end
+
+% =========================================================================
+function init = refine_initial_state(init, M, Ynet, base)
+%REFINE_INITIAL_STATE Newton iterations on the full DAE residual [f; g] to
+%drive BOTH the differential states x and the network voltages y to a
+%consistent operating point f(x,y)=0, g(x,y)=0. The slack-bus voltage
+%angle (bus 1 imaginary part) is held fixed as the angular reference, so
+%the Jacobian is non-singular.
+x = init.x0;
+y = init.y0;
+% Fixed angular reference: y(2) (Im(V) of bus 1) stays at its power-flow
+% value. We solve for the remaining components.
+fixed_idx = 2;   % Im(V_slack)
+free_idx = setdiff(1:numel(y), fixed_idx);
+maxit = 80;
+tol = 1e-10;
+for it = 1:maxit
+    f = dae_f(x, y, init, M, Ynet, base);
+    g = dae_g(x, y, init, M, Ynet, base);
+    res = [f; g];
+    nr = norm(res);
+    if nr < tol; break; end
+    nx = numel(x);
+    eps_p = 1e-6;
+    % Jacobian of [f; g] w.r.t. [x; y(free)] only
+    nfree = numel(free_idx);
+    J = zeros(nx + numel(y), nx + nfree);
+    for i = 1:nx
+        xp = x; xp(i) = xp(i) + eps_p;
+        xm = x; xm(i) = xm(i) - eps_p;
+        J(:,i) = ([dae_f(xp,y,init,M,Ynet,base); dae_g(xp,y,init,M,Ynet,base)] ...
+               - [dae_f(xm,y,init,M,Ynet,base); dae_g(xm,y,init,M,Ynet,base)]) / (2*eps_p);
+    end
+    for jj = 1:nfree
+        j = free_idx(jj);
+        yp = y; yp(j) = yp(j) + eps_p;
+        ym = y; ym(j) = ym(j) - eps_p;
+        J(:,nx+jj) = ([dae_f(x,yp,init,M,Ynet,base); dae_g(x,yp,init,M,Ynet,base)] ...
+                 - [dae_f(x,ym,init,M,Ynet,base); dae_g(x,ym,init,M,Ynet,base)]) / (2*eps_p);
+    end
+    dxy = J \ (-res);
+    x = x + dxy(1:nx);
+    y(free_idx) = y(free_idx) + dxy(nx+1:end);
+end
+init.x0 = x;
+init.y0 = y;
+init.newton_iterations = it;
+init.newton_residual = nr;
 end
 
 % =========================================================================

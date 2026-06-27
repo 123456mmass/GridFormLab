@@ -247,6 +247,35 @@ negative real axis.}
 \label{fig:fulleig}
 \end{figure}
 
+\section{Transient Stability: 3-Phase Fault Simulation}
+\label{sec:fault}
+
+A time-domain transient simulation is performed with the in-house
+implementation to verify the small-signal prediction of poor interarea
+damping. A solid 3-phase fault is applied at bus~8 (the middle of the
+interarea tie) at $t = 0.5$~s and cleared after $0.1$~s by restoring the
+network (temporary fault). Generators are modelled with the classical
+constant-voltage-behind-transient-reactance model, integrated with a
+project-coded 4th-order Runge--Kutta scheme.
+
+Figure~\ref{fig:fault} shows the resulting rotor-angle differences
+(relative to G1), the active power output of each generator, the bus
+voltage magnitudes, and the rotor speed deviations. The bus~8 voltage
+collapses to zero during the fault and the generators swing against each
+other; because the system has no damping torque in the manual-excitation
+case, the oscillations are sustained, consistent with the poorly damped
+interarea mode identified in Section~\ref{sec:sss}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/kundur_ex126/fault_simulation.png}
+\caption{Time-domain response to a 3-phase fault at bus~8 ($t_{clear}=0.1$~s).
+Top-left: rotor-angle differences relative to G1. Top-right: generator
+active power. Bottom-left: bus voltage magnitudes (bus~8 collapses to zero
+during the fault). Bottom-right: rotor speed deviations.}
+\label{fig:fault}
+\end{figure}
+
 \section{Stability Figures}
 \label{sec:figs}
 

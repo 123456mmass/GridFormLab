@@ -64,4 +64,52 @@ case_data.line_data = [ ...
 case_data.reference = struct( ...
     'source', 'Kundur, Power System Stability and Control, Chapter 12, Example 12.6', ...
     'book_table', 'Table E12.3 - System modes with manual excitation control');
+
+% ---------------------------------------------------------------------
+% Synchronous-machine dynamic data (6th-order subtransient model).
+% Parameters per unit on the machine base (900 MVA, 20 kV, 60 Hz), taken
+% from Kundur Example 12.6 / Table E12.2 and confirmed against the public
+% test-case repositories (colib.net, CloudPSS, fglongatt.org).
+%
+% State vector per machine (manual/constant excitation, E_fd held fixed):
+%   x_i = [ delta_i; omega_i; E'_qi; E'_di; E''_qi; E''_di ]
+%
+% Reactances:
+%   Xd=1.8  X'd=0.3  X''d=0.25  Xq=1.7  X'q=0.55  X''q=0.25  Xl=0.2
+% Time constants (s):
+%   T'd0=8.0  T''d0=0.03  T'q0=0.4  T''q0=0.05
+% Inertia / damping:
+%   H1=H2=6.5 s, H3=H4=6.175 s, D=0 (manual excitation).
+% Stator resistance: Ra = 0.0025 pu.
+machine_base = struct('S_MVA', 900, 'V_kV', 20, 'f_Hz', 60);
+machine_reactances = struct( ...
+    'Xd', 1.8, 'Xdp', 0.3, 'Xdpp', 0.25, ...
+    'Xq', 1.7, 'Xqp', 0.55, 'Xqpp', 0.25, ...
+    'Xl', 0.2, 'Ra', 0.0025);
+machine_time_constants = struct( ...
+    'Tpd0', 8.0, 'Tppd0', 0.03, 'Tpq0', 0.4, 'Tppq0', 0.05);
+case_data.machines = struct();
+case_data.machines.base = machine_base;
+case_data.machines.reactances = machine_reactances;
+case_data.machines.time_constants = machine_time_constants;
+% Per-generator inertia/damping. G1 and G2 (Area 1) have H = 6.5 s; G3 and
+% G4 (Area 2) have H = 6.175 s. Damping D is zero for the manual-excitation
+% (classical) benchmark, matching Kundur Table E12.3.
+case_data.machines.units = struct();
+case_data.machines.units(1).gen_id = 'G1';
+case_data.machines.units(1).bus = 1;
+case_data.machines.units(1).H = 6.5;
+case_data.machines.units(1).D = 0;
+case_data.machines.units(2).gen_id = 'G2';
+case_data.machines.units(2).bus = 2;
+case_data.machines.units(2).H = 6.5;
+case_data.machines.units(2).D = 0;
+case_data.machines.units(3).gen_id = 'G3';
+case_data.machines.units(3).bus = 3;
+case_data.machines.units(3).H = 6.175;
+case_data.machines.units(3).D = 0;
+case_data.machines.units(4).gen_id = 'G4';
+case_data.machines.units(4).bus = 4;
+case_data.machines.units(4).H = 6.175;
+case_data.machines.units(4).D = 0;
 end

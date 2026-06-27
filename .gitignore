@@ -11,3 +11,15 @@ context.md
 kundur_ex126_update*/
 kundur_ex126_update.zip
 output/gui_capture/
+
+# Keep repo lean: code (.m) and docs (.md) only on GitHub.
+# Reference PDFs, extracted page images, fonts, local scratch and
+# compiled report artefacts stay on the local machine only.
+*.pdf
+*.png
+*.docx
+*.ttf
+tmp/
+tmp_ieee_busdata/
+.claude/settings.local.json
+docs/source/fonts/

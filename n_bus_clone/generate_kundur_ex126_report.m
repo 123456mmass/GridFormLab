@@ -15,8 +15,12 @@ opts = struct('plot_results', false, 'verbose', false, 'max_iter', 50, ...
     'tolerance', 1e-8, 'enforce_q_limits', false);
 pf = pfsolver.powerflow_newton_raphson(case_data, opts);
 stab = stability.kundur_ex126_classical_analysis();
+% Run the implemented 6th-order Sauer-Pai SSSA as part of the report build
+% so the generated assets and the submitted SSSA code are tied to the same
+% operating point.
+ssa6 = stability.kundur_ex126_sixth_order_ssa('pf', pf);
 
-save(fullfile(outdir, 'kundur_ex126_results.mat'), 'case_data', 'pf', 'stab');
+save(fullfile(outdir, 'kundur_ex126_results.mat'), 'case_data', 'pf', 'stab', 'ssa6');
 
 make_powerflow_figure(pf, fullfile(outdir, 'powerflow_summary.png'));
 make_lineflow_figure(pf, fullfile(outdir, 'line_power_flow.png'));
@@ -25,6 +29,7 @@ make_mode_shape_figure(stab, fullfile(outdir, 'mode_shapes.png'));
 make_smib_reference_response(fullfile(outdir, 'smib_style_time_response.png'));
 make_smib_eig_vs_kd_figure(fullfile(outdir, 'eigenvalues_vs_kd.png'));
 make_full_eig_figure(stab, fullfile(outdir, 'full_eigenvalue_map.png'));
+make_fault_simulation_figure(fullfile(outdir, 'fault_simulation.png'));
 
 write_pf_table(pf, fullfile(outdir, 'table_powerflow_bus.tex'));
 write_pf_summary(pf, fullfile(outdir, 'table_powerflow_summary.tex'));
@@ -34,6 +39,8 @@ write_full_e123(stab, fullfile(outdir, 'table_e123_reproduction.tex'));
 fprintf('Generated Kundur Ex12.6 report assets in %s\n', outdir);
 fprintf('Power flow: converged=%d, iterations=%d, minV=%.4f, maxV=%.4f, Ploss=%.4f pu\n', ...
     pf.converged, pf.iterations, min(pf.bus_voltage), max(pf.bus_voltage), pf.P_loss_total);
+fprintf('6th-order SSSA: eigenvalues=%d, DAE residual=%.3e\n', ...
+    numel(ssa6.eigenvalues), ssa6.newton_residual);
 end
 
 function make_powerflow_figure(pf, path)
@@ -313,7 +320,7 @@ end
 end
 
 function make_full_eig_figure(stab, path)
-f = figure('Visible','off','Color','w','Position',[100 100 950 620]);
+f = figure('Visible','off','Color','w','Position',[100 100 1180 720]);
 ax = axes('Parent', f); hold on; box on; grid on;
 T = stab.full_table;
 n = size(T,1);
@@ -350,14 +357,24 @@ for k = 1:n
         plot(sigmas(k), 0, 's', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
     end
 end
-% annotate the four key oscillatory modes
-annotate_modes = {'4,5','9,10','11,12','1,2'};
+% Annotate every Table-4/Table-E12.3 row so the plot explicitly covers all
+% state-variable groups, not only the three swing modes.
 for k = 1:n
-    if ismember(T{k,1}, annotate_modes)
-        dx = 0.02 * abs(xmin); dy = 0.25;
-        if omegas(k) < 1; dy = 0.35; end
+    dx = 0.010 * abs(xmin);
+    if complex_indices(k)
+        dy = 0.22;
+        if omegas(k) < 0.4; dy = 0.35; end
         text(sigmas(k)+dx, omegas(k)+dy, T{k,1}, ...
-            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 9, 'BackgroundColor','white');
+            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.5, ...
+            'BackgroundColor','white', 'Margin',1);
+        text(sigmas(k)+dx, -omegas(k)-dy, T{k,1}, ...
+            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.5, ...
+            'BackgroundColor','white', 'Margin',1);
+    else
+        dy = 0.22 + 0.18*mod(k,3);
+        text(sigmas(k)+dx, dy, T{k,1}, ...
+            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.2, ...
+            'BackgroundColor','white', 'Margin',1);
     end
 end
 text(xmin*0.85, ymax*0.90, 'stable region', 'Color',[0.15 0.45 0.15], 'FontWeight','bold', 'FontSize', 11);
@@ -366,10 +383,80 @@ text(0.05, ymin*0.90, 'stability boundary', 'Color',[0.75 0.18 0.18], 'FontWeigh
 hold off;
 xlabel('Real part  \sigma  (1/s)');
 ylabel('Imaginary part  \omega  (rad/s)');
-title({'Full manual-excitation eigenvalues from Table E12.3'; 'plotted in the complex plane'}, 'FontWeight','bold');
+title({'Table 4 / Kundur Table E12.3 eigenvalues'; 'real-imaginary plot for all state-variable groups'}, 'FontWeight','bold');
 xlim([xmin xmax]); ylim([ymin ymax]);
 style_axes(gca);
 exportgraphics(f, path, 'Resolution', 200); close(f);
+end
+
+function make_fault_simulation_figure(path)
+res = stability.kundur_fault_simulation();
+t = res.t;
+labels = {'G1','G2','G3','G4'};
+colors = [0.00 0.28 0.60; 0.82 0.25 0.05; 0.52 0.43 0.00; 0.35 0.16 0.58];
+f = figure('Visible','off','Color','w','Position',[80 80 1400 900]);
+tl = tiledlayout(f, 2, 2, 'Padding','compact', 'TileSpacing','compact');
+
+fault_on = res.tfault_start;
+fault_off = res.tfault_start + res.tclear;
+
+ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+delta_deg = rad2deg(res.delta - res.delta(:,1));
+plot(ax, t, delta_deg(:,2), 'LineWidth',1.9, 'Color',colors(2,:));
+plot(ax, t, delta_deg(:,3), 'LineWidth',1.9, 'Color',colors(3,:));
+plot(ax, t, delta_deg(:,4), 'LineWidth',1.9, 'Color',colors(4,:));
+mark_fault(ax, fault_on, fault_off);
+xlabel(ax,'Time (s)'); ylabel(ax,'Rotor angle difference (deg)');
+title(ax,'Rotor angle differences relative to G1');
+legend(ax, {'G2-G1','G3-G1','G4-G1'}, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
+style_axes(ax);
+
+ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+for k = 1:4
+    plot(ax, t, res.Pgen(:,k), 'LineWidth',1.5, 'Color',colors(k,:));
+end
+mark_fault(ax, fault_on, fault_off);
+xlabel(ax,'Time (s)'); ylabel(ax,'P_{gen} (MW)'); title(ax,'Generator active power');
+legend(ax, labels, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
+style_axes(ax);
+
+ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+buses_to_plot = res.bus_ids(:)';
+line_styles = {'-','-','-','-','-','-','-','-','-','-','-'};
+for kk = 1:numel(buses_to_plot)
+    bidx = find(res.bus_ids == buses_to_plot(kk), 1);
+    lw = 1.10;
+    if buses_to_plot(kk) == res.fault_bus
+        lw = 2.25; % highlight the faulted bus
+    end
+    plot(ax, t, res.Vbus(:,bidx), line_styles{kk}, 'LineWidth',lw);
+end
+mark_fault(ax, fault_on, fault_off);
+xlabel(ax,'Time (s)'); ylabel(ax,'|V| (pu)'); title(ax,'Bus voltage magnitudes (all buses)'); ylim(ax,[0 1.2]);
+lgd = legend(ax, compose('Bus %d', buses_to_plot), 'Location','eastoutside', 'TextColor',[0 0 0], 'Color','w');
+lgd.NumColumns = 1;
+style_axes(ax);
+
+ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+for k = 1:4
+    plot(ax, t, res.omega(:,k), 'LineWidth',1.5, 'Color',colors(k,:));
+end
+mark_fault(ax, fault_on, fault_off);
+xlabel(ax,'Time (s)'); ylabel(ax,'\Delta\omega (pu)'); title(ax,'Rotor speed deviations');
+legend(ax, labels, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
+style_axes(ax);
+
+st = sgtitle(tl, sprintf('Kundur Two-Area: 3-phase fault at bus %d (t_{clear}=%.1f s)', res.fault_bus, res.tclear), 'FontWeight','bold');
+st.Color = [0.10 0.10 0.10];
+exportgraphics(f, path, 'Resolution', 220, 'BackgroundColor','white');
+close(f);
+end
+
+function mark_fault(ax, fault_on, fault_off)
+xline(ax, fault_on, '--', 'Fault on', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, ...
+    'LabelVerticalAlignment','top', 'LabelOrientation','horizontal');
+xline(ax, fault_off, '--', 'Fault cleared', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, ...
+    'LabelVerticalAlignment','bottom', 'LabelOrientation','horizontal');
 end
 
 function style_axes(ax)

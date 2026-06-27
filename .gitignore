@@ -1,2 +1,13 @@
 .claude/settings.local.json
 n_bus_py/
+
+# --- Local-only report sources and scratch files (kept off GitHub) ---
+*.tex
+*.zip
+dbg_*.m
+capture_*.m
+capture_*.png
+context.md
+kundur_ex126_update*/
+kundur_ex126_update.zip
+output/gui_capture/

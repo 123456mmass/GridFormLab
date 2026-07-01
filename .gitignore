@@ -23,3 +23,10 @@ tmp/
 tmp_ieee_busdata/
 .claude/settings.local.json
 docs/source/fonts/
+
+# EXCEPTIONS: keep our own generated report assets (tex/pdf/png) tracked.
+# Book/reference PDFs in docs/ stay ignored (copyrighted).
+!docs/source/**/*.tex
+!docs/source/**/*.pdf
+!docs/source/**/*.png
+!docs/page-*.png

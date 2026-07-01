@@ -30,3 +30,14 @@ docs/source/fonts/
 !docs/source/**/*.pdf
 !docs/source/**/*.png
 !docs/page-*.png
+
+# LaTeX build artefacts and MATLAB generated data
+*.aux
+*.log
+*.toc
+*.out
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz

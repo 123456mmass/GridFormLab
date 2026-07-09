@@ -105,26 +105,43 @@ part).  Not the root cause.
 
 ---
 
+## CRITICAL: PSAT also does NOT reproduce Table E12.3
+
+PSAT Model 6 eigenvalues were computed by running PSAT 2.1.11 on the
+Kundur case (`d_kundur1_mdl`, `sssa` routine).  Results:
+
+| Mode | PSAT | Ours | Book E12.3 |
+|---|---|---|---|
+| Interarea | -0.127±j3.13 (0.50 Hz) | -0.108±j3.44 (0.55 Hz) | -0.111±j3.43 (0.55 Hz) |
+| Local 1 | -0.519±j6.17 (0.98 Hz) | -0.558±j6.87 (1.09 Hz) | -0.492±j6.82 (1.09 Hz) |
+| Local 2 | -0.510±j6.00 (0.95 Hz) | -0.565±j7.07 (1.12 Hz) | -0.506±j7.02 (1.12 Hz) |
+| Field | -0.179, -0.172 | -0.19, -0.20 | -0.265, -0.276 |
+| q-damper | -3.5, -4.4, -5.9, -5.9 | -2.5, -3.4, -4.6, -4.7 | -3.4, -4.1, -5.3, -5.3 |
+| Zero | 0, 0, **+0.012** | ±0.00006 | -0.00076±j0.0022 |
+
+Key observations:
+- PSAT has an **unstable eigenvalue** (+0.012) — worse than ours.
+- PSAT frequencies are **lower** than both the book and ours.
+- **Our frequencies are closer to the book** than PSAT's.
+- The `gd`/`gq` corrections in PSAT do NOT fix the discrepancy.
+- No modern tool (PSAT, PSS/E, PacDyn, Dynaω) reproduces Table E12.3.
+
+Conclusion: the `gd`/`gq` path is NOT the answer.  Kundur likely used a
+model or parameter set that differs from what is published.  The
+investigation must continue from the book's own equations, not from any
+third-party tool.
+
 ## Next steps
 
-1. **Implement PSAT-style Model 6 equations** with `gd`/`gq` corrections in
-   `kundur_ex126_book_flux_ssa.m`.  The corrections are derived from standard
-   parameters only (not fitted):
-   - `gd = (X''d/X'd)*(T''d0/T'd0)*(Xd-X'd)`
-   - `gq = (X''q/X'q)*(T''q0/T'q0)*(Xq-X'q)`
-
-2. **Use PSAT-style transient equations** (Id-based form, not E''-based):
-   - `dE'q/dt = (-E'q - (Xd-X'd)*Id + Efd) / T'd0`
-   - `dE'd/dt = (-E'd + (Xq-X'q)*Iq) / T'q0`
-
-3. **Disable saturation in differential equations** (PSAT runs without it;
-   saturation only affects initialization).  Keep the Kundur Eq. 3.189 for
-   the operating-point rotor angle and Efd.
-
-4. Re-run family comparison and check if all 24 modes pass `<0.5%`.
-
-5. If still failing, investigate the PSAT stator equation form (`c1`, `c2`,
-   `c3` constants) and the `Taa` parameter.
+1. Study the Kundur book's own state-space formulation (Chapter 12,
+   Section 12.6–12.8) for the exact linearization procedure used.
+2. Check if Kundur used the incremental saturation factor (Ksd_incr) in the
+   linearized equations, not the total factor.
+3. Investigate whether the book used a different load model Jacobian for the
+   CC-P load (e.g., constant phasor vs angle-following current).
+4. Consider whether the book's published parameters are on a different base
+   or use different definitions (e.g., T'd0 vs T'd).
+5. Do NOT follow PSAT's model equations — they don't reproduce the table.
 
 ---
 

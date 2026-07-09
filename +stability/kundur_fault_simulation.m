@@ -15,15 +15,24 @@ function result = kundur_fault_simulation(varargin)
 %     result.t           - time vector (s)
 %     result.delta       - rotor angles of G1..G4 (rad), [Nt x 4]
 %     result.omega       - rotor speed deviations (pu),     [Nt x 4]
-%     result.Pgen         - generator active power (MW),     [Nt x 4]
-%     result.Vbus         - bus voltage magnitudes (pu),     [Nt x nb]
-%     result.Pgen_machine - per-generator electrical power (pu on 100 MVA)
-%     result.bus_ids      - external bus ids
-%     result.fault_bus    - faulted bus id
-%     result.tclear       - fault clearing time (s)
+%     result.Pgen        - generator active power (MW),     [Nt x 4]
+%     result.Vbus        - bus voltage magnitudes (pu),     [Nt x nb]
+%     result.Pgen_machine- per-generator electrical power (pu on 100 MVA)
+%     result.bus_ids     - external bus ids
+%     result.fault_bus   - faulted bus id
+%     result.tclear      - fault clearing time (s)
 %
-%   Integration: classical 4th-order Runge-Kutta with step dt.
-%   Only MATLAB base built-ins are used (no toolbox).
+%   Integration: implicit trapezoidal rule (PSAT-style), with a Newton
+%   iteration per step to resolve the implicit electrical power.
+%   Reference: F. Milano, "Power System Modelling and Scripting" (PSAT),
+%   trapezoidal integration of the swing equations:
+%       x_{n+1} = x_n + (dt/2)*(f(x_n) + f(x_{n+1}))
+%   The state omega is speed deviation in pu. The swing equations follow the
+%   PSAT convention:
+%       d(delta)/dt = omega_s*omega
+%       d(omega)/dt = (Pm - Pe - D*omega)/(2*H_system)
+%   where H_system = H_machine*S_machine/S_system because Pm and Pe are on
+%   the 100-MVA network base. Only MATLAB base built-ins are used (no toolbox).
 
 % --- Parse options --------------------------------------------------------
 bus_fault = 8;
@@ -80,9 +89,13 @@ for k = 1:ng
     bidx = find(bus_ids == M.units(k).bus, 1);
     Pm_vec(k) = pf.P_generation(bidx);   % network pu (100 MVA)
 end
+H_machine = zeros(ng,1);
 H_sys = zeros(ng,1);
+D_sys = zeros(ng,1);
 for k = 1:ng
-    H_sys(k) = M.units(k).H * (M.base.S_MVA / case_data.base_values.S_base_MVA);
+    H_machine(k) = M.units(k).H;                                      % seconds on 900-MVA machine base
+    H_sys(k) = M.units(k).H * (M.base.S_MVA / case_data.base_values.S_base_MVA); % seconds on 100-MVA system base
+    D_sys(k) = M.units(k).D * (M.base.S_MVA / case_data.base_values.S_base_MVA);
 end
 w0 = 2*pi*case_data.base_values.frequency_Hz;
 
@@ -95,7 +108,10 @@ else
     Ypost = remove_line(Ypre, case_data, bus_ids, bus_fault);
 end
 
-% --- Time integration (RK4) -----------------------------------------------
+% --- Time integration: implicit trapezoidal rule (PSAT-style) -----------
+%   x_{n+1} = x_n + (dt/2)*(f(x_n) + f(x_{n+1}))
+%   where f depends on Pe, which depends on delta_{n+1} through the network.
+%   Each step solves the nonlinear implicit equation by Newton iteration.
 t_vec = 0:dt:tmax;
 Nt = numel(t_vec);
 delta_hist  = zeros(Nt, ng);
@@ -105,6 +121,8 @@ Vbus_hist   = zeros(Nt, nb);
 Pe_hist     = zeros(Nt, ng);
 
 state = [delta0; omega0];
+newton_tol = 1e-8;
+newton_maxit = 20;
 for it = 1:Nt
     t = t_vec(it);
     if t < tfault_start
@@ -121,17 +139,34 @@ for it = 1:Nt
     Pe_hist(it,:)    = Pe';
     Vbus_hist(it,:)  = Vbus';
     if it < Nt
-        k1 = derivatives(state, Pe, Pm_vec, H_sys, w0, ng);
-        s2 = state + 0.5*dt*k1;
-        [Pe2,~] = electrical_power(s2, Eprime, M, bus_ids, Y, zb_scale, ng);
-        k2 = derivatives(s2, Pe2, Pm_vec, H_sys, w0, ng);
-        s3 = state + 0.5*dt*k2;
-        [Pe3,~] = electrical_power(s3, Eprime, M, bus_ids, Y, zb_scale, ng);
-        k3 = derivatives(s3, Pe3, Pm_vec, H_sys, w0, ng);
-        s4 = state + dt*k3;
-        [Pe4,~] = electrical_power(s4, Eprime, M, bus_ids, Y, zb_scale, ng);
-        k4 = derivatives(s4, Pe4, Pm_vec, H_sys, w0, ng);
-        state = state + (dt/6)*(k1 + 2*k2 + 2*k3 + k4);
+        % f(x_n)
+        fn = derivatives(state, Pe, Pm_vec, H_sys, D_sys, w0, ng);
+        % Newton iteration for x_{n+1}:  R(x) = x - x_n - (dt/2)*(fn + f(x)) = 0
+        x_next = state + dt*fn;   % predictor (explicit Euler)
+        for nit = 1:newton_maxit
+            [Pe_next,~] = electrical_power(x_next, Eprime, M, bus_ids, Y, zb_scale, ng);
+            f_next = derivatives(x_next, Pe_next, Pm_vec, H_sys, D_sys, w0, ng);
+            R = x_next - state - 0.5*dt*(fn + f_next);
+            if norm(R, inf) < newton_tol
+                break;
+            end
+            % Jacobian of R w.r.t. x_next:  dR/dx = I - 0.5*dt*df/dx.
+            % df/dx is computed by finite differences (only Pe depends on x).
+            nx = 2*ng; eps_j = 1e-6;
+            J = eye(nx);
+            for j = 1:nx
+                xp = x_next; xp(j) = xp(j) + eps_j;
+                xm = x_next; xm(j) = xm(j) - eps_j;
+                [Pep,~] = electrical_power(xp, Eprime, M, bus_ids, Y, zb_scale, ng);
+                [Pem,~] = electrical_power(xm, Eprime, M, bus_ids, Y, zb_scale, ng);
+                fp = derivatives(xp, Pep, Pm_vec, H_sys, D_sys, w0, ng);
+                fm = derivatives(xm, Pem, Pm_vec, H_sys, D_sys, w0, ng);
+                J(:,j) = J(:,j) - 0.5*dt*(fp - fm)/(2*eps_j);
+            end
+            dx = J \ (-R);
+            x_next = x_next + dx;
+        end
+        state = x_next;
     end
 end
 
@@ -148,8 +183,11 @@ result.tclear = tclear;
 result.tfault_start = tfault_start;
 result.Eprime = Eprime;
 result.delta0 = delta0;
+result.H_machine = H_machine;
 result.H_sys = H_sys;
+result.D_sys = D_sys;
 result.Pm = Pm_vec;
+result.integration_method = 'implicit trapezoidal (PSAT-style)';
 result.temporary = temporary;
 result.Ypre = Ypre;
 result.Yfault = Yfault;
@@ -157,12 +195,12 @@ result.Ypost = Ypost;
 end
 
 % =========================================================================
-function dy = derivatives(state, Pe, Pm, H, w0, ng)
-delta = state(1:ng);
+function dy = derivatives(state, Pe, Pm, H, D, w0, ng)
+delta = state(1:ng); %#ok<NASGU>
 omega = state(ng+1:end);
 dy = zeros(2*ng,1);
 dy(1:ng)     = omega * w0;
-dy(ng+1:end) = (Pm - Pe) ./ (2*H);
+dy(ng+1:end) = (Pm - Pe - D.*omega) ./ (2*H);
 end
 
 % =========================================================================

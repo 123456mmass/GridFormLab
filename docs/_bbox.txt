@@ -1,0 +1,20 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Power System Stability and Control</title>
+<meta name="Author" content="Kundur"/>
+<meta name="Creator" content="Image2PDF Command Line Software(Foxit Advanced PDF Editor)"/>
+<meta name="Producer" content="Acrobat Distiller 8.0.0 (Windows)"/>
+<meta name="CreationDate" content="2007-11-30T18:00:11+03:30"/>
+<meta name="ModDate" content="2019-06-10T09:51:53Z"/>
+</head>
+<body>
+<doc>
+  <page width="595.000000" height="841.000000">
+  </page>
+  <page width="595.000000" height="841.000000">
+  </page>
+  <page width="595.000000" height="841.000000">
+  </page>
+</doc>
+</body>
+</html>

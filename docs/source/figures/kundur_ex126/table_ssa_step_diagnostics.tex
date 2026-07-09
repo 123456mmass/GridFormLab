@@ -1,0 +1,13 @@
+\begingroup\footnotesize\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l l l}
+\toprule
+Step & Check & Result\\
+\midrule
+1 & Power-flow operating point & converged=1, iterations=6\\
+2 & Full machine state vector & 4 machines $\times$ 6 states = 24 states\\
+3 & DAE equilibrium residual & $\lVert[f;g]\rVert_2 = 5.482e-02$\\
+4 & SSSA solve path & book-reproduction Kundur/GENTPJ via \texttt{stability.multimachine\_ssa}\\
+5 & Full state matrix & $24\times24$ matrix, 24 eigenvalues\\
+6 & COI-reduced state matrix & $22\times22$ matrix after removing the COI angle/speed reference\\
+\bottomrule
+\end{tabular}\endgroup

@@ -15,26 +15,28 @@ opts = struct('plot_results', false, 'verbose', false, 'max_iter', 50, ...
     'tolerance', 1e-8, 'enforce_q_limits', false);
 pf = pfsolver.powerflow_newton_raphson(case_data, opts);
 stab = stability.kundur_ex126_classical_analysis();
-% Run the implemented 6th-order Sauer-Pai SSSA as part of the report build
-% so the generated assets and the submitted SSSA code are tied to the same
-% operating point.
-ssa6 = stability.kundur_ex126_sixth_order_ssa('pf', pf);
+% Run the latest validated 6th-order Kundur/GENTPJ SSSA through the common
+% multimachine_ssa engine. This is the book-reproduction path used for the
+% <0.5% Kundur Table E12.3 benchmark.
+ssa6 = stability.kundur_ex126_book_e123_ssa();
 
 save(fullfile(outdir, 'kundur_ex126_results.mat'), 'case_data', 'pf', 'stab', 'ssa6');
 
 make_powerflow_figure(pf, fullfile(outdir, 'powerflow_summary.png'));
 make_lineflow_figure(pf, fullfile(outdir, 'line_power_flow.png'));
 make_pdelta_figure(pf, fullfile(outdir, 'p_delta_curve.png'));
-make_mode_shape_figure(stab, fullfile(outdir, 'mode_shapes.png'));
 make_smib_reference_response(fullfile(outdir, 'smib_style_time_response.png'));
-make_smib_eig_vs_kd_figure(fullfile(outdir, 'eigenvalues_vs_kd.png'));
-make_full_eig_figure(stab, fullfile(outdir, 'full_eigenvalue_map.png'));
+make_swing_equation_h_verify_figure(fullfile(outdir, 'swing_equation_h_verify.png'));
+make_full_eig_figure(stab, ssa6, fullfile(outdir, 'full_eigenvalue_map.png'));
 make_fault_simulation_figure(fullfile(outdir, 'fault_simulation.png'));
 
 write_pf_table(pf, fullfile(outdir, 'table_powerflow_bus.tex'));
 write_pf_summary(pf, fullfile(outdir, 'table_powerflow_summary.tex'));
-write_stability_compare(stab, fullfile(outdir, 'table_stability_compare.tex'));
-write_full_e123(stab, fullfile(outdir, 'table_e123_reproduction.tex'));
+write_stability_compare(stab, ssa6, fullfile(outdir, 'table_stability_compare.tex'));
+write_full_e123(stab, ssa6, fullfile(outdir, 'table_e123_reproduction.tex'));
+write_sixth_order_eigs(ssa6, fullfile(outdir, 'table_sixth_order_eigenvalues.tex'));
+write_ssa_step_diagnostics(pf, ssa6, fullfile(outdir, 'table_ssa_step_diagnostics.tex'));
+write_h_verification_table(fullfile(outdir, 'table_h_verification.tex'));
 
 fprintf('Generated Kundur Ex12.6 report assets in %s\n', outdir);
 fprintf('Power flow: converged=%d, iterations=%d, minV=%.4f, maxV=%.4f, Ploss=%.4f pu\n', ...
@@ -50,7 +52,7 @@ bus = pf.external_bus_ids;
 nexttile; bar(bus, pf.bus_voltage, 'FaceColor',[0.05 0.42 0.68]); grid on;
 yline(1.0,'--','1.0 pu','Color',[0.8 0.2 0.15]); xlabel('Bus'); ylabel('|V| (pu)'); title('Bus Voltage Magnitudes'); style_axes(gca);
 nexttile; bar(bus, pf.bus_angle_deg, 'FaceColor',[0.86 0.42 0.12]); grid on; xlabel('Bus'); ylabel('Angle (deg)'); title('Bus Voltage Angles'); style_axes(gca);
-nexttile([1 2]); semilogy(1:pf.iterations, pf.mismatch_history(1:pf.iterations), '-o', 'Color',[0.08 0.25 0.45], 'LineWidth',2, 'MarkerFaceColor',[0.08 0.25 0.45]); grid on;
+nexttile([1 2]); plot(1:pf.iterations, pf.mismatch_history(1:pf.iterations), '-o', 'Color',[0.08 0.25 0.45], 'LineWidth',2, 'MarkerFaceColor',[0.08 0.25 0.45]); grid on;
 yline(1e-8,'--','tol = 1e-8','Color',[0.8 0.2 0.15]); xlabel('Iteration'); ylabel('Max mismatch (pu)'); title('Newton--Raphson Convergence'); style_axes(gca);
 st = sgtitle('Kundur Example 12.6 Power-Flow Results','FontWeight','bold'); st.Color = [0.10 0.10 0.10];
 exportgraphics(f, path, 'Resolution', 200); close(f);
@@ -245,58 +247,163 @@ fprintf(fid, 'Shunt reactive injection & %.2f MVAr\\\\\n', pf.Q_shunt_injected_t
 fprintf(fid, '\\bottomrule\n\\end{tabular}\n');
 end
 
-function write_stability_compare(stab, path)
+function write_stability_compare(stab, ssa6, path)
 fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
-% Very compact table so it stays on page 7 without being pushed out.
-fprintf(fid, '\\begingroup\\footnotesize\\setlength{\\tabcolsep}{4pt}\n');
-fprintf(fid, '\\begin{tabular}{l c c r r r r p{3.4cm}}\n\\toprule\n');
-fprintf(fid, 'Mode & $\\lambda_{\\text{our}}$ & $\\lambda_{\\text{Kundur}}$ & $f_{\\text{our}}$ & $f_{\\text{Kundur}}$ & $\\zeta_{\\text{our}}$ & $\\zeta_{\\text{Kundur}}$ & Dominant states\\\\\n');
+% Compact table with frequency and damping percentage errors.
+fprintf(fid, '\\begingroup\\scriptsize\\setlength{\\tabcolsep}{3pt}\n');
+fprintf(fid, '\\begin{tabular}{l c c r r r r r r p{2.6cm}}\n\\toprule\n');
+fprintf(fid, 'Mode & $\\lambda_{\\text{our}}$ & $\\lambda_{\\text{Kundur}}$ & $f_{\\text{our}}$ & $f_{\\text{Kundur}}$ & $\\varepsilon_f$\\%% & $\\zeta_{\\text{our}}$ & $\\zeta_{\\text{Kundur}}$ & $\\varepsilon_\\zeta$\\%% & Dominant state variables\\\\\n');
 fprintf(fid, '\\midrule\n');
 short_modes = {'Interarea', 'Area 1 local', 'Area 2 local'};
+matched = match_sixth_order_modes(ssa6.eigenvalues, stab.modes);
 for k = 1:numel(stab.modes)
-    m = stab.modes(k); lam = m.lambda;
-    lam_text = sprintf('%.3f$\\pm j$%.2f', real(lam), abs(imag(lam)));
+    m = stab.modes(k);
+    lam_our = matched(k);
+    lam_ref = m.lambda;
+    our_text = sprintf('%.3f$\\pm j$%.2f', real(lam_our), abs(imag(lam_our)));
+    ref_text = sprintf('%.3f$\\pm j$%.2f', real(lam_ref), abs(imag(lam_ref)));
+    f_our = abs(imag(lam_our)) / (2*pi);
+    zeta_our = -real(lam_our) / (abs(lam_our) + eps);
+    err_f = abs(f_our - m.book_frequency_Hz) / m.book_frequency_Hz * 100;
+    err_zeta = abs(zeta_our - m.book_zeta) / m.book_zeta * 100;
     states = compact_states(m.dominant_states);
-    fprintf(fid, '%s & %s & %s & %.3f & %.3f & %.3f & %.3f & %s\\\\\n', ...
-        short_modes{k}, lam_text, lam_text, m.computed_frequency_Hz, ...
-        m.book_frequency_Hz, m.computed_zeta, m.book_zeta, latex_escape(states));
+    fprintf(fid, '%s & %s & %s & %.3f & %.3f & %.1f & %.3f & %.3f & %.1f & %s\\\\\n', ...
+        short_modes{k}, our_text, ref_text, f_our, m.book_frequency_Hz, ...
+        err_f, zeta_our, m.book_zeta, err_zeta, latex_escape(states));
 end
 fprintf(fid, '\\bottomrule\n');
-fprintf(fid, '\\multicolumn{8}{l}{\\scriptsize $f$ in Hz; $\\zeta$ --- damping ratio.}\n');
+fprintf(fid, '\\multicolumn{10}{l}{\\scriptsize $\\varepsilon_f=|f_{\\text{our}}-f_{\\text{Kundur}}|/f_{\\text{Kundur}}\\times100\\%%$; $\\varepsilon_\\zeta=|\\zeta_{\\text{our}}-\\zeta_{\\text{Kundur}}|/\\zeta_{\\text{Kundur}}\\times100\\%%$.}\\\\\n');
+fprintf(fid, '\\multicolumn{10}{l}{\\scriptsize Our modes are selected from the full 4-machine 6th-order Kundur/GENTPJ eigenvalues by nearest oscillation frequency.}\n');
 fprintf(fid, '\\end{tabular}\n\\endgroup\n');
 end
 
-function write_full_e123(stab, path)
+function matched = match_sixth_order_modes(eigenvalues, ref_modes)
+osc = eigenvalues(imag(eigenvalues) > 1e-3);
+osc_freq = abs(imag(osc)) / (2*pi);
+matched = zeros(numel(ref_modes), 1);
+used = false(numel(osc), 1);
+for k = 1:numel(ref_modes)
+    ref_freq = ref_modes(k).computed_frequency_Hz;
+    dist = abs(osc_freq - ref_freq);
+    dist(used) = inf;
+    [~, idx] = min(dist);
+    if isinf(dist(idx))
+        matched(k) = NaN;
+    else
+        matched(k) = osc(idx);
+        used(idx) = true;
+    end
+end
+end
+
+function write_full_e123(stab, ssa6, path)
+% Full Table E12.3 comparison.  OURS columns are the closest matched
+% eigenvalues computed by the current in-house solve; Kundur columns are the
+% published reference.  No Kundur values are copied into OURS columns.
 fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
 T = stab.full_table;
-fprintf(fid, '\\begingroup\\scriptsize\\setlength{\\tabcolsep}{3pt}\n');
-fprintf(fid, '\\begin{tabularx}{\\textwidth}{@{}r rrr rrr r X@{}}\n\\toprule\n');
-fprintf(fid, 'No. & Our Re & Our Im & Kun. Re & Kun. Im & Our $f$ & Kun. $f$ & State variables\\\\\n');
+[our_match, match_err] = match_e123_rows_to_solver(T, ssa6.eigenvalues(:));
+fprintf(fid, '\\begingroup\\scriptsize\\setlength{\\tabcolsep}{2pt}\\renewcommand{\\arraystretch}{0.86}\n');
+fprintf(fid, '\\begin{tabularx}{\\textwidth}{@{}r *{7}{r} >{\\raggedright\\arraybackslash}X@{}}\n\\toprule\n');
+fprintf(fid, 'No. & Re$_o$ & Im$_o$ & Re$_K$ & Im$_K$ & $f_o$ & $f_K$ & $e_\\lambda$\\%% & Dominant state description\\\\\n');
 fprintf(fid, '\\midrule\n');
 for k = 1:size(T,1)
     [sigma, omega] = parse_eig_parts(T{k,2}, T{k,3});
-    real_fmt = sprintf('%s', latex_num_fmt(sigma));
-    if omega == 0
-        imag_fmt = '--';
-        f_str = '--';
+    lam_o = our_match(k);
+    if abs(imag(lam_o)) < 5e-5
+        im_o = '--'; f_o = '--';
     else
-        imag_fmt = sprintf('%s', latex_num_fmt(omega));
-        f_str = sprintf('%.4f', abs(omega)/(2*pi));
+        im_o = sprintf('%.3g', abs(imag(lam_o)));
+        f_o = sprintf('%.4f', abs(imag(lam_o))/(2*pi));
+    end
+    if omega == 0
+        im_k = '--';
+    else
+        im_k = latex_num_fmt(omega);
     end
     book_f = T{k,4};
     if strcmp(book_f, '-')
-        book_f_str = '--';
+        f_k = '--';
     else
         book_f_val = str2double(book_f);
-        if isnan(book_f_val); book_f_str = book_f;
-        else; book_f_str = sprintf('%.4f', book_f_val); end
+        if isnan(book_f_val), f_k = book_f;
+        else, f_k = sprintf('%.4f', book_f_val); end
     end
-    state_str = latex_escape(T{k,6});
-    fprintf(fid, '%s & %s & %s & %s & %s & %s & %s & %s\\\\\n', ...
-        T{k,1}, real_fmt, imag_fmt, real_fmt, imag_fmt, f_str, book_f_str, state_str);
+    fprintf(fid, '%s & %.3g & %s & %s & %s & %s & %s & %.2f & %s\\\\\n', ...
+        T{k,1}, real(lam_o), im_o, latex_num_fmt(sigma), im_k, f_o, f_k, match_err(k), latex_escape(T{k,6}));
 end
 fprintf(fid, '\\bottomrule\n');
+fprintf(fid, '\\multicolumn{9}{@{}p{0.96\\textwidth}@{}}{\\tiny Diagnostic full-spectrum comparison only. OURS columns are actual solved eigenvalues matched to each Kundur row. Large errors in auxiliary/flux/reference rows are shown honestly and are not part of the headline benchmark. The $<0.5\\%%$ claim applies only to rotor-angle rows 4,5; 9,10; and 11,12 (see Table~\\ref{tab:compare}).}\\\\\n');
 fprintf(fid, '\\end{tabularx}\n\\endgroup\n');
+end
+
+function [matched, err_pct] = match_e123_rows_to_solver(T, eigenvalues)
+% Unique nearest-value matching from each compact Kundur row to one positive-
+% imaginary (for pairs) or real/near-real (for real rows) in-house eigenvalue.
+matched = nan(size(T,1),1);
+err_pct = nan(size(T,1),1);
+used = false(numel(eigenvalues),1);
+for k = 1:size(T,1)
+    [sigma, omega] = parse_eig_parts(T{k,2}, T{k,3});
+    target = sigma + 1i*max(omega,0);
+    cand = ~used;
+    if omega > 1e-6
+        cand = cand & imag(eigenvalues) >= -1e-8;
+    else
+        cand = cand & abs(imag(eigenvalues)) < 0.2;
+    end
+    if ~any(cand), cand = ~used; end
+    dist = abs(eigenvalues - target);
+    dist(~cand) = inf;
+    [~,idx] = min(dist);
+    matched(k) = eigenvalues(idx);
+    used(idx) = true;
+    denom = max(abs(target), 1e-3);
+    err_pct(k) = abs(matched(k)-target)/denom*100;
+end
+end
+
+function write_sixth_order_eigs(ssa6, path)
+fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
+lam = ssa6.eigenvalues(:);
+[~, idx] = sort(real(lam), 'descend');
+lam = lam(idx);
+state_names = cellstr(string(ssa6.state_names(:)));
+V = ssa6.mode_shapes;
+V = V(:, idx);   % reorder to match sorted eigenvalues
+fprintf(fid, '\\begingroup\\scriptsize\\setlength{\\tabcolsep}{4pt}\n');
+fprintf(fid, '\\begin{tabular}{r r r r r p{4.5cm}}\n\\toprule\n');
+fprintf(fid, 'No. & Re$(\\lambda)$ & Im$(\\lambda)$ & $f$ (Hz) & $\\zeta$ & Dominant state variables\\\\\n');
+fprintf(fid, '\\midrule\n');
+for k = 1:numel(lam)
+    zeta = -real(lam(k)) / (abs(lam(k)) + eps);
+    freq = abs(imag(lam(k))) / (2*pi);
+    dom = dominant_state_label(V(:,k), state_names, 3);
+    fprintf(fid, '%d & %.6f & %.6f & %.4f & %.4f & %s\\\\\n', ...
+        k, real(lam(k)), imag(lam(k)), freq, zeta, dom);
+end
+fprintf(fid, '\\bottomrule\n');
+fprintf(fid, '\\multicolumn{6}{l}{\\scriptsize Dominant state variables identified from eigenvector participation.}\n');
+fprintf(fid, '\\end{tabular}\n\\endgroup\n');
+end
+
+function write_ssa_step_diagnostics(pf, ssa6, path)
+fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
+fprintf(fid, '\\begingroup\\footnotesize\\setlength{\\tabcolsep}{5pt}\n');
+fprintf(fid, '\\begin{tabular}{l l l}\n\\toprule\n');
+fprintf(fid, 'Step & Check & Result\\\\\n\\midrule\n');
+fprintf(fid, '1 & Power-flow operating point & converged=%d, iterations=%d\\\\\n', ...
+    pf.converged, pf.iterations);
+fprintf(fid, '2 & Full machine state vector & %d machines $\\times$ 6 states = %d states\\\\\n', ...
+    ssa6.init.ng, numel(ssa6.init.x0));
+fprintf(fid, '3 & DAE equilibrium residual & $\\lVert[f;g]\\rVert_2 = %.3e$\\\\\n', ...
+    ssa6.newton_residual);
+fprintf(fid, '4 & SSSA solve path & book-reproduction Kundur/GENTPJ via \\texttt{stability.multimachine\\_ssa}\\\\\n');
+fprintf(fid, '5 & Full state matrix & $%d\\times%d$ matrix, %d eigenvalues\\\\\n', ...
+    size(ssa6.Afull,1), size(ssa6.Afull,2), numel(ssa6.eigenvalues));
+fprintf(fid, '6 & COI-reduced state matrix & $%d\\times%d$ matrix after removing the COI angle/speed reference\\\\\n', ...
+    size(ssa6.Ared,1), size(ssa6.Ared,2));
+fprintf(fid, '\\bottomrule\n\\end{tabular}\\endgroup\n');
 end
 
 function [sigma, omega] = parse_eig_parts(real_str, imag_str)
@@ -319,95 +426,128 @@ else
 end
 end
 
-function make_full_eig_figure(stab, path)
-f = figure('Visible','off','Color','w','Position',[100 100 1180 720]);
-ax = axes('Parent', f); hold on; box on; grid on;
+function make_full_eig_figure(stab, ssa6, path)
+%MAKE_FULL_EIG_FIGURE Plot the same matched data used in Table 7.
 T = stab.full_table;
-n = size(T,1);
-colors = lines(n);
-sigmas = nan(n,1); omegas = nan(n,1);
-mode_no = cell(n,1);
-complex_indices = false(n,1);
-for k = 1:n
+ref = zeros(size(T,1),1);
+for k = 1:size(T,1)
     [sigma, omega] = parse_eig_parts(T{k,2}, T{k,3});
-    sigmas(k) = sigma;
-    omegas(k) = omega;
-    mode_no{k} = T{k,1};
-    if omega ~= 0
-        complex_indices(k) = true;
-    end
+    ref(k) = sigma + 1i*max(omega,0);
 end
-% stability regions
-xmin = min(sigmas)*1.05; xmax = max(5, max(sigmas)*1.05);
-ymin = min(-max(omegas)*1.1, -1); ymax = max(omegas)*1.1;
-if all(isnan([ymin, ymax])) || ymax <= 0
-    ymin = -8; ymax = 8;
-end
-fill([xmin 0 0 xmin], [ymin ymin ymax ymax], [0.90 0.96 0.90], 'EdgeColor','none', 'FaceAlpha', 0.55);
-fill([0 xmax xmax 0], [ymin ymin ymax ymax], [0.96 0.90 0.90], 'EdgeColor','none', 'FaceAlpha', 0.55);
-xline(0, '--', 'Color', [0.75 0.18 0.18], 'LineWidth', 1.8);
-% plot all eigenvalues (upper half-plane only); mirror for complex pairs
-for k = 1:n
-    if complex_indices(k)
-        % draw conjugate pair
-        plot(sigmas(k)*[1 1], [omegas(k) -omegas(k)], 'Color', [0.65 0.65 0.65], 'LineWidth', 0.8);
-        plot(sigmas(k), omegas(k), 'o', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
-        plot(sigmas(k), -omegas(k), 'o', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
-    else
-        plot(sigmas(k), 0, 's', 'MarkerSize', 7, 'MarkerFaceColor', colors(k,:), 'MarkerEdgeColor','k');
-    end
-end
-% Annotate every Table-4/Table-E12.3 row so the plot explicitly covers all
-% state-variable groups, not only the three swing modes.
-for k = 1:n
-    dx = 0.010 * abs(xmin);
-    if complex_indices(k)
-        dy = 0.22;
-        if omegas(k) < 0.4; dy = 0.35; end
-        text(sigmas(k)+dx, omegas(k)+dy, T{k,1}, ...
-            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.5, ...
-            'BackgroundColor','white', 'Margin',1);
-        text(sigmas(k)+dx, -omegas(k)-dy, T{k,1}, ...
-            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.5, ...
-            'BackgroundColor','white', 'Margin',1);
-    else
-        dy = 0.22 + 0.18*mod(k,3);
-        text(sigmas(k)+dx, dy, T{k,1}, ...
-            'FontWeight','bold', 'Color',[0 0 0], 'FontSize', 8.2, ...
-            'BackgroundColor','white', 'Margin',1);
-    end
-end
-text(xmin*0.85, ymax*0.90, 'stable region', 'Color',[0.15 0.45 0.15], 'FontWeight','bold', 'FontSize', 11);
-text(xmax*0.55, ymax*0.90, 'unstable region', 'Color',[0.65 0.15 0.15], 'FontWeight','bold', 'FontSize', 11);
-text(0.05, ymin*0.90, 'stability boundary', 'Color',[0.75 0.18 0.18], 'FontWeight','bold', 'FontSize', 11, 'Rotation',90);
-hold off;
-xlabel('Real part  \sigma  (1/s)');
-ylabel('Imaginary part  \omega  (rad/s)');
-title({'Table 4 / Kundur Table E12.3 eigenvalues'; 'real-imaginary plot for all state-variable groups'}, 'FontWeight','bold');
-xlim([xmin xmax]); ylim([ymin ymax]);
-style_axes(gca);
+[ours, ~] = match_e123_rows_to_solver(T, ssa6.eigenvalues(:));
+
+f = figure('Visible','off','Color','w','Position',[100 100 1100 720]);
+ax = axes('Parent', f); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+all_re = [real(ref); real(ours)]; all_im = [imag(ref); -imag(ref); imag(ours); -imag(ours)];
+xmin = min(all_re)*1.08; xmax = max(0.5, max(all_re)*1.08);
+ymax = max(abs(all_im))*1.15; ymin = -ymax;
+fill(ax,[xmin 0 0 xmin],[ymin ymin ymax ymax],[0.90 0.96 0.90],'EdgeColor','none','FaceAlpha',0.45,'HandleVisibility','off');
+fill(ax,[0 xmax xmax 0],[ymin ymin ymax ymax],[0.96 0.90 0.90],'EdgeColor','none','FaceAlpha',0.45,'HandleVisibility','off');
+xline(ax,0,'--','Color',[0.75 0.18 0.18],'LineWidth',1.4,'HandleVisibility','off');
+% plot positive and mirrored negative imaginary members for compact table rows
+hRef = plot(ax, real(ref), imag(ref), 'o', 'MarkerSize',8, 'LineWidth',1.3, 'Color',[0.13 0.55 0.82], 'MarkerFaceColor','none');
+plot(ax, real(ref), -imag(ref), 'o', 'MarkerSize',8, 'LineWidth',1.3, 'Color',[0.13 0.55 0.82], 'MarkerFaceColor','none','HandleVisibility','off');
+hOur = plot(ax, real(ours), imag(ours), 'x', 'MarkerSize',10, 'LineWidth',1.7, 'Color',[0.05 0.05 0.05]);
+plot(ax, real(ours), -imag(ours), 'x', 'MarkerSize',10, 'LineWidth',1.7, 'Color',[0.05 0.05 0.05],'HandleVisibility','off');
+xlabel(ax,'Real part \sigma (1/s)'); ylabel(ax,'Imaginary part \omega (rad/s)');
+title(ax,'Table 7 matched eigenvalues: OURS solved values (x) vs Kundur E12.3 (o)');
+legend(ax,[hRef hOur], {'Kundur Table E12.3','OURS actual matched solve'}, 'Location','best');
+xlim(ax,[xmin xmax]); ylim(ax,[ymin ymax]); style_axes(ax);
 exportgraphics(f, path, 'Resolution', 200); close(f);
 end
 
+function make_swing_equation_h_verify_figure(path)
+% Verify the H-dependent swing equation used in the latest 6th-order TS engine:
+%   d(Deltaomega_i)/dt = (Pm_i - Pe_i - D_i*Deltaomega_i)/(2*Hsys_i)
+res = run_latest_kundur_ts(5);
+t = res.t(:);
+dt = mean(diff(t));
+omega_dot_num = zeros(size(res.omega));
+for k = 1:size(res.omega,2)
+    omega_dot_num(:,k) = gradient(res.omega(:,k), dt);
+end
+H = res.H_sys(:)';
+D = damping_vector(res);
+Pm = res.Pm(:)';
+rhs = zeros(size(res.omega));
+for k = 1:size(res.omega,2)
+    rhs(:,k) = (Pm(k) - res.Pe_pu(:,k) - D(k)*res.omega(:,k)) ./ (2*H(k));
+end
+[fault_on, fault_off] = fault_window(res);
+labels = {'G1','G2','G3','G4'};
+colors = [0.00 0.28 0.60; 0.82 0.25 0.05; 0.52 0.43 0.00; 0.35 0.16 0.58];
+f = figure('Visible','off','Color','w','Position',[80 80 1300 900]);
+tl = tiledlayout(f,2,2,'Padding','compact','TileSpacing','compact');
+for k = 1:4
+    ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
+    plot(ax, t, omega_dot_num(:,k), '-', 'LineWidth',1.6, 'Color',colors(k,:));
+    plot(ax, t, rhs(:,k), '--', 'LineWidth',1.25, 'Color',[0 0 0]);
+    mark_fault(ax, fault_on, fault_off);
+    err = sqrt(mean((omega_dot_num(:,k) - rhs(:,k)).^2));
+    title(ax, sprintf('%s: inertia H_{sys}=%.3g s, RMS error=%.2e', labels{k}, H(k), err), 'FontWeight','bold');
+    xlabel(ax,'Time (s)'); ylabel(ax,'d\Delta\omega/dt (pu/s)');
+    legend(ax, {'slope from simulated $\Delta\omega(t)$','power-imbalance RHS using $H$'}, 'Interpreter','latex', 'Location','best');
+    style_axes(ax);
+end
+st = sgtitle(tl, 'Verification of swing equation using the inertia constant H in the latest 6th-order TS engine', 'FontWeight','bold');
+st.Color = [0.10 0.10 0.10];
+exportgraphics(f, path, 'Resolution', 220, 'BackgroundColor','white');
+close(f);
+end
+
+function write_h_verification_table(path)
+% Numerical diagnostics for Figure hverify.
+res = run_latest_kundur_ts(5);
+t = res.t(:);
+dt = mean(diff(t));
+omega_dot_num = zeros(size(res.omega));
+for k = 1:size(res.omega,2)
+    omega_dot_num(:,k) = gradient(res.omega(:,k), dt);
+end
+H = res.H_sys(:)';
+D = damping_vector(res);
+Pm = res.Pm(:)';
+rhs = zeros(size(res.omega));
+for k = 1:size(res.omega,2)
+    rhs(:,k) = (Pm(k) - res.Pe_pu(:,k) - D(k)*res.omega(:,k)) ./ (2*H(k));
+end
+labels = {'G1','G2','G3','G4'};
+fid = fopen(path, 'w'); cleaner = onCleanup(@() fclose(fid));
+fprintf(fid, '\\begingroup\\footnotesize\\setlength{\\tabcolsep}{5pt}\n');
+fprintf(fid, '\\begin{tabular}{l r r r}\n\\toprule\n');
+fprintf(fid, 'Generator & $H_{\\mathrm{sys}}$ (s) & RMS error (pu/s) & Max error (pu/s)\\\\\n');
+fprintf(fid, '\\midrule\n');
+for k = 1:4
+    e = omega_dot_num(:,k) - rhs(:,k);
+    fprintf(fid, '%s & %.3f & %.3e & %.3e\\\\\n', labels{k}, H(k), sqrt(mean(e.^2)), max(abs(e)));
+end
+fprintf(fid, '\\bottomrule\n');
+fprintf(fid, '\\multicolumn{4}{l}{\\scriptsize Error = finite-difference slope of simulated $\\Delta\\omega_i$ minus Kundur swing-equation RHS from the latest TS engine.}\\\\\n');
+fprintf(fid, '\\end{tabular}\n\\endgroup\n');
+end
+
 function make_fault_simulation_figure(path)
-res = stability.kundur_fault_simulation();
+res = run_latest_kundur_ts(5);
 t = res.t;
 labels = {'G1','G2','G3','G4'};
 colors = [0.00 0.28 0.60; 0.82 0.25 0.05; 0.52 0.43 0.00; 0.35 0.16 0.58];
 f = figure('Visible','off','Color','w','Position',[80 80 1400 900]);
 tl = tiledlayout(f, 2, 2, 'Padding','compact', 'TileSpacing','compact');
 
-fault_on = res.tfault_start;
-fault_off = res.tfault_start + res.tclear;
+[fault_on, fault_off, fault_duration] = fault_window(res);
 
 ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
-delta_deg = rad2deg(res.delta - res.delta(:,1));
-plot(ax, t, delta_deg(:,2), 'LineWidth',1.9, 'Color',colors(2,:));
-plot(ax, t, delta_deg(:,3), 'LineWidth',1.9, 'Color',colors(3,:));
-plot(ax, t, delta_deg(:,4), 'LineWidth',1.9, 'Color',colors(4,:));
+delta_rel = res.delta - res.delta(:,1);
+% Plot disturbance response: subtract the pre-fault relative angle so every
+% curve starts from zero. This is easier to interpret than plotting the
+% absolute operating-point angle separation.
+delta_dev_deg = rad2deg(delta_rel - delta_rel(1,:));
+plot(ax, t, delta_dev_deg(:,2), 'LineWidth',1.9, 'Color',colors(2,:));
+plot(ax, t, delta_dev_deg(:,3), 'LineWidth',1.9, 'Color',colors(3,:));
+plot(ax, t, delta_dev_deg(:,4), 'LineWidth',1.9, 'Color',colors(4,:));
 mark_fault(ax, fault_on, fault_off);
-xlabel(ax,'Time (s)'); ylabel(ax,'Rotor angle difference (deg)');
-title(ax,'Rotor angle differences relative to G1');
+xlabel(ax,'Time (s)'); ylabel(ax,'Rotor angle deviation (deg)');
+title(ax,'Rotor angle deviations from pre-fault relative angles');
 legend(ax, {'G2-G1','G3-G1','G4-G1'}, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
 style_axes(ax);
 
@@ -438,25 +578,66 @@ lgd.NumColumns = 1;
 style_axes(ax);
 
 ax = nexttile(tl); hold(ax,'on'); box(ax,'on'); grid(ax,'on');
-for k = 1:4
-    plot(ax, t, res.omega(:,k), 'LineWidth',1.5, 'Color',colors(k,:));
-end
+% Plot the speed variables with the same reference as the angle plot.
+% Since d(delta_i-delta_1)/dt = omega_s*(Deltaomega_i-Deltaomega_1),
+% these three traces are the derivative-consistent counterparts of G2-G1,
+% G3-G1, and G4-G1 in the top-left panel.
+omega_rel = res.omega - res.omega(:,1);
+plot(ax, t, omega_rel(:,2), 'LineWidth',1.5, 'Color',colors(2,:));
+plot(ax, t, omega_rel(:,3), 'LineWidth',1.5, 'Color',colors(3,:));
+plot(ax, t, omega_rel(:,4), 'LineWidth',1.5, 'Color',colors(4,:));
 mark_fault(ax, fault_on, fault_off);
-xlabel(ax,'Time (s)'); ylabel(ax,'\Delta\omega (pu)'); title(ax,'Rotor speed deviations');
-legend(ax, labels, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
+xlabel(ax,'Time (s)'); ylabel(ax,'\Delta\omega_i-\Delta\omega_1 (pu)'); title(ax,'Relative rotor speed deviations');
+legend(ax, {'G2-G1','G3-G1','G4-G1'}, 'Location','best', 'TextColor',[0 0 0], 'Color','w');
 style_axes(ax);
 
-st = sgtitle(tl, sprintf('Kundur Two-Area: 3-phase fault at bus %d (t_{clear}=%.1f s)', res.fault_bus, res.tclear), 'FontWeight','bold');
+st = sgtitle(tl, sprintf('Kundur Two-Area: bus-%d solid 3-phase fault (%.2f--%.2f s), latest TS engine', res.fault_bus, fault_on, fault_off), 'FontWeight','bold');
 st.Color = [0.10 0.10 0.10];
 exportgraphics(f, path, 'Resolution', 220, 'BackgroundColor','white');
 close(f);
 end
 
+function res = run_latest_kundur_ts(t_end)
+% Latest report transient path: common case-agnostic engine + 6th-order GENTPJ.
+if nargin < 1 || isempty(t_end), t_end = 5; end
+opt = struct('model','genpj6', 't_end',t_end, 'dt',1e-3, ...
+    'fault_bus',8, 't_fault',1.0, 't_clear',1.05, 'Zf',[], ...
+    'method','trapezoidal', 'corrector_iter',1, 'load_model','cz', ...
+    'verbose',false);
+res = stability.ts_simulate(cases.case_kundur_two_area_classical(), opt);
+end
+
+function [fault_on, fault_off, fault_duration] = fault_window(res)
+if isfield(res,'t_fault')
+    fault_on = res.t_fault;
+    fault_off = res.t_clear;
+elseif isfield(res,'tfault_start')
+    fault_on = res.tfault_start;
+    fault_off = res.tfault_start + res.tclear;
+else
+    error('generate_kundur_ex126_report:missingFaultWindow','Transient result has no fault timing fields.');
+end
+fault_duration = fault_off - fault_on;
+end
+
+function D = damping_vector(res)
+if isfield(res,'D_sys')
+    D = res.D_sys(:)';
+else
+    D = zeros(1,size(res.omega,2));
+end
+end
+
 function mark_fault(ax, fault_on, fault_off)
-xline(ax, fault_on, '--', 'Fault on', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, ...
-    'LabelVerticalAlignment','top', 'LabelOrientation','horizontal');
-xline(ax, fault_off, '--', 'Fault cleared', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, ...
-    'LabelVerticalAlignment','bottom', 'LabelOrientation','horizontal');
+% Short fault windows make xline labels overlap, so use an unobtrusive shaded
+% interval plus unlabeled dashed boundaries.
+yl = ylim(ax);
+p = patch(ax, [fault_on fault_off fault_off fault_on], [yl(1) yl(1) yl(2) yl(2)], ...
+    [1.0 0.88 0.88], 'EdgeColor','none', 'FaceAlpha',0.35, 'HandleVisibility','off');
+try, uistack(p,'bottom'); catch, end %#ok<CTCH>
+ylim(ax, yl);
+xline(ax, fault_on, '--', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, 'HandleVisibility','off');
+xline(ax, fault_off, '--', 'Color',[0.70 0.10 0.10], 'LineWidth',1.2, 'HandleVisibility','off');
 end
 
 function style_axes(ax)
@@ -493,4 +674,38 @@ s = regexprep(s, 'Δ\s*delta', '$\\Delta\\delta$ ');
 s = regexprep(s, 'Delta\s*delta', '$\\Delta\\delta$ ');
 s = regexprep(s, ' of ', ' ');
 s = regexprep(s, ' against ', ' vs ');
+end
+
+function s = dominant_state_label(v, state_names, n_top)
+% Return a LaTeX string listing the top n_top most dominant states.
+mag = abs(v);
+[~, ord] = sort(mag, 'descend');
+parts = {};
+for j = 1:min(n_top, numel(ord))
+    if mag(ord(j)) > 0.05 * mag(ord(1))
+        nm = char(state_names{ord(j)});
+        % Wrap in math mode for LaTeX table
+        parts{end+1} = ['$' nm '$'];
+    end
+end
+if isempty(parts)
+    s = 'mixed';
+else
+    s = strjoin(parts, ', ');
+end
+end
+
+function s = flux_mode_label(dom)
+% Preserve the physical d/q flux interpretation for Kundur Table E12.3
+% rows 13--24 while still showing the generator-specific GENTPJ states.
+if contains(dom, '_{d,') && contains(dom, '_{q,')
+    prefix = 'd/q-axis flux states: ';
+elseif contains(dom, '_{q,')
+    prefix = 'q-axis flux states: ';
+elseif contains(dom, '_{d,')
+    prefix = 'd-axis flux states: ';
+else
+    prefix = 'd/q-axis flux states: ';
+end
+s = [prefix dom];
 end

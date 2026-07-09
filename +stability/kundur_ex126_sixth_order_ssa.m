@@ -3,15 +3,15 @@ function result = kundur_ex126_sixth_order_ssa(varargin)
 %
 %   RESULT = kundur_ex126_sixth_order_ssa() preserves the public API used by
 %   the report and presentation material. The implemented machine model is
-%   the Sauer-Pai 6th-order formulation in
-%   +stability/kundur_ex126_sauer_pai_ssa.m:
+%   the Kundur/GENTPJ 6th-order formulation in
+%   +stability/kundur_ex126_kundur_ssa.m:
 %
-%       x_i = [delta_i; omega_i; E'_qi; E'_di; psi''_di; psi''_qi]
+%       x_i = [delta_i; omega_i; E'_qi; E'_di; E''_qi; E''_di]
 %
 %   No external power-system toolbox is used. The operating point comes from
 %   +pfsolver/powerflow_newton_raphson and the DAE is linearised with base
 %   MATLAB numerical differentiation/eig.
 
-result = stability.kundur_ex126_sauer_pai_ssa(varargin{:});
-result.model_name = '6th-order Sauer-Pai synchronous-machine model';
+result = stability.kundur_ex126_kundur_ssa(varargin{:});
+result.model_name = '6th-order Kundur/GENTPJ synchronous-machine model';
 end

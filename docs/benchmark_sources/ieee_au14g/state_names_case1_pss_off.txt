@@ -1,0 +1,126 @@
+Total states 125
+  1 DEL .HPS_1
+  2 W   .HPS_1
+  3 Eq' .HPS_1
+  4 FLkd.HPS_1
+  5 Ed" .HPS_1
+  6 x021.HPS_1
+  7 EF  .HPS_1
+  8 DEL .BPS_2
+  9 W   .BPS_2
+ 10 Eq' .BPS_2
+ 11 FLkd.BPS_2
+ 12 Ed' .BPS_2
+ 13 FLkq.BPS_2
+ 14 x021.BPS_2
+ 15 EF  .BPS_2
+ 16 DEL .EPS_2
+ 17 W   .EPS_2
+ 18 Eq' .EPS_2
+ 19 FLkd.EPS_2
+ 20 Ed' .EPS_2
+ 21 FLkq.EPS_2
+ 22 VR  .EPS_2
+ 23 EF  .EPS_2
+ 24 x061.EPS_2
+ 25 DEL .VPS_2
+ 26 W   .VPS_2
+ 27 Eq' .VPS_2
+ 28 FLkd.VPS_2
+ 29 Ed' .VPS_2
+ 30 FLkq.VPS_2
+ 31 x021.VPS_2
+ 32 EF  .VPS_2
+ 33 DEL .MPS_2
+ 34 W   .MPS_2
+ 35 Eq' .MPS_2
+ 36 FLkd.MPS_2
+ 37 Ed' .MPS_2
+ 38 FLkq.MPS_2
+ 39 x021.MPS_2
+ 40 EF  .MPS_2
+ 41 SV1 .ASVC_2
+ 42 B   .ASVC_2
+ 43 DEL .LPS_3
+ 44 W   .LPS_3
+ 45 Eq' .LPS_3
+ 46 FLkd.LPS_3
+ 47 Ed' .LPS_3
+ 48 FLkq.LPS_3
+ 49 x021.LPS_3
+ 50 EF  .LPS_3
+ 51 DEL .YPS_3
+ 52 W   .YPS_3
+ 53 Eq' .YPS_3
+ 54 FLkd.YPS_3
+ 55 Ed" .YPS_3
+ 56 VR  .YPS_3
+ 57 EF  .YPS_3
+ 58 x061.YPS_3
+ 59 SV1 .RSVC_3
+ 60 B   .RSVC_3
+ 61 DEL .TPS_4
+ 62 W   .TPS_4
+ 63 Eq' .TPS_4
+ 64 FLkd.TPS_4
+ 65 Ed' .TPS_4
+ 66 FLkq.TPS_4
+ 67 x021.TPS_4
+ 68 EF  .TPS_4
+ 69 DEL .CPS_4
+ 70 W   .CPS_4
+ 71 Eq' .CPS_4
+ 72 FLkd.CPS_4
+ 73 Ed' .CPS_4
+ 74 FLkq.CPS_4
+ 75 Vtr .CPS_4
+ 76 x031.CPS_4
+ 77 EF  .CPS_4
+ 78 DEL .SPS_4
+ 79 W   .SPS_4
+ 80 Eq' .SPS_4
+ 81 FLkd.SPS_4
+ 82 Ed' .SPS_4
+ 83 FLkq.SPS_4
+ 84 x021.SPS_4
+ 85 EF  .SPS_4
+ 86 DEL .GPS_4
+ 87 W   .GPS_4
+ 88 Eq' .GPS_4
+ 89 FLkd.GPS_4
+ 90 Ed' .GPS_4
+ 91 FLkq.GPS_4
+ 92 x021.GPS_4
+ 93 EF  .GPS_4
+ 94 SV1 .BSVC_4
+ 95 B   .BSVC_4
+ 96 DEL .NPS_5
+ 97 W   .NPS_5
+ 98 Eq' .NPS_5
+ 99 FLkd.NPS_5
+100 Ed' .NPS_5
+101 FLkq.NPS_5
+102 VR  .NPS_5
+103 EF  .NPS_5
+104 x041.NPS_5
+105 DEL .TPS_5
+106 W   .TPS_5
+107 Eq' .TPS_5
+108 FLkd.TPS_5
+109 Ed' .TPS_5
+110 FLkq.TPS_5
+111 x021.TPS_5
+112 x031.TPS_5
+113 EF  .TPS_5
+114 DEL .PPS_5
+115 W   .PPS_5
+116 Eq' .PPS_5
+117 FLkd.PPS_5
+118 Ed' .PPS_5
+119 FLkq.PPS_5
+120 x021.PPS_5
+121 EF  .PPS_5
+122 SV1 .PSVC_5
+123 B   .PSVC_5
+124 SV1 .SSVC_5
+125 B   .SSVC_5

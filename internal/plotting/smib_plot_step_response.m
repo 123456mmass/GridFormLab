@@ -66,12 +66,18 @@ plot(ax1, t, dwr, 'LineWidth', 1.8, 'Color', [0.05 0.36 0.60]);
 style_axis(ax1);
 xlabel(ax1, 'Time (s)'); ylabel(ax1, '\Delta\omega_r (pu)');
 title(ax1, 'Rotor speed deviation', 'FontWeight', 'bold', 'Color', [0 0 0]);
+if isprop(ax1, 'Subtitle')
+    subtitle(ax1, '\Delta\omega = (1/\omega_s)d\Delta\delta/dt');
+end
 
 ax2 = nexttile(layout);
 plot(ax2, t, ddelta, 'LineWidth', 1.8, 'Color', [0.83 0.20 0.15]);
 style_axis(ax2);
 xlabel(ax2, 'Time (s)'); ylabel(ax2, '\Delta\delta (deg)');
 title(ax2, 'Rotor angle deviation', 'FontWeight', 'bold', 'Color', [0 0 0]);
+if isprop(ax2, 'Subtitle')
+    subtitle(ax2, 'peaks occur when \Delta\omega crosses zero');
+end
 
 model = '';
 if isfield(sys, 'model'); model = sys.model; end

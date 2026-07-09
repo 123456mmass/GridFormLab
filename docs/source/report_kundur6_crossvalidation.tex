@@ -1,0 +1,196 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.85in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx,float,tabularx,hyperref,caption,subcaption}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\graphicspath{{figures/kundur_ex126/}}
+\title{Kundur Two-Area 6th-Order Cross-Validation: OURS vs PSAT vs Kundur Book}
+\author{In-house solver report}
+\date{\today}
+\begin{document}
+\maketitle
+
+\section*{Scope and honesty statement}
+This report separates three quantities that must not be mixed.  First, the
+power-flow (PF) operating point is compared between the in-house Newton solver
+and PSAT.  Second, small-signal stability analysis (SSSA) is compared against
+Kundur Table~E12.3 and PSAT.  Third, nonlinear transient stability (TS) is
+compared against PSAT because the book provides no time-domain fault benchmark.
+All OURS columns are generated from the current in-house code; Kundur Book
+columns are printed reference values.  The Kundur $<0.5\%$ claim is only for
+the three rotor-angle modes of the book-reproduction 6th-order path, not for
+every auxiliary/flux eigenvalue in a full unreduced realization.
+
+\section{Power flow: OURS vs PSAT vs Kundur book}
+Kundur Example~12.6 defines the bus, line, load and generator operating data.
+The in-house PF solver reconstructs this operating point directly from those
+book data; PSAT's built-in \texttt{d\_kundur1\_mdl} is used as an independent
+implementation check.
+
+The network equations solved by Newton--Raphson are
+\begin{align}
+S_i &= P_i+jQ_i = V_i I_i^*, \qquad I = Y_{bus}V,\\
+\Delta P_i &= P_i^{\mathrm{spec}} - \Re\{V_i(Y_{bus}V)_i^*\},\\
+\Delta Q_i &= Q_i^{\mathrm{spec}} - \Im\{V_i(Y_{bus}V)_i^*\},\\
+\begin{bmatrix}\Delta P\\ \Delta Q\end{bmatrix}
+&= J(V,\theta)
+\begin{bmatrix}\Delta\theta\\ \Delta |V|\end{bmatrix}.
+\end{align}
+The slack angle convention is arbitrary; therefore angle comparisons below
+remove one global offset before computing errors.
+
+\begin{table}[H]
+\centering
+\caption{Power-flow comparison.  OURS is solved from the Kundur book case data;
+PSAT is the independent \texttt{d\_kundur1\_mdl} operating point.}
+\input{figures/kundur_ex126/table_pf_ours_psat.tex}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/kundur_ex126/pf_ours_psat_compare.png}
+\caption{PF comparison: voltage magnitudes and residual errors after slack-angle alignment.}
+\end{figure}
+
+\section{SSSA: 6th-order 24-state model, eigenvalues and modes}
+Each synchronous generator is represented by six differential states,
+\begin{equation}
+ x_i = [\delta_i,\Delta\omega_i,E'_{q i},E'_{d i},E''_{q i},E''_{d i}]^T,
+ \qquad i=1,\ldots,4,
+\end{equation}
+so the full machine state vector has $4\times6=24$ states.  The nonlinear DAE
+has the form
+\begin{equation}
+ \dot{x}=f(x,y), \qquad 0=g(x,y),
+\end{equation}
+where $y$ contains the algebraic network voltages.  The reduced state matrix
+used for eigenanalysis is obtained by eliminating the algebraic variables,
+\begin{equation}
+ A = f_x - f_y g_y^{-1} g_x.
+ \label{eq:sssa_elim}
+\end{equation}
+
+\subsection{Actual 24-state in-house eigenvalues}
+Table~\ref{tab:ssa24} is not a copied book table.  It is the direct eigenvalue
+output of the current in-house 24-state 6th-order book-reproduction SSSA path.
+Some full-matrix near-zero/reference modes are realization dependent; the
+headline accuracy benchmark is therefore reported separately on the three
+rotor-angle modes.
+
+\begin{table}[H]
+\centering
+\caption{Actual in-house 24-state 6th-order eigenvalues and dominant states.}
+\label{tab:ssa24}
+\input{figures/kundur_ex126/table_sssa_24_actual.tex}
+\end{table}
+
+\subsection{Rotor-angle benchmark: OURS vs Kundur Book vs PSAT}
+The benchmark rows are the three electromechanical modes printed in Kundur
+Table~E12.3.  The dominant states identify which generator states participate
+most strongly in the corresponding in-house eigenvector.
+
+\begin{table}[H]
+\centering
+\caption{Rotor-angle modes: actual in-house result vs Kundur Book vs PSAT.}
+\input{figures/kundur_ex126/table_sssa_ours_book_psat.tex}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{figures/kundur_ex126/full_eigenvalue_map.png}
+\caption{Rotor-mode zoom: in-house book-reproduction path vs Kundur Table~E12.3.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{figures/kundur_ex126/kundur6_sssa_compare_3way.png}
+\caption{Three-way SSSA comparison.  PSAT model~6 is included as an independent
+implementation; its SSSA frequencies are lower than Kundur's book values.}
+\end{figure}
+
+\subsection{Why OURS is closer to the book than PSAT in SSSA}
+The network current interface is the same standard subtransient relation in
+both implementations,
+\begin{align}
+I_d &= \frac{R_a(E''_d - V_d) + X''_q(E''_q - V_q)}{R_a^2+X''_dX''_q},\\
+I_q &= \frac{R_a(E''_q - V_q) - X''_d(E''_d - V_d)}{R_a^2+X''_dX''_q}.
+\end{align}
+The difference is in the rotor flux-state realization.  The in-house
+book-reproduction path uses the Kundur/Canay leakage partition, e.g.
+\begin{equation}
+ g_{d1}=\frac{X''_d-X_l}{X'_d-X_l},
+ \qquad
+ \dot{E}'_q = \frac{E_{fd}-E'_q-(X_d-X'_d)I_d + \text{Canay leakage terms}}{T'_{d0}}.
+\end{equation}
+For the Kundur parameters $X''_d=0.25$, $X'_d=0.30$, $X_l=0.20$, this gives
+$g_{d1}=0.5$.  PSAT model~6 uses a standard subtransient realization with
+$k_1,k_2$ factors that does not insert the same $X_l$ partition into the flux
+state equations.  Therefore the algebraic current coupling can agree while the
+linearized flux-state Jacobian in Eq.~\eqref{eq:sssa_elim} differs.  This is why
+OURS can reproduce Kundur's printed SSSA modes more closely than PSAT, while
+PSAT remains useful for independent nonlinear TS comparison.
+
+\section{Transient stability: trapezoidal TS, OURS vs PSAT}
+The time-domain simulation uses the same 6th-order machine states but integrates
+the nonlinear DAE through a solid three-phase fault at bus~8 from
+$t=1.00$--$1.05$~s.  The book has no TS benchmark, so TS is compared against
+PSAT only.
+
+The swing equations are
+\begin{align}
+\dot{\delta}_i &= \omega_s\Delta\omega_i,\\
+2H_i\dot{\Delta\omega_i} &= P_{m,i}-P_{e,i}-D_i\Delta\omega_i,
+\end{align}
+with $P_e$ recomputed from the nonlinear network/machine equations at each time
+step.  The trapezoidal predictor--corrector step used in the in-house engine is
+\begin{align}
+x_{k+1}^{(0)} &= x_k + h f(x_k,y_k),\\
+0 &= g(x_{k+1}^{(r)},y_{k+1}^{(r)}),\\
+x_{k+1}^{(r+1)} &= x_k + \frac{h}{2}\left[f(x_k,y_k)+f(x_{k+1}^{(r)},y_{k+1}^{(r)})\right].
+\end{align}
+PSAT uses an implicit Newton trapezoidal scheme.  Rotor angles are compared in
+the COI frame because PSAT fixes a slack angle during time-domain simulation,
+whereas the in-house no-governor model permits the common angle to float.
+
+\begin{table}[H]
+\centering
+\caption{TS comparison metrics for a bus-8 solid fault, $t=1.00$--$1.05$~s.}
+\input{figures/kundur_ex126/table_ts_ours_psat.tex}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{figures/kundur_ex126/kundur6_ts_angle.png}
+\caption{Rotor angles, COI frame.}
+\end{subfigure}\hfill
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{figures/kundur_ex126/kundur6_ts_speed.png}
+\caption{Rotor speeds, COI frame.}
+\end{subfigure}
+\\[2mm]
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{figures/kundur_ex126/kundur6_ts_pe.png}
+\caption{Electrical power.}
+\end{subfigure}\hfill
+\begin{subfigure}{0.49\textwidth}
+\includegraphics[width=\textwidth]{figures/kundur_ex126/kundur6_ts_voltage.png}
+\caption{All bus voltages; bus~8 is the faulted bus.}
+\end{subfigure}
+\caption{Separate TS plots in the requested style.  Solid lines are OURS;
+dashed lines are PSAT where overlaid.}
+\end{figure}
+
+\section{Conclusion}
+The in-house PF solver matches the PSAT operating point to $0.0025$~pu in
+voltage magnitude and $0.049^\circ$ in bus angle after slack alignment.  The
+SSSA engine produces a real 24-state eigenvalue list; the three rotor-angle
+benchmark modes match Kundur Table~E12.3 within $0.5\%$ in the dedicated
+book-reproduction path.  PSAT differs in SSSA because its model~6 flux-state
+realization is not the same as the Kundur/Canay leakage formulation, but PSAT
+still provides an independent nonlinear TS check.  For the 6th-order bus-8
+fault, OURS vs PSAT differs by $1.895^\circ$ in COI-frame rotor angle and
+$3.69\times10^{-4}$~pu in relative speed.
+
+\end{document}

@@ -1,0 +1,16 @@
+function tests = test_no_kundur_calibration_claims()
+%TEST_NO_KUNDUR_CALIBRATION_CLAIMS Ensure accepted paths do not use the fit.
+tests = functiontests(localfunctions);
+end
+
+function test_book_flux_and_catalog_do_not_call_calibrated_wrapper(testCase)
+files = { ...
+    fullfile(fileparts(fileparts(mfilename('fullpath'))),'+stability','kundur_ex126_book_flux_ssa.m'), ...
+    fullfile(fileparts(fileparts(mfilename('fullpath'))),'+cases','dynamic_accuracy_benchmark_catalog.m'), ...
+    fullfile(fileparts(fileparts(mfilename('fullpath'))),'tests','test_kundur_book_flux_path.m'), ...
+    fullfile(fileparts(fileparts(mfilename('fullpath'))),'tests','test_multimachine_machine_count_ladder.m')};
+for k=1:numel(files)
+    verifyEmpty(testCase,regexp(fileread(files{k}), ...
+        'kundur_ex126_book_e123_ssa','once'),files{k});
+end
+end

@@ -1,0 +1,979 @@
+Description of Machine Models GENROU,
+GENSAL, GENTPF and GENTPJ
+
+Date         : October 22, 2015
+
+             December 3, 2015 (corrections GENTPF d/q subscripts)
+
+Prepared by  : James Weber, Ph.D.
+                Director of Software Development
+                PowerWorld Corporation
+                (217) 384-6330 ext. 13
+                weber@powerworld.com
+
+                               2001 South First Street
+                               Champaign, IL 61820
+                               (217) 384-6330
+                               www.powerworld.com
+
+Table of Contents
+
+1 General Topics ...................................................................................................................................... 1
+   1.1 Circuit Models for Network Interfaces (dq transformation)......................................................... 1
+   1.2 Saturation Functions ..................................................................................................................... 2
+
+2 Machine Models with Additive Saturation ........................................................................................... 2
+   2.1 Machine: GENSAL model with saturation..................................................................................... 3
+   2.2 Machine: GENROU model without saturation.............................................................................. 4
+   2.3 Machine: GENROU model with saturation ................................................................................... 5
+
+3 History of Machine: GENTPF and GENTPJ............................................................................................. 6
+   3.1 Equations for GENTPF/GENTPJ to Block Diagram......................................................................... 7
+   3.2 Theoretical Justification for GENTPF/GENTPJ............................................................................. 10
+   3.3  parameter in GENTPJ Model ............................................................................................... 13
+
+                                                               i
+1 General Topics
+
+1.1 Circuit Models for Network Interfaces (dq transformation)
+
+It is very important to explicitly define the relationship between the network reference frame (abc phases) and
+
+the dq axis reference frame. When reading various textbooks you will see this done in at least 3 different ways.
+
+All references start by defining the d-axis using the right-hand rule with respect to the rotor windings. The
+
+phase axes (a,b,c) are then also defined using the right-hand rule with respect to the stator windings.
+
+After these definitions though, there are two independent choices to be made.
+
+1. Where is the q-axis? 90 degrees leading the d-axis or 90 degrees lagging
+
+2. What is the rotor angle () with respect to?
+
+Software vendors have settled on the same choices as shown in the figure to the right.
+
+1. q-axis is 90 degrees leading                                           b-axis              q-axis
+2. Rotor angle is the angle of the q-axis with respect to the
+
+    network a phase axis.
+
+This matches the conventions used in the book Power System                c                              b
+
+Dynamics and Stability by Peter Sauer and M.A. Pai. However you will                          
+find textbooks and other references that make different choices. As
+long as one is consistent in the choice it doesn't matter, however be                                    a-axis
+
+very careful when comparing equations between textbooks and other                                        d-axis
+references as they may use a different convention.
+
+The following are circuit models for the network interface for the           c-axis        a
+Thevenin and Norton Equivalents and on the dq axis and network
+reference frames.
+
+Norton Equivalent                                              Thevenin Equivalent
+  
+                          1     dq Axis                                           +          +
++                              Reference                                                    + 
+                                                                                         
+                                 Frame                                                       _
+ +                  +  =   +                                 +            +  + 
+                                                                                             +
+                                                                          _                 + 
+
+                               Network                                            +          _
+                               Reference  + 
+                                                                                         
+                                 Frame
+                    +  =  1                                               +  + 
+
+                           +                                              _
+
+Conversions between reference frames are done using equation 6.8 and 6.9 on page 125 of Sauer/Pai book. The
+
+same general function works for converting all phasors between the dq axis and network reference frames.
+
+Assume you have a complex phase  that can be written as either  +  or ( + ).
+
+ +  = ( + )--2 =  ( + ) cos  -  +   -  = ( + )sin() + ()
+                               2                                    2
+
+ = + sin() -  cos()
+
+ = + cos() +  sin()
+
+ +  =  + +-2 =  +  cos    -  +   -  =  + sin() - ()
+                                  2                                    2
+
+ = + sin() +  cos()
+
+ = - cos() +  sin()
+
+                               1                                                     PowerWorld Corpration
+
+                                                                                     2001 South First St
+
+                                                                                     Champaign, IL 61820
+1.2 Saturation Functions
+
+There are three commonly used saturation functions used in power system transient stability software.
+
+Name              Function              Which Platform
+
+Quadratic         () = ( - )2 GE PSLF
+
+Scaled Quadratic              ( - )2    PowerWorld Simulator option
+Exponential       () =                  PTI PSS/E,
+                                        PowerWorld Simulator Option
+                     () =               BPA IPF
+
+                                        Specific models in PTI PSS/E
+
+                                        Specific models in PowerWorld Simulator
+
+Once a function is chosen, a model specifies the saturation function by giving two values of saturation function
+
+evaluated at 1.0 and 1.2 (call these values 10 and 12. From these values you can then calculate the coefficents
+
+A and B of the respective equation.
+
+2 Machine Models with Additive Saturation
+
+A fundamental derivation of a GENROU and GENSAL models can found in Chapter 3 of the book Power System
+Dynamics and Stability by Peter Sauer and M.A. Pai from 1998. This derivation starts from first principals
+represented by equations 3.1 - 3.9 on page 24 - 25 and culminates in Equations 3.148 - 3.159 on page 42. The
+equations on page 42 of Sauer/Pai essentially represent the block diagrams for GENROU and GENSAL without
+saturation (though there are some minor sign convention differences). The treatment of saturation is then
+discussed in more detail by including additive terms similar to what is done for GENROU and GENSAL. The
+treatment of saturation is one of the fundamental differences between GENROU/GENSAL and the
+GENTPF/GENTPJ models.
+
+The following sub sections show the block diagrams and description of the network boundary interface for the
+following
+
+    � GENSAL model with saturation
+    � GENROU model without saturation
+    � GENROU model with saturation
+
+This will then be followed by a section showing the block diagrams and description of the network boundary
+interface for the GENTPF and GENTPJ model along with some historical references to indicate where this model
+came from.
+
+                                     2                  PowerWorld Corpration
+
+                                                        2001 South First St
+
+                                                        Champaign, IL 61820
+2.1 Machine: GENSAL model with saturation.
+
+Electrical Torque                                                 Network Interface Equations
+
+ =   -                                                                 =    +   
+
+                                                                            1       
+
+                                                                   =  + =  + 
+ =  -                                                                       
+
+                                                                                    +
+ =  -  =   -  
+                                                                   +  = 
+
+Mechanical Swing Equations                                          +    =  (1  +  )     +      
+
+                                                                                                   
+
+  1  =   0                                                         +  =     -  +   (1 + )
+  2  = 12 - 1+ -                                                                       
+
+                                                                   +  =  + ( + )
+
+ = per unit speed deviation, so  = 0 means we are at synchronous  Convert to Network Reference
+       speed and  = 1 would mean it's spinning at double           +  =  + (-2)
+       synchronous speed
+                                                                     +                    + 
+0 = synchronous speed 20where 0 is the nominal system               
+       frequency in Hz
+
+Note: If option Ignore Speed Effects in Generator Swing
+
+Equation is true, then instead use
+
+          = 21 ( -  - )
+
+                              3                                                       PowerWorld Corpration
+
+                                                                                      2001 South First St
+
+                                                                                      Champaign, IL 61820
+2.2 Machine: GENROU model without saturation
+
+Electrical Torque                                                       Network Interface Equations
+
+ =   -                                                                       =    +   
+
+                                                                                  1       
+
+                                                                         =  + =  + 
+ =  -                                                                             
+
+                                                                                          +
+ =  -  =   -  
+                                                                         +  = 
+
+Mechanical Swing Equations                                                +    =  (1  +  )     +      
+
+                                                                                                         
+
+  1  =   0                                                               +  =     -  +   (1 + )
+  2  = 12 - 1+ -                                                                             
+
+                                                                         +  =  + ( + )
+
+ = per unit speed deviation, so  = 0 means we are at synchronous speed  Convert to Network Reference
+       and  = 1 would mean it's spinning at double synchronous speed     +  =  + (-2)
+
+0 = synchronous speed 20where 0 is the nominal system frequency in Hz         +                 + 
+Note: If option Ignore Speed Effects in Generator Swing Equation is
+
+true, then instead use
+
+          = 21 ( -  - )
+
+                              4                                                   PowerWorld Corpration
+
+                                                                                  2001 South First St
+
+                                                                                  Champaign, IL 61820
+2.3 Machine: GENROU model with saturation
+
+The GENROU model including saturation is presented below. The Mechanical Swing Equations, Electric
+Torque, and Network Interface Equations are all the same as the GENROU and GENSAL models
+previously.
+
+5  PowerWorld Corpration
+
+   2001 South First St
+
+   Champaign, IL 61820
+3 History of Machine: GENTPF and GENTPJ
+
+ =  +  + 2 +  +  - 2                                           Electrical Torque
+
+                                                               Corrections made to dq subscripts of the X terms on
+
+                                                               December 3, 2015
+
+D-Axis:  = 1 +   + 2 + 2                                         =          -                =  -           -   
+
+                                                                                                     
+
+                                                                 =          -                =           -   
+
+                                                                                                              
+
+                                       22                       =  - 
+Q-Axis:  = 1 +   +  +  
+                
+
+Saturated Subtransient Reactances                              Network Interface Equations
+
+ =         -    +                                                                +
+
+                                                                +  = 
+
+       
+           -  
+ =              +                                                +          =  (1     +   )              +   
+         
+                                                                                                                
+       
+                                                                                                     
+Note:      <>       both  because      <>      and              +  = - +   (1 + )         
+                                             
+
+because  <> .                                                  Corrections  made  to      subscript  on  December  3,  2015
+
+                                                                                        
+
+                                                                +           =         +   (1             +  )
+
+                                                                                   
+
+Mechanical Swing Equations                                     Because                <>             we     cannot     use   a
+
+     1  =   0                                                                             
+     2  = 12 - 1+ - 
+                                                               circuit model for network interface
+ = per unit speed deviation, so  = 0 means we are at
+       synchronous speed and  = 1 would mean it's spinning at  equations and must instead directly use
+       double synchronous speed
+                                                               the following.
+0 = synchronous speed 20where 0 is the nominal system
+       frequency in Hz                                               =  -  + 
+                                                                                              
+Note: If option Ignore Speed Effects in Generator Swing                           =       -                 -   
+Equation is true, then instead use                                                              
+
+          = 21 ( -  - )                                        Convert to Network Reference
+                                                                +  =  + (-2)
+                                                                +  =  + (-2)
+
+                                               6                                             PowerWorld Corpration
+
+                                                                                             2001 South First St
+
+                                                                                             Champaign, IL 61820
+A fundamental derivation of a GENROU and GENSAL models can found in Chapter 3 of the book Power
+System Dynamics and Stability by Peter Sauer and M.A. Pai from 1998. This derivation starts from first
+principals represented by equations 3.1 - 3.9 on page 24 - 25 and culminates in Equations 3.148 - 3.159
+on page 42. The equations on page 42 of Sauer/Pai essentially represent the block diagrams for
+GENROU and GENSAL without saturation (though there are some minor sign convention differences).
+Saturation is then discussed in more detail by including additive terms similar to what is done for
+GENROU and GENSAL. We have not found a fundamental derivation of the GENTPF/GENTPJ model
+equations. There are papers from the late 1960s which show equations very similar to them but the
+papers present them without the fundamental derivation as found in Sauer/Pai. These papers are
+
+    � Olive, D.W., "New Techniques for Calculation of Dynamic Stability", IEEE Transactions on Power
+         Apparatus and Systems, Vol PAS-85, No. 7, July 1966, pp. 767-777.
+         Equations (9) - (14) in this paper provide the fundamental start of the GENTPF/GENTPJ
+         equations.
+
+    � Olive, D.W., "Digital Simulation of Synchronous Machines Transients", IEEE Transactions on
+         Power Apparatus and Systems, Vol PAS-87, No. 8. Pp 1669-1675.
+         Equations (18) - (27) in this paper provide the extend the earlier paper to more dynamic
+         variables
+
+The full equations used for GENTPF/GENTPJ were consolidated in a very short 2 page write-up by John
+Undrill for WECC on November 19, 2007 and then corrected on June 19, 2012. A link to this paper as of
+October 22, 2015 is found at https://www.wecc.biz/Reliability/gentpj-typej-definition.pdf .
+
+In this section we will derive how the equations given in John Undrill's writeup result in the block
+diagram and network interface algebra used in the GENTPF/GENTPJ models. We will also then provide
+the theoretical framework showing that the GENROU and GENTPF/GENTPJ equations are the same but
+with saturation modeled differently.
+
+3.1 Equations for GENTPF/GENTPJ to Block Diagram
+
+The following are the equations given in the write-up from John Undrill for WECC in June 19, 2012, we
+have replaced the use of (1 + ) and 1 +  with purely () and  and also renamed the
+term  and  which were written as  and  in the original Undrill document. We have
+made these changes to be consistent with the remainder of this document.
+
+1.  = 1 + 2 -  - 
+
+2.  = 1 + 2 +  - 
+    
+3.        =  1  +  2  -   
+      
+    
+4.        =  1  +  2  +   
+      
+                          -
+5.  = 1 + 2 -  - 2 - 
+
+                         
+                          -
+6.  = 1 + 2 -  - 2 + 
+
+                         
+
+7.        = -()       - 2
+
+                          
+                     -  
+
+8.        = -         - 2
+
+        
+
+                          
+                     -  
+
+     -()1
+9. =
+                   
+
+     -1
+10. = 
+                
+
+                             7  PowerWorld Corpration
+                                2001 South First St
+                                Champaign, IL 61820
+11.  = (-)  +  
+12.    = - 
+
+                       
+
+13.    = -
+
+                         
+
+14.  = -  +  
+
+                   - 
+
+15.  =
+
+                      
+                     -
+
+16.  =
+
+                        
+
+17.  =  +  + 2 +  +  - 2
+
+18.  = 1 +   + 2 + 2
+
+                                       22
+19.  = 1 +   +  +  
+             
+
+While it is not immediately clear that this list of equation becomes the GENTPF/GENTPJ model shown in
+the block diagram. The following derivation will show this.
+
+Take Equation 13 and 16 add substitute back into equation 3 and 4.
+
+1 + 2 = +        -               + 
+
+                             
+                 -
+1 + 2 = -                      + 
+
+                             
+
+Substitute these equations along with 12 and 14 back into equation 5 and 6.
+
+           -                   -               - 
+ = +             +  -                   2 - 
+                                 -               
+
+           -                   -               - 
+ = -             +  -                   2 + 
+                                 -               
+
+Move terms to the left side
+
+ -  -          -             +   -          -
+                                       =-         2
+                                           - 
+
+ -  +          -             -   -     =-   -
+                                                  2
+                                           - 
+
+Multiply by  and  on appropriate terms and group terms multiplied by  and .
+                                                  -
+() -   - ( -  ) = -()  - 2           
+
+                                                 
+                                                  -
+( -  ) + ( -  ) = -  - 2             
+
+                                                 
+
+The right-hand side of these two equations match the right-hand side of equations 7 and 8.  Therefore
+
+ () -- -
+      =
+                 
+                 
+
+      =   -+( -)
+
+    
+
+                 
+                 
+
+Now take same equation and solve for 2 and 2.
+
+-2 =  -   -                       - -                 -                      -
+                                          =  -     - 
+                                 () -                -                       ()
+
+                                              8                              PowerWorld Corpration
+
+                                                                             2001 South First St
+
+                                                                             Champaign, IL 61820
+                                   - -                    -     -
+-2 = ( -  ) +                               = ( -  )   + 
+                                   -                        -      
+
+Now let's go back to equation 13 and 16 substituted into equation 3 and 4 and then move the terms 2
+
+and 2 to the right-hand side.
+       -
+1 = +                       +  - 2
+
+             
+
+1 = -  -                    +  - 2
+
+             
+
+Take our solution for 2 and 2 and substitute those in.
+
+1 = +  -                                  -              -
+                            +  +  -     - 
+                                            -            ()
+
+       -                                  -              -
+1 = -                       +  + ( -  )   + 
+                                            -            
+
+Note that the terms multiplied by  and  both cancel.
+                                 -
+1 = + +  -    -
+
+                                  
+                                 -
+1 = + + ( -  )  -
+
+                                  
+
+Then simplify further by grouping terms
+
+               -                     -            -           -
+1 = + 1 -    +    = -    +    
+               -                         -               -      -
+               -                     -            -           -
+1 = + 1 -    +    = -    +    
+
+               -                         -               -      -
+
+Now substitute these equations into equations 9 and 10.
+
+                  -                   -
+                                  
+ +()   -  
+                            -            -
+  =
+                                
+
+              -                    -
+     +   -  
+                 -                -
+  =
+                              
+
+If you look the block diagram for GENTPF/GENTPJ you will find that the equations for ,  , , and
+
+                                                                                                                                                  
+
+ all match these equations.
+
+ 
+
+Now let's see how we obtain the network interface equations used in GENTPF/GENTPJ from John
+
+Undrill's equations. As we started the dynamic equation derivation, take Equation 13 and 16 add
+
+substitute back into equation 3 and 4 and then substitute the values back into Equation 1 and 2. Also
+
+take equation 11 and 14 to substitute in for  and .
+
+ = + +                      -     -      (-)  +  - 
+
+                                         
+                            -
+ = + -                            +      -    +  - 
+
+                                         
+
+Now group terms to simplify.
+
+ = + -                        -   +      - 
+                                         - 
+                                
+                              -
+ = + +                            + 
+
+                                
+
+If we now define the terms
+
+ =       -     + 
+
+       
+
+     
+
+                                              9                      PowerWorld Corpration
+
+                                                                     2001 South First St
+
+                                                                     Champaign, IL 61820
+             =           -         + 
+
+                       
+
+                       
+
+Then we may write
+
+                 =     +        -            - 
+
+                       +             
+                                    
+                 =              +            - 
+
+These almost match our equations from the block diagram description. There is one additional term
+
+missing from the GENTPF and GENTPJ block diagrams. There is an additional multiplication by per unit
+
+speed  on   the      and           term.  Thus our actual implementation of the GENTPF and GENTPJ models is as
+
+                             
+
+follows.
+
+                 =     +(1         +  )   -            - 
+
+                                               
+             = +(1 + ) +  - 
+
+This is partially consistent with the original papers from D.W. Olive. On page 1671 of the original D.W.
+
+Olive paper from 1968 (which is also referenced in John Undrill's writeup for WECC), there are equations
+
+18 and 19 which would correspond to a minor change to Equation 1 and 2 of Undrill's writeup for WECC
+
+as show by multiply the flux and reactance terms by per unit speed (1 + ).
+
+             = 1 + 2 - (1 + ) - 
+
+             = 1 + 2 + (1 + ) - 
+
+Including this extra multiplication by per unit speed would result in the following network interface
+
+equation.
+
+                 =     +(1         +  )   -        (1  +   )   - 
+
+                       +                       
+                                               
+                 =            (1   +  )   +        (1  +   )   - 
+                                                 
+
+Thus the implementation in the software tools ignore the impact of speed variation on the term
+associated with reactance, but continue to include the impact of speed on the terms associated with flux
+linkage. This is in keeping with the history of the GENSAL and GENROU models which also multiply their
+flux linkage value by per unit speed. It is also in keeping with the choice in transient stability models to
+not include the impact of frequency changes on the reactance values in the transmission system.
+
+3.2 Theoretical Justification for GENTPF/GENTPJ
+
+As a starting point, this section will take the fundamental derivation of a GENROU and GENSAL models
+found in Chapter 3 of the book Power System Dynamics and Stability by Peter Sauer and M.A. Pai from
+1986. We will then show how to convert this model into GENTPF/GENTPJ. Essentially all of this revolves
+around how best to model saturation in the synchronous machine.
+
+In the GENROU/GENSAL models the saturation shows up purely as an additive term the derivative of 
+     
+and      .  In GENROU/GENSAL models, the saturation does not come into play in the equations for the
+       
+                                                                                
+network     interface  at  all  and   thus  when  the  assumption  that      =      is  made  in  GENROU/GENSAL          the
+                                                                                  
+                                                                                                    
+network equations can be modeled as a simple circuit model.              (Note:     when        <>      ,  this  is  called
+                                                                                                      
+
+transient saliency.)
+
+The advantage of the GENTPF and GENTPJ model is that the saturation really affects the entire model as
+
+the saturation is applied directly to all the inductance terms simultaneously. This likely better reflects
+
+what occurs due to the actual physics of the device. This does however complicate the network
+
+boundary equations as the saturation will be included in the network interface equations and thus a
+
+simple circuit model can not be used. However, because the GENTPF/GENTPJ model is from the start
+
+designed    to  permit  transient     saliency  with       <>      anyway,   there  is  no  additional  increase     in
+
+                                                                 
+
+complexity by having saturation affect the network equations.
+
+                                                               10                                   PowerWorld Corpration
+
+                                                                                                    2001 South First St
+
+                                                                                                    Champaign, IL 61820
+To convert the GENROU equations into the GENTPF/GENTPJ equations do the follow. The rotor model
+includes an armature resistance and leakage reactance in series with each phase as shown in the
+following picture.
+
+                       +                                         Rotor
+
+Consider adding two additional impedances in series which cancel one another out.
+
+    - +                +                      -                  Rotor
+
+                                           
+
+Then merge the second two terms simplify this to
+
+    - +              +                                           Rotor
+                  Fake Point
+
+Now looking from the "Fake Point" inward, this will look like a GENROU/GENSAL model but with
+
+  =       and  also  some    "extra"  Norton    impedance    of      -    for  the  network  interface.
+
+                                                                   
+
+We then need to know what the resulting Norton impedance for use in the network equations look like
+
+from this fake point.    In  the  derivation  from  Sauer/Pai    the  Norton   reactances  would  be      and      ,  but
+
+                                                                                                                 
+
+we  have  added  in  some    extra   impedance        - .    This extra impedance however will become
+
+saturated so the total impedance seen from the fake point would be as follows.
+
+                 =       +        -  
+
+                               
+
+                             
+           - 
+       =  +
+                             
+
+We then need to add in the additional impedance in front of the fake point so we get the total Norton
+
+impedance of
+
+               =       +      -       -      +     =      -      + 
+
+                                                        
+
+                                                      
+             -                                        
+       =  +                           -  +  =             -      + 
+                                                        
+
+                                                      
+
+These impedances match those given in the GENTPF/GENTPJ model.
+
+We must then show how the GENROU derivative equations change into the GENTPF/GENTPJ equations.
+From the block diagram for GENROU
+
+                          -                 -         
+                                          
+    + =  = +  +   = +
+                             -           -
+                          -                -
+    - =  = -  -   = -                                 
+
+                             -           -
+
+Thus      =      and      =       .  Substitute that into the derivate equations and you get the following.
+
+                               
+
+                                                             11                                   PowerWorld Corpration
+
+                                                                                                  2001 South First St
+
+                                                                                                  Champaign, IL 61820
+                d                                                     
+Conversion for . Start with GENROU equation and substitute  =  and  = 
+                dt
+
+                                           -                
+               -+-+                           2---+
+
+        d                                -
+
+            =                                               
+
+        dt                                  
+
+                                           -                
+               -+-+                             2- -- +
+
+                                         -
+                                          
+        d =   
+        dt                                  
+
+                                                
+          -+--  -+  
+        d                             -         -
+            =
+        dt                          
+
+                       -  - 
+          -+  -   
+        d               -             -
+            =
+        dt                      
+
+                     -            -         
+                       
+          -  +  
+        d           -             -
+            =
+        dt                  
+
+                d                                               
+Conversion for . Start with GENROU equation and substitute  =  and  =  .
+                dt
+
+                          -                             
+               -+--                     2(-+-+) 
+        d                          -
+            =
+        dt                            
+
+                                     -                    
+               -+--                       2(- +- +) 
+        d                          -
+            =
+        dt                              
+
+                                              
+          - +- +   --    
+        d                       -           -
+            =
+        dt                        
+
+        d              -  - 
+
+          --   +  
+                    -               -
+            =
+        dt                  
+
+        d             -  - 
+
+          -   +  
+                -             -
+            =
+        dt                
+
+The d and d are trivial. Thus in the end the derivative equations for GENROU without saturation
+dt          dt
+
+with result in the GENTPF/GENTPJ dynamic equations without saturation as shown in the following
+
+table.
+
+                                                    12          PowerWorld Corpration
+
+                                                                2001 South First St
+
+                                                                Champaign, IL 61820
+GENROU equation without saturation                                  Make assumptions
+
+                                                                          =       ;      =      ;    =  
+
+                                                                                                          
+
+                                                                    Gives you the GENTPF/GENTPJ equations
+
+d       =  - + -+                                                   d     =     -+ -
+
+                                                                        
+
+                                                                    dt                   
+dt                                                                                    
+
+           - - -+                                                     -- -
+        =                                                                 =
+     d                                                              dt                   
+                                                                                        
+dt               
+               
+                                                                                      -            -
+                                                                                                            
+                                     -                                -  +  
+                                                                    d                -             -
+           -+-+                          2---+                            =
+                                    -                               dt                        
+
+d       =                                                           (See derivation following this table)
+
+dt                                     
+
+                     -                                                            -  - 
+           -+--                     2(-+-+)                         d
+                                                                      -   +  
+                                                                               -                -
+d                            -                                            =
+        =                                                           dt                      
+
+dt                                                                  (See derivation following this table)
+
+Taking these modified equations and applying saturation to the model will then be done more globally
+
+by  multiplying  all  instances  of   ,   ,  and         by  the  appropriate     or          function  to  represent
+
+                                                       
+
+the fact that the flux linkages become saturated. This then gives you the same derivate equations
+
+shown in the GENTPF/GENTPJ block diagrams.
+
+           GENTPF/GENTPJ without Saturation                  GENTPF/GENTPJ with Saturation
+
+d                         -      +       -                           (           -   )     +       -   
+
+                                                                                       
+
+ dt                                                                                     
+                                    
+ dt                                 (                                                    
+d
+ dt                       -      -       -   )                       -  - ( - )
+
+d                                                                                       
+ dt                                                                                      
+                                                                                                            
+                          -                   -                                      -                  -       
+                                                                                                              
+              -     +                                             +  -     +     
+                       -                  -                                     -                      - 
+
+                                                                                         
+
+                      -                   -                                    -                    -  
+
+                                                                                    
+               -     +                                             -     +     
+                  -                       -                                -                        - 
+
+                                                                                        
+
+3.3  parameter in GENTPJ Model
+
+The only difference between the GENTPF and GENTPJ model is the a parameter . In the GENROU and
+GENSAL models the saturation is a function of only the air-gap flux . In generator testing however, it
+has been found that saturation is also a function of the armature current magnitude. The GENTPF
+model assumes that the saturation is NOT a function of armature current. The GENTPJ model
+recognizes that the leakage flux components induces in the stator teeth by high stator currents can
+increase the reluctance of the magnetic circuit. To model this, the argument of the saturation function
+is increased by a multiplication of the parameter  by the armature current and thus GENTPJ uses.
+
+ = 1 +   + 2 + 2
+
+                                         22
+ = 1 +    +  +  
+               
+
+                                                             13                                    PowerWorld Corpration
+
+                                                                                                   2001 South First St
+
+                                                                                                   Champaign, IL 61820
+

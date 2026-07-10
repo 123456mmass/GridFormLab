@@ -32,10 +32,12 @@ model.angle_state_index = 1;
 model.speed_state_index = 2;
 model.inertia = H;
 model.metadata = struct('benchmark','Sauer-Pai Example 8.3', ...
-    'engine','stability.multimachine_ssa', 'jacobian','analytical');
+    'engine','stability.multimachine_ssa', 'jacobian','analytical', ...
+    'plugin','sauer_pai_two_axis_ieee_type1');
 
 result = stability.multimachine_ssa(model);
 result.A = Asys;
 result.linearization = lin;
+result.metadata.plugin = 'sauer_pai_two_axis_ieee_type1';
 result.reference = cases.sauer_pai_reference_catalog().example_8_3_table_8_1;
 end

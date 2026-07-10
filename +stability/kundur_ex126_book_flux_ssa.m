@@ -23,21 +23,41 @@ function result = kundur_ex126_book_flux_ssa(varargin)
 %       Vd = E''d - Ra Id + X''q Iq
 %       Vq = E''q - Ra Iq - X''d Id
 
+case_data = cases.kundur_ex126_book_case();
 pf = [];
 opts = struct();
-if nargin >= 2 && strcmpi(varargin{1}, 'pf')
-    pf = varargin{2};
-    if nargin >= 4 && strcmpi(varargin{3}, 'options'); opts = varargin{4}; end
-elseif nargin >= 2 && strcmpi(varargin{1}, 'options')
-    opts = varargin{2};
+arg = 1;
+while arg <= nargin
+    if arg == nargin
+        error('kundur_ex126_book_flux_ssa:arguments', ...
+            'Arguments must be supplied as name/value pairs.');
+    end
+    name = varargin{arg};
+    value = varargin{arg + 1};
+    if strcmpi(name, 'case') || strcmpi(name, 'case_data')
+        case_data = value;
+    elseif strcmpi(name, 'pf')
+        pf = value;
+    elseif strcmpi(name, 'options')
+        opts = value;
+    else
+        error('kundur_ex126_book_flux_ssa:arguments', ...
+            'Unknown argument "%s".', string(name));
+    end
+    arg = arg + 2;
 end
 % Model options (defaults reproduce the original Sauer-Pai behaviour).
 if ~isfield(opts, 'load_model');  opts.load_model  = 'cc_p_cz_q'; end
+if ~isfield(opts, 'realization'); opts.realization = 'emf_multiplicative'; end
 % Kundur lists Asat, Bsat, and PsiT1 in Example 12.6; the book-flux
 % realization therefore includes saturation unless explicitly disabled.
 if ~isfield(opts, 'use_saturation'); opts.use_saturation = true; end
 if ~isfield(opts, 'sat_params')
-    opts.sat_params = struct('Asat',0.015,'Bsat',9.6,'PsiT1',0.9);
+    if isfield(case_data, 'saturation')
+        opts.sat_params = case_data.saturation;
+    else
+        opts.sat_params = struct('Asat',0.015,'Bsat',9.6,'PsiT1',0.9);
+    end
 end
 % Central-difference plateau probe selects 3e-6; smaller steps show round-off.
 if ~isfield(opts, 'fd_eps'); opts.fd_eps = 3e-6; end
@@ -50,12 +70,10 @@ if ~isfield(opts, 'qload_z_scale'); opts.qload_z_scale = 1.0; end
 if ~isfield(opts, 'line_r_scale'); opts.line_r_scale = 1.0; end
 
 if isempty(pf)
-    case_data = cases.kundur_ex126_book_case();
     pf_opts = struct('plot_results', false, 'verbose', false, ...
-        'max_iter', 50, 'tolerance', 1e-8, 'enforce_q_limits', false);
-    pf = pfsolver.powerflow_newton_raphson(case_data, pf_opts);
+        'max_iter', 200, 'tolerance', 1e-10);
+    pf = pfsolver.powerflow_fsolve(case_data, pf_opts);
 end
-case_data = cases.kundur_ex126_book_case();
 if ~isempty(opts.machine_override)
     case_data.machines = opts.machine_override;
 end
@@ -69,8 +87,11 @@ end
 R = M.reactances;
 g_d1 = (R.Xdpp - R.Xl) / (R.Xdp - R.Xl);
 g_q1 = (R.Xqpp - R.Xl) / (R.Xqp - R.Xl);
-g_d2 = (1 - g_d1) / (R.Xdp - R.Xl);
-g_q2 = (1 - g_q1) / (R.Xqp - R.Xl);
+% Damper-current reconstruction. These coefficients are independent of
+% the E'' mixing factors: substituting I1d/I2q into the E' equations must
+% cancel the direct stator-current term exactly.
+g_d2 = 1 / (R.Xdp - R.Xl);
+g_q2 = 1 / (R.Xqp - R.Xl);
 gamma = struct('d1',g_d1,'q1',g_q1,'d2',g_d2,'q2',g_q2);
 
 [init, Ynet] = initialise_generators(pf, case_data, M, gamma, opts);
@@ -121,6 +142,7 @@ result.pre_refine_residual_g = pre_residual_g;
 result.newton_iterations = init.newton_iterations;
 result.newton_residual = init.newton_residual;
 result.fd_eps = opts.fd_eps;
+result.case_data = case_data;
 ref = stability.kundur_ex126_classical_analysis();
 result.reference = ref;
 % Expose DAE functions for external calls (e.g. transient simulation):
@@ -282,13 +304,34 @@ for k = 1:ng
     Xqpp_sat = Xl_n + (Xqpp_n-Xl_n)/Satq0;
     init.Id(k)=Id; init.Iq(k)=Iq; init.Vd(k)=Vd; init.Vq(k)=Vq;
 
-    % Direct GENTPJ steady-state initialization.  These four assignments
-    % make f(3:6)=0 identically under the same Sat_d/Sat_q used in dae_f.
-    psi2d = Vq + Ra_n*Iq + Xdpp_sat*Id;  % E''q
-    psi2q = Vd + Ra_n*Id - Xqpp_sat*Iq;  % E''d
-    Eqp = psi2d + Id*(Xdp_n-Xdpp_n)/Satd0;
-    Edp = psi2q - Iq*(Xqp_n-Xqpp_n)/Satq0;
-    init.Efd(k) = Satd0*psi2d + Id*(Xd_n-Xdpp_n);
+    if is_flux_realization(opts)
+        % Additive flux-linkage realization used by the book-era GENROU
+        % formulation. Solve the local steady-state machine equations with
+        % the PF terminal phasors fixed; no reference eigenvalue is used.
+        z0 = [delta; ...
+            Vq + Ra_n*Iq + Xdp_n*Id; ...
+            (Xq_n-Xqp_n)*Iq; ...
+            Vq + Ra_n*Iq + Xl_n*Id; ...
+            (Xq_n-Xl_n)*Iq; ...
+            Vq + Ra_n*Iq + Xd_n*Id; ...
+            real(Vt*conj(It_net)) + Ra_n*abs(It_net)^2];
+        z = solve_flux_machine_equilibrium(z0, Vt, It_net, R, gamma, ...
+            zb_scale, opts);
+        delta=z(1); Eqp=z(2); Edp=z(3); psi2d=z(4); psi2q=z(5);
+        init.delta(k)=delta;
+        init.Efd(k)=z(6);
+        [Id,Iq]=stability.kundur_book_dq(It_net,delta);
+        [Vd,Vq]=stability.kundur_book_dq(Vt,delta);
+        init.Id(k)=Id; init.Iq(k)=Iq; init.Vd(k)=Vd; init.Vq(k)=Vq;
+    else
+        % Direct GENTPJ steady-state initialization. These assignments make
+        % f(3:6)=0 under the same saturation used in dae_f.
+        psi2d = Vq + Ra_n*Iq + Xdpp_sat*Id;  % E''q
+        psi2q = Vd + Ra_n*Id - Xqpp_sat*Iq;  % E''d
+        Eqp = psi2d + Id*(Xdp_n-Xdpp_n)/Satd0;
+        Edp = psi2q - Iq*(Xqp_n-Xqpp_n)/Satq0;
+        init.Efd(k) = Satd0*psi2d + Id*(Xd_n-Xdpp_n);
+    end
     init.Eqpi(k)=Eqp; init.Edpi(k)=Edp;
     init.Psipd(k)=psi2d; init.Psipq(k)=psi2q;   % store E''q, E''d
 
@@ -301,11 +344,17 @@ for k = 1:ng
     init.state_names{(k-1)*6+2} = sprintf('\\omega_{%s}', M.units(k).gen_id);
     init.state_names{(k-1)*6+3} = sprintf("E'_{q,%s}", M.units(k).gen_id);
     init.state_names{(k-1)*6+4} = sprintf("E'_{d,%s}", M.units(k).gen_id);
-    init.state_names{(k-1)*6+5} = sprintf("E''_{q,%s}", M.units(k).gen_id);
-    init.state_names{(k-1)*6+6} = sprintf("E''_{d,%s}", M.units(k).gen_id);
+    if is_flux_realization(opts)
+        init.state_names{(k-1)*6+5} = sprintf('\\psi_{1d,%s}', M.units(k).gen_id);
+        init.state_names{(k-1)*6+6} = sprintf('-\\psi_{2q,%s}', M.units(k).gen_id);
+    else
+        init.state_names{(k-1)*6+5} = sprintf("E''_{q,%s}", M.units(k).gen_id);
+        init.state_names{(k-1)*6+6} = sprintf("E''_{d,%s}", M.units(k).gen_id);
+    end
     init.H_sys(k) = M.units(k).H * (Sm/Sbase);
 end
 init.x0 = x0; init.ng = ng; init.w0 = w0;
+init.case_data = case_data;
 init.zb_scale = zb_scale;
 
 Ynet = build_network_admittance(pf, case_data, M, init.opts);
@@ -401,9 +450,8 @@ Te=zeros(ng,1); Id_o=zeros(ng,1); Iq_o=zeros(ng,1); Vd_o=zeros(ng,1); Vq_o=zeros
 for k=1:ng
     [Id,Iq,Vd,Vq,~,~,Xdpp_sat,Xqpp_sat] = solve_stator( ...
         x,y,init,k,R,gamma,zb_scale);
-    Eqpp = x((k-1)*6+5); Edpp = x((k-1)*6+6);
-    % GENTPJ torque (MathWorks): E''d*Id + E''q*Iq - (X''d_sat - X''q_sat)*Id*Iq
-    Te(k)=Edpp*Id + Eqpp*Iq - (Xdpp_sat-Xqpp_sat)*Id*Iq;
+    Ra_n=R.Ra*zb_scale;
+    Te(k)=Vd*Id+Vq*Iq+Ra_n*(Id^2+Iq^2);
     Id_o(k)=Id; Iq_o(k)=Iq; Vd_o(k)=Vd; Vq_o(k)=Vq;
 end
 end
@@ -420,7 +468,14 @@ V_bus = complex(zeros(nb,1),zeros(nb,1));
 for b=1:nb; V_bus(b)=complex(y(2*b-1),y(2*b)); end
 Vt = V_bus(init.bus_idx(k));
 delta=x((k-1)*6+1);
-Eqpp=x((k-1)*6+5); Edpp=x((k-1)*6+6);
+if is_flux_realization(init.opts)
+    Eqp=x((k-1)*6+3); Edp=x((k-1)*6+4);
+    psi1d=x((k-1)*6+5); psi2q=x((k-1)*6+6);
+    Eqpp=gamma.d1*Eqp+(1-gamma.d1)*psi1d;
+    Edpp=gamma.q1*Edp+(1-gamma.q1)*psi2q;
+else
+    Eqpp=x((k-1)*6+5); Edpp=x((k-1)*6+6);
+end
 Ra_n=R.Ra*zb_scale; Xl_n=R.Xl*zb_scale;
 Xdpp_n=R.Xdpp*zb_scale; Xqpp_n=R.Xqpp*zb_scale;
 [Vd,Vq]=stability.kundur_book_dq(Vt,delta);
@@ -429,6 +484,10 @@ rhs_d=Vd-Edpp; rhs_q=Vq-Eqpp;
 det0=Xdpp_n*Xqpp_n+Ra_n*Ra_n;
 Id=(-Ra_n*rhs_d-Xqpp_n*rhs_q)/det0;
 Iq=(Xdpp_n*rhs_d-Ra_n*rhs_q)/det0;
+if is_flux_realization(init.opts)
+    Satd=1; Satq=1; Xdpp_sat=Xdpp_n; Xqpp_sat=Xqpp_n;
+    return;
+end
 for it=1:100
     [Satd,Satq]=book_saturation_factors_stator(Vd,Vq,init,R,zb_scale,Id,Iq);
     Xdpp_sat=Xl_n+(Xdpp_n-Xl_n)/Satd;
@@ -490,21 +549,88 @@ for k=1:ng
     omega_dev=x((k-1)*6+2);
     Eqp=x((k-1)*6+3); Edp=x((k-1)*6+4);
     Eqpp=x((k-1)*6+5); Edpp=x((k-1)*6+6);
-    [Id,Iq,~,~,Satd,Satq,Xdpp_sat,Xqpp_sat] = solve_stator( ...
+    [Id,Iq,Vd,Vq,Satd,Satq,Xdpp_sat,Xqpp_sat] = solve_stator( ...
         x,y,init,k,R,gamma,zb_scale);
-    % Te = psi_d*Iq - psi_q*Id using the saturated stator fluxes.
-    Te=Edpp*Id+Eqpp*Iq-(Xdpp_sat-Xqpp_sat)*Id*Iq;
+    Te=Vd*Id+Vq*Iq+R.Ra*zb_scale*(Id^2+Iq^2);
     if isfield(init,'Tm') && ~isempty(init.Tm); Tm=init.Tm(k); else
         Tm=init.Vq(k)*init.Iq(k)+init.Vd(k)*init.Id(k); end
     H=init.H_sys(k); D=M.units(k).D*(Sm/Sbase);
     f((k-1)*6+1)=omega_dev*w0;
     f((k-1)*6+2)=(Tm-Te-D*omega_dev)/(2*H);
-    % Satd/Satq already include the leading one: Satd=1+psi_I/psi_at.
-    f((k-1)*6+3)=(init.Efd(k)+Satd*(Eqpp*c_d-Eqp*d_d))/TC.Tpd0;
-    f((k-1)*6+4)=Satq*(Edpp*c_q-Edp*d_q)/TC.Tpq0;
-    f((k-1)*6+5)=(Satd*(Eqp-Eqpp)-Id*(Xdp_n-Xdpp_n))/TC.Tppd0;
-    f((k-1)*6+6)=(Satq*(Edp-Edpp)+Iq*(Xqp_n-Xqpp_n))/TC.Tppq0;
+    if is_flux_realization(init.opts)
+        psi1d=Eqpp; psi2q=Edpp;
+        I1d=gamma.d2*(psi1d+(Xdp_n-R.Xl*zb_scale)*Id-Eqp);
+        I2q=gamma.q2*(-psi2q+(Xqp_n-R.Xl*zb_scale)*Iq+Edp);
+        [Sfd,S1q]=flux_saturation_terms(Vd,Vq,Id,Iq,R,zb_scale,init.opts);
+        f((k-1)*6+3)=(-Eqp-(Xd_n-Xdp_n)*(Id-I1d)-Sfd+init.Efd(k))/TC.Tpd0;
+        f((k-1)*6+4)=(-Edp+(Xq_n-Xqp_n)*(Iq-I2q)+S1q)/TC.Tpq0;
+        f((k-1)*6+5)=(-psi1d+Eqp-(Xdp_n-R.Xl*zb_scale)*Id)/TC.Tppd0;
+        f((k-1)*6+6)=(-psi2q+Edp+(Xqp_n-R.Xl*zb_scale)*Iq)/TC.Tppq0;
+    else
+        % Satd/Satq already include the leading one: Satd=1+psi_I/psi_at.
+        f((k-1)*6+3)=(init.Efd(k)+Satd*(Eqpp*c_d-Eqp*d_d))/TC.Tpd0;
+        f((k-1)*6+4)=Satq*(Edpp*c_q-Edp*d_q)/TC.Tpq0;
+        f((k-1)*6+5)=(Satd*(Eqp-Eqpp)-Id*(Xdp_n-Xdpp_n))/TC.Tppd0;
+        f((k-1)*6+6)=(Satq*(Edp-Edpp)+Iq*(Xqp_n-Xqpp_n))/TC.Tppq0;
+    end
 end
+end
+
+function z = solve_flux_machine_equilibrium(z0,Vt,It,R,gamma,zb_scale,opts)
+solver_options=optimoptions('fsolve','Display','off','FunctionTolerance',1e-12, ...
+    'OptimalityTolerance',1e-12,'StepTolerance',1e-13, ...
+    'MaxIterations',200,'MaxFunctionEvaluations',3000);
+[z,residual,exitflag]=fsolve(@local_residual,z0,solver_options);
+if exitflag<=0 || norm(residual,inf)>1e-9
+    error('sauer_pai_flux_ssa:machineEquilibrium', ...
+        'Local flux-state equilibrium failed (exitflag %d, residual %.3e).', ...
+        exitflag,norm(residual,inf));
+end
+    function r=local_residual(q)
+        delta=q(1); Eqp=q(2); Edp=q(3); psi1d=q(4); psi2q=q(5);
+        Efd=q(6); Tm=q(7);
+        Xd=R.Xd*zb_scale; Xdp=R.Xdp*zb_scale;
+        Xq=R.Xq*zb_scale; Xqp=R.Xqp*zb_scale;
+        Xl=R.Xl*zb_scale; Xdpp=R.Xdpp*zb_scale;
+        Xqpp=R.Xqpp*zb_scale; Ra=R.Ra*zb_scale;
+        Eqpp=gamma.d1*Eqp+(1-gamma.d1)*psi1d;
+        Edpp=gamma.q1*Edp+(1-gamma.q1)*psi2q;
+        [Vd,Vq]=stability.kundur_book_dq(Vt,delta);
+        rd=Vd-Edpp; rq=Vq-Eqpp; det=Xdpp*Xqpp+Ra^2;
+        Id=(-Ra*rd-Xqpp*rq)/det; Iq=(Xdpp*rd-Ra*rq)/det;
+        Ig=stability.kundur_book_network_current(Id,Iq,delta);
+        I1d=gamma.d2*(psi1d+(Xdp-Xl)*Id-Eqp);
+        I2q=gamma.q2*(-psi2q+(Xqp-Xl)*Iq+Edp);
+        [Sfd,S1q]=flux_saturation_terms(Vd,Vq,Id,Iq,R,zb_scale,opts);
+        Te=Vd*Id+Vq*Iq+Ra*(Id^2+Iq^2);
+        r=[real(Ig-It);imag(Ig-It); ...
+            -Eqp-(Xd-Xdp)*(Id-I1d)-Sfd+Efd; ...
+            -Edp+(Xq-Xqp)*(Iq-I2q)+S1q; ...
+            -psi1d+Eqp-(Xdp-Xl)*Id; ...
+            -psi2q+Edp+(Xqp-Xl)*Iq; Tm-Te];
+    end
+end
+
+function [Sfd,S1q] = flux_saturation_terms(Vd,Vq,Id,Iq,R,zb_scale,opts)
+Sfd=0; S1q=0;
+if ~(isfield(opts,'use_saturation') && opts.use_saturation)
+    return;
+end
+Xl=R.Xl*zb_scale; Ra=R.Ra*zb_scale;
+psi_d=Vq+Ra*Iq+Xl*Id;
+psi_q=Vd+Ra*Id-Xl*Iq;
+psi=hypot(psi_d,psi_q);
+p=opts.sat_params;
+if psi<=p.PsiT1
+    return;
+end
+psi_I=p.Asat*exp(p.Bsat*(psi-p.PsiT1));
+Sfd=(psi_d/psi)*psi_I;
+S1q=(psi_q/psi)*((R.Xq-R.Xl)/(R.Xd-R.Xl))*psi_I;
+end
+
+function tf = is_flux_realization(opts)
+tf=isfield(opts,'realization') && strcmpi(opts.realization,'flux_linkage_additive');
 end
 
 % =========================================================================
@@ -548,8 +674,7 @@ for b=1:nb; V_bus(b)=complex(y(2*b-1),y(2*b)); end
 Inet = Ynet * V_bus;
 g = zeros(2*nb,1);
 for b=1:nb; g(2*b-1)=-real(Inet(b)); g(2*b)=-imag(Inet(b)); end
-case_data = cases.kundur_ex126_book_case();
-BD = case_data.bus_data;
+BD = init.case_data.bus_data;
 load_model = 'cc_p_cz_q';
 if isfield(init,'opts') && isfield(init.opts,'load_model') && ~isempty(init.opts.load_model)
     load_model = lower(init.opts.load_model);

@@ -14,7 +14,7 @@ function ps = run_psat_rts24(psat_case)
 %
 %   REFERENCE-ONLY runner -- never used by production solvers.
 
-global Settings Bus Varout Varname DAE clpsat Syn Fault Line
+global Settings Bus Varout Varname DAE clpsat Syn Fault Line PQ Shunt SW PV
 
 psat_root = 'C:/Users/User/Downloads/psat-2.1.11-mat/psat';
 if ~exist(psat_root,'dir')
@@ -90,7 +90,41 @@ end
 
 % Pe generator bus mapping: PSAT variable names use machine INDEX
 % (p_Syn_1, p_Syn_2, ...), NOT bus ID. Map through Syn.con(:,1).
+% Pe generator bus mapping: PSAT variable names use machine INDEX
+% (p_Syn_1, p_Syn_2, ...), NOT bus ID. Map through Syn.con(:,1).
 ps.pe_bus = Syn.con(:,1);
+
+% --- Export diagnostic quantities for Pe divergence investigation ---------
+% Syn internal parameters (after setup + base conversion)
+% Only fields accessible through @SYclass/subsref.m are exported.
+ps.Syn_con_post = Syn.con;       % post-base-conversion Syn.con
+ps.Syn_pm0 = Syn.pm0;            % mechanical power initial
+ps.Syn_Pg0 = Syn.Pg0;           % electrical power initial
+ps.Syn_vf0 = Syn.vf0;           % field voltage initial
+
+% Initial dynamic states: extract from FIRST row of Varout (t=0),
+% NOT from DAE.x (which is the FINAL state after TS).
+ps.init_delta = Varout.vars(1, dc).';  % rad, transposed to column
+ps.init_omega = Varout.vars(1, oc).';   % pu
+ps.init_p     = Varout.vars(1, pcc).';   % electrical power (pu)
+ps.init_Vbus  = Varout.vars(1, vc).';    % bus voltage magnitudes
+
+% Initial bus voltages (from PF, used for TS init)
+% Extract from Varout first row too (bus voltage magnitude columns)
+ps.init_Vm = Varout.vars(1, vc).';      % bus voltage magnitudes
+
+% Ybus from PSAT (pre-fault, after build_y)
+ps.Ybus = full(Line.Y);           % pre-fault admittance matrix
+
+% PQ load data (after pq2z conversion, if applicable)
+ps.PQ_con = PQ.con;               % PQ load data (post-setup)
+ps.PQ_shunt = PQ.shunt;           % which loads are converted to shunt
+
+% Settings used for TS
+ps.settings_tstep = Settings.tstep;
+ps.settings_method = Settings.method;
+ps.settings_dynmit = Settings.dynmit;
+ps.settings_dyntol = Settings.dyntol;
 
 ps.td_points = numel(Varout.t);
 ps.td_tend   = Varout.t(end);

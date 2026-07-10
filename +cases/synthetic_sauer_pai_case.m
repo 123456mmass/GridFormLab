@@ -62,6 +62,7 @@ c.Tdo=baseTdo(idx); c.Tqo=baseTqo(idx);
 c.KA=20*ones(ng,1); c.TA=0.2*ones(ng,1); c.KE=ones(ng,1);
 c.TE=0.314*ones(ng,1); c.KF=0.063*ones(ng,1); c.TF=0.35*ones(ng,1);
 c.sat_A=0.0039; c.sat_B=1.555;
+c=cases.standardize_study_case(c,'dynamic_benchmark');
 
     function add_branch(i,j,r,x,b)
         y = 1/(r+1i*x);

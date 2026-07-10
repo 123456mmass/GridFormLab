@@ -28,6 +28,8 @@ c=[net('ieee5','IEEE 5-bus',@cases.case_ieee5bus,3,base); ...
 % default.  Users can still request its classical model explicitly.
 c(end).sssa_options=struct('model','emf6');
 c(end).ts_options.model='emf6';
+c(end).ts_options.corrector_mode='fixed';
+c(end).ts_options.corrector_iter=3;
 end
 
 function s=net(id,label,loader,fault_bus,base)

@@ -112,4 +112,5 @@ case_data.machines.units(4).gen_id = 'G4';
 case_data.machines.units(4).bus = 4;
 case_data.machines.units(4).H = 6.175;
 case_data.machines.units(4).D = 0;
+case_data = cases.standardize_case(case_data);
 end

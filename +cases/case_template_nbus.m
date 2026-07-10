@@ -28,4 +28,5 @@ case_data.line_data = [
     205 309 0.05 0.20 0.02;
     101 309 0.08 0.24 0.01
 ];
+case_data = cases.standardize_case(case_data);
 end

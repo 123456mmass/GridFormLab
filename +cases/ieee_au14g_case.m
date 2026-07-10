@@ -20,6 +20,7 @@ c.dyn = parse_dyr_minimal(dyr);
 c.gen_buses = [c.dyn.generators.bus].';
 c.generator_count = numel(c.dyn.generators);
 c.sbase = c.raw.sbase;
+c=cases.standardize_study_case(c,'dynamic_benchmark');
 end
 
 function raw = parse_raw_minimal(path)

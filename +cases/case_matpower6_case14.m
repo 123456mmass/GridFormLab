@@ -67,6 +67,7 @@ case_data.mpc = mpc;
 case_data.reference_solution = struct( ...
     'bus_voltage', mpc.bus(:,8), ...
     'bus_angle_deg', mpc.bus(:,9));
+case_data = cases.standardize_case(case_data);
 end
 
 function case_data = convert_mpc_to_project_case(mpc)

@@ -52,9 +52,13 @@ ps.uvars = uvars;
 % Locate delta_Syn and omega_Syn columns.
 delta_cols = find(~cellfun('isempty',regexpi(uvars,'^delta_Syn_\d')));
 omega_cols = find(~cellfun('isempty',regexpi(uvars,'^omega_Syn_\d')));
+pe_cols = find(~cellfun('isempty',regexpi(uvars,'^p_Syn_\d+$')));
 ps.delta = Varout.vars(:,delta_cols);   % rad
 ps.omega = Varout.vars(:,omega_cols);   % pu
 ps.delta_bus = Syn.con(:,1);
+ps.Pe_pu = Varout.vars(:,pe_cols);      % generator electrical output, system pu
+ps.Pe_MW = 100*ps.Pe_pu;
+ps.pe_bus = Syn.con(:,1);
 
 % Bus voltage magnitudes during TD (theta_Bus then V_Bus).
 v_cols = nb + (1:nb);  % after angle block? locate explicitly

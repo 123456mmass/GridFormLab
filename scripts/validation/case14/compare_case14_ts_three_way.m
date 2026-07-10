@@ -16,19 +16,30 @@ S = load(fullfile(outdir,'psat_case14_ts_raw.mat'));
 ps = S.ps_save;
 dps = rad2deg(interp1(ps.t, ps.delta, tg, 'linear'));  % PSAT stores delta in rad -> deg
 wps = interp1(ps.t, ps.omega, tg, 'linear');
-vps = interp1(ps.t, ps.Vbus, tg, 'linear');
+peps = 100*interp1(ps.t, ps.Pe_pu, tg, 'linear');
+vps_all = interp1(ps.t, ps.Vbus, tg, 'linear');
 gbus_ps = ps.delta_bus;
 [~,ord] = sort(gbus_ps);
-dps = dps(:,ord); wps = wps(:,ord); vps = vps(:,ord);
+dps = dps(:,ord); wps = wps(:,ord); peps = peps(:,ord);
 gbus_ps = gbus_ps(ord);
+fi_ps = find(ps.bus_ids==4,1);
+vps_fault = vps_all(:,fi_ps);
 
-% --- Ours ---
+% --- Ours: production adaptive/event-aware engine ---
+c_ours = cases.case_matpower6_case14();
 opt = struct('t_end',15.0,'dt',0.01,'fault_bus',4,'t_fault',1.0,'t_clear',1.1, ...
-    'Zf',1i*0.1,'method','trapezoidal','corrector_iter',3,'pm_mode','pgaz','verbose',false);
-res = stability.case14_ts_classical(opt);
+    'Zf',1i*0.1,'method','trapezoidal','corrector_mode','adaptive', ...
+    'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
+    'max_corrector_iter',10,'corrector_failure','error', ...
+    'pm_mode','balanced','model','classical','verbose',false);
+res = stability.ts_simulate(c_ours,opt);
 [~,oo] = sort(res.gen_buses);
-d_ours = rad2deg(res.delta(:,oo)); w_ours = res.omega(:,oo); v_ours = res.Vbus(:,oo);
+d_ours = rad2deg(res.delta(:,oo)); w_ours = res.omega(:,oo);
+pe_ours = res.Pe_MW(:,oo);
 gbus_ours = res.gen_buses(oo);
+if isfield(res,'bus_ids'), bus_ids_ours=res.bus_ids(:); else, bus_ids_ours=res.pf.external_bus_ids(:); end
+fi_ours = find(bus_ids_ours==4,1);
+v_ours_fault = res.Vbus(:,fi_ours);
 
 % --- PGAz ---
 pgaz_root = 'C:/Users/User/Downloads/PGAz1.3 (2)/PGAz1.3';
@@ -40,9 +51,14 @@ TS = pgaz_ts(sys,1e-10,50,optp);
 [~,po] = sort(TS.gen_bus);
 d_pg = interp1(TS.t, TS.delta_deg, tg, 'linear');
 w_pg = interp1(TS.t, TS.omega, tg, 'linear');
-v_pg = interp1(TS.t, TS.Vm, tg, 'linear');
-d_pg = d_pg(:,po); w_pg = w_pg(:,po); v_pg = v_pg(:,po);
+pe_pg = interp1(TS.t, TS.Pe_pu*TS.baseMVA, tg, 'linear');
+v_pg_all = interp1(TS.t, TS.Vm, tg, 'linear');
+d_pg = d_pg(:,po); w_pg = w_pg(:,po); pe_pg = pe_pg(:,po);
 gbus_pg = TS.gen_bus(po);
+v_pg_fault = v_pg_all(:,4);
+
+assert(isequal(gbus_ps(:),gbus_ours(:),gbus_pg(:)), ...
+    'Generator bus mapping differs between PSAT, PGAz and Ours.');
 
 % --- COI frame (equal H=5) ---
 H = 5*ones(5,1);
@@ -57,24 +73,32 @@ d_pg_our = max(abs(drel_pg - drel_our),[],'all');
 w_ps_our = max(abs(wrel_ps - wrel_our),[],'all');
 w_ps_pg  = max(abs(wrel_ps - wrel_pg),[],'all');
 w_pg_our = max(abs(wrel_pg - wrel_our),[],'all');
-v_ps_our = max(abs(vps(:,4) - v_ours(:,4)),[],'all');
-v_ps_pg  = max(abs(vps(:,4) - v_pg(:,4)),[],'all');
-v_pg_our = max(abs(v_pg(:,4) - v_ours(:,4)),[],'all');
+pe_ps_our = max(abs(peps - pe_ours),[],'all');
+pe_ps_pg  = max(abs(peps - pe_pg),[],'all');
+pe_pg_our = max(abs(pe_pg - pe_ours),[],'all');
+v_ps_our = max(abs(vps_fault - v_ours_fault),[],'all');
+v_ps_pg  = max(abs(vps_fault - v_pg_fault),[],'all');
+v_pg_our = max(abs(v_pg_fault - v_ours_fault),[],'all');
 
 out = struct();
 out.max = struct('delta_deg',[d_ps_our d_ps_pg d_pg_our], ...
     'omega_pu',[w_ps_our w_ps_pg w_pg_our], ...
+    'Pe_MW',[pe_ps_our pe_ps_pg pe_pg_our], ...
     'Vm_pu',[v_ps_our v_ps_pg v_pg_our]);
 out.gen_buses = gbus_ours;
 
 % --- PF comparison ---
 pf_ps_ang = ps.pf_angle_deg; pf_ps_v = ps.pf_vmag;
 pf_our = res.pf;
-nb = numel(pf_ps_ang);
 pf_our_v = pf_our.bus_voltage; pf_our_ang = pf_our.bus_angle_deg;
-% PGAz/Ours PF already matched; use ours as PGAz proxy for PF.
-out.pf = struct('max_dV_ps_ours',max(abs(pf_ps_v-pf_our_v)), ...
-    'max_dAng_ps_ours',max(abs(pf_ps_ang-pf_our_ang)));
+pf_pg_v = TS.Vm(1,:).'; pf_pg_ang = TS.Va_deg(1,:).';
+out.pf = struct( ...
+    'max_dV_ps_ours',max(abs(pf_ps_v-pf_our_v)), ...
+    'max_dAng_ps_ours',max(abs(pf_ps_ang-pf_our_ang)), ...
+    'max_dV_ps_pg',max(abs(pf_ps_v-pf_pg_v)), ...
+    'max_dAng_ps_pg',max(abs(pf_ps_ang-pf_pg_ang)), ...
+    'max_dV_pg_ours',max(abs(pf_pg_v-pf_our_v)), ...
+    'max_dAng_pg_ours',max(abs(pf_pg_ang-pf_our_ang)));
 
 % --- Markdown report ---
 fid = fopen(fullfile(outdir,'case14_ts_compare_three_way.md'),'w'); c = onCleanup(@()fclose(fid));
@@ -84,15 +108,17 @@ fprintf(fid,'Model: classical (5 generators at buses 1,2,3,6,8; H=5, D=0, x''d=0
 fprintf(fid,'Rotor angles/speeds compared in the COI frame (inter-machine) because each tool uses a different absolute angle reference (PSAT fixes the slack angle; PGAz/Ours float the COI).\n\n');
 fprintf(fid,'## Power flow\n\n');
 fprintf(fid,'| Pair | Max |dV| (pu) | Max |dAngle| (deg) |\n|---|---:|---:|\n');
-fprintf(fid,'| PSAT vs Ours | %.6g | %.6g |\n\n',out.pf.max_dV_ps_ours,out.pf.max_dAng_ps_ours);
+fprintf(fid,'| PSAT vs Ours | %.6g | %.6g |\n',out.pf.max_dV_ps_ours,out.pf.max_dAng_ps_ours);
+fprintf(fid,'| PSAT vs PGAz | %.6g | %.6g |\n',out.pf.max_dV_ps_pg,out.pf.max_dAng_ps_pg);
+fprintf(fid,'| PGAz vs Ours | %.6g | %.6g |\n\n',out.pf.max_dV_pg_ours,out.pf.max_dAng_pg_ours);
 fprintf(fid,'## Transient stability (COI frame)\n\n');
-fprintf(fid,'| Pair | Max |delta_rel| (deg) | Max |omega_rel| (pu) | Max |Vm_bus4| (pu) |\n|---|---:|---:|---:|\n');
-fprintf(fid,'| PSAT vs Ours | %.6g | %.6g | %.6g |\n',d_ps_our,w_ps_our,v_ps_our);
-fprintf(fid,'| PSAT vs PGAz | %.6g | %.6g | %.6g |\n',d_ps_pg,w_ps_pg,v_ps_pg);
-fprintf(fid,'| PGAz vs Ours | %.6g | %.6g | %.6g |\n\n',d_pg_our,w_pg_our,v_pg_our);
+fprintf(fid,'| Pair | Max |delta_rel| (deg) | Max |omega_rel| (pu) | Max |Pe| (MW) | Max |Vm_bus4| (pu) |\n|---|---:|---:|---:|---:|\n');
+fprintf(fid,'| PSAT vs Ours | %.6g | %.6g | %.6g | %.6g |\n',d_ps_our,w_ps_our,pe_ps_our,v_ps_our);
+fprintf(fid,'| PSAT vs PGAz | %.6g | %.6g | %.6g | %.6g |\n',d_ps_pg,w_ps_pg,pe_ps_pg,v_ps_pg);
+fprintf(fid,'| PGAz vs Ours | %.6g | %.6g | %.6g | %.6g |\n\n',d_pg_our,w_pg_our,pe_pg_our,v_pg_our);
 fprintf(fid,'## Notes\n\n');
-fprintf(fid,'- All three tools reproduce the same PF solution to ~1e-4 (PSAT vs Ours) and ~1e-9 (PGAz vs Ours).\n');
-fprintf(fid,'- Rotor-angle trajectories agree in the COI frame. The remaining PSAT vs Ours/PGAz difference comes from the integration scheme (PSAT full-Newton trapezoidal vs Heun predictor-corrector) and is amplified by the mild post-fault frequency drift (no governor in the classical model).\n');
+fprintf(fid,'- Ours uses the production adaptive/event-aware implicit trapezoidal corrector; PSAT uses its converged trapezoidal Newton iteration; PGAz uses three fixed predictor-corrector iterations.\n');
+fprintf(fid,'- Rotor-angle trajectories are compared in the COI frame, while electrical power and fault-bus voltage retain their physical references.\n');
 fprintf(fid,'- The scenario is angle-stable (inter-machine swings are bounded); the absolute COI drifts because no governor/AGC is modelled.\n');
 
 % --- Plot ---
@@ -106,7 +132,7 @@ grid on; xlabel('time (s)'); ylabel('COI-relative \delta (deg)');
 title('Rotor angle (COI): PGAz solid, Ours dashed'); legend(arrayfun(@(b)sprintf('G@%d',b),gbus_ours,'uni',0),'Location','best');
 nexttile; plot(tg,wrel_our,'-','LineWidth',1.3); hold on; plot(tg,wrel_ps,'--','LineWidth',1.1);
 grid on; xlabel('time (s)'); ylabel('COI-relative \omega (pu)'); title('Speed (COI): Ours solid, PSAT dashed');
-nexttile; plot(tg,v_ours(:,4),'-','LineWidth',1.4); hold on; plot(tg,vps(:,4),'--','LineWidth',1.2); plot(tg,v_pg(:,4),':','LineWidth',1.2);
+nexttile; plot(tg,v_ours_fault,'-','LineWidth',1.4); hold on; plot(tg,vps_fault,'--','LineWidth',1.2); plot(tg,v_pg_fault,':','LineWidth',1.2);
 grid on; xlabel('time (s)'); ylabel('|V| bus 4 (pu)'); title('Fault-bus voltage'); legend('Ours','PSAT','PGAz','Location','best');
 sgtitle(tl,'Case14 TS three-way: PSAT vs PGAz vs Ours (COI frame)');
 exportgraphics(f, fullfile(outdir,'case14_ts_compare_three_way.png'),'Resolution',200); close(f);
@@ -116,6 +142,8 @@ fprintf('\n=== Three-way TS (COI frame) ===\n');
 fprintf('PSAT vs Ours : delta %.6g deg, omega %.6g pu, Vm %.6g pu\n',d_ps_our,w_ps_our,v_ps_our);
 fprintf('PSAT vs PGAz : delta %.6g deg, omega %.6g pu, Vm %.6g pu\n',d_ps_pg,w_ps_pg,v_ps_pg);
 fprintf('PGAz vs Ours : delta %.6g deg, omega %.6g pu, Vm %.6g pu\n',d_pg_our,w_pg_our,v_pg_our);
+fprintf('Pe max error : PSAT/Ours %.6g MW, PSAT/PGAz %.6g MW, PGAz/Ours %.6g MW\n', ...
+    pe_ps_our,pe_ps_pg,pe_pg_our);
 end
 
 function sys = build_pgaz_sys(mfile)

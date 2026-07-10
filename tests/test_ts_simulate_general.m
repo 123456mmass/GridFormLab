@@ -13,7 +13,7 @@ function setupOnce(~)
 end
 
 function test_kundur_flux6_via_general_engine(testCase)
-    % The parameter-driven primitive-flux model must run through the same
+    % The parameter-driven GENTPJ model must run through the same
     % transient-simulation entry point as classical cases.
     case_data = cases.kundur_ex126_book_case();
     ssa = stability.multicase_sssa(case_data);
@@ -25,7 +25,7 @@ function test_kundur_flux6_via_general_engine(testCase)
         't_fault',0.5,'t_clear',0.6,'Zf',[],'method','trapezoidal', ...
         'corrector_mode','fixed','corrector_iter',1,'verbose',false);
     r = stability.ts_simulate(case_data, opt);
-    testCase.verifyEqual(r.model, '6th-order primitive-flux full nonlinear');
+    testCase.verifyEqual(r.model, '6th-order GENTPJ full nonlinear');
     testCase.verifyEqual(numel(r.gen_buses), 4);
     testCase.verifySize(r.delta,[numel(r.t),4]);
     testCase.verifySize(r.omega,size(r.delta));

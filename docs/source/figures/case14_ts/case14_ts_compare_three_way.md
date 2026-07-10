@@ -9,17 +9,19 @@ Rotor angles/speeds compared in the COI frame (inter-machine) because each tool 
 | Pair | Max |dV| (pu) | Max |dAngle| (deg) |
 |---|---:|---:|
 | PSAT vs Ours | 4.49319e-06 | 0.000807331 |
+| PSAT vs PGAz | 4.49319e-06 | 0.000807331 |
+| PGAz vs Ours | 1.55431e-15 | 1.06581e-13 |
 
 ## Transient stability (COI frame)
 
-| Pair | Max |delta_rel| (deg) | Max |omega_rel| (pu) | Max |Vm_bus4| (pu) |
-|---|---:|---:|---:|
-| PSAT vs Ours | 0.628091 | 0.000291613 | 0.00225732 |
-| PSAT vs PGAz | 0.628091 | 0.000291613 | 0.00225732 |
-| PGAz vs Ours | 1.22782e-11 | 5.9952e-15 | 4.11893e-14 |
+| Pair | Max |delta_rel| (deg) | Max |omega_rel| (pu) | Max |Pe| (MW) | Max |Vm_bus4| (pu) |
+|---|---:|---:|---:|---:|
+| PSAT vs Ours | 0.0195881 | 7.5429e-06 | 0.0749563 | 5.40275e-05 |
+| PSAT vs PGAz | 0.628091 | 0.000291613 | 2.45949 | 0.00225732 |
+| PGAz vs Ours | 0.614315 | 0.000291642 | 2.44121 | 0.00226426 |
 
 ## Notes
 
-- All three tools reproduce the same PF solution to ~1e-4 (PSAT vs Ours) and ~1e-9 (PGAz vs Ours).
-- Rotor-angle trajectories agree in the COI frame. The remaining PSAT vs Ours/PGAz difference comes from the integration scheme (PSAT full-Newton trapezoidal vs Heun predictor-corrector) and is amplified by the mild post-fault frequency drift (no governor in the classical model).
+- Ours uses the production adaptive/event-aware implicit trapezoidal corrector; PSAT uses its converged trapezoidal Newton iteration; PGAz uses three fixed predictor-corrector iterations.
+- Rotor-angle trajectories are compared in the COI frame, while electrical power and fault-bus voltage retain their physical references.
 - The scenario is angle-stable (inter-machine swings are bounded); the absolute COI drifts because no governor/AGC is modelled.

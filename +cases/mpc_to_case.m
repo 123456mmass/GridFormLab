@@ -38,4 +38,5 @@ case_data.generator_buses = gen(gen(:,8)~=0,1);
 case_data.bus_names = [];
 if isfield(mpc,'bus_name'), case_data.bus_names = mpc.bus_name; end
 case_data.mpc = mpc;
+case_data = cases.standardize_case(case_data);
 end

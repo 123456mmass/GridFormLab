@@ -6,11 +6,21 @@ if nargin < 1 || isempty(case_data)
 end
 if nargin < 2 || isempty(options), options=struct(); end
 
-if isfield(case_data,'bus_data') && isfield(case_data,'machines') && ...
+requested_model='';
+if isfield(options,'model'), requested_model=lower(char(options.model)); end
+
+if ~strcmp(requested_model,'classical') && ...
+        isfield(case_data,'bus_data') && isfield(case_data,'machines') && ...
         isfield(case_data.machines,'reactances') && ...
         isfield(case_data.machines.reactances,'Xdpp')
-    result=stability.synchronous_flux_ssa(case_data,options);
-    result.metadata.plugin='primitive_flux_sixth_order';
+    model='flux6'; if isfield(options,'model'), model=lower(char(options.model)); end
+    if any(strcmp(model,{'emf6','kundur6'}))
+        result=stability.synchronous_emf6_ssa(case_data,options);
+        result.metadata.plugin='operational_emf_sixth_order';
+    else
+        result=stability.synchronous_flux_ssa(case_data,options);
+        result.metadata.plugin='primitive_flux_sixth_order';
+    end
 elseif all(isfield(case_data,{'Ybus','V','theta','gen_buses','Xd','Xdp'}))
     lin=stability.sauer_pai_linearization(case_data);
     ng=lin.ng; ns=lin.ns;
@@ -25,6 +35,10 @@ elseif all(isfield(case_data,{'Ybus','V','theta','gen_buses','Xd','Xdp'}))
             'benchmark',char(case_data.name)));
     result=stability.multimachine_ssa(model);
     result.linearization=lin;
+elseif isfield(case_data,'schema_version') && ...
+        strcmp(case_data.schema_version,'power_case/1.0')
+    result=stability.classical_sssa(case_data,options);
+    result.metadata.plugin='classical_network_linearization';
 else
     error('multicase_sssa:unsupportedCase', ...
         'No SSSA model plugin recognizes this case schema.');

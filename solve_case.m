@@ -253,8 +253,8 @@ tl=tiledlayout(fig,2,2,'Padding','compact','TileSpacing','compact');
 
 ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 for k=1:ng, plot(ax,t,delta_deg(:,k),'LineWidth',1.4,'Color',colors(k,:)); end
-mark_fault(ax,r); xlabel(ax,'Time (s)'); ylabel(ax,'Delta delta (deg)');
-title(ax,'Rotor-angle deviations'); legend(ax,labels,'Location','best');
+mark_fault(ax,r); xlabel(ax,'Time (s)'); ylabel(ax,'Rotor angle (deg)');
+title(ax,'Rotor angle'); legend(ax,labels,'Location','best');
 
 ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 for k=1:ng, plot(ax,t,wd(:,k),'LineWidth',1.3,'Color',colors(k,:)); end

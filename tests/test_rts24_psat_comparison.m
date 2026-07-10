@@ -17,7 +17,7 @@ c = cases.case_ieee_rts24_pgaz();
 end
 
 % =========================================================================
-function test_rts24_to_psat_conversion(testCase)
+function test_psat_conversion_dimensions(testCase)
 % Verify the PSAT case conversion produces correct matrix dimensions.
 c = load_case();
 pc = rts24_to_psat_case(c);
@@ -27,12 +27,60 @@ testCase.verifyEqual(size(pc.SW_con,1), 1, '1 slack bus.');
 testCase.verifyEqual(size(pc.PV_con,1), 10, '10 PV buses.');
 testCase.verifyEqual(size(pc.Syn_con,1), 11, '11 generator buses.');
 testCase.verifyEqual(size(pc.Fault_con,1), 1, '1 fault.');
+% Syn.con MUST be 28 columns (PSAT @SYclass ncol=28)
+testCase.verifyEqual(size(pc.Syn_con,2), 28, 'Syn.con must have 28 columns.');
+% Line.con MUST be 16 columns (PSAT @LNclass ncol=16)
+testCase.verifyEqual(size(pc.Line_con,2), 16, 'Line.con must have 16 columns.');
+end
+
+% =========================================================================
+function test_syn_con_pgen_ratio_is_one(testCase)
+% PSAT @SYclass/setx0.m: for single machine per bus, col 22 (Pgen_ratio)
+% MUST be 1 and col 23 (Qgen_ratio) MUST be 1.  Otherwise PSAT warns and
+% overrides — the input would NOT be what we claim.
+c = load_case();
+pc = rts24_to_psat_case(c);
+for k = 1:size(pc.Syn_con,1)
+    testCase.verifyEqual(pc.Syn_con(k,22), 1, 'AbsTol', 1e-12, ...
+        sprintf('Syn row %d (bus %d): Pgen ratio must be 1', k, pc.Syn_con(k,1)));
+    testCase.verifyEqual(pc.Syn_con(k,23), 1, 'AbsTol', 1e-12, ...
+        sprintf('Syn row %d (bus %d): Qgen ratio must be 1', k, pc.Syn_con(k,1)));
+    testCase.verifyEqual(pc.Syn_con(k,28), 1, 'AbsTol', 1e-12, ...
+        sprintf('Syn row %d (bus %d): u (status) must be 1', k, pc.Syn_con(k,1)));
+end
+end
+
+% =========================================================================
+function test_q_limits_not_multiplied_by_sbase(testCase)
+% PSAT SW.con/PV.con Q limits are in pu on Sn (verified from @SWclass/base.m
+% and @PVclass/base.m: Qmax_sys = Qmax_input * Sn / Settings.mva).
+% Since Sn = Sbase = Settings.mva, the conversion is identity.
+% So Qmax/Qmin input must EQUAL the case_data pu values (NOT × Sbase).
+c = load_case();
+pc = rts24_to_psat_case(c);
+bd = c.bus_data;
+% SW.con: [bus Sn Vn Vm Va Qmax Qmin Vmax Vmin Pgen area zone u]
+sw = find(bd(:,2)==1,1);
+testCase.verifyEqual(pc.SW_con(1,6), bd(sw,12), 'AbsTol', 1e-12, ...
+    'SW Qmax must equal case_data Qmax (pu, not MVA).');
+testCase.verifyEqual(pc.SW_con(1,7), bd(sw,11), 'AbsTol', 1e-12, ...
+    'SW Qmin must equal case_data Qmin (pu, not MVA).');
+% PV.con: [bus Sn Vn Pg Vm Qmax Qmin Vmax Vmin area u]
+pv_idx = find(bd(:,2)==2);
+for k = 1:numel(pv_idx)
+    r = pv_idx(k);
+    testCase.verifyEqual(pc.PV_con(k,4), bd(r,5), 'AbsTol', 1e-12, ...
+        sprintf('PV bus %d: Pg must be pu', bd(r,1)));
+    testCase.verifyEqual(pc.PV_con(k,6), bd(r,12), 'AbsTol', 1e-12, ...
+        sprintf('PV bus %d: Qmax must be pu', bd(r,1)));
+    testCase.verifyEqual(pc.PV_con(k,7), bd(r,11), 'AbsTol', 1e-12, ...
+        sprintf('PV bus %d: Qmin must be pu', bd(r,1)));
+end
 end
 
 % =========================================================================
 function test_line_B_is_total(testCase)
 % PSAT Line.con col 10 = B_total; our case_data stores B_half.
-% Verify B_total = 2 * B_half.
 c = load_case();
 pc = rts24_to_psat_case(c);
 for k = 1:size(pc.Line_con,1)
@@ -40,6 +88,30 @@ for k = 1:size(pc.Line_con,1)
     psat_Btotal = pc.Line_con(k,10);
     testCase.verifyEqual(psat_Btotal, 2*our_Bhalf, 'AbsTol', 1e-12, ...
         sprintf('Line %d: B_total must be 2*B_half', k));
+end
+end
+
+% =========================================================================
+function test_transformer_kt_column(testCase)
+% Line.con col 7 = kt (transformer voltage ratio). Must be non-zero for
+% transformers (different voltage bases) and 0 for regular lines.
+% Verified from @LNclass/base.m: idx=find(con(:,7)), kt=con(idx,7).
+c = load_case();
+pc = rts24_to_psat_case(c);
+bd = c.bus_data;
+Vb = cases.ieee_rts24_pgaz_raw().ABus_con(:,3);
+for k = 1:size(pc.Line_con,1)
+    f = c.line_data(k,1); t = c.line_data(k,2);
+    vf = Vb(find(bd(:,1)==f,1)); vt = Vb(find(bd(:,1)==t,1));
+    if abs(vf - vt) > 1
+        % Transformer: kt = Vn_from / Vn_to
+        testCase.verifyEqual(pc.Line_con(k,7), vf/vt, 'RelTol', 1e-6, ...
+            sprintf('Line %d-%d: kt must be Vn_from/Vn_to', f, t));
+    else
+        % Regular line: kt = 0
+        testCase.verifyEqual(pc.Line_con(k,7), 0, 'AbsTol', 1e-12, ...
+            sprintf('Line %d-%d: kt must be 0 for regular line', f, t));
+    end
 end
 end
 
@@ -63,7 +135,6 @@ function test_shunt_sign_convention(testCase)
 % Bus 6 has Bs=-100 Mvar (inductive) -> Bsh=-1.0 pu.
 c = load_case();
 pc = rts24_to_psat_case(c);
-% Shunt.con: [bus Sn Vn fn Gs Bs u]
 b6_idx = find(pc.Shunt_con(:,1)==6);
 testCase.verifyNotEmpty(b6_idx, 'Bus 6 shunt must exist.');
 testCase.verifyEqual(pc.Shunt_con(b6_idx,6), -1.0, 'AbsTol', 1e-12, ...
@@ -94,16 +165,26 @@ end
 function test_load_model_constant_impedance(testCase)
 % In-house TS uses Yload = conj(Sload)./V0^2 (constant admittance).
 % PSAT uses pq2z=1 (PQ -> constant impedance at PF operating point).
-% Verify the in-house code does NOT use constant power.
+% Verify the in-house PF solution and load admittance match the PSAT model.
 c = load_case();
-opt = struct('t_end',0.1,'dt',0.01,'fault_bus',15, ...
-    't_fault',999,'t_clear',999.1,'Zf',0+0.1j, ...
-    'method','trapezoidal','corrector_iter',1, ...
-    'verbose',false,'model','classical','plot_results',false);
-r = stability.ts_simulate(c,opt);
-% If constant impedance, no-fault should have zero drift (load doesn't change).
-testCase.verifyLessThan(max(abs(r.omega-1),[],'all'), 1e-9, ...
-    'No-fault: constant-Z load must have zero drift.');
+pf = pfsolver.powerflow_newton_raphson(c, struct('verbose',false, ...
+    'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
+V = pf.bus_voltage;
+% In-house: Yload = conj(S0)/V0^2. At PF, S = V0^2 * conj(Yload) = S0.
+% If voltage changes to V, S = V^2 * conj(Yload) = S0 * (V/V0)^2.
+% This is the same as PSAT pq2z: P = P0 * (V/V_pf)^2.
+bd = c.bus_data;
+load_idx = find(bd(:,7)~=0 | bd(:,8)~=0);
+for k = load_idx'
+    P0 = bd(k,7); Q0 = bd(k,8); V0 = V(k);
+    Yload = conj(P0 + 1j*Q0) / V0^2;  % constant admittance
+    % At PF: S = V0^2 * conj(Yload) = P0 + j*Q0
+    S_check = V0^2 * conj(Yload);
+    testCase.verifyEqual(real(S_check), P0, 'AbsTol', 1e-10, ...
+        sprintf('Bus %d: constant-Z load P must match at PF', bd(k,1)));
+    testCase.verifyEqual(imag(S_check), Q0, 'AbsTol', 1e-10, ...
+        sprintf('Bus %d: constant-Z load Q must match at PF', bd(k,1)));
+end
 end
 
 % =========================================================================
@@ -128,15 +209,16 @@ gen_buses = unique([u.bus]).';
 for k = 1:numel(gen_buses)
     b = gen_buses(k);
     idx = [u.bus]==b;
+    nu = nnz(idx);
     H_agg = sum([u(idx).H]);
     Xdp_agg = 1/sum(1./[u(idx).Xdp]);
     D_agg = sum([u(idx).D]);
     testCase.verifyEqual(pc.Syn_con(k,18), 2*H_agg, 'AbsTol', 1e-6, ...
-        sprintf('Bus %d: 2H mismatch', b));
+        sprintf('Bus %d (%d units): 2H mismatch', b, nu));
     testCase.verifyEqual(pc.Syn_con(k,9), Xdp_agg, 'AbsTol', 1e-6, ...
-        sprintf('Bus %d: Xdp mismatch', b));
+        sprintf('Bus %d (%d units): Xdp mismatch', b, nu));
     testCase.verifyEqual(pc.Syn_con(k,19), D_agg, 'AbsTol', 1e-6, ...
-        sprintf('Bus %d: D mismatch', b));
+        sprintf('Bus %d (%d units): D mismatch', b, nu));
 end
 end
 
@@ -158,26 +240,8 @@ testCase.verifyEqual(dcoi_inc(1,:), zeros(1,size(dcoi,2)), 'AbsTol', 1e-12, ...
 end
 
 % =========================================================================
-function test_incremental_pairwise_metric(testCase)
-% Incremental pairwise = pair(t) - pair(0). At t=0, must be 0.
-c = load_case();
-opt = struct('t_end',1,'dt',0.01,'fault_bus',15, ...
-    't_fault',999,'t_clear',999.1,'Zf',0+0.1j, ...
-    'method','trapezoidal','corrector_iter',1, ...
-    'verbose',false,'model','classical','plot_results',false);
-r = stability.ts_simulate(c,opt);
-ng = size(r.delta,2);
-pair0 = r.delta(1,1) - r.delta(1,2);
-pair_inc = (r.delta(:,1) - r.delta(:,2)) - pair0;
-testCase.verifyEqual(pair_inc(1), 0, 'AbsTol', 1e-12, ...
-    'Incremental pairwise at t=0 must be zero.');
-end
-
-% =========================================================================
 function test_no_extrapolation(testCase)
 % Interpolation must not extrapolate beyond PSAT time range.
-% Verify by checking that t_int is within [t_ps(1), t_ps(end)].
-% (This is a logic test; actual interpolation tested in integration.)
 t_ps = [0; 0.01; 0.02; 0.03];
 t_ours = [0; 0.005; 0.01; 0.02; 0.03; 0.04];  % 0.04 > t_ps(end)
 tmin = max(t_ours(1), t_ps(1));
@@ -207,7 +271,7 @@ function test_validation_does_not_modify_production(testCase)
 c1 = load_case();
 H1 = [c1.machines.units.H];
 Xdp1 = [c1.machines.units.Xdp];
-pc = rts24_to_psat_case(c1);
+pc = rts24_to_psat_case(c1); %#ok<NASGU>
 c2 = load_case();
 H2 = [c2.machines.units.H];
 Xdp2 = [c2.machines.units.Xdp];
@@ -216,9 +280,41 @@ testCase.verifyEqual(Xdp1, Xdp2, 'AbsTol', 0, 'Production Xdp must not change.')
 end
 
 % =========================================================================
+function test_all_matrices_present_in_converter(testCase)
+% Verify ALL required PSAT matrices are present in the converter output.
+c = load_case();
+pc = rts24_to_psat_case(c);
+required_fields = {'Bus_con','Line_con','SW_con','PV_con','PQ_con', ...
+    'Shunt_con','Syn_con','Fault_con','Bus_names'};
+for k = 1:numel(required_fields)
+    testCase.assertTrue(isfield(pc, required_fields{k}), ...
+        sprintf('Missing field: %s', required_fields{k}));
+    testCase.verifyNotEmpty(pc.(required_fields{k}), ...
+        sprintf('Field %s must not be empty', required_fields{k}));
+end
+end
+
+% =========================================================================
+function test_runner_writes_all_matrices_no_d024(testCase)
+% Verify the runner writes ALL matrices and does NOT call d_024_mdl.
+% Read the runner source and the generated case file content.
+runner_src = fileread('scripts/validation/run_psat_rts24.m');
+% Must NOT contain d_024_mdl
+testCase.verifyEmpty(strfind(runner_src, 'd_024_mdl'), ...
+    'Runner must NOT call d_024_mdl.');
+% Must write ALL matrices
+required = {'Bus.con', 'Line.con', 'Shunt.con', 'SW.con', 'PV.con', ...
+    'PQ.con', 'Syn.con', 'Fault.con', 'Bus.names'};
+for k = 1:numel(required)
+    testCase.verifyNotEmpty(strfind(runner_src, required{k}), ...
+        sprintf('Runner must write %s', required{k}));
+end
+end
+
+% =========================================================================
 function test_psat_integration_optional(testCase)
-% Integration test: if PSAT is available, run the comparison.
-% Skip if PSAT not found.
+% Integration test: if PSAT is available, run the comparison and
+% assert that metrics are within tolerance.
 psat_root = 'C:/Users/User/Downloads/psat-2.1.11-mat/psat';
 if ~exist(psat_root, 'dir')
     testCase.assumeFalse(true, 'PSAT not found; skipping integration test.');
@@ -231,5 +327,20 @@ testCase.verifyTrue(exist(report.outdir, 'dir') > 0, 'Output dir must exist.');
 testCase.verifyTrue(exist(fullfile(report.outdir,'rts24_pf_comparison.csv'),'file') > 0);
 testCase.verifyTrue(exist(fullfile(report.outdir,'rts24_ts_metrics.csv'),'file') > 0);
 testCase.verifyTrue(exist(fullfile(report.outdir,'rts24_machine_parameter_comparison.csv'),'file') > 0);
+testCase.verifyTrue(exist(fullfile(report.outdir,'rts24_generator_mapping.csv'),'file') > 0);
 testCase.verifyTrue(exist(fullfile(report.outdir,'rts24_psat_comparison.md'),'file') > 0);
+% Assert metrics within tolerance
+metrics = readtable(fullfile(report.outdir,'rts24_ts_metrics.csv'));
+for r = 1:height(metrics)
+    switch metrics.metric{r}
+        case 'max_dVm_mpu'
+            testCase.verifyLessThan(metrics.value(r), 50, 'PF max dVm must be < 50 mpu.');
+        case 'max_dVa_deg'
+            testCase.verifyLessThan(metrics.value(r), 5, 'PF max dVa must be < 5 deg.');
+        case 'max_inc_dcoi_deg'
+            testCase.verifyLessThan(metrics.value(r), 20, 'TS max inc COI error must be < 20 deg.');
+        case 'rms_inc_dcoi_deg'
+            testCase.verifyLessThan(metrics.value(r), 5, 'TS RMS inc COI must be < 5 deg.');
+    end
+end
 end

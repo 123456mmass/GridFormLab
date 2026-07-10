@@ -1,12 +1,12 @@
 function ps = run_psat_rts24(psat_case)
-%RUN_PSAT_RTS24  Run PSAT PF + TS for RTS-24 cross-validation.
-%   Uses the PSAT d_024_mdl network as base (same IEEE RTS-24 system),
-%   then overlays the in-house Syn.con (classical, aggregated H/D/X'd)
-%   and Fault.con (Zf = 0 + j0.1).  PSAT solves PF and TS independently.
+%RUN_PSAT_RTS24  Run PSAT PF + TS for RTS-24 using ONLY converted matrices.
+%   Writes a COMPLETE, self-contained PSAT case file containing ALL
+%   matrices from rts24_to_psat_case() (Bus.con, Line.con, Shunt.con,
+%   SW.con, PV.con, PQ.con, Syn.con, Fault.con, Bus.names).
+%   Does NOT call any external PSAT case file — all data is from the converter.
 %
-%   Network data agreement: the d_024_mdl line impedances are rounded
-%   versions of the PGAz source data.  The max input difference is
-%   reported in ps.network_diff_max for transparency.
+%   This ensures PSAT solves from the EXACT SAME network input as the
+%   in-house solver — a true apples-to-apples cross-validation.
 %
 %   Load model: Settings.pq2z = 1 converts PQ loads to constant impedance
 %   at the PF operating point, matching the in-house classical TS engine
@@ -23,11 +23,10 @@ end
 addpath(genpath(psat_root));
 old = pwd; cleanup = onCleanup(@() cd(old)); %#ok<NASGU>
 
-% --- Write the combined PSAT case file -------------------------------------
-% Uses d_024_mdl network (verified same IEEE RTS-24) + our Syn/Fault.
+% --- Write the COMPLETE self-contained PSAT case file -----------------------
 tests_dir = fullfile(psat_root, 'tests');
 casefile = fullfile(tests_dir, 'rts24_ours_psat.m');
-write_combined_case(casefile, psat_case);
+write_complete_case(casefile, psat_case);
 
 cd(psat_root);
 command_line_psat = 1; %#ok<NASGU>
@@ -37,9 +36,6 @@ clpsat.mesg = 0; clpsat.readfile = 1; clpsat.pq2z = 1;  % PQ -> constant Z
 runpsat('rts24_ours_psat', tests_dir, 'data');
 
 runpsat('pf');
-
-% --- Report network input difference (after PF setup populates Line struct) ---
-ps.network_diff_max = report_network_diff(Bus.con, Line.con, psat_case);
 
 ps.pf_conv = Settings.conv;
 ps.pf_iter = Settings.iter;
@@ -92,6 +88,19 @@ for k=1:numel(vc)
     ps.vbus_ids(k) = num;
 end
 
+% Pe generator bus mapping from names
+pe_names = uvars(pcc);
+ps.pe_bus = zeros(numel(pcc),1);
+for k=1:numel(pcc)
+    num = sscanf(pe_names{k}, 'p_Syn_%d');
+    if isempty(num)
+        % Try "p_Syn_<bus>" format
+        tok = regexp(pe_names{k}, 'p_Syn_(\d+)', 'tokens');
+        if ~isempty(tok), num = str2double(tok{1}{1}); end
+    end
+    ps.pe_bus(k) = num;
+end
+
 ps.td_points = numel(Varout.t);
 ps.td_tend   = Varout.t(end);
 ps.td_error  = Settings.error;
@@ -99,6 +108,7 @@ ps.Zf = psat_case.Zf;
 ps.fault_bus = psat_case.fault_bus;
 ps.t_fault = psat_case.t_fault;
 ps.t_clear = psat_case.t_clear;
+ps.Sbase = psat_case.Sbase;
 
 delete(casefile);
 fprintf('PSAT RTS-24: PF conv=%d iter=%d, TD pts=%d t_end=%.2f err=%g\n', ...
@@ -106,65 +116,43 @@ fprintf('PSAT RTS-24: PF conv=%d iter=%d, TD pts=%d t_end=%.2f err=%g\n', ...
 end
 
 % =========================================================================
-function write_combined_case(filepath, pc)
-% Write a PSAT case file that extends d_024_mdl with our Syn.con and Fault.con.
+function write_complete_case(filepath, pc)
+% Write a COMPLETE self-contained PSAT case file with ALL matrices.
+% All data comes from the converter struct — no external case file.
 fid = fopen(filepath, 'w');
 if fid < 0, error('run_psat_rts24:writeFail','Cannot write %s', filepath); end
-fprintf(fid, '%% Auto-generated RTS-24 PSAT case (from in-house case_data)\n');
-fprintf(fid, '%% Network = d_024_mdl (same IEEE RTS-24); Syn/Fault from case_data\n');
-fprintf(fid, 'd_024_mdl;\n');
-fprintf(fid, 'clear Supply Demand;\n');
+fprintf(fid, '%% Auto-generated RTS-24 PSAT case (self-contained)\n');
+fprintf(fid, '%% ALL matrices from rts24_to_psat_case(). No external case file.\n');
+write_mat(fid, 'Bus.con',   pc.Bus_con);
+write_mat(fid, 'Line.con',  pc.Line_con);
+write_mat(fid, 'Shunt.con', pc.Shunt_con);
+write_mat(fid, 'SW.con',    pc.SW_con);
+write_mat(fid, 'PV.con',    pc.PV_con);
+write_mat(fid, 'PQ.con',    pc.PQ_con);
 write_mat(fid, 'Syn.con',   pc.Syn_con);
 write_mat(fid, 'Fault.con', pc.Fault_con);
+write_names(fid, 'Bus.names', pc.Bus_names);
 fclose(fid);
 end
 
 function write_mat(fid, name, M)
-fprintf(fid, '%s = [ ...\n', name);
-for r = 1:size(M,1)
-    fprintf(fid, '  ');
-    for c = 1:size(M,2)
-        fprintf(fid, '%.10g  ', M(r,c));
+    fmt = repmat('%.10g  ', 1, size(M,2));
+    fprintf(fid, '%s = [ ...\n', name);
+    for r = 1:size(M,1)
+        fprintf(fid, '  ');
+        fprintf(fid, [fmt, '\n'], M(r,:));
     end
-    if r < size(M,1), fprintf(fid, ';\n'); else, fprintf(fid, '\n'); end
-end
-fprintf(fid, '];\n');
+    fprintf(fid, '];\n\n');
 end
 
-% =========================================================================
-function diff_max = report_network_diff(bus_con, line_con, pc)
-% Report max input difference between PSAT d_024 network and our case_data.
-% Line R/X/B differences come from rounding in the d_024_mdl file.
-bd = pc.Bus_con_ref;  % our bus_data reference (set by caller if available)
-if ~isfield(pc, 'Line_con_ref')
-    diff_max = struct('max_R_pct', NaN, 'max_X_pct', NaN, 'max_B_pct', NaN);
-    return;
-end
-% Compare line impedances
-our_lines = pc.Line_con_ref;  % [from to R X B_half tap phase]
-psat_R = line_con(:,8);
-psat_X = line_con(:,9);
-psat_B = line_con(:,10);  % total
-our_R = our_lines(:,3);
-our_X = our_lines(:,4);
-our_B = 2*our_lines(:,5);  % total
-% Match by from-to bus pair
-n = size(our_lines,1);
-dR = zeros(n,1); dX = zeros(n,1); dB = zeros(n,1);
-for k = 1:n
-    f = our_lines(k,1); t = our_lines(k,2);
-    idx = find(line_con(:,1)==f & line_con(:,2)==t, 1);
-    if isempty(idx), idx = find(line_con(:,1)==t & line_con(:,2)==f, 1); end
-    if ~isempty(idx)
-        dR(k) = abs(psat_R(idx) - our_R(k)) / max(abs(our_R(k)), 1e-10);
-        dX(k) = abs(psat_X(idx) - our_X(k)) / max(abs(our_X(k)), 1e-10);
-        dB(k) = abs(psat_B(idx) - our_B(k)) / max(abs(our_B(k)), 1e-10);
+function write_names(fid, name, names)
+    fprintf(fid, '%s = { ...\n', name);
+    for r = 1:numel(names)
+        if r < numel(names)
+            fprintf(fid, '  ''%s'';\n', names{r});
+        else
+            fprintf(fid, '  ''%s''\n', names{r});
+        end
     end
-end
-diff_max = struct( ...
-    'max_R_pct', 100*max(dR), ...
-    'max_X_pct', 100*max(dX), ...
-    'max_B_pct', 100*max(dB));
-fprintf('Network input diff (d_024 vs case_data): max R=%.3f%%, X=%.3f%%, B=%.3f%%\n', ...
-    diff_max.max_R_pct, diff_max.max_X_pct, diff_max.max_B_pct);
+    fprintf(fid, '};\n\n');
 end

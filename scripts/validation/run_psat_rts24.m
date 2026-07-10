@@ -88,18 +88,9 @@ for k=1:numel(vc)
     ps.vbus_ids(k) = num;
 end
 
-% Pe generator bus mapping from names
-pe_names = uvars(pcc);
-ps.pe_bus = zeros(numel(pcc),1);
-for k=1:numel(pcc)
-    num = sscanf(pe_names{k}, 'p_Syn_%d');
-    if isempty(num)
-        % Try "p_Syn_<bus>" format
-        tok = regexp(pe_names{k}, 'p_Syn_(\d+)', 'tokens');
-        if ~isempty(tok), num = str2double(tok{1}{1}); end
-    end
-    ps.pe_bus(k) = num;
-end
+% Pe generator bus mapping: PSAT variable names use machine INDEX
+% (p_Syn_1, p_Syn_2, ...), NOT bus ID. Map through Syn.con(:,1).
+ps.pe_bus = Syn.con(:,1);
 
 ps.td_points = numel(Varout.t);
 ps.td_tend   = Varout.t(end);

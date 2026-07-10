@@ -201,7 +201,7 @@ end
 % Verified: Zf = Fault.con(ff,7) + j*Fault.con(ff,8)
 fb = opt.fault_bus;
 Vn_f = Vb(find(bd(:,1)==fb,1));
-Fault_con = [fb, Sbase, Vn_f, freq, 1, opt.t_clear, real(Zf), imag(Zf)];
+Fault_con = [fb, Sbase, Vn_f, freq, opt.t_fault, opt.t_clear, real(Zf), imag(Zf)];
 
 % --- Assemble --------------------------------------------------------------
 psat_case = struct();

@@ -184,6 +184,25 @@ if ~isempty(Pe_ps_int)
     fprintf('  Electrical power (Pe):\n');
     fprintf('    Max |error| = %.6e pu\n', max(abs(dPe),[],'all'));
     fprintf('    RMSE        = %.6e pu\n', rms(dPe(:)));
+    % Phase-segmented Pe error
+    pre_mask    = t_int < pc.t_fault;
+    during_mask = t_int >= pc.t_fault & t_int < pc.t_clear;
+    post_mask   = t_int >= pc.t_clear;
+    if any(pre_mask)
+        dPe_pre = Pe_ours_int(pre_mask,:) - Pe_ps_int(pre_mask,:);
+        fprintf('    Pre-fault:  max |err|=%.4e, RMSE=%.4e pu\n', ...
+            max(abs(dPe_pre),[],'all'), rms(dPe_pre(:)));
+    end
+    if any(during_mask)
+        dPe_dur = Pe_ours_int(during_mask,:) - Pe_ps_int(during_mask,:);
+        fprintf('    During:     max |err|=%.4e, RMSE=%.4e pu\n', ...
+            max(abs(dPe_dur),[],'all'), rms(dPe_dur(:)));
+    end
+    if any(post_mask)
+        dPe_post = Pe_ours_int(post_mask,:) - Pe_ps_int(post_mask,:);
+        fprintf('    Post:       max |err|=%.4e, RMSE=%.4e pu\n', ...
+            max(abs(dPe_post),[],'all'), rms(dPe_post(:)));
+    end
 end
 
 % --- Fault-bus voltage
@@ -237,14 +256,26 @@ fprintf('\n  Peak COI-relative angle time: ours=%.3f s, PSAT=%.3f s\n', ...
 % --- Boundedness
 fprintf('\n--- Boundedness (15 s window) ---\n');
 maxpair_ours = 0; maxpair_ps = 0;
+maxpair_inc_ours = 0; maxpair_inc_ps = 0;
 for i=1:ng; for j=i+1:ng
-    maxpair_ours = max(maxpair_ours, max(abs(rad2deg(delta_ours_int(:,i)-delta_ours_int(:,j)))));
-    maxpair_ps   = max(maxpair_ps,   max(abs(rad2deg(delta_ps_int(:,i)-delta_ps_int(:,j)))));
+    pair_ours = rad2deg(delta_ours_int(:,i)-delta_ours_int(:,j));
+    pair_ps   = rad2deg(delta_ps_int(:,i)-delta_ps_int(:,j));
+    maxpair_ours = max(maxpair_ours, max(abs(pair_ours)));
+    maxpair_ps   = max(maxpair_ps,   max(abs(pair_ps)));
+    % Incremental pairwise: pair(t) - pair(0)
+    pair_inc_ours = pair_ours - pair_ours(1);
+    pair_inc_ps   = pair_ps   - pair_ps(1);
+    maxpair_inc_ours = max(maxpair_inc_ours, max(abs(pair_inc_ours)));
+    maxpair_inc_ps   = max(maxpair_inc_ps,   max(abs(pair_inc_ps)));
 end; end
-fprintf('  Ours: max COI-rel=%.2f deg, max pairwise=%.2f deg, max dw=%.4e\n', ...
-    max(abs(rad2deg(dcoi_ours)),[],'all'), maxpair_ours, max(abs(omega_ours_int-1),[],'all'));
-fprintf('  PSAT: max COI-rel=%.2f deg, max pairwise=%.2f deg, max dw=%.4e\n', ...
-    max(abs(rad2deg(dcoi_ps)),[],'all'), maxpair_ps, max(abs(omega_ps_int-1),[],'all'));
+fprintf('  Absolute pairwise (dominated by initial PF angles):\n');
+fprintf('    Ours: max=%.2f deg, PSAT: max=%.2f deg\n', maxpair_ours, maxpair_ps);
+fprintf('  Incremental pairwise (pair(t) - pair(0), isolates dynamics):\n');
+fprintf('    Ours: max=%.2f deg, PSAT: max=%.2f deg\n', maxpair_inc_ours, maxpair_inc_ps);
+fprintf('  Max COI-rel: ours=%.2f deg, PSAT=%.2f deg\n', ...
+    max(abs(rad2deg(dcoi_ours)),[],'all'), max(abs(rad2deg(dcoi_ps)),[],'all'));
+fprintf('  Max dw: ours=%.4e, PSAT=%.4e\n', ...
+    max(abs(omega_ours_int-1),[],'all'), max(abs(omega_ps_int-1),[],'all'));
 win = t_int >= 0.9*t_int(end);
 if ng > 1
     fp_ours = max(abs(rad2deg(delta_ours_int(win,1:end-1)-delta_ours_int(win,2:end))),[],'all');
@@ -255,6 +286,8 @@ end
 fprintf('  Final-window pairwise: ours=%.2f deg, PSAT=%.2f deg\n', fp_ours, fp_ps);
 fprintf('\n  Both simulations remain bounded within the 15-second window.\n');
 fprintf('  D=0 => marginal stability; oscillations do not decay asymptotically.\n');
+fprintf('\n  Status: Exact-network PF passes. TS trajectories are broadly similar\n');
+fprintf('  but Pe error and incremental pairwise require further audit.\n');
 
 % === SAVE OUTPUTS ==========================================================
 save(fullfile(outdir, 'rts24_psat_raw.mat'), 'ps', 'ts_ours', 'pf_ours', 'pc', 'c');
@@ -288,6 +321,8 @@ if ~isempty(Pe_ps_int)
 end
 fprintf(fid, 'ours_max_pairwise_deg,%.2f\n', maxpair_ours);
 fprintf(fid, 'psat_max_pairwise_deg,%.2f\n', maxpair_ps);
+fprintf(fid, 'ours_max_inc_pairwise_deg,%.2f\n', maxpair_inc_ours);
+fprintf(fid, 'psat_max_inc_pairwise_deg,%.2f\n', maxpair_inc_ps);
 fclose(fid);
 % Machine params CSV
 fid = fopen(fullfile(outdir, 'rts24_machine_parameter_comparison.csv'), 'w');
@@ -305,13 +340,14 @@ fid = fopen(fullfile(outdir, 'rts24_generator_mapping.csv'), 'w');
 fprintf(fid, 'psat_syn_row,psat_bus,ours_gen_idx,ours_bus\n');
 for k=1:ng
     ps_bus = syn_buses_ps(k);
-    [~, oi2] = find(ours_gen_buses == ps_bus);
+    oi2 = find(ours_gen_buses == ps_bus, 1);
     fprintf(fid, '%d,%d,%d,%d\n', k, ps_bus, oi2, ps_bus);
 end
 fclose(fid);
 % Markdown report
 write_report(outdir, pf_ours, ps, dVm, dVa, ddelta, domega, ...
-    maxpair_ours, maxpair_ps, Pe_ps_int, Pe_ours_int, dVf, ...
+    maxpair_ours, maxpair_ps, maxpair_inc_ours, maxpair_inc_ps, ...
+    Pe_ps_int, Pe_ours_int, dVf, ...
     t_int, dcoi_ours_inc, dcoi_ps_inc, pc);
 fprintf('\nOutputs saved to: %s\n', outdir);
 report = struct('psat_available', true, 'outdir', outdir);
@@ -319,12 +355,12 @@ end
 
 % =========================================================================
 function y = rms(x)
-y = sqrt(mean(x.^2));
+y = sqrt(mean(x(:).^2));
 end
 
 % =========================================================================
 function write_report(outdir, pf_ours, ps, dVm, dVa, ddelta, domega, ...
-    mp_o, mp_p, Pe_ps, Pe_ours, dVf, t_int, dcoi_o, dcoi_p, pc)
+    mp_o, mp_p, mp_inc_o, mp_inc_p, Pe_ps, Pe_ours, dVf, t_int, dcoi_o, dcoi_p, pc)
 fid = fopen(fullfile(outdir, 'rts24_psat_comparison.md'), 'w');
 fprintf(fid, '# IEEE RTS-24: In-house vs PSAT Cross-Validation\n\n');
 fprintf(fid, '## Configuration\n');
@@ -360,10 +396,17 @@ if ~isempty(dVf)
 end
 fprintf(fid, '| Ours max pairwise | %.2f deg |\n', mp_o);
 fprintf(fid, '| PSAT max pairwise | %.2f deg |\n', mp_p);
+fprintf(fid, '| Ours max INCREMENTAL pairwise | %.2f deg |\n', mp_inc_o);
+fprintf(fid, '| PSAT max INCREMENTAL pairwise | %.2f deg |\n', mp_inc_p);
 [maxcoi_o, i_o] = max(max(abs(rad2deg(dcoi_o)),[],2));
 [maxcoi_p, i_p] = max(max(abs(rad2deg(dcoi_p)),[],2));
 fprintf(fid, '| Peak COI time (ours) | %.3f s |\n', t_int(i_o));
 fprintf(fid, '| Peak COI time (PSAT) | %.3f s |\n', t_int(i_p));
+fprintf(fid, '\n## Summary\n');
+fprintf(fid, 'Exact-network PF cross-validation passes (dVm=0, dVa=0).\n');
+fprintf(fid, 'TS trajectories are broadly similar (incremental COI and pairwise\n');
+fprintf(fid, 'separation match within a few degrees).  Pe error requires further\n');
+fprintf(fid, 'investigation before claiming full dynamic model equivalence.\n');
 fprintf(fid, '\n## Stability Wording\n');
 fprintf(fid, 'Both simulations remain bounded within the 15-second window.\n');
 fprintf(fid, 'D=0 implies marginal stability; oscillations do not decay asymptotically.\n');

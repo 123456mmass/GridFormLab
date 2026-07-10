@@ -312,6 +312,32 @@ end
 end
 
 % =========================================================================
+function test_fault_con_t_fault(testCase)
+% Fault.con col 5 must be t_fault (not constant 1).
+% Verified from @FTclass/setup.m: col 5 = fault occurrence time.
+c = load_case();
+pc = rts24_to_psat_case(c, 't_fault', 1.0, 't_clear', 1.1);
+testCase.verifyEqual(pc.Fault_con(5), 1.0, 'AbsTol', 1e-12, 'Fault col 5 must be t_fault.');
+testCase.verifyEqual(pc.Fault_con(6), 1.1, 'AbsTol', 1e-12, 'Fault col 6 must be t_clear.');
+% Test with different t_fault
+pc2 = rts24_to_psat_case(c, 't_fault', 0.5, 't_clear', 0.7);
+testCase.verifyEqual(pc2.Fault_con(5), 0.5, 'AbsTol', 1e-12, 'Fault col 5 must follow opt.t_fault.');
+testCase.verifyEqual(pc2.Fault_con(6), 0.7, 'AbsTol', 1e-12, 'Fault col 6 must follow opt.t_clear.');
+end
+
+% =========================================================================
+function test_pe_bus_mapping_in_source(testCase)
+% Verify the runner maps pe_bus through Syn.con(:,1), not by parsing
+% variable names (which give machine indices 1..11, not bus IDs).
+runner_src = fileread('scripts/validation/run_psat_rts24.m');
+testCase.verifyNotEmpty(strfind(runner_src, 'ps.pe_bus = Syn.con(:,1)'), ...
+    'Runner must set pe_bus = Syn.con(:,1) (bus IDs, not machine indices).');
+% Must NOT parse pe_bus from variable names
+testCase.verifyEmpty(strfind(runner_src, 'sscanf(pe_names'), ...
+    'Runner must NOT parse pe_bus from variable names.');
+end
+
+% =========================================================================
 function test_psat_integration_optional(testCase)
 % Integration test: if PSAT is available, run the comparison and
 % assert that metrics are within tolerance.
@@ -334,13 +360,30 @@ metrics = readtable(fullfile(report.outdir,'rts24_ts_metrics.csv'));
 for r = 1:height(metrics)
     switch metrics.metric{r}
         case 'max_dVm_mpu'
-            testCase.verifyLessThan(metrics.value(r), 50, 'PF max dVm must be < 50 mpu.');
+            testCase.verifyLessThan(metrics.value(r), 1, 'PF max dVm must be < 1 mpu (exact network).');
         case 'max_dVa_deg'
-            testCase.verifyLessThan(metrics.value(r), 5, 'PF max dVa must be < 5 deg.');
+            testCase.verifyLessThan(metrics.value(r), 0.1, 'PF max dVa must be < 0.1 deg (exact network).');
         case 'max_inc_dcoi_deg'
             testCase.verifyLessThan(metrics.value(r), 20, 'TS max inc COI error must be < 20 deg.');
         case 'rms_inc_dcoi_deg'
             testCase.verifyLessThan(metrics.value(r), 5, 'TS RMS inc COI must be < 5 deg.');
+        case 'max_domega_pu'
+            testCase.verifyLessThan(metrics.value(r), 0.01, 'TS max speed error must be < 0.01 pu.');
+        case 'rms_domega_pu'
+            testCase.verifyLessThan(metrics.value(r), 0.002, 'TS RMS speed must be < 0.002 pu.');
+        case 'max_dVfault_mpu'
+            testCase.verifyLessThan(metrics.value(r), 50, 'TS max Vfault error must be < 50 mpu.');
+        case 'rms_dVfault_mpu'
+            testCase.verifyLessThan(metrics.value(r), 10, 'TS RMS Vfault must be < 10 mpu.');
     end
 end
+% Verify generator mapping CSV has correct bus IDs
+map = readtable(fullfile(report.outdir,'rts24_generator_mapping.csv'));
+c = cases.case_ieee_rts24_pgaz();
+expected_buses = unique([c.machines.units.bus]).';
+testCase.verifyEqual(map.psat_bus(:)', expected_buses(:)', 'Generator mapping buses must match.');
+testCase.verifyEqual(map.ours_bus(:)', expected_buses(:)', 'Generator mapping ours_bus must match.');
+% All ours_gen_idx must be valid (non-zero, within range)
+testCase.verifyTrue(all(map.ours_gen_idx > 0), 'All ours_gen_idx must be valid.');
+testCase.verifyTrue(all(map.ours_gen_idx <= numel(expected_buses)), 'All ours_gen_idx in range.');
 end

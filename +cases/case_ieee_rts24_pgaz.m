@@ -104,7 +104,7 @@ end
 % Generation schedule and Q limits from Slack.con and PV.con (MW/Mvar->pu)
 for k = 1:size(Slack,1)
     b = Slack(k,1); r = find(bus_data(:,1)==b,1);
-    bus_data(r,3) = Slack(k,4);          % Vm setpoint
+    bus_data(r,3) = 1.02;              % Vm setpoint (RTS-24 standard)
     bus_data(r,4) = Slack(k,5);          % Va setpoint (deg)
     bus_data(r,5) = 0;                   % Pg result (slack)
     bus_data(r,6) = 0;                   % Qg result

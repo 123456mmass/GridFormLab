@@ -29,8 +29,10 @@ if nargin > 1 && isstruct(varargin{1})
 end
 
 % --- Model dispatch: single entry point for classical and 6th-order -------
-if strcmpi(opt.model,'genpj6')
-    if opt.verbose, fprintf('[ts_simulate] Dispatching to 6th-order GENTPJ path.\n'); end
+if any(strcmpi(opt.model,{'flux6','genpj6','emf6','kundur6'}))
+    if opt.verbose
+        fprintf('[ts_simulate] Dispatching to 6th-order %s path.\n',opt.model);
+    end
     res = stability.ts_simulate_genpj6(case_data, opt);
     return;
 end
@@ -134,6 +136,19 @@ if isfield(case_data,'mpc')
     mach = [];
     if isfield(case_data,'machines') && ~isempty(case_data.machines) && isstruct(case_data.machines) && isfield(case_data.machines,'units')
         mach = case_data.machines.units;
+        % Published machine data (e.g. Kundur) are on machine MVA base,
+        % while the classical network solver expects system-base H/D/X'd.
+        if isfield(case_data.machines,'base') && ...
+                isfield(case_data.machines.base,'S_MVA') && ...
+                isfield(case_data.machines,'reactances')
+            ratio=case_data.machines.base.S_MVA/mpc.baseMVA;
+            for kk=1:numel(mach)
+                mach(kk).H=mach(kk).H*ratio;
+                mach(kk).D=mach(kk).D*ratio;
+                mach(kk).Xdp=case_data.machines.reactances.Xdp/ratio;
+                mach(kk).model='classical';
+            end
+        end
     elseif isfield(case_data,'machines') && isstruct(case_data.machines) && ~isempty(case_data.machines)
         if isfield(case_data.machines(1),'bus'), mach = case_data.machines; end
     end
@@ -200,13 +215,23 @@ if ~isempty(mach) && numel(mach)==ng
         if isfield(mach(k),'Xdp'), Xdp(k)=mach(k).Xdp; end
     end
 elseif ~isempty(mach)
-    % map by bus if counts differ
+    % Aggregate multiple machines connected to the same bus using the
+    % standard classical-model coherent aggregation (machines at the
+    % same bus swing together, same E and delta):
+    %   H_agg    = sum(H_k)              (kinetic energies add)
+    %   D_agg    = sum(D_k)              (damping torques add)
+    %   1/X'd_agg = sum(1/X'd_k)        (parallel admittances add)
+    % This preserves total stored kinetic energy, total damping torque
+    % and total short-circuit current injection at the bus.
+    machBus = [mach.bus];
     for k=1:ng
         b=gbus(k);
-        idx=find([mach.bus]==b,1);
-        if ~isempty(idx)
-            H(k)=mach(idx).H; D(k)=mach(idx).D; Xdp(k)=mach(idx).Xdp;
-        end
+        idx=find(machBus==b);   % ALL machines at this bus
+        if isempty(idx), continue; end
+        Hk=[mach(idx).H]; Dk=[mach(idx).D]; Xk=[mach(idx).Xdp];
+        H(k)=sum(Hk);
+        D(k)=sum(Dk);
+        Xdp(k)=1/sum(1./Xk);
     end
 end
 % Per-run overrides (e.g. classical defaults for MATPOWER cases).

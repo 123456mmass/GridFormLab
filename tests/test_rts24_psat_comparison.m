@@ -339,25 +339,24 @@ end
 
 % =========================================================================
 function test_corrector_iter_reduces_pe_error(testCase)
-% Convergence sweep finding: corrector_iter=3 reduces Pe error 15x
-% compared to corrector_iter=1. This is a unit test that verifies
-% the in-house solver produces smaller Pe error with more iterations.
-% (Does NOT require PSAT — just checks internal convergence.)
+% Verify that fixed ci=1 has higher trapezoidal residual than adaptive.
+% This checks the actual integration residual, not just trajectory difference.
 c = load_case();
-opt1 = struct('t_end',5,'dt',0.01,'fault_bus',15,'t_fault',1.0, ...
-    't_clear',1.1,'Zf',0+0.1j,'method','trapezoidal','corrector_iter',1, ...
-    'verbose',false,'model','classical','plot_results',false);
-opt3 = struct('t_end',5,'dt',0.01,'fault_bus',15,'t_fault',1.0, ...
-    't_clear',1.1,'Zf',0+0.1j,'method','trapezoidal','corrector_iter',3, ...
-    'verbose',false,'model','classical','plot_results',false);
-r1 = stability.ts_simulate(c, opt1);
-r3 = stability.ts_simulate(c, opt3);
-% The trajectories should differ (ci=3 is more converged)
-diff_delta = max(abs(r1.delta(:) - r3.delta(:)));
-testCase.verifyGreaterThan(diff_delta, 1e-6, ...
-    'ci=1 and ci=3 must produce different trajectories (ci=1 not converged).');
-% ci=3 should have smaller swing-equation residual
-testCase.verifyTrue(numel(r1.t) == numel(r3.t), 'Same time vector.');
+opt_fixed = struct('t_end',5,'dt',0.01,'fault_bus',15,'t_fault',1.0, ...
+    't_clear',1.1,'Zf',0+0.1j,'method','trapezoidal', ...
+    'corrector_mode','fixed','corrector_iter',1,'verbose',false);
+opt_adaptive = struct('t_end',5,'dt',0.01,'fault_bus',15,'t_fault',1.0, ...
+    't_clear',1.1,'Zf',0+0.1j,'method','trapezoidal', ...
+    'corrector_mode','adaptive','max_corrector_iter',10,'verbose',false);
+r_fixed = stability.ts_simulate(c, opt_fixed);
+r_adaptive = stability.ts_simulate(c, opt_adaptive);
+% Fixed ci=1 must have significantly higher residual
+testCase.verifyGreaterThan(r_fixed.max_corrector_residual, ...
+    r_adaptive.max_corrector_residual * 100, ...
+    'Fixed ci=1 residual must be >100x adaptive residual.');
+% Adaptive must converge all steps
+testCase.verifyEqual(r_adaptive.nonconverged_step_count, 0, ...
+    'Adaptive corrector must converge all steps.');
 end
 
 % =========================================================================

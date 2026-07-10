@@ -21,11 +21,24 @@ function res = ts_simulate(case_data, varargin)
 %   via the per-machine .model field (stage 2).
 
 opt = struct('t_end',15.0,'dt',0.01,'fault_bus',[],'t_fault',1.0,'t_clear',1.1, ...
-    'Zf',1i*0.1,'method','trapezoidal','corrector_iter',1, ...
+    'Zf',1i*0.1,'method','trapezoidal', ...
+    'corrector_mode','adaptive','corrector_iter',[], ...
+    'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
+    'max_corrector_iter',10,'corrector_failure','error', ...
     'pm_mode','balanced','verbose',true,'H',[],'D',[],'Xdp',[],'model','classical','load_model','cc_p_cz_q');
 if nargin > 1 && isstruct(varargin{1})
     fn = fieldnames(varargin{1});
     for k=1:numel(fn), opt.(fn{k}) = varargin{1}.(fn{k}); end
+end
+% --- Backward compatibility: corrector_iter without corrector_mode -------
+% If corrector_iter is set but corrector_mode is 'adaptive', switch to
+% 'fixed' so old scripts that only set corrector_iter keep working.
+if ~isempty(opt.corrector_iter) && strcmp(opt.corrector_mode,'adaptive')
+    opt.corrector_mode = 'fixed';
+end
+% Default corrector_iter for fixed mode
+if strcmp(opt.corrector_mode,'fixed') && isempty(opt.corrector_iter)
+    opt.corrector_iter = 1;
 end
 
 % --- Model dispatch: single entry point for classical and 6th-order -------
@@ -79,9 +92,52 @@ end
 if opt.verbose
     fprintf('[ts_simulate] TS: t_end=%.3f dt=%.4f fault bus %d (%.3f-%.3f s)\n', ...
         opt.t_end,opt.dt,opt.fault_bus,opt.t_fault,opt.t_clear);
+    fprintf('[ts_simulate] Corrector: mode=%s', opt.corrector_mode);
+    if strcmp(opt.corrector_mode,'adaptive')
+        fprintf(' abs_tol=%.1e rel_tol=%.1e max_iter=%d failure=%s\n', ...
+            opt.corrector_abs_tol, opt.corrector_rel_tol, ...
+            opt.max_corrector_iter, opt.corrector_failure);
+    else
+        fprintf(' iter=%d\n', opt.corrector_iter);
+    end
 end
 
-t=(0:opt.dt:opt.t_end).'; nt=numel(t);
+% --- Event-aware time grid -------------------------------------------------
+% Ensure t_fault and t_clear fall exactly on the grid so that no
+% trapezoidal step straddles two different network topologies.
+t_raw = (0:opt.dt:opt.t_end).';
+event_times = [];
+if isfinite(opt.t_fault) && opt.t_fault > t_raw(1) && opt.t_fault < t_raw(end)
+    event_times = [event_times; opt.t_fault];
+end
+if isfinite(opt.t_clear) && opt.t_clear > t_raw(1) && opt.t_clear < t_raw(end)
+    event_times = [event_times; opt.t_clear];
+end
+% Insert event times into the grid (if not already present)
+t = t_raw;
+for et = event_times.'
+    [~, idx] = min(abs(t - et));
+    if abs(t(idx) - et) > opt.dt * 1e-10
+        t = sort([t; et]);
+    end
+end
+nt = numel(t);
+dt_arr = diff(t);  % actual dt per step (may differ at event boundaries)
+
+% --- Event side tracking --------------------------------------------------
+% At an event time, both a left-limit (pre-event) and right-limit
+% (post-event) sample exist. We store the post-event value (right limit)
+% as the row at that time index. The pre-event value is used only for
+% integration up to the event.
+event_idx = [];
+for et = event_times.'
+    event_idx = [event_idx; find(abs(t - et) < opt.dt * 1e-10, 1)];
+end
+event_side = zeros(nt,1);  % 0 = normal, 1 = event-right (post-switch)
+for ei = event_idx.'
+    event_side(ei) = 1;
+end
+
 delta=zeros(nt,ng); omega=zeros(nt,ng); Pe=zeros(nt,ng); Vhist=zeros(nt,nb);
 delta(1,:)=delta0.'; omega(1,:)=ones(1,ng);
 [V,~,Pe0]=solve_network(delta0,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,0,opt);
@@ -98,31 +154,127 @@ switch lower(opt.pm_mode)
 end
 Pe(1,:)=Pe0.'; Vhist(1,:)=abs(V).';
 
+% --- Corrector diagnostics -------------------------------------------------
+corr_iters = zeros(nt-1,1);
+corr_residual = zeros(nt-1,1);
+corr_update = zeros(nt-1,1);
+corr_converged = true(nt-1,1);
+nonconv_count = 0;
+
 x=[delta0; ones(ng,1)];
 for it=1:nt-1
-    f0=rhs(t(it),x);
-    xnext=x+opt.dt*f0;
-    for ci=1:max(1,opt.corrector_iter)
-        f1=rhs(t(it+1),xnext);
-        xnext=x+0.5*opt.dt*(f0+f1);
+    dt_step = dt_arr(it);
+    t_now = t(it);
+    t_next = t(it+1);
+
+    % Determine topology for this step. The fault status at t_now determines
+    % the pre-event topology. If t_next is an event time, the step uses the
+    % pre-event topology for the entire step, then the topology switches
+    % at the event boundary. The next step starts with the post-event topology.
+    % This prevents trapezoidal averaging of RHS from different topologies.
+    fault_on_now = t_now >= opt.t_fault && t_now < opt.t_clear;
+
+    % Predictor: explicit Euler
+    f0 = rhs_fixed(t_now, x, fault_on_now);
+    xnext = x + dt_step * f0;
+
+    if strcmp(opt.corrector_mode,'adaptive')
+        % Adaptive Picard corrector with trapezoidal residual check
+        for ci = 1:opt.max_corrector_iter
+            f1 = rhs_fixed(t_next, xnext, fault_on_now);
+            x_new = x + 0.5*dt_step*(f0 + f1);
+            update_norm = norm(x_new - xnext, inf);
+            % Check the residual at the candidate state itself.  Checking
+            % only the Picard update can accept a state whose trapezoidal
+            % equation is still not solved.
+            f1_new = rhs_fixed(t_next, x_new, fault_on_now);
+            R_new = x_new - x - 0.5*dt_step*(f0 + f1_new);
+            residual_norm = norm(R_new, inf);
+            corr_iters(it) = ci;
+            corr_update(it) = update_norm;
+            corr_residual(it) = residual_norm;
+            xnext = x_new;
+            tol_now = opt.corrector_abs_tol + ...
+                opt.corrector_rel_tol * max(1, norm(xnext, inf));
+            if update_norm <= tol_now && residual_norm <= tol_now
+                corr_converged(it) = true;
+                break;
+            end
+            if ci == opt.max_corrector_iter
+                corr_converged(it) = false;
+                % Recompute final residual for reporting
+                f1_final = rhs_fixed(t_next, xnext, fault_on_now);
+                R = xnext - x - 0.5*dt_step*(f0 + f1_final);
+                corr_residual(it) = norm(R, inf);
+                if strcmp(opt.corrector_failure, 'error')
+                    error('ts_simulate:correctorNotConverged', ...
+                        ['Corrector did not converge at t=%.4f (step %d). ' ...
+                        'Iterations=%d, update=%.3e, residual=%.3e. ' ...
+                        'Consider increasing max_corrector_iter or loosening tolerance.'], ...
+                        t_next, it, ci, update_norm, corr_residual(it));
+                end
+            end
+        end
+        % Final residual (for converged steps)
+        if corr_converged(it)
+            f1_final = rhs_fixed(t_next, xnext, fault_on_now);
+            R = xnext - x - 0.5*dt_step*(f0 + f1_final);
+            corr_residual(it) = norm(R, inf);
+        end
+    else
+        % Fixed corrector (backward compatible)
+        for ci=1:max(1,opt.corrector_iter)
+            f1 = rhs_fixed(t_next, xnext, fault_on_now);
+            xnext = x + 0.5*dt_step*(f0 + f1);
+        end
+        corr_iters(it) = opt.corrector_iter;
+        f1_final = rhs_fixed(t_next, xnext, fault_on_now);
+        R = xnext - x - 0.5*dt_step*(f0 + f1_final);
+        corr_residual(it) = norm(R, inf);
+        corr_update(it) = norm(R, inf);  % for fixed mode, update ~ residual
+        corr_converged(it) = corr_residual(it) <= 1e-6;  % loose check
     end
-    x=xnext;
-    delta(it+1,:)=x(1:ng).'; omega(it+1,:)=x(ng+1:end).';
-    fault_on=t(it+1)>=opt.t_fault && t(it+1)<opt.t_clear;
-    [V,~,Pek]=solve_network(x(1:ng),Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
-    Pe(it+1,:)=Pek.'; Vhist(it+1,:)=abs(V).';
+    if ~corr_converged(it), nonconv_count = nonconv_count + 1; end
+
+    x = xnext;
+    delta(it+1,:) = x(1:ng).'; omega(it+1,:) = x(ng+1:end).';
+
+    % Recompute algebraic with the ACTUAL topology at t_next
+    fault_on_next = t_next >= opt.t_fault && t_next < opt.t_clear;
+    [V,~,Pek] = solve_network(x(1:ng),Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on_next,opt);
+    Pe(it+1,:) = Pek.'; Vhist(it+1,:) = abs(V).';
 end
-if opt.verbose, fprintf('[ts_simulate] TS finished: %d steps, method=%s\n',nt-1,opt.method); end
+if opt.verbose
+    fprintf('[ts_simulate] TS finished: %d steps, method=%s, mode=%s\n', ...
+        nt-1, opt.method, opt.corrector_mode);
+    fprintf('[ts_simulate] Corrector: max_iter_used=%d, max_residual=%.3e, nonconv=%d\n', ...
+        max(corr_iters), max(corr_residual), nonconv_count);
+end
 
 res=struct('t',t,'delta',delta,'omega',omega,'Pe_pu',Pe,'Pe_MW',Pe*base, ...
     'Vbus',Vhist,'pf',pf,'gen_buses',gbus,'H',H,'D',D,'Xdp',Xdp, ...
     'Pm',Pm,'Eqmag',Eqmag,'method',opt.method,'dt',opt.dt,'t_end',opt.t_end, ...
     'fault_bus',opt.fault_bus,'t_fault',opt.t_fault,'t_clear',opt.t_clear,'Zf',opt.Zf, ...
-    'model','classical','freq_Hz',freq);
+    'model','classical','freq_Hz',freq, ...
+    'corrector_mode',opt.corrector_mode, ...
+    'corrector_iterations',corr_iters, ...
+    'corrector_residual',corr_residual, ...
+    'corrector_update_norm',corr_update, ...
+    'corrector_converged',corr_converged, ...
+    'max_corrector_iterations_used',max(corr_iters), ...
+    'max_corrector_residual',max(corr_residual), ...
+    'nonconverged_step_count',nonconv_count, ...
+    'event_idx',event_idx, 'event_side',event_side);
 
-    function dx=rhs(tnow,xx)
+    function dx=rhs(tnow,xx) %#ok<USD>
         del=xx(1:ng); w=xx(ng+1:end);
         fault_on=tnow>=opt.t_fault && tnow<opt.t_clear;
+        [~,~,Pek]=solve_network(del,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
+        dx=[ws*(w-1); (Pm-Pek-D.*(w-1))./(2*H)];
+    end
+
+    function dx=rhs_fixed(~,xx,fault_on)
+        del=xx(1:ng); w=xx(ng+1:end);
         [~,~,Pek]=solve_network(del,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
         dx=[ws*(w-1); (Pm-Pek-D.*(w-1))./(2*H)];
     end

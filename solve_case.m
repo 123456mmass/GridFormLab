@@ -190,8 +190,39 @@ else
     wd=r.omega-1;
 end
 fprintf('Max |Delta w|   : %.6e pu\n',max(abs(wd),[],'all'));
-d=r.delta-mean(r.delta,2); d=d-d(1,:);
-fprintf('Max COI angle   : %.6f deg\n',max(abs(rad2deg(d)),[],'all'));
+% COI-relative rotor angles (H-weighted centre of inertia).
+ng=size(r.delta,2);
+if isfield(r,'H') && numel(r.H)==ng && any(r.H>0)
+    Hw=r.H(:).';
+else
+    Hw=ones(1,ng);
+end
+delta_coi=(r.delta.*Hw).*sum(1./Hw);  % = sum(H_k*delta_k)/sum(H_k)
+delta_coi=sum(r.delta.*Hw,2)./sum(Hw);
+d_coi=rad2deg(r.delta-delta_coi);            % COI-relative angle (deg)
+fprintf('Max COI-rel ang : %.4f deg\n',max(abs(d_coi),[],'all'));
+% Maximum pairwise rotor-angle separation (deg).
+maxpair=0;
+for i=1:ng
+    for j=i+1:ng
+        sep=abs(rad2deg(r.delta(:,i)-r.delta(:,j)));
+        maxpair=max(maxpair,max(sep));
+    end
+end
+fprintf('Max pair separ. : %.4f deg\n',maxpair);
+% Final-window trend (last 10% of simulation).
+t_final=r.t(end);
+win=r.t>=0.9*t_final;
+if any(win)
+    d_final=d_coi(win,:);
+    trend_deg=max(d_final(end,:))-max(d_final(1,:));
+    fprintf('Final-window dCOI trend: %+.4f deg\n',trend_deg);
+end
+% Post-fault voltage recovery.
+t_post=r.t>=r.t_clear+0.1;
+if any(t_post)
+    fprintf('Post-fault Vmin : %.6f pu (t>=%.2fs)\n',min(r.Vbus(t_post,:),[],'all'),r.t_clear+0.1);
+end
 if isfield(r,'initial_dae_residual')
     fprintf('Initial residual: %.3e\n',r.initial_dae_residual);
 end
@@ -202,7 +233,15 @@ function [fig,png]=plot_ts_result(r,label,root,case_id)
 t=r.t(:); ng=size(r.delta,2); colors=lines(ng);
 if isfield(r,'gen_buses'), gb=r.gen_buses(:); else, gb=(1:ng)'; end
 labels=compose('G%d@Bus%d',(1:ng)',gb);
-delta_deg=rad2deg(r.delta-r.delta(1,:));
+% COI-relative rotor angles (H-weighted).
+if isfield(r,'H') && numel(r.H)==ng && any(r.H>0)
+    Hw=r.H(:).';
+else
+    Hw=ones(1,ng);
+end
+delta_coi=sum(r.delta.*Hw,2)./sum(Hw);
+delta_deg=rad2deg(r.delta-delta_coi);
+delta_deg=delta_deg-delta_deg(1,:);
 if isfield(r,'omega_is_deviation') && r.omega_is_deviation
     wd=r.omega;
 else

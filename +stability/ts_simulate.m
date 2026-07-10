@@ -48,7 +48,12 @@ pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false,'plot_r
 if ~pf.converged, error('ts_simulate:pfNotConverged','Power flow did not converge.'); end
 
 gen = mpc.gen(mpc.gen(:,8) ~= 0,:);
-gbus = gen(:,1); ng = size(gen,1); nb = size(mpc.bus,1);
+% Deduplicate generator buses: if mpc.gen has multiple rows at the same
+% bus (e.g. raw MATPOWER cases), keep one representative row per bus.
+% The classical engine models one equivalent generator per bus.
+gbus_raw = gen(:,1);
+[gbus, ~, ic] = unique(gbus_raw, 'stable');
+ng = numel(gbus); nb = size(mpc.bus,1);
 if isempty(opt.fault_bus), opt.fault_bus = gbus(1); end
 
 % --- Machine dynamic data on system base ----------------------------------
@@ -206,34 +211,52 @@ end
 end
 
 % =========================================================================
-function [H,D,Xdp] = expand_machines(mach, ng, gbus, bus_ids, opt)
-H=5.0*ones(ng,1); D=zeros(ng,1); Xdp=0.30*ones(ng,1);
-if ~isempty(mach) && numel(mach)==ng
-    for k=1:ng
-        if isfield(mach(k),'H'),   H(k)=mach(k).H;   end
-        if isfield(mach(k),'D'),   D(k)=mach(k).D;   end
-        if isfield(mach(k),'Xdp'), Xdp(k)=mach(k).Xdp; end
-    end
-elseif ~isempty(mach)
-    % Aggregate multiple machines connected to the same bus using the
-    % standard classical-model coherent aggregation (machines at the
-    % same bus swing together, same E and delta):
-    %   H_agg    = sum(H_k)              (kinetic energies add)
-    %   D_agg    = sum(D_k)              (damping torques add)
-    %   1/X'd_agg = sum(1/X'd_k)        (parallel admittances add)
-    % This preserves total stored kinetic energy, total damping torque
-    % and total short-circuit current injection at the bus.
+function [H,D,Xdp] = expand_machines(mach, ng, gbus, bus_ids, opt) %#ok<INUSD>
+%EXPAND_MACHINES  Map machine dynamic data to generator buses.
+%   Always maps by BUS ID (never by index), so that machine ordering does
+%   not need to match the gen-row ordering.  When multiple machines are
+%   connected to the same bus they are aggregated using the standard
+%   coherent classical equivalent:
+%       H_agg    = sum(H_k)            (kinetic energies add)
+%       D_agg    = sum(D_k)            (damping torques add)
+%       1/X'd_agg = sum(1/X'd_k)      (parallel admittances add)
+%
+%   If a case provides machine data (mach non-empty) but a generator bus
+%   has no matching machine, an ERROR is raised -- we never silently fall
+%   back to H=5 / X'd=0.3 when the case explicitly carries machine data.
+%   Defaults are used ONLY when no machine data is supplied at all.
+
+H = 5.0*ones(ng,1); D = zeros(ng,1); Xdp = 0.30*ones(ng,1);
+has_mach = ~isempty(mach) && numel(mach) > 0;
+
+if has_mach
     machBus = [mach.bus];
-    for k=1:ng
-        b=gbus(k);
-        idx=find(machBus==b);   % ALL machines at this bus
-        if isempty(idx), continue; end
-        Hk=[mach(idx).H]; Dk=[mach(idx).D]; Xk=[mach(idx).Xdp];
-        H(k)=sum(Hk);
-        D(k)=sum(Dk);
-        Xdp(k)=1/sum(1./Xk);
+    for k = 1:ng
+        b = gbus(k);
+        idx = find(machBus == b);
+        if isempty(idx)
+            error('ts_simulate:noMachineForBus', ...
+                ['Generator bus %d has no matching machine data. ' ...
+                 'When a case provides .machines, every generator bus ' ...
+                 'must have at least one machine entry. ' ...
+                 'Add the missing machine or remove the generator bus.'], b);
+        end
+        Hk  = [mach(idx).H];
+        Dk  = [mach(idx).D];
+        Xk  = [mach(idx).Xdp];
+        H(k)   = sum(Hk);
+        D(k)   = sum(Dk);
+        Xdp(k) = 1 / sum(1./Xk);
+    end
+    % Validate: H > 0, Xdp > 0 and finite.
+    if any(~isfinite(H)) || any(H <= 0)
+        error('ts_simulate:badH', 'Aggregated H must be positive and finite (got min=%.4g).', min(H));
+    end
+    if any(~isfinite(Xdp)) || any(Xdp <= 0)
+        error('ts_simulate:badXdp', 'Aggregated X''d must be positive and finite (got min=%.4g).', min(Xdp));
     end
 end
+
 % Per-run overrides (e.g. classical defaults for MATPOWER cases).
 if ~isempty(opt.H),   H=opt.H(:);   if numel(H)==1, H=H*ones(ng,1); end, end
 if ~isempty(opt.D),   D=opt.D(:);   if numel(D)==1, D=D*ones(ng,1); end, end

@@ -2,11 +2,14 @@ function case_data = case_ieee_rts24_pgaz()
 %CASE_IEEE_RTS24_PGAZ IEEE Reliability Test System 24-bus (RTS-1996).
 %
 %   Network data (buses, lines, transformers, shunt, slack/PV/PQ schedules)
-%   are imported from the PGAz 1.3 data file:
+%   are read from the SELF-CONTAINED in-repository file:
+%       +cases/ieee_rts24_pgaz_raw.m
+%   which stores verbatim copies of the PGAz 1.3 matrices from:
 %       C:\Users\User\Downloads\PGAz1.3 (2)\PGAz1.3\Data\case24_ieee_rts_mp.m
-%   which is itself a conversion of the MATPOWER case24_ieee_rts case
-%   (© PSERC, 3-Clause BSD License).  The PGAz file is used as a DATA SOURCE
-%   / cross-validation reference only; no PGAz/MATPOWER solver is invoked.
+%   (itself a conversion of the MATPOWER case24_ieee_rts case,
+%   © PSERC, 3-Clause BSD License).  The PGAz file is a DATA SOURCE /
+%   cross-validation reference only; no PGAz/MATPOWER solver is invoked
+%   and no file in the user's Downloads folder is required at runtime.
 %
 %   Dynamic data (H, D, X'd) are NOT present in the PGAz file -- its Gen.con
 %   contains only placeholder defaults (H=5, D=0, all reactances = 0).  The
@@ -27,6 +30,7 @@ function case_data = case_ieee_rts24_pgaz()
 %       IEEE RTS-1996:  "The IEEE Reliability Test System-1996",
 %           IEEE Trans. Power Systems, vol. 14, no. 3, pp. 1010-1020, 1999.
 %           Table 15 dynamic data: https://labs.ece.uw.edu/pstca/rts/rts96/
+%           Paper PDF: https://www.engineering.iastate.edu/~jdm/ee553/IEEE-RTS1996.pdf
 %
 %   Slack bus: bus 13 (230 kV), as specified in Slack.con.
 
@@ -58,8 +62,8 @@ function case_data = case_ieee_rts24_pgaz()
 Sbase = 100;          % system MVA base
 freq  = 60;           % Hz
 
-% --- Load the PGAz source matrices (data only, no solver) -----------------
-pg = load_pgaz_source();
+% --- Load the PGAz source matrices (self-contained, in-repository) ----------
+pg = cases.ieee_rts24_pgaz_raw();
 
 % =========================================================================
 % Build bus_data  [bus type Vm Va_deg Pg Qg Pd Qd Gsh Bsh Qmin Qmax]
@@ -98,7 +102,6 @@ for k = 1:size(PQ,1)
 end
 
 % Generation schedule and Q limits from Slack.con and PV.con (MW/Mvar->pu)
-% Pgen/Qgen are left as the schedule; Qg for PV/slack is set by PF later.
 for k = 1:size(Slack,1)
     b = Slack(k,1); r = find(bus_data(:,1)==b,1);
     bus_data(r,3) = Slack(k,4);          % Vm setpoint
@@ -131,7 +134,6 @@ end
 % Build line_data  [from to R_pu X_pu B_half_pu tap phase_deg]
 %   PGAz ALine col 9 = TOTAL charging -> B_half = col9/2.
 %   PGAz tap (col 10): 0 -> 1.
-%   All phase shifts are 0 in this case (ALine has no phase-shifting xfmrs).
 % =========================================================================
 ALine = pg.ALine_con;
 nl = size(ALine,1);
@@ -147,61 +149,79 @@ line_data(:,6) = tap;                 % tap ratio
 line_data(:,7) = 0;                   % phase shift deg (none in RTS-24)
 
 % =========================================================================
-% Machine dynamic data (per-unit generator, for transient stability)
-%   The PGAz Gen.con contains only placeholder dynamic data (H=5, D=0,
-%   all reactances = 0).  We instead use the official IEEE RTS-1996
-%   Table 15 published dynamic data, which assumes a CLASSICAL model.
+% Machine dynamic data (system-base classical units, for transient stability)
 %
-%   Each Gen.con row is matched to a unit group by its Pmax:
-%       Pmax  20 -> U20,   76 -> U76,  100 -> U100, 197 -> U197,
-%       Pmax  12 -> U12,   50 -> U50,  155 -> U155, 350 -> U350,
-%       Pmax 400 -> U400,   0 -> Sync Condenser (bus 14)
+%   The PGAz Gen.con contains only PLACEHOLDER dynamic data (H=5, D=0,
+%   all reactances = 0) from the PGAz conversion defaults.  We instead use
+%   the official IEEE RTS-1996 Table 15 published dynamic data, which
+%   assumes a CLASSICAL model (Table 15 Note 1).
 %
-%   RTS-1996 Table 15 (H in MJ/MW = s on MW base; X'd on unit MVA base):
-%     group  Smva  X'd(pu@Smva)  H(s@MWbase)  D
-%       U12    14     0.32        2.8        0.0
-%       U20    24     0.32        2.8        0.0
-%       U50    53     0.28        3.5        0.0
-%       U76    89     0.30        3.0        0.0
-%      U100   118     0.32        2.8        0.0
-%      U155   182     0.30        3.0        0.0
-%      U197   232     0.32        2.8        0.0
-%      U350   412     0.30        3.0        0.0
-%      U400   471     0.40        5.0        0.0
+%   RTS-1996 Table 15 (verified from
+%   https://labs.ece.uw.edu/pstca/rts/rts96/Table-15.txt):
 %
-%   Conversion to 100 MVA system base:
-%       H_sys   = H_table * (S_unit_MVA / S_base)        [kinetic energy]
-%                 (Table 15 note 4: H given on MW base = s; the standard
-%                  H-to-base conversion H_sys = H_mach * S_mach/S_sys keeps
-%                  total stored kinetic energy 0.5*H_mach*S_mach constant.)
-%       X'd_sys = X'd_table * (S_base / S_unit_MVA)
-%       D_sys   = D_table * (S_unit_MVA / S_base)
+%     Unit   Pmw   Smva   X'd(pu@Smva)   H(MJ/MW)   D
+%     U12     12     14      0.32          2.8      0.0
+%     U20     20     24      0.32          2.8      0.0
+%     U50     50     53      0.28          3.5      0.0
+%     U76     76     89      0.30          3.0      0.0
+%     U100   100    118      0.32          2.8      0.0
+%     U155   155    182      0.30          3.0      0.0
+%     U197   197    232      0.32          2.8      0.0
+%     U350   350    412      0.30          3.0      0.0
+%     U400   400    471      0.40          5.0      0.0
 %
-%   Bus 14 synchronous condenser: Pmax=0, no mechanical power.  It is a
-%   reactive device with no swing dynamics in the classical model.  It is
-%   therefore EXCLUDED from the TS machine list (handled as a PV bus in PF
-%   only).  This is documented as an assumption.
+%   Table 15 Notes (verbatim):
+%     1. A classical model is assumed for each generator.
+%     2. Reactance and inertia data are typical of generators of the same
+%        type and the same size.
+%     3. Reactance values are based on the given MVA base.
+%     4. Inertia values are based on the unit size in MW.
+%
+%   BASE CONVERSION (to 100 MVA system base):
+%     Note 4 states H is in MJ/MW = seconds referenced to the MW rating.
+%     The stored kinetic energy is KE = H_table * P_unit_MW (in MJ).
+%     On the system base (S_base in MVA), the inertia constant is:
+%         H_sys = KE / S_base = H_table * (P_unit_MW / S_base_MVA)
+%     Note 3 states X'd is on the unit MVA base, so:
+%         X'd_sys = X'd_table * (S_base_MVA / S_unit_MVA)
+%     Damping (dimensionless, per-unit on the same base as H):
+%         D_sys = D_table * (P_unit_MW / S_base_MVA)
+%
+%   Example -- Bus 1 (2xU20 + 2xU76):
+%     H_agg = 2*(2.8*20/100) + 2*(3.0*76/100) = 1.12 + 4.56 = 5.68
+%
+%   BUS 14 SYNCHRONOUS CONDENSER:
+%     Table 7 lists bus 14 as a "Sync Cond" (separate unit type, not U197).
+%     Table 15 does NOT provide dynamic data for the synchronous condenser.
+%     We INCLUDE bus 14 in the TS machine list with U197-classical dynamic
+%     data (H=2.8, X'd=0.32, D=0) and Pm=0 so it swings as a zero-power
+%     synchronous machine.  This is an EXPLICIT MODELLING ASSUMPTION, not
+%     a value sourced from Table 15.  The assumption is recorded in
+%     case_data.dynamic_assumptions.bus14_assumption.
 % =========================================================================
 G = pg.Gen_con;
 ng = size(G,1);
 
-% Table 15 lookup by unit group name
+% Table 15 lookup by unit group name.  Pmw = MW rating (for H), Smva = MVA
+% base (for X'd), per Table 15 Notes 3 and 4.
 unit_table = struct( ...
-    'U12',  struct('Smva',14, 'Xdp',0.32,'H',2.8,'D',0.0), ...
-    'U20',  struct('Smva',24, 'Xdp',0.32,'H',2.8,'D',0.0), ...
-    'U50',  struct('Smva',53, 'Xdp',0.28,'H',3.5,'D',0.0), ...
-    'U76',  struct('Smva',89, 'Xdp',0.30,'H',3.0,'D',0.0), ...
-    'U100', struct('Smva',118,'Xdp',0.32,'H',2.8,'D',0.0), ...
-    'U155', struct('Smva',182,'Xdp',0.30,'H',3.0,'D',0.0), ...
-    'U197', struct('Smva',232,'Xdp',0.32,'H',2.8,'D',0.0), ...
-    'U350', struct('Smva',412,'Xdp',0.30,'H',3.0,'D',0.0), ...
-    'U400', struct('Smva',471,'Xdp',0.40,'H',5.0,'D',0.0));
+    'U12',  struct('Pmw',12,  'Smva',14,  'Xdp',0.32,'H',2.8,'D',0.0), ...
+    'U20',  struct('Pmw',20,  'Smva',24,  'Xdp',0.32,'H',2.8,'D',0.0), ...
+    'U50',  struct('Pmw',50,  'Smva',53,  'Xdp',0.28,'H',3.5,'D',0.0), ...
+    'U76',  struct('Pmw',76,  'Smva',89,  'Xdp',0.30,'H',3.0,'D',0.0), ...
+    'U100', struct('Pmw',100, 'Smva',118, 'Xdp',0.32,'H',2.8,'D',0.0), ...
+    'U155', struct('Pmw',155, 'Smva',182, 'Xdp',0.30,'H',3.0,'D',0.0), ...
+    'U197', struct('Pmw',197, 'Smva',232, 'Xdp',0.32,'H',2.8,'D',0.0), ...
+    'U350', struct('Pmw',350, 'Smva',412, 'Xdp',0.30,'H',3.0,'D',0.0), ...
+    'U400', struct('Pmw',400, 'Smva',471, 'Xdp',0.40,'H',5.0,'D',0.0));
 
+% Match Gen.con rows to unit groups by Pmax (col 6).
 group_by_pmax = {20,'U20'; 76,'U76'; 100,'U100'; 197,'U197';
                  12,'U12'; 50,'U50'; 155,'U155'; 350,'U350'; 400,'U400'};
 
 units = repmat(struct('gen_id','', 'bus',0, 'group','', ...
-    'Smva',0, 'H',0, 'D',0, 'Xdp',0, 'Pmin_MW',0, 'Pmax_MW',0, ...
+    'Pmw',0, 'Smva',0, 'H',0, 'D',0, 'Xdp',0, ...
+    'Pmin_MW',0, 'Pmax_MW',0, ...
     'model','classical', 'is_sync_condenser',false), ng, 1);
 
 for k = 1:ng
@@ -209,31 +229,19 @@ for k = 1:ng
     Pmax = G(k,6);
     Pmin = G(k,5);
     if Pmax == 0 && Pmin == 0
-        % Synchronous condenser (bus 14): no active power, but it IS a
-        % synchronous machine that participates in swing dynamics.  In
-        % the IEEE RTS-96 it is a U197-type unit operated as a condenser
-        % (Table 7 lists it at bus 14 with Q capability only).  We model
-        % it with U197 classical dynamic data and Pm=0 so it swings as a
-        % zero-power synchronous machine.  Documented as an assumption.
-        if bus == 14
-            name = 'U197'; t = unit_table.(name);
-            units(k).gen_id = sprintf('%s@%d(cond)', name, bus);
-            units(k).bus = bus;
-            units(k).group = name;
-            units(k).Smva = t.Smva;
-            units(k).H   = t.H * (t.Smva / Sbase);
-            units(k).D   = t.D * (t.Smva / Sbase);
-            units(k).Xdp = t.Xdp * (Sbase / t.Smva);
-            units(k).model = 'classical';
-            units(k).is_sync_condenser = true;  % Pm will be set to 0
-            units(k).Pmin_MW = Pmin; units(k).Pmax_MW = Pmax;
-            continue;
-        end
-        units(k).gen_id = sprintf('SC@%d', bus);
+        % Synchronous condenser (bus 14).  INCLUDED in TS with U197 data.
+        % See header comment for the full assumption documentation.
+        name = 'U197'; t = unit_table.(name);
+        units(k).gen_id = sprintf('%s@%d(cond)', name, bus);
         units(k).bus = bus;
-        units(k).group = 'SyncCondenser';
-        units(k).model = 'sync_condenser';
-        units(k).is_sync_condenser = true;
+        units(k).group = name;
+        units(k).Pmw = t.Pmw;
+        units(k).Smva = t.Smva;
+        units(k).H   = t.H * (t.Pmw / Sbase);     % H uses MW rating
+        units(k).D   = t.D * (t.Pmw / Sbase);
+        units(k).Xdp = t.Xdp * (Sbase / t.Smva);  % X'd uses MVA rating
+        units(k).model = 'classical';
+        units(k).is_sync_condenser = true;        % Pm set to 0 in TS
         units(k).Pmin_MW = Pmin; units(k).Pmax_MW = Pmax;
         continue;
     end
@@ -248,19 +256,15 @@ for k = 1:ng
     units(k).gen_id = sprintf('%s@%d', name, bus);
     units(k).bus = bus;
     units(k).group = name;
+    units(k).Pmw = t.Pmw;
     units(k).Smva = t.Smva;
     % Convert to 100 MVA system base.
-    units(k).H   = t.H * (t.Smva / Sbase);     % keep kinetic energy
-    units(k).D   = t.D * (t.Smva / Sbase);
-    units(k).Xdp = t.Xdp * (Sbase / t.Smva);   % reactance to system base
+    units(k).H   = t.H * (t.Pmw / Sbase);      % H uses MW rating (Note 4)
+    units(k).D   = t.D * (t.Pmw / Sbase);
+    units(k).Xdp = t.Xdp * (Sbase / t.Smva);   % X'd uses MVA base (Note 3)
     units(k).model = 'classical';
     units(k).Pmin_MW = Pmin; units(k).Pmax_MW = Pmax;
 end
-
-% Aggregation policy for PF: the PF solver schedules one Pg per generator
-% bus.  Multiple generators at the same bus are summed (P and Q limits).
-% This is done by standardize_case -> mpc.gen aggregation is implicit in
-% bus_data (only one Pg per bus).  For TS the individual units are kept.
 
 % =========================================================================
 % Assemble case_data
@@ -273,8 +277,7 @@ case_data.bus_data  = bus_data;
 case_data.line_data = line_data;
 
 % Machine struct (system-base classical units), including the bus-14
-% synchronous condenser (Pm=0, U197 dynamic data).  ts_simulate handles
-% the condenser by giving it Pm=0 via the balanced pm_mode.
+% synchronous condenser (Pm=0, U197 dynamic data as a modelling assumption).
 case_data.machines = struct();
 case_data.machines.base = struct('S_MVA',Sbase,'V_kV',230,'f_Hz',freq);
 case_data.machines.units = units;
@@ -297,23 +300,39 @@ case_data.pgaz.column_map = struct( ...
               'Td0p','Td0pp','Tq0p','Tq0pp','u'}});
 
 % Dynamic-data assumptions (NOT the PGAz file values).
-case_data.dynamic_assumptions = struct();
-case_data.dynamic_assumptions.source = ...
-    'IEEE RTS-1996 Table 15 (https://labs.ece.uw.edu/pstca/rts/rts96/)';
-case_data.dynamic_assumptions.model = 'classical (per Table 15 Note 1)';
-case_data.dynamic_assumptions.note = { ...
+da = struct();
+da.source = 'IEEE RTS-1996 Table 15 (https://labs.ece.uw.edu/pstca/rts/rts96/)';
+da.model = 'classical (per Table 15 Note 1)';
+da.note = { ...
     'The PGAz file Gen.con contains only placeholder dynamic data', ...
     '(H=5, D=0, all reactances = 0) from the PGAz conversion defaults.', ...
-    'Real IEEE RTS-1996 Table 15 data are used instead. H is converted to', ...
-    'the 100 MVA system base keeping total kinetic energy (H_sys=H*Sunit/Ssys).', ...
-    'X''d is converted to the system base (Xdp_sys = Xdp*Ssys/Sunit).', ...
-    'Bus 14 is a synchronous condenser (Pmax=0); it is excluded from the', ...
-    'classical TS machine list and kept as a PV bus in PF only.'};
-case_data.dynamic_assumptions.unit_table = unit_table;
-case_data.dynamic_assumptions.conversion = struct( ...
-    'H_sys','H_table * (S_unit_MVA / S_base)', ...
-    'D_sys','D_table * (S_unit_MVA / S_base)', ...
-    'Xdp_sys','Xdp_table * (S_base / S_unit_MVA)');
+    'Real IEEE RTS-1996 Table 15 data are used instead.', ...
+    '', ...
+    'Base conversion to 100 MVA system base (per Table 15 Notes 3-4):', ...
+    '  H_sys   = H_table * (P_unit_MW / S_base_MVA)   [Note 4: H in MJ/MW]', ...
+    '  X''d_sys = X''d_table * (S_base_MVA / S_unit_MVA) [Note 3: X''d on MVA base]', ...
+    '  D_sys   = D_table * (P_unit_MW / S_base_MVA)', ...
+    '', ...
+    'Bus 14 synchronous condenser is INCLUDED in the TS machine list with', ...
+    'U197 classical dynamic data and Pm=0.  This is an EXPLICIT MODELLING', ...
+    'ASSUMPTION -- Table 15 does not provide data for sync condensers.'};
+da.unit_table = unit_table;
+da.conversion = struct( ...
+    'H_sys',  'H_table * (P_unit_MW / S_base_MVA)', ...
+    'D_sys',  'D_table * (P_unit_MW / S_base_MVA)', ...
+    'Xdp_sys', 'Xdp_table * (S_base_MVA / S_unit_MVA)');
+da.bus14_assumption = struct( ...
+    'status', 'modelling assumption, not directly specified by Table 15', ...
+    'rationale', {{ ...
+        'Table 7 lists bus 14 as a "Sync Cond" unit type (separate from U197).', ...
+        'Table 15 provides dynamic data only for unit groups U12..U400,', ...
+        'with no entry for the synchronous condenser.', ...
+        'Bus 14 is INCLUDED in the TS machine list using U197 classical', ...
+        'dynamic data (H=2.8, X''d=0.32, D=0) with Pm=0, so it swings as', ...
+        'a zero-power synchronous machine.', ...
+        'This assumption does not affect PF (bus 14 is a PV bus with Q', ...
+        'limits from PV.con) and only affects TS swing dynamics.'}});
+case_data.dynamic_assumptions = da;
 
 case_data.ts_defaults = struct( ...
     'fault_bus', 15, ...
@@ -328,30 +347,8 @@ case_data.ts_defaults = struct( ...
 case_data.reference = struct( ...
     'pgaz_file', 'C:\Users\User\Downloads\PGAz1.3 (2)\PGAz1.3\Data\case24_ieee_rts_mp.m', ...
     'pgaz_version', 'PGAz v1.1.1 (file header); packaged in PGAz v1.3', ...
-    'rts96_table15', 'https://labs.ece.uw.edu/pstca/rts/rts96/Table-15.txt');
+    'rts96_table15', 'https://labs.ece.uw.edu/pstca/rts/rts96/Table-15.txt', ...
+    'rts96_paper', 'https://www.engineering.iastate.edu/~jdm/ee553/IEEE-RTS1996.pdf');
 
 case_data = cases.standardize_case(case_data);
-end
-
-% =========================================================================
-function pg = load_pgaz_source()
-% Load the raw PGAz matrices from the data-source file.  This is a DATA
-% read only; no PGAz solver code is executed.
-src = 'C:\Users\User\Downloads\PGAz1.3 (2)\PGAz1.3\Data\case24_ieee_rts_mp.m';
-if ~exist(src,'file')
-    error('case_ieee_rts24_pgaz:noSource', ...
-        'PGAz data source not found: %s', src);
-end
-S = struct();
-ABus=struct(); ALine=struct(); Slack=struct(); PV=struct(); PQ=struct(); AShunt=struct(); Gen=struct();
-run(src); %#ok<EVALNC>
-% PGAz file stores each matrix as a struct with a .con field.
-pg.ABus_con   = ABus.con;
-pg.ALine_con  = ALine.con;
-pg.Slack_con  = Slack.con;
-pg.PV_con     = PV.con;
-pg.PQ_con     = PQ.con;
-pg.AShunt_con = AShunt.con;
-pg.Gen_con    = Gen.con;
-pg.source_file = src;
 end

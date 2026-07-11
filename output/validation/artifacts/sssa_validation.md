@@ -2,7 +2,13 @@
 
 **Generated:** 2026-07-12 (FRESH this session — all values computed in this invocation,
 no saved metrics replayed as fresh).
-**Validated source commit:** `25badd0` (Phase C2 commit).
+**Validated source commit:** `a09830b` (Phase C closure: make Table 9.5 comparison
+diagnostic-only). This is the source/tests/docs commit whose behavior the artifact records;
+the artifact itself is committed separately in C4 and is NOT a validated source. The
+pre-closure validated source commit was `25badd0` (Phase C2); the pre-closure artifact
+commit was `dd26bdd`. The closure commit `a09830b` supersedes both as the validated
+source: it removes the hidden Table 9.5 acceptance gate, retracts the unsupported FD-noise
+causal claim, and corrects the provenance wording.
 **MATLAB:** R2026a Update 3.
 
 ## Scope
@@ -132,11 +138,22 @@ Padiyar SSSA attaches `case_data.reference` to its output for REPORTING only;
 the computation is produced entirely by `multimachine_ssa` operating on the DAE.
 The PF result (voltage, angle) is likewise invariant to reference corruption.
 
-## 10. Padiyar Table 9.5 — secondary cross-check only (fresh run)
+## 10. Padiyar Table 9.5 — secondary diagnostic cross-check only (fresh run)
 
-18 non-near-zero physical roots matched greedily against computed eigenvalues
-(pre-declared tolerance 0.06; the near-zero pair is excluded because Padiyar
-attributes it to load-flow/numerical error):
+Table 9.5 is an external published reference, NOT a numerical acceptance gate. There is no
+`verifyLessThan` assertion on the matched eigenvalue distance, and no tolerance such as
+`0.06` controls regression pass/fail. The comparison returns finite metrics with
+`required_for_acceptance = false`.
+
+18 non-near-zero physical roots matched against computed eigenvalues using a deterministic
+global assignment (successive minima over the full distance matrix; no toolbox assignment
+solver). The near-zero pair (`|λ| ≤ 0.01`) is excluded by a pre-declared structural rule
+because Padiyar attributes it to load-flow/numerical error. The matched indices are unique
+(one-to-one), and the sorted absolute-error multiset is invariant to the ordering of either
+input (verified by `test_table_9_5_matching_permutation_invariant`). The specific
+(ref_idx, computed_idx) pairing is order-dependent when reference eigenvalues are
+near-degenerate — a documented limitation of greedy assignment versus a full Hungarian
+solver; a toolbox assignment solver is not used.
 
 | book λ | computed λ | abs_err | freq err % | damping err % |
 |---|---|---|---|---|
@@ -154,10 +171,15 @@ attributes it to load-flow/numerical error):
 | -4.1121 | -4.1095 | 2.65e-03 | 0.00 | 0.00 |
 | -4.2449 | -4.2423 | 2.56e-03 | 0.00 | 0.00 |
 
-Max abs error = 4.3e-2 < 0.06 (secondary cross-check passes). This is reported,
-NOT gated: Table 9.5 is never a fitted target, and no parameter was tuned to match
-it. The remaining ~4e-2 offsets are consistent with printed-precision and FD-Jacobian
-noise, not a model defect.
+Maximum matched absolute difference ≈ `4.3e-2` (reported, NOT gated). The FD plateau study
+(§5) changes the computed eigenvalues by approximately `1e-7` between `h=1e-5` and `h=1e-6`,
+so the observed ~4e-2 reference offset cannot be attributed to FD-step noise. The remaining
+difference is unresolved and may reflect model, data, convention, initialization, or
+publication-precision differences. No parameter, scale, time constant, saturation, load
+model, finite-difference step, or solver tolerance was adjusted to reduce it. This
+statement separates observed evidence (the plateau study), possible hypotheses (the listed
+sources of difference), and the absence of a proven root cause; no hypothesis is asserted as
+fact.
 
 ## 11. Manual / AVR excitation equations
 
@@ -167,18 +189,21 @@ noise, not a model defect.
 - **AVR** (5 states): `Efd_dot = (KA*(Vref - |Vt|) - Efd)/TA` (`:133`);
   `Vref = |Vt| + Efd/KA` at initialization (`:110`). `u = {H, D, Pm, Vref}`.
 
-## 12. Test counts (fresh run)
+## 12. Test counts (fresh run on C3 = `a09830b`)
 
 | Test file | Passed | Failed | Incomplete |
 |---|---|---|---|
 | test_emf6_contract.m | 6 | 0 | 0 |
 | test_emf6_physics_contract.m | 7 | 0 | 0 |
-| test_padiyar_two_area_reference.m | 9 | 0 | 0 |
-| test_sssa_contract.m (NEW) | 10 | 0 | 0 |
-| test_sssa_fd_convergence.m (NEW) | 2 | 0 | 0 |
-| test_sssa_reference_independence.m (NEW) | 5 | 0 | 0 |
-| **SSSA targeted total** | **39** | **0** | **0** |
-| **Full regression** | **276** | **0** | **0** |
+| test_padiyar_two_area_reference.m | 14 | 0 | 0 |
+| test_sssa_contract.m | 10 | 0 | 0 |
+| test_sssa_fd_convergence.m | 2 | 0 | 0 |
+| test_sssa_reference_independence.m | 5 | 0 | 0 |
+| test_no_external_solver_dependency.m | 12 | 0 | 0 |
+| test_no_kundur_calibration_claims.m | 3 | 0 | 0 |
+| test_no_table95_acceptance_gate.m (NEW) | 3 | 0 | 0 |
+| **SSSA targeted total** | **62** | **0** | **0** |
+| **Full regression** | **284** | **0** | **0** |
 
 ## 13. Phase C gate status
 
@@ -188,20 +213,30 @@ noise, not a model defect.
 | SSSA_CALL_GRAPH_AUDITED | PASS (docs/SSSA_CONTRACT.md) |
 | SSSA_SHARED_DAE | PASS |
 | SSSA_EQUILIBRIUM_RESIDUAL | PASS |
+| SSSA_STATE_ORDER | PASS |
+| SSSA_STATE_COUNTS | PASS (manual=16, AVR=20, EMF6=24) |
 | SSSA_FD_CONVERGENCE | PASS |
+| SSSA_DEFAULT_FD_ON_PLATEAU | PASS |
 | SSSA_SCHUR_SOLVE | PASS |
-| SSSA_NO_INV_JYY | PASS |
-| SSSA_FINITE_JACOBIAN | PASS |
-| SSSA_CONJUGATE_PAIRS | PASS |
+| SSSA_NO_EXPLICIT_INV | PASS |
 | SSSA_REFERENCE_ANGLE_STRUCTURE | PASS |
+| SSSA_CONJUGATE_PAIR_STRUCTURE | PASS |
 | SSSA_MODAL_METRICS | PASS |
 | SSSA_REFERENCE_INDEPENDENCE | PASS |
-| SSSA_NO_REFERENCE_TUNING | PASS (test_no_kundur_calibration_claims + grep guard) |
-| PADIYAR_MANUAL_STATE_COUNT | PASS (16) |
-| PADIYAR_AVR_STATE_COUNT | PASS (20) |
-| PADIYAR_TABLE95_SECONDARY_ONLY | PASS |
-| DOCUMENTATION_MATCHES_SSSA_CODE | PASS (docs/SSSA_CONTRACT.md) |
-| FULL_REGRESSION | PASS (276/0/0) |
+| SSSA_TABLE95_DIAGNOSTIC_COMPUTED | PASS |
+| SSSA_TABLE95_NOT_ACCEPTANCE_GATE | PASS |
+| SSSA_TABLE95_MATCHING_ORDER_INVARIANT | PASS |
+| SSSA_NO_UNSUPPORTED_CAUSAL_CLAIM | PASS |
+| SSSA_NO_PARAMETER_TUNING | PASS |
+| SSSA_NO_EXTERNAL_SOLVER | PASS |
+| ARTIFACT_SOURCE_PROVENANCE | PASS (validated source = a09830b; pre-closure source = 25badd0; pre-closure artifact = dd26bdd) |
+| DOCUMENTATION_MATCHES_RUNTIME | PASS (docs/SSSA_CONTRACT.md) |
+| TARGETED_TESTS | PASS (62/0/0 on a09830b) |
+| FULL_REGRESSION | PASS (284/0/0 on a09830b) |
+
+Padiyar Table 9.5 proximity itself is NOT a required gate. There is no
+`TABLE95_MATCH = PASS/FAIL` based on a book tolerance; the matched absolute difference is
+reported as a metric (≈ 4.3e-2) only.
 
 **PHASE_C_SSSA_READY = PASS.**
 
@@ -218,6 +253,10 @@ r4 = runtests('tests/test_sssa_contract.m');
 r5 = runtests('tests/test_sssa_fd_convergence.m');
 r6 = runtests('tests/test_sssa_reference_independence.m');
 
+% Guards
+r7 = runtests('tests/test_no_external_solver_dependency.m');
+r8 = runtests('tests/test_no_kundur_calibration_claims.m');
+
 % Schur reconstruction
 da = stability.padiyar_model11_ssa([],struct('excitation','avr','fd_eps',1e-6));
 A_recon = da.Jxx - da.Jxy(:,da.free_y)*(da.Jyy(da.free_y,da.free_y)\da.Jyx(da.free_y,:));
@@ -229,11 +268,14 @@ r = runtests('tests','IncludeSubfolders',true);
 
 ## 15. Explicit statements
 
-- All values above are from fresh runs in this session (no saved .mat replayed as fresh).
+- All values above are from fresh runs on C3 (`a09830b`) in this session (no saved .mat replayed as fresh).
 - No parameter tuning to match PSAT/PGAz/Kundur/Table 9.5.
 - No tolerance was relaxed after seeing a result (all tolerances pre-declared).
 - No hidden non-convergence (all equilibrium residuals < 1e-10).
 - No `inv(Jyy)` in production `+stability/` (grep-guarded).
+- No reference eigenvalues drive the SSSA solver (`reference.table95_eigenvalues` is attached for reporting only).
+- No hard eigenvalue-distance assertion to Table 9.5 controls regression acceptance (guard: `tests/test_no_table95_acceptance_gate.m`).
+- The observed Table 9.5 offset is unresolved and is not attributable to FD-step noise based on the measured plateau study.
 - SSSA and TS share the exact same DAE for both Padiyar and EMF6.
-- Adaptive TS was NOT started; the TS kernel was NOT modified; the PF solver was
-  NOT modified.
+- Adaptive TS was NOT started; the TS kernel was NOT modified; the PF solver was NOT modified.
+- Repository overall working tree is DIRTY after C4: unrelated user-owned changes (AGENTS.md edits, Padiyar contract doc, IBR plan files, Padiyar report sources) are intentionally preserved and are NOT part of this closure. The closure-scoped files (C3 source/tests/docs + C4 artifact) are committed.

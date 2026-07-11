@@ -113,6 +113,11 @@ for it = 1:nt-1
     Pe_hist(it,:) = Pe_fun(x, y).'; Vbus_hist(it,:) = abs(complex(y(1:2:end),y(2:2:end))).';
 
     % Predictor (explicit Euler).
+    % The differential step [t_now, t_next] uses the topology at t_now
+    % (Y_now) for BOTH f0 and the corrector, so no trapezoidal step averages
+    % RHS from two different topologies across the fault/clear boundary. The
+    % topology switches at the event boundary (next step). The post-step
+    % algebraic state is re-solved with Y_next for the recorded voltage.
     x_next = x + dt_step*f0;
     y_next = y;
 
@@ -120,11 +125,11 @@ for it = 1:nt-1
         case {'trapezoidal','heun','predictor-corrector','predictor_corrector'}
             if strcmp(cmode,'adaptive')
                 for ci = 1:max_citer
-                    y_next = solve_g(x_next, y_next, Y_next, dae_g, jac_y, g_tol);
+                    y_next = solve_g(x_next, y_next, Y_now, dae_g, jac_y, g_tol);
                     f1 = dae_f(x_next, y_next);
                     x_new = x + 0.5*dt_step*(f0 + f1);
                     upd = norm(x_new - x_next, inf);
-                    f1c = dae_f(x_new, solve_g(x_new,y_next,Y_next,dae_g,jac_y,g_tol));
+                    f1c = dae_f(x_new, solve_g(x_new,y_next,Y_now,dae_g,jac_y,g_tol));
                     R = x_new - x - 0.5*dt_step*(f0 + f1c);
                     resn = norm(R, inf);
                     corr_iters(it) = ci; corr_update(it) = upd; corr_residual(it) = resn;
@@ -144,12 +149,12 @@ for it = 1:nt-1
                 end
             else
                 for ci = 1:max(1,citer)
-                    y_next = solve_g(x_next, y_next, Y_next, dae_g, jac_y, g_tol);
+                    y_next = solve_g(x_next, y_next, Y_now, dae_g, jac_y, g_tol);
                     f1 = dae_f(x_next, y_next);
                     x_next = x + 0.5*dt_step*(f0 + f1);
                 end
                 corr_iters(it) = citer;
-                f1f = dae_f(x_next, solve_g(x_next,y_next,Y_next,dae_g,jac_y,g_tol));
+                f1f = dae_f(x_next, solve_g(x_next,y_next,Y_now,dae_g,jac_y,g_tol));
                 R = x_next - x - 0.5*dt_step*(f0 + f1f);
                 corr_residual(it) = norm(R, inf);
                 corr_update(it) = norm(R, inf);

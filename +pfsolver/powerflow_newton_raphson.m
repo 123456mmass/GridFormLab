@@ -123,15 +123,16 @@ function results = solve_model(model, max_iter, tolerance, verbose)
 %   Newton iteration order (Phase B contract, mandatory correction D):
 %     1. compute mismatch
 %     2. check mismatch finite
-%     3. compute analytic Jacobian
-%     4. check Jacobian finite
-%     5. check conditioning (rcond >= 1e-13)
-%     6. solve Newton step
-%     7. check Newton step finite
-%     8. update state
-%     9. check updated state finite
-%    10. enforce fixed REF/PV quantities (non-positive V reset)
-%    11. check convergence
+%     3. check convergence (breaks before Jacobian on the final iteration,
+%        so the new guards below are dead on a converging case)
+%     4. compute analytic Jacobian
+%     5. check Jacobian finite
+%     6. check conditioning (rcond >= 1e-13)
+%     7. solve Newton step
+%     8. check Newton step finite
+%     9. update state
+%    10. check updated state finite
+%    11. enforce fixed REF/PV quantities (non-positive V reset)
 rcond_threshold = 1e-13;   % declared upfront; matches nonlinear_newton.m:28
 
 x = pf_initial_state(model);

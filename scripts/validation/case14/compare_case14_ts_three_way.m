@@ -1,10 +1,11 @@
 function out = compare_case14_ts_three_way()
 %COMPARE_CASE14_TS_THREE_WAY  Fresh three-way (Ours + PSAT + PGAz) validation
 %   for IEEE case14. Delegates to run_three_way_validation (all three tools run
-%   FRESH this session; no saved .mat). PGAz is MANDATORY for the gate — a
-%   missing/not-run PGAz makes ALL_GATES_PASS = FAIL (never an optional pass).
-%   PSAT/PGAz are reference tools only (never production deps). Also writes a
-%   markdown report + plot to docs/source/figures/case14_ts/.
+%   FRESH this session; no saved .mat). PSAT is the PRIMARY required
+%   cross-validation reference; PGAz is a SECONDARY DIAGNOSTIC only (never a
+%   required gate, never a basis for relaxing tolerance). PSAT/PGAz are
+%   reference tools only (never production deps). Also writes a markdown
+%   report + plot to docs/source/figures/case14_ts/.
 
 root = pf_init_paths;
 o = run_three_way_validation('case_matpower6_case14');
@@ -32,14 +33,17 @@ fprintf(fid,'## Gates\n\n| Gate | Status |\n|---|---:|\n');
 fprintf(fid,'| contract_ybus_pgaz | %s |\n', gate(g.contract_ybus_pgaz));
 fprintf(fid,'| contract_ybus_psat | %s |\n', gate(g.contract_ybus_psat));
 fprintf(fid,'| gen_mapping_pgaz | %s |\n', gate(g.gen_mapping_pgaz));
-fprintf(fid,'| psat_ran | %s (td=%g) |\n', gate(g.psat_ran), o.psat_td_points);
-fprintf(fid,'| pgaz_ran | %s (nt=%g) |\n', gate(g.pgaz_ran), o.pgaz_nt);
-fprintf(fid,'| ours_nonconv_zero | %s (nonconv=%d) |\n', gate(g.ours_nonconv_zero), o.ours_nonconv);
-fprintf(fid,'| ps_metrics_ok (PSAT_GATE) | %s |\n', gate(g.ps_metrics_ok));
-fprintf(fid,'| pg_metrics_ok (PGAZ_GATE) | %s |\n', gate(g.pg_metrics_ok));
+fprintf(fid,'| psat_execution | %s (td=%g) |\n', gate(g.psat_execution), o.psat.td_points);
+fprintf(fid,'| pgaz_execution | %s (nt=%g; fixed ci=%d, residual unavailable) |\n', ...
+    gate(g.pgaz_execution), o.pgaz.nt, o.pgaz.corrector_iter);
+fprintf(fid,'| ours_convergence | %s (nonconv=%d) |\n', gate(g.ours_convergence), o.ours_nonconv);
+fprintf(fid,'| comparison_grid_valid | %s |\n', gate(g.comparison_grid_valid));
+fprintf(fid,'| event_grid_valid | %s |\n', gate(g.event_grid_valid));
+fprintf(fid,'| psat_comparison (primary) | %s |\n', gate(g.psat_comparison));
+fprintf(fid,'| pgaz_comparison (diagnostic) | %s |\n', gate(g.pgaz_comparison));
 fprintf(fid,'| ALL_GATES_PASS | %s |\n\n', gate(g.all_gates_pass));
-fprintf(fid,'Tolerances (predeclared by method class): PF dV<1e-6 dAng<1e-4; TS converged dCOI<0.05; TS PGAz (fixed-3-iter) dCOI<1.0.\n');
-fprintf(fid,'PGAz uses a fixed 3-iteration corrector (pgaz_ts.m default); its larger TS offset is method accuracy, not a conversion bug (PF matches at machine precision).\n');
+fprintf(fid,'Primary PSAT tolerance: PF dV<1e-6, dAng<1e-4; TS dCOI<0.05 deg, dw<1e-4 pu, dPe<0.1 MW, dVm<1e-3 pu.\n');
+fprintf(fid,'PGAz is reported as a secondary diagnostic. Completion is not described as residual convergence, and its larger trajectory difference is not hidden by a relaxed tolerance.\n');
 
 out = o;
 fprintf('\nReport: %s\n', fullfile(outdir,'case14_ts_compare_three_way.md'));

@@ -24,8 +24,8 @@ PSAT/PGAz are reference tools only. Generators mapped by bus ID; angles/speeds i
 | Pair | max|dCOI| (deg) | max|dw| (pu) | max|dPe| (MW) | max|dVm bus4| (pu) |
 |---|---:|---:|---:|---:|
 | PSAT-Ours | 0.009571 | 3.816033e-06 | 0.042171 | 3.179264e-05 |
-| PGAz-Ours | 0.614315 | 2.916422e-04 | 2.441206 | 2.264256e-03 |
-| PSAT-PGAz | 0.612232 | 2.916130e-04 | 2.435224 | 2.257649e-03 |
+| PGAz-Ours | 0.616348 | 2.916429e-04 | 2.467655 | 2.264528e-03 |
+| PSAT-PGAz | 0.615333 | 2.916136e-04 | 2.461673 | 2.257957e-03 |
 
 ## Gates
 
@@ -34,12 +34,14 @@ PSAT/PGAz are reference tools only. Generators mapped by bus ID; angles/speeds i
 | contract_ybus_pgaz | PASS |
 | contract_ybus_psat | PASS |
 | gen_mapping_pgaz | PASS |
-| psat_ran | PASS (td=1509) |
-| pgaz_ran | PASS (nt=1501) |
-| ours_nonconv_zero | PASS (nonconv=0) |
-| ps_metrics_ok (PSAT_GATE) | PASS |
-| pg_metrics_ok (PGAZ_GATE) | PASS |
+| psat_execution | PASS (td=1509) |
+| pgaz_execution | PASS (nt=1501; fixed ci=8, residual unavailable) |
+| ours_convergence | PASS (nonconv=0) |
+| comparison_grid_valid | PASS |
+| event_grid_valid | PASS |
+| psat_comparison (primary) | PASS |
+| pgaz_comparison (diagnostic) | FAIL |
 | ALL_GATES_PASS | PASS |
 
-Tolerances (predeclared by method class): PF dV<1e-6 dAng<1e-4; TS converged dCOI<0.05; TS PGAz (fixed-3-iter) dCOI<1.0.
-PGAz uses a fixed 3-iteration corrector (pgaz_ts.m default); its larger TS offset is method accuracy, not a conversion bug (PF matches at machine precision).
+Primary PSAT tolerance: PF dV<1e-6, dAng<1e-4; TS dCOI<0.05 deg, dw<1e-4 pu, dPe<0.1 MW, dVm<1e-3 pu.
+PGAz is reported as a secondary diagnostic. Completion is not described as residual convergence, and its larger trajectory difference is not hidden by a relaxed tolerance.

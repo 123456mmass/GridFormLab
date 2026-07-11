@@ -15,7 +15,7 @@ pf=pfsolver.powerflow_newton_raphson(case_data,struct('verbose',false, ...
     'plot_results',false,'tolerance',options.equilibrium_tolerance, ...
     'max_iter',options.newton_max_iterations,'enforce_q_limits',false));
 if ~pf.converged
-    error('synchronous_emf6_ssa:powerFlow','FSOLVE power flow did not converge.');
+    error('synchronous_emf6_ssa:powerFlow','In-house Newton power flow did not converge.');
 end
 
 [m,u]=machine_parameters(case_data,pf);

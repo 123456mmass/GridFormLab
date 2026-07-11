@@ -74,6 +74,32 @@ verifyEqual(testCase,r2.Afull,r1.Afull,'AbsTol',1e-12);
 verifyEqual(testCase,sort(r2.eigenvalues),sort(r1.eigenvalues),'AbsTol',1e-12);
 end
 
+function test_printed_reference_data_does_not_drive_pf(testCase)
+% Falsification test: corrupting the Padiyar Table 9.2 comparison copies
+% (printed_V/angle/Pg/Qg) and the Table 9.5 eigenvalue reference must NOT
+% alter the PF result. Only COMPARISON-ONLY fields are corrupted; physical
+% inputs (bus_data, line_data) are untouched. A deterministic solver with
+% unchanged inputs returns identical results to machine precision.
+c=cases.case_padiyar_two_area_4m_avr();
+opt=struct('verbose',false,'plot_results',false,'enforce_q_limits',false,'tolerance',1e-11);
+r1=pfsolver.powerflow_newton_raphson(c,opt);
+c2=c;
+c2.operating_point.printed_V=(0.5:0.1:1.4).';
+c2.operating_point.printed_angle_deg=(-50:5:-5).';
+c2.operating_point.printed_Pg=rand(10,1)*10;
+c2.operating_point.printed_Qg=rand(10,1)*5;
+c2.reference.table95_eigenvalues=(101:120).'+1i*(201:220).';
+r2=pfsolver.powerflow_newton_raphson(c2,opt);
+verifyEqual(testCase,r2.converged,r1.converged);
+verifyEqual(testCase,r2.iterations,r1.iterations);
+verifyEqual(testCase,r2.mismatch_history,r1.mismatch_history,'AbsTol',1e-12);
+verifyEqual(testCase,r2.Ybus,r1.Ybus,'AbsTol',1e-12);
+verifyEqual(testCase,r2.bus_voltage,r1.bus_voltage,'AbsTol',1e-12);
+verifyEqual(testCase,r2.bus_angle_deg,r1.bus_angle_deg,'AbsTol',1e-12);
+verifyEqual(testCase,r2.P_generation,r1.P_generation,'AbsTol',1e-12);
+verifyEqual(testCase,r2.Q_generation,r1.Q_generation,'AbsTol',1e-12);
+end
+
 function test_no_fault_ts_equilibrium(testCase)
 for excitation={'manual','avr'}
     r=stability.ts_simulate_padiyar_model11([],struct('excitation',excitation{1}, ...

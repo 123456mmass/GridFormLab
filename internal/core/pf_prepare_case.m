@@ -37,6 +37,9 @@ model.external_bus_ids = external_bus_ids;
 model.num_buses = size(bus_data, 1);
 model.num_lines = size(line_data, 1);
 model.bus_type = bus_type;
+% Physical source of truth: bus_data columns 3-6 (V, angle, Pgen, Qgen).
+% Reference/comparison fields (e.g. operating_point.printed_*, case_data.reference.*)
+% are never read here -- see test_pf_reference_independence.
 model.V_spec = bus_data(:, 3);
 model.angle_spec_deg = bus_data(:, 4);
 model.P_gen = bus_data(:, 5);

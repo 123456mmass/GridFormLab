@@ -23,6 +23,12 @@ case_data.base_values = struct('S_base_MVA',100,'V_base_kV',1,'frequency_Hz',60)
 % Internal project bus types: 1=REF, 2=PV, 3=PQ. Bus 11 is the printed
 % angle reference and therefore the PF slack. Printed angles are supplied
 % as initial values only; the in-house PF recomputes the operating point.
+%
+% PHYSICAL INPUT (source of truth for the PF solver): bus_data columns
+% 3 (Vmag), 4 (angleDeg), 5 (Pgen), 6 (Qgen) are read by pf_prepare_case.
+% The operating_point.printed_* fields below are COMPARISON COPIES of
+% Padiyar Table 9.2 and must NOT influence solver output. Corrupting them
+% must leave the PF result unchanged (see test_pf_reference_independence).
 case_data.bus_data = [ ...
     1   2  1.0300    8.2154  7.0000  0  0     0     0  0  -Inf Inf;
     2   2  1.0100   -1.5040  7.0000  0  0     0     0  0  -Inf Inf;
@@ -70,6 +76,10 @@ case_data.machines = struct( ...
     'exciter',struct('model','single_time_constant_avr','KA',200,'TA',0.02), ...
     'units',units);
 
+% operating_point.printed_* : COMPARISON COPIES of Padiyar Table 9.2
+% (published operating point). These are NOT physical inputs. The PF
+% solver reads only bus_data(:,3:6). Corrupting printed_* must not change
+% PF results (see tests/test_pf_reference_independence.m).
 case_data.operating_point = struct( ...
     'load_model','cz_p_cz_q', ...
     'constant_mechanical_power',true, ...

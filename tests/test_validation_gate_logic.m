@@ -14,6 +14,9 @@ pf_init_paths();
 end
 
 function g = full_pass_gates()
+% Phase B: PGAz is a secondary diagnostic only. The required gate set
+% excludes all PGAz-dependent fields (pgaz_execution, pgaz_plateau,
+% pgaz_comparison). PSAT is the required cross-validation reference.
 g = struct();
 g.production_dependency = true;
 g.no_kundur_acceptance_target = true;
@@ -22,8 +25,8 @@ g.emf6_no_fault = true;
 g.emf6_shared_model = true;
 g.case14 = struct('contract',true,'mapping',true,'comparison_grid',true, ...
     'event_grid',true,'sample_alignment',true,'extrapolation_used_false',true, ...
-    'psat_execution',true,'pgaz_execution',true,'ours_convergence',true, ...
-    'psat_comparison',true,'pgaz_plateau',true,'pgaz_comparison',true);
+    'psat_execution',true,'ours_convergence',true, ...
+    'psat_comparison',true);
 g.rts24 = g.case14;
 end
 
@@ -60,20 +63,25 @@ testCase.verifyFalse(all_pass, 'Extrapolation used must fail.');
 testCase.verifyTrue(ismember('case14.extrapolation_used_false', report.false), 'extrapolation gate reported false.');
 end
 
-function test_pgaz_completed_but_comparison_fails(testCase)
-% PGAz completed (execution=true) but plateau comparison fails => aggregate fail.
-g = full_pass_gates(); g.case14.pgaz_comparison = false;
+function test_pgaz_comparison_failure_does_not_fail_aggregate(testCase)
+% Phase B: PGAz is a secondary diagnostic only. PGAz comparison failure
+% must NOT fail the aggregate gate (PSAT is the required reference).
+g = full_pass_gates();
+g.case14.pgaz_comparison = false;   % reported, not required
+g.case14.pgaz_execution = false;   % reported, not required
+g.case14.pgaz_plateau = false;      % reported, not required
 [all_pass, report] = evaluate_validation_gates(g);
-testCase.verifyFalse(all_pass, 'PGAz comparison failure must fail aggregate.');
-testCase.verifyTrue(ismember('case14.pgaz_comparison', report.false), 'pgaz_comparison reported false.');
+testCase.verifyTrue(all_pass, 'PGAz diagnostic failures must not fail the aggregate gate.');
+testCase.verifyTrue(isempty(report.missing), 'No required gate should be missing.');
 end
 
-function test_pgaz_not_converged_no_residual_still_completed(testCase)
-% PGAz fixed-3 with no residual is COMPLETED (pgaz_execution=true), not
-% "converged". The execution gate passes; convergence is not a gate field.
+function test_pgaz_fields_absent_does_not_fail_aggregate(testCase)
+% Phase B: a gate struct with NO PGAz fields at all must still pass,
+% because PGAz is not part of the required gate set.
 g = full_pass_gates();
-[all_pass, ~] = evaluate_validation_gates(g);
-testCase.verifyTrue(all_pass, 'PGAz completed (no residual) does not fail execution gate.');
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyTrue(all_pass, 'Gate struct without PGAz fields must pass.');
+testCase.verifyTrue(~isfield(g.case14, 'pgaz_comparison'), 'pgaz_comparison absent by design.');
 end
 
 function test_comparison_grid_invalid_fails(testCase)
@@ -96,8 +104,11 @@ testCase.verifyTrue(ismember('case14.psat_comparison', report.invalid), 'NaN rep
 end
 
 function test_nested_missing_fails(testCase)
-g = full_pass_gates(); g.rts24 = rmfield(g.rts24, 'pgaz_execution');
+% Phase B: PGAz fields are not required, so removing a REQUIRED (PSAT)
+% field must fail. Removing a PGAz field must NOT fail.
+g = full_pass_gates();
+g.rts24 = rmfield(g.rts24, 'psat_execution');   % required -> must fail
 [all_pass, report] = evaluate_validation_gates(g);
-testCase.verifyFalse(all_pass, 'Nested missing gate must fail.');
-testCase.verifyTrue(ismember('rts24.pgaz_execution', report.missing), 'nested missing reported.');
+testCase.verifyFalse(all_pass, 'Nested missing REQUIRED gate must fail.');
+testCase.verifyTrue(ismember('rts24.psat_execution', report.missing), 'nested missing reported.');
 end

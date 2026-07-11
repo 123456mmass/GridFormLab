@@ -131,7 +131,6 @@ fprintf('validated_source_commit: %s\n', src_commit);
 function add(s)
 lines = [lines; {s}];
 end
-end
 
 function emit_case(title, o)
 g = o.gates;
@@ -159,3 +158,4 @@ end
 
 function s = gate(c), if c, s='PASS'; else, s='FAIL'; end, end
 function s = ternary(c,a,b), if c, s=a; else, s=b; end, end
+end

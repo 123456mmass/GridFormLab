@@ -58,8 +58,9 @@ case 'fixed'
         x_pred = x + 0.5*h*(f0 + f1);
         ci_used = ci;
     end
-    % Final residual (matches EMF6 fixed-path reporting).
+    % Final consistent algebraic state at x_full (requirement 5).
     [y_fin, ~] = stability.ts_algebraic_solve(x_pred, y_pred, Y, dae_g, jac_fn, g_tol, Jyy);
+    y_pred = y_fin;
     R = x_pred - x - 0.5*h*(f0 + dae_f(x_pred, y_fin));
     resn = norm(R, inf);
     upd = resn;

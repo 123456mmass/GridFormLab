@@ -22,8 +22,3 @@ else
     Y = Ypre;
 end
 end
-
-function tf = ts_topology_changed(A, B)
-%TS_TOPOLOGY_CHANGED True if two admittance matrices differ.
-tf = isequal(size(A),size(B)) && max(abs(A(:)-B(:)),[],'all') == 0;
-end

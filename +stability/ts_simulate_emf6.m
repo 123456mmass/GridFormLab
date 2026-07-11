@@ -96,19 +96,21 @@ corr_update = zeros(nt-1,1); corr_converged = true(nt-1,1); nonconv = 0;
 
 % --- Algebraic network solver: solve dae_g(x,.,Y) = 0 for y ----------------
 g_tol = 1e-12;            % tight, so no-fault equilibrium is preserved
-jac_y = jac_y_fd(x,y,Ypre,dae_g,nb);
+
 Ycur = Ypre;
 
-set_topo = @(tnow) topology_at(tnow, opt, Ypre, Yfault, Ypost);
+set_topo = @(tnow) stability.ts_topology_at(tnow, opt, Ypre, Yfault, Ypost);
 for it = 1:nt-1
     dt_step = dt_arr(it);
     t_now = t(it); t_next = t(it+1);
     Y_now  = set_topo(t_now);
     Y_next = set_topo(t_next);
-    jac_y = jac_y_fd(x,y,Y_now,dae_g,nb); Ycur = Y_now;
+    jac_y = stability.ts_jac_y_fd(x,y,Y_now,dae_g);
 
     % Consistent algebraic state at current x (seed with previous y).
-    y = solve_g(x, y, Y_now, dae_g, jac_y, g_tol);
+    [y, alg_info] = stability.ts_algebraic_solve(x, y, Y_now, dae_g, @stability.ts_jac_y_fd, g_tol, jac_y);
+    if ~alg_info.converged, error('ts_simulate_emf6:algebraic', ...
+        'Algebraic solve failed at t=%.4f (step %d): residual=%.3e (tol=%.3e), iters=%d.', t_now, it, alg_info.final_residual, g_tol, alg_info.iterations); end
     f0 = dae_f(x, y);
 
     % Record current sample.
@@ -138,7 +140,10 @@ for it = 1:nt-1
                 t_next, it, step.corrector_residual);
         end
     end
-    x = step.x_full; jac_y = jac_y_fd(x,step.y_full,Y_next,dae_g,nb); y = solve_g(x, step.y_full, Y_next, dae_g, jac_y, g_tol);
+    x = step.x_full; jac_y = stability.ts_jac_y_fd(x,step.y_full,Y_next,dae_g);
+    [y, alg_info2] = stability.ts_algebraic_solve(x, step.y_full, Y_next, dae_g, @stability.ts_jac_y_fd, g_tol, jac_y);
+    if ~alg_info2.converged, error('ts_simulate_emf6:algebraic', ...
+        'Algebraic solve failed at t=%.4f (step %d): residual=%.3e (tol=%.3e), iters=%d.', t_next, it, alg_info2.final_residual, g_tol, alg_info2.iterations); end
 end
 % Final sample.
 delta_hist(nt,:) = x(1:6:end).'; omega_hist(nt,:) = x(2:6:end).';
@@ -171,47 +176,3 @@ res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
     'freq_Hz',dae.base.frequency_Hz);
 end
 
-% =========================================================================
-function Y = topology_at(tnow, opt, Ypre, Yfault, Ypost)
-if tnow < opt.t_fault,        Y = Ypre;
-elseif tnow < opt.t_clear,    Y = Yfault;
-else,                         Y = Ypost; end
-end
-
-function tf = equalY(A,B)
-tf = isequal(size(A),size(B)) && max(abs(A(:)-B(:)),[],'all') == 0;
-end
-
-function y = solve_g(x, y0, Y, dae_g, Jyy, tol)
-% Damped Newton on dae_g(x,y,Y) = 0.  y is the algebraic (voltage) state.
-y = y0(:);
-for k = 1:30
-    g = dae_g(x, y, Y);
-    ng = norm(g, inf);
-    if ng <= tol, return; end
-    step = -(Jyy \ g);
-    if any(~isfinite(step)), return; end
-    % Line search to keep the residual decreasing.
-    alpha = 1; accepted = false;
-    while alpha >= 2^-16
-        yt = y + alpha*step;
-        gt = dae_g(x, yt, Y);
-        if all(isfinite(gt)) && norm(gt,inf) < ng, y = yt; accepted = true; break; end
-        alpha = alpha/2;
-    end
-    if ~accepted, return; end
-end
-end
-
-function J = jac_y_fd(x, y, Y, dae_g, nb)
-% Central finite-difference Jacobian of dae_g w.r.t. y (network voltages).
-ny = 2*nb; J = complex(zeros(ny));
-g0 = dae_g(x, y, Y);
-for j = 1:ny
-    h = 1e-7*(1 + abs(y(j)));
-    yp = y; ym = y; yp(j) = yp(j) + h; ym(j) = ym(j) - h;
-    J(:,j) = (dae_g(x, yp, Y) - dae_g(x, ym, Y)) / (2*h);
-end
-% Guard against an all-zero column (degenerate bus).
-J = J + 1e-14*eye(ny);
-end

@@ -26,7 +26,15 @@ for k = 1:30
     end
     step = -(Jyy \ g);
     if any(~isfinite(step))
-        info.converged = false; return;
+        % Singular/degenerate Jacobian: refresh and retry once.
+        Jyy = jac_y_fn(x, y, Y, dae_g);
+        step = -(Jyy \ g);
+        if any(~isfinite(step))
+            error('ts_algebraic_solve:failed', ...
+                ['Algebraic solve failed (non-finite Newton step) at ' ...
+                'residual=%.3e (tol=%.3e), iterations=%d, line_search_failures=%d.'], ...
+                nr, tol, k, info.line_search_failures);
+        end
     end
     alpha = 1; accepted = false;
     while alpha >= 2^-16
@@ -49,7 +57,10 @@ for k = 1:30
             end
         end
         if ~accepted
-            info.converged = false; return;
+            error('ts_algebraic_solve:failed', ...
+                ['Algebraic solve failed (line search exhausted) at ' ...
+                'residual=%.3e (tol=%.3e), iterations=%d, line_search_failures=%d.'], ...
+                nr, tol, k, info.line_search_failures);
         end
     end
 end

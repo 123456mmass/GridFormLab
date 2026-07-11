@@ -110,6 +110,7 @@ end
 function test_padiyar_15s_no_algebraic_failure(testCase)
 % Long-horizon regression: the stale-Jacobian bug caused algebraic failure at
 % t~3.81s. After the fix, 15s must pass with zero algebraic failures.
+% Bounded using COI-relative angle, pairwise angle, speed, Vbus, residuals.
 c=cases.case_padiyar_two_area_4m_avr();
 opt=struct('fault_enabled',true,'fault_bus',3,'Zf',1i*0.1,'t_fault',1,'t_clear',1.1, ...
     't_end',15,'dt',0.01,'excitation','avr','verbose',false);
@@ -117,9 +118,25 @@ r=stability.ts_simulate_padiyar_model11(c,opt);
 testCase.verifyEqual(r.nonconverged_step_count,0);
 testCase.verifyTrue(all(isfinite(r.delta(:))));
 testCase.verifyTrue(all(isfinite(r.omega(:))));
-testCase.verifyLessThan(max(r.corrector_residual),1e-6);
-% Trajectory bounded (declared a priori: angles should not exceed 360 deg)
-testCase.verifyLessThan(max(abs(r.delta(:))),360);
+testCase.verifyTrue(all(isfinite(r.Vbus(:))));
+testCase.verifyLessThan(max(r.corrector_residual),1e-6,'Trapezoidal residual');
+testCase.verifyLessThan(max(r.algebraic_residual),1e-9,'Algebraic residual');
+% Event landing
+testCase.verifyEqual(min(abs(r.t-opt.t_fault)),0,'AbsTol',1e-14);
+testCase.verifyEqual(min(abs(r.t-opt.t_clear)),0,'AbsTol',1e-14);
+% COI-relative angle bounded (declared a priori: 60 deg)
+H=r.H(:); dcoi=r.delta*H/sum(H);
+dcoi_rel=r.delta-dcoi;
+testCase.verifyLessThan(max(abs(dcoi_rel(:))),60,'COI-relative angle (deg)');
+% Pairwise angle bounded (declared a priori: 120 deg)
+np=size(r.delta,2);
+maxpair=0; for kk=1:np, for jj=kk+1:np, maxpair=max(maxpair,max(abs(r.delta(:,kk)-r.delta(:,jj)))); end; end
+testCase.verifyLessThan(maxpair,120,'Pairwise angle (deg)');
+% Speed deviation bounded (declared a priori: 0.05 pu)
+testCase.verifyLessThan(max(abs(r.omega(:)-1)),0.05,'Speed deviation (pu)');
+% Vbus bounded (declared a priori: 0.5..1.2 pu)
+testCase.verifyGreaterThan(min(r.Vbus(:)),0.5,'Min Vbus');
+testCase.verifyLessThan(max(r.Vbus(:)),1.2,'Max Vbus');
 end
 
 function test_emf6_regression_bit_identical(testCase)
@@ -145,4 +162,49 @@ J=stability.ts_jac_y_fd(x,y,Y,dae.dae_g);
 testCase.verifyTrue(issparse(J)==0); % dense
 testCase.verifyEqual(size(J,1),size(J,2));
 testCase.verifyTrue(all(isfinite(J(:))));
+end
+
+function test_topology_changed_semantics(testCase)
+% A.6: ts_topology_changed returns true when DIFFERENT, false when same.
+A=eye(3); B=A; B(1,1)=B(1,1)+1;
+testCase.verifyTrue(stability.ts_topology_changed(A,B),'different -> true');
+testCase.verifyFalse(stability.ts_topology_changed(A,A),'same -> false');
+testCase.verifyTrue(stability.ts_topology_changed(eye(3),eye(4)),'size diff -> true');
+end
+
+function test_failure_nan_input(testCase)
+% A.7: NaN input must error, not silently continue (spec: NaN/Inf ต้อง error).
+c=cases.case_padiyar_two_area_4m_avr();
+opt=struct('fault_enabled',false,'excitation','avr','verbose',false);
+dae=stability.padiyar_model11_dae(c,opt);
+x=dae.x0(:); y=dae.y0(:); Y=dae.Ynet;
+x(1)=NaN;
+kopt=struct('algebraic_tolerance',1e-11,'max_corrector_iter',12, ...
+    'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8);
+testCase.assertError(@() stability.ts_step_kernel(x,y,0.005,dae.dae_f,dae.dae_g,Y,[],kopt), ...
+    'ts_algebraic_solve:failed');
+end
+
+function test_failure_algebraic_nonconvergence(testCase)
+% A.7: algebraic solve that cannot converge must throw (not return unconverged).
+% Use a singular Y (all zeros) so g has no solution.
+g_bad=@(x,y,Y) ones(size(y));  % constant residual, never converges
+c=cases.case_padiyar_two_area_4m_avr();
+opt=struct('fault_enabled',false,'excitation','avr','verbose',false);
+dae=stability.padiyar_model11_dae(c,opt);
+x=dae.x0(:); y=dae.y0(:); Y=dae.Ynet;
+testCase.assertError(@() stability.ts_algebraic_solve(x,y,Y,g_bad,@stability.ts_jac_y_fd,1e-11,[]), ...
+    'ts_algebraic_solve:failed');
+end
+
+function test_failure_corrector_nonconvergence(testCase)
+% A.7: corrector that cannot converge must report non-convergence.
+% Use max_corrector_iter=1 with tight tolerance to force non-convergence.
+c=cases.case_padiyar_two_area_4m_avr();
+opt=struct('fault_enabled',true,'fault_bus',3,'Zf',1i*0.001,'t_fault',1,'t_clear',1.1, ...
+    't_end',1.2,'dt',0.01,'excitation','avr','verbose',false, ...
+    'max_corrector_iter',1,'corrector_abs_tol',1e-20,'corrector_rel_tol',1e-20);
+% With a very tight tolerance and 1 iteration, the corrector should fail.
+testCase.assertError(@() stability.ts_simulate_padiyar_model11(c,opt), ...
+    'ts_simulate_padiyar_model11:corrector');
 end

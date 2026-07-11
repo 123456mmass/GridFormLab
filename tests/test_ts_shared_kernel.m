@@ -124,19 +124,21 @@ testCase.verifyLessThan(max(r.algebraic_residual),1e-9,'Algebraic residual');
 % Event landing
 testCase.verifyEqual(min(abs(r.t-opt.t_fault)),0,'AbsTol',1e-14);
 testCase.verifyEqual(min(abs(r.t-opt.t_clear)),0,'AbsTol',1e-14);
-% COI-relative angle bounded (declared a priori: 60 deg)
+% COI-relative angle bounded (declared a priori: 60 deg). r.delta is radians.
 H=r.H(:); dcoi=r.delta*H/sum(H);
-dcoi_rel=r.delta-dcoi;
-testCase.verifyLessThan(max(abs(dcoi_rel(:))),60,'COI-relative angle (deg)');
+dcoi_rel_deg=rad2deg(r.delta-dcoi);
+testCase.verifyLessThan(max(abs(dcoi_rel_deg(:))),60,'COI-relative angle (deg)');
 % Pairwise angle bounded (declared a priori: 120 deg)
 np=size(r.delta,2);
-maxpair=0; for kk=1:np, for jj=kk+1:np, maxpair=max(maxpair,max(abs(r.delta(:,kk)-r.delta(:,jj)))); end; end
-testCase.verifyLessThan(maxpair,120,'Pairwise angle (deg)');
+maxpair_deg=0; for kk=1:np, for jj=kk+1:np, maxpair_deg=max(maxpair_deg,max(abs(rad2deg(r.delta(:,kk)-r.delta(:,jj))))); end; end
+testCase.verifyLessThan(maxpair_deg,120,'Pairwise angle (deg)');
 % Speed deviation bounded (declared a priori: 0.05 pu)
 testCase.verifyLessThan(max(abs(r.omega(:)-1)),0.05,'Speed deviation (pu)');
 % Vbus bounded (declared a priori: 0.5..1.2 pu)
 testCase.verifyGreaterThan(min(r.Vbus(:)),0.5,'Min Vbus');
 testCase.verifyLessThan(max(r.Vbus(:)),1.2,'Max Vbus');
+fprintf('  15s metrics: COI_rel=%.2f deg, pairwise=%.2f deg, speed_dev=%.3e pu, Vbus=[%.3f,%.3f], alg_res=%.3e, trap_res=%.3e\n', ...
+    max(abs(dcoi_rel_deg(:))),maxpair_deg,max(abs(r.omega(:)-1)),min(r.Vbus(:)),max(r.Vbus(:)),max(r.algebraic_residual),max(r.corrector_residual));
 end
 
 function test_emf6_regression_bit_identical(testCase)
@@ -207,4 +209,19 @@ opt=struct('fault_enabled',true,'fault_bus',3,'Zf',1i*0.001,'t_fault',1,'t_clear
 % With a very tight tolerance and 1 iteration, the corrector should fail.
 testCase.assertError(@() stability.ts_simulate_padiyar_model11(c,opt), ...
     'ts_simulate_padiyar_model11:corrector');
+end
+
+function test_algebraic_residual_in_tol_range(testCase)
+% Regression: residual in tol < r <= 100*tol must ALSO throw (not just > 100*tol).
+% Construct a g that converges to a fixed residual just above tol.
+tol=1e-11;
+target_res=1e-9;  % tol < target_res <= 100*tol
+g_bad=@(x,y,Y) target_res*ones(size(y));  % constant residual, never decreases
+c=cases.case_padiyar_two_area_4m_avr();
+opt=struct('fault_enabled',false,'excitation','avr','verbose',false);
+dae=stability.padiyar_model11_dae(c,opt);
+x=dae.x0(:); y=dae.y0(:); Y=dae.Ynet;
+% Must throw because residual (1e-9) > tol (1e-11), even though < 100*tol (1e-9).
+testCase.assertError(@() stability.ts_algebraic_solve(x,y,Y,g_bad,@stability.ts_jac_y_fd,tol,[]), ...
+    'ts_algebraic_solve:failed');
 end

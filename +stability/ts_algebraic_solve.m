@@ -66,9 +66,10 @@ for k = 1:30
 end
 info.final_residual = norm(dae_g(x, y, Y), inf);
 info.converged = info.final_residual <= tol;
-if ~info.converged && info.final_residual > 100*tol
+if ~info.converged
     error('ts_algebraic_solve:failed', ...
-        'Algebraic solve failed: residual=%.3e (tol=%.3e).', ...
-        info.final_residual, tol);
+        ['Algebraic solve did not converge: residual=%.3e (tol=%.3e), ' ...
+        'iterations=%d, line_search_failures=%d.'], ...
+        info.final_residual, tol, info.iterations, info.line_search_failures);
 end
 end

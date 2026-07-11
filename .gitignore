@@ -47,3 +47,7 @@ docs/source/fonts/
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+.aider*
+
+# Generated MATLAB data artifacts (reproducible from report generators)
+*.mat

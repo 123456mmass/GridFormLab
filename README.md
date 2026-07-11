@@ -23,6 +23,22 @@ r = solve_case('analysis','ts','case','rts24', ...
     'options',struct('plot_results',true,'verbose',true));
 ```
 
+Padiyar two-area reference study:
+
+```matlab
+pf_init_paths;
+pf = solve_case('analysis','pf','case','padiyar_two_area', ...
+    'options',struct('plot_results',false));
+ssa = solve_case('analysis','sssa','case','padiyar_two_area');
+ts = solve_case('analysis','ts','case','padiyar_two_area', ...
+    'options',struct('plot_results',true));
+generate_padiyar_two_area_report;
+```
+
+The reference follows Padiyar model 1.1 with a single-time-constant AVR
+(five states per generator). It deliberately does not infer sixth-order data
+or PSS settings that are absent from the cited source pages.
+
 ## Repository layout
 
 - `+cases/` — case loaders and the canonical case catalog

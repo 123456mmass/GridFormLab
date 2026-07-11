@@ -19,6 +19,7 @@
   - `source/PROJECT_STRUCTURE.md`
   - `source/README_NBUS_CLONE.md`
   - `source/REPORT_POWERFLOW_THAI.md`
+  - `source/report_padiyar_two_area.tex`
   - `source/report.tex`
 
 ## generated

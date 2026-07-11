@@ -23,8 +23,8 @@ end
 
 function test_topology_and_printed_loads(testCase)
 c = cases.kundur_ex126_book_case();
-verifySize(testCase,c.bus_data,[11,10]);
-verifySize(testCase,c.line_data,[12,5]);
+verifySize(testCase,c.bus_data,[11,12]);
+verifySize(testCase,c.line_data,[12,7]);
 verifyEqual(testCase,c.bus_data(7,[7,8,10]),[9.67,1.00,2.00]);
 verifyEqual(testCase,c.bus_data(9,[7,8,10]),[17.67,1.00,3.50]);
 xt = 0.15*(100/900);

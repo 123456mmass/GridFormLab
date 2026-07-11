@@ -12,7 +12,7 @@ end
 function test_case14_data_import(testCase)
     c = cases.case_matpower6_case14();
     testCase.verifyEqual(c.base_values.S_base_MVA, 100);
-    testCase.verifySize(c.bus_data, [14 10]);
+    testCase.verifySize(c.bus_data, [14 12]);
     testCase.verifySize(c.line_data, [20 7]);
     testCase.verifySize(c.mpc.gen, [5 21]);
     testCase.verifyEqual(c.mpc.bus(1,2), 3, 'MATPOWER slack bus type should be preserved in raw mpc.');

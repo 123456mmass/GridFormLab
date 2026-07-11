@@ -24,11 +24,15 @@ function test_three_machine_published_sauer_pai(testCase)
     testCase.verifyLessThan(maxNearestEigenError(r.eigenvalues, ref), 0.005);
 end
 
-function test_four_machine_kundur_book_flux_engine(testCase)
-    r = stability.kundur_ex126_book_flux_ssa();
+function test_four_machine_kundur_emf6(testCase)
+    % Four-machine Kundur 12.6 via the operational EMF6 model (single
+    % equation set shared with TS).
+    r = stability.synchronous_emf6_ssa(cases.kundur_ex126_book_case(), ...
+        struct('load_model','cc_p_cz_q'));
     testCase.verifyEqual(r.metadata.engine, 'stability.multimachine_ssa');
     testCase.verifyEqual(numel(r.eigenvalues),24);
     testCase.verifyLessThan(r.newton_residual,1e-8);
+    testCase.verifyTrue(all(isfinite(r.eigenvalues)));
 end
 
 function test_five_machine_synthetic_case(testCase)

@@ -20,8 +20,14 @@ function setupOnce(~)
     pf_init_paths();
 end
 
-function test_modern_gentpj_matches_independent_literature_ranges(testCase)
-    ssa = stability.kundur_ex126_kundur_ssa('options', struct('load_model','cc_p_cz_q'));
+function test_operational_emf6_matches_independent_literature_ranges(testCase)
+    % The operational EMF6 model uses only the published Kundur parameters
+    % (no calibration knobs) and the in-house Newton solver. Its rotor modes
+    % are checked against INDEPENDENTLY reproduced Kundur two-area ranges
+    % (not Table E12.3). This is a qualitative range check, not a golden-
+    % value acceptance test.
+    ssa = stability.synchronous_emf6_ssa(cases.kundur_ex126_book_case(), ...
+        struct('load_model','cc_p_cz_q'));
     modes = local_rotor_modes(ssa.eigenvalues);
     freq = imag(modes) / (2*pi);
     zeta = -real(modes) ./ abs(modes);

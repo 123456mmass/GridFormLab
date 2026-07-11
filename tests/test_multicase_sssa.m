@@ -7,16 +7,26 @@ addpath(fileparts(fileparts(mfilename('fullpath'))));
 pf_init_paths();
 end
 
-function test_kundur_uses_primitive_flux_plugin(testCase)
+function test_kundur_default_uses_operational_emf6(testCase)
+% The Kundur 12.6 default SSSA must use the operational EMF6 model -- the
+% single sixth-order equation set shared with TS (stability.emf6_dae) --
+% built with the in-house Newton solver and no fsolve/optimoptions.
+% Kundur Table E12.3 is never used as an acceptance target here.
 r=stability.multicase_sssa(cases.kundur_ex126_book_case());
-verifyEqual(testCase,r.metadata.plugin,'primitive_flux_sixth_order');
+verifyEqual(testCase,r.metadata.plugin,'operational_emf_sixth_order');
+verifyEqual(testCase,r.metadata.engine,'stability.multimachine_ssa');
 verifyEqual(testCase,numel(r.eigenvalues),24);
+verifyTrue(testCase,all(isfinite(r.eigenvalues)));
 verifyLessThan(testCase,norm([r.debug_residual_f;r.debug_residual_g],inf),1e-8);
 verifyLessThan(testCase,r.angle_shift_residual,1e-6);
-verifyEqual(testCase,r.equilibrium_solver,'fsolve');
-diagnostic=stability.kundur_e123_primitive_compare(r);
-verifyFalse(testCase,diagnostic.all_nonzero_families_pass, ...
-    'Kundur must not be promoted to a passing benchmark before every root is within 0.5%.');
+% No fsolve in the equilibrium path.
+if isfield(r,'equilibrium_solver')
+    verifyNotEqual(testCase,r.equilibrium_solver,'fsolve');
+end
+% Structural zero-mode: a common rotor rotation is a null direction of the
+% autonomous DAE (no infinite bus / no governor).
+A=r.Afull; vangle=zeros(size(A,1),1); vangle(1:6:end)=1;
+verifyLessThan(testCase,norm(A*vangle),1e-7);
 end
 
 function test_sauer_pai_published_case_stays_within_half_percent(testCase)

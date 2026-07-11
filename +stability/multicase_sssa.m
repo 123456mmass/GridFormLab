@@ -13,14 +13,13 @@ if ~strcmp(requested_model,'classical') && ...
         isfield(case_data,'bus_data') && isfield(case_data,'machines') && ...
         isfield(case_data.machines,'reactances') && ...
         isfield(case_data.machines.reactances,'Xdpp')
-    model='flux6'; if isfield(options,'model'), model=lower(char(options.model)); end
-    if any(strcmp(model,{'emf6','kundur6'}))
-        result=stability.synchronous_emf6_ssa(case_data,options);
-        result.metadata.plugin='operational_emf_sixth_order';
-    else
-        result=stability.synchronous_flux_ssa(case_data,options);
-        result.metadata.plugin='primitive_flux_sixth_order';
-    end
+    % The operational EMF6 model (states [delta,omega,E'q,E'd,E''q,E''d]) is
+    % the single sixth-order equation set for SSSA and TS, built from
+    % stability.emf6_dae / stability.synchronous_emf6_ssa (in-house Newton,
+    % no fsolve). The historical primitive-flux (psi-state) and calibrated
+    % GENTPJ realizations have been moved to legacy/.
+    result=stability.synchronous_emf6_ssa(case_data,options);
+    result.metadata.plugin='operational_emf_sixth_order';
 elseif all(isfield(case_data,{'Ybus','V','theta','gen_buses','Xd','Xdp'}))
     lin=stability.sauer_pai_linearization(case_data);
     ng=lin.ng; ns=lin.ns;

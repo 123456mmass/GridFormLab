@@ -20,14 +20,16 @@ function test_6th_order_matches_psat_coi(testCase)
         return;
     end
     S = load(raw); ps = S.ps_save;
-    % Our 6th-order with the same scenario + load model as PSAT (pq2z => cz).
-    opt = struct('model','genpj6','t_end',min(ps.td_tend,6),'dt',1e-3,'fault_bus',8, ...
-        't_fault',1.0,'t_clear',1.05,'Zf',[],'method','trapezoidal','corrector_iter',1, ...
+    % Our operational EMF6 6th-order model with the same scenario + load model
+    % as PSAT (pq2z => cz). EMF6 uses only published parameters (no
+    % calibration); this is a cross-validation, not a tuned match.
+    opt = struct('model','emf6','t_end',min(ps.td_tend,6),'dt',1e-3,'fault_bus',8, ...
+        't_fault',1.0,'t_clear',1.05,'Zf',[],'method','trapezoidal','corrector_iter',2, ...
         'load_model','cz','verbose',false);
     r = stability.ts_simulate(cases.case_kundur_two_area_classical(), opt);
     [~,oo] = sort(r.gen_buses);
     do = rad2deg(r.delta(:,oo)); wo = r.omega(:,oo);
-    H = r.H_machine(:).';
+    H = r.H(:).';   % system-base H; COI weights equal machine-base ratios
     tg = r.t;
     dps = rad2deg(interp1(ps.t, ps.delta, tg)); wps = interp1(ps.t, ps.omega, tg);
     [~,o] = sort(ps.delta_bus); dps = dps(:,o); wps = wps(:,o);

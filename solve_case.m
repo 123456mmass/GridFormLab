@@ -97,11 +97,11 @@ switch analysis
         r=items_from_catalog(catalog,'pf_options');
     case 'sssa'
         r=items_from_catalog(catalog,'sssa_options');
-        % Additional model/benchmark variants remain available alongside
-        % the one default SSSA entry provided for every network case.
-        r=[r; item('kundur_flux6','Kundur - primitive flux6', ...
-                @cases.kundur_ex126_book_case,struct('model','flux6')); ...
-           item('sauer_pai','Sauer-Pai Example 8.3', ...
+        % The Kundur Example 12.6 case is already in the catalog with
+        % sssa_options.model='emf6' (the operational sixth-order model).
+        % The historical primitive-flux and Sauer-Pai flux variants have
+        % been moved to legacy/ and are no longer offered here.
+        r=[r; item('sauer_pai','Sauer-Pai Example 8.3', ...
                 @cases.sauer_pai_ex83_case,struct())];
     case 'ts'
         r=items_from_catalog(catalog,'ts_options');

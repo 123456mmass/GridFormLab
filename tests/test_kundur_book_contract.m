@@ -29,9 +29,22 @@ verifyEqual(testCase,[c.machines.units.H]/scale,[58.5,58.5,55.575,55.575], ...
 end
 
 function test_stator_power_and_torque_identity(testCase)
-r = stability.kundur_ex126_book_flux_ssa();
-V = r.init.Vd.*r.init.Id + r.init.Vq.*r.init.Iq;
-Ra_sys = cases.kundur_ex126_book_case().machines.reactances.Ra*(100/900);
-Te = V + Ra_sys*(r.init.Id.^2+r.init.Iq.^2);
-verifyLessThan(testCase,max(abs(r.init.Tm-Te)),1e-10);
+% Torque/power identity for the operational EMF6 model:
+%   Te = Vd*Id + Vq*Iq + Ra*(Id^2 + Iq^2)
+% must equal the mechanical torque Tm held at initialization (constant-Tm
+% operating point). Vd,Vq are recovered from the network phasor and the
+% rotor angle via the Kundur dq transform.
+c = cases.kundur_ex126_book_case();
+r = stability.synchronous_emf6_ssa(c,struct('load_model','cc_p_cz_q'));
+init = r.init;
+Ra_sys = c.machines.reactances.Ra * (c.base_values.S_base_MVA/c.machines.base.S_MVA);
+Te = zeros(init.ng,1);
+for k=1:init.ng
+    b = init.bus_idx(k);
+    V = complex(init.y0(2*b-1), init.y0(2*b));
+    delta = init.x0((k-1)*6+1);
+    [Vd,Vq] = stability.kundur_book_dq(V, delta);
+    Te(k) = Vd*init.Id(k) + Vq*init.Iq(k) + Ra_sys*(init.Id(k)^2 + init.Iq(k)^2);
+end
+verifyLessThan(testCase,max(abs(init.Tm-Te)),1e-10);
 end

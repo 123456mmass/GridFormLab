@@ -10,7 +10,11 @@ function setupOnce(~)
 end
 
 function test_kundur_and_sauer_pai_use_common_engine(testCase)
-    kundur = stability.kundur_ex126_kundur_ssa();
+    % Kundur via the operational EMF6 model and Sauer-Pai via its published
+    % two-axis model both pass through the shared stability.multimachine_ssa
+    % linearisation core.
+    kundur = stability.synchronous_emf6_ssa(cases.kundur_ex126_book_case(), ...
+        struct('load_model','cc_p_cz_q'));
     sauer = stability.sauer_pai_ex83_ssa();
 
     testCase.verifyEqual(kundur.metadata.engine, 'stability.multimachine_ssa');

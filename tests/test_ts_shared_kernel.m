@@ -113,14 +113,14 @@ function test_padiyar_15s_no_algebraic_failure(testCase)
 % Bounded using COI-relative angle, pairwise angle, speed, Vbus, residuals.
 c=cases.case_padiyar_two_area_4m_avr();
 opt=struct('fault_enabled',true,'fault_bus',3,'Zf',1i*0.1,'t_fault',1,'t_clear',1.1, ...
-    't_end',15,'dt',0.01,'excitation','avr','verbose',false);
+    't_end',15,'dt',0.01,'excitation','avr','verbose',false,'algebraic_tolerance',1e-11);
 r=stability.ts_simulate_padiyar_model11(c,opt);
 testCase.verifyEqual(r.nonconverged_step_count,0);
 testCase.verifyTrue(all(isfinite(r.delta(:))));
 testCase.verifyTrue(all(isfinite(r.omega(:))));
 testCase.verifyTrue(all(isfinite(r.Vbus(:))));
 testCase.verifyLessThan(max(r.corrector_residual),1e-6,'Trapezoidal residual');
-testCase.verifyLessThan(max(r.algebraic_residual),1e-9,'Algebraic residual');
+testCase.verifyLessThan(max(r.algebraic_residual),opt.algebraic_tolerance,'Algebraic residual vs declared tolerance');
 % Event landing
 testCase.verifyEqual(min(abs(r.t-opt.t_fault)),0,'AbsTol',1e-14);
 testCase.verifyEqual(min(abs(r.t-opt.t_clear)),0,'AbsTol',1e-14);
@@ -212,16 +212,15 @@ testCase.assertError(@() stability.ts_simulate_padiyar_model11(c,opt), ...
 end
 
 function test_algebraic_residual_in_tol_range(testCase)
-% Regression: residual in tol < r <= 100*tol must ALSO throw (not just > 100*tol).
-% Construct a g that converges to a fixed residual just above tol.
+% Regression: residual in tol < r < 100*tol must ALSO throw (not just > 100*tol).
+% Use g(y)=y with y0=1 and supplied J=2 so each Newton step halves y.
+% After 30 iterations residual = 1/2^30 = 9.31e-10, which is in
+% (tol=1e-11, 100*tol=1e-9). Must throw — no silent gap acceptance.
 tol=1e-11;
-target_res=1e-9;  % tol < target_res <= 100*tol
-g_bad=@(x,y,Y) target_res*ones(size(y));  % constant residual, never decreases
-c=cases.case_padiyar_two_area_4m_avr();
-opt=struct('fault_enabled',false,'excitation','avr','verbose',false);
-dae=stability.padiyar_model11_dae(c,opt);
-x=dae.x0(:); y=dae.y0(:); Y=dae.Ynet;
-% Must throw because residual (1e-9) > tol (1e-11), even though < 100*tol (1e-9).
-testCase.assertError(@() stability.ts_algebraic_solve(x,y,Y,g_bad,@stability.ts_jac_y_fd,tol,[]), ...
+g_lin=@(x,y,Y) y;          % g(y)=y, dg/dy=I (but we supply J=2 deliberately)
+y0=1;                      % scalar state
+J_supplied=2;              % wrong Jacobian: step=-J\g=-y/2 -> y halves each iter
+% After 30 iters: |y|=1/2^30=9.31e-10. tol<9.31e-10<100*tol -> must throw.
+testCase.assertError(@() stability.ts_algebraic_solve(0,y0,0,g_lin,@stability.ts_jac_y_fd,tol,J_supplied), ...
     'ts_algebraic_solve:failed');
 end

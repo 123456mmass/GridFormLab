@@ -90,9 +90,18 @@ for k=1:size(grows,1)
 end
 Vm = bus(:,8); Va = bus(:,9);
 
+% --- AShunt [i Sn Vn fn Gs Bs u] (Gs/Bs in MW/Mvar @ V=1 pu, as PGAz expects;
+%   pgaz_ybus divides by baseMVA internally -> pu). Built from mpc.bus Gs/Bs.
+shBuses = find(bus(:,5)~=0 | bus(:,6)~=0);
+AShunt = zeros(numel(shBuses),7);
+for k=1:numel(shBuses)
+    r = shBuses(k);
+    AShunt(k,:) = [bus(r,1), baseMVA, bus(r,10), 60, bus(r,5), bus(r,6), 1];
+end
+
 sys = struct();
 sys.ABus=ABus; sys.ALine=ALine; sys.Slack=Slack; sys.PV=PV; sys.PQ=PQ;
-sys.Gen=Gen; sys.AShunt=[]; sys.baseMVA=baseMVA; sys.nbus=nb;
+sys.Gen=Gen; sys.AShunt=AShunt; sys.baseMVA=baseMVA; sys.nbus=nb;
 sys.Pl=Pl; sys.Pg=Pg; sys.Ql=Ql; sys.Qmin=Qmin; sys.Qmax=Qmax;
 sys.Vm0=Vm; sys.Va0=deg2rad(Va);
 sys.idx = struct('slack', find(pgtype==1,1), 'pv', find(pgtype==2), 'pq', find(pgtype==0));

@@ -180,7 +180,14 @@ if isfield(r,'Q_loss_total'), fprintf('Q loss          : %.6g pu\n',r.Q_loss_tot
 fprintf('Voltage range   : %.6f .. %.6f pu\n',min(r.bus_voltage),max(r.bus_voltage));
 fprintf('Angle range     : %.6f .. %.6f deg\n',min(r.bus_angle_deg),max(r.bus_angle_deg));
 fprintf('Tolerance       : %.3e\n',opt.tolerance);
-if ~r.converged, error('solve_case:pf','Power flow did not converge.'); end
+if ~r.converged
+    msg = 'Power flow did not converge.';
+    if isfield(r,'reason'), msg = sprintf('%s\n  reason: %s', msg, r.reason); end
+    if isfield(r,'finite_status'), msg = sprintf('%s\n  finite_status: %s', msg, r.finite_status); end
+    if isfield(r,'iterations'), msg = sprintf('%s\n  iterations: %d', msg, r.iterations); end
+    if isfield(r,'max_mismatch'), msg = sprintf('%s\n  max_mismatch: %.3e pu', msg, r.max_mismatch); end
+    error('solve_case:pf', msg);
+end
 end
 
 function print_sssa_checks(r)

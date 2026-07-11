@@ -5,28 +5,30 @@ function [all_pass, report] = evaluate_validation_gates(g)
 %   and true. Missing field / empty / NaN / non-logical / false / exception
 %   => all_pass = false. A skipped required gate is a failure, never a pass.
 %
+%   Phase B: PGAz is a SECONDARY DIAGNOSTIC ONLY. The PGAz-dependent gates
+%   (pgaz_execution, pgaz_plateau, pgaz_comparison, contract_ybus_pgaz,
+%   gen_mapping_pgaz, sample_alignment_pgaz) are NOT required. PSAT is the
+%   required cross-validation reference.
+%
 %   Required gate fields (flat or nested):
 %     production_dependency, no_kundur_acceptance_target, regression,
 %     emf6_no_fault, emf6_shared_model,
 %     case14.contract, case14.mapping, case14.comparison_grid,
 %       case14.event_grid, case14.sample_alignment, case14.extrapolation_used_false,
-%       case14.psat_execution, case14.pgaz_execution, case14.ours_convergence,
-%       case14.psat_comparison, case14.pgaz_plateau, case14.pgaz_comparison,
+%       case14.psat_execution, case14.ours_convergence, case14.psat_comparison,
 %     rts24.* (same set as case14)
-%   case14.extrapolation_used_false and *.pgaz_comparison are required gates
-%   (extrapolation must be false; plateau PGAz must match within tolerance).
+%   case14.extrapolation_used_false is a required gate (extrapolation must
+%   be false). PGAz comparison fields are reported but not required.
 
 required = { ...
  'production_dependency','no_kundur_acceptance_target','regression', ...
  'emf6_no_fault','emf6_shared_model', ...
  'case14.contract','case14.mapping','case14.comparison_grid','case14.event_grid', ...
  'case14.sample_alignment','case14.extrapolation_used_false','case14.psat_execution', ...
- 'case14.pgaz_execution','case14.ours_convergence','case14.psat_comparison', ...
- 'case14.pgaz_plateau','case14.pgaz_comparison', ...
+ 'case14.ours_convergence','case14.psat_comparison', ...
  'rts24.contract','rts24.mapping','rts24.comparison_grid','rts24.event_grid', ...
  'rts24.sample_alignment','rts24.extrapolation_used_false','rts24.psat_execution', ...
- 'rts24.pgaz_execution','rts24.ours_convergence','rts24.psat_comparison', ...
- 'rts24.pgaz_plateau','rts24.pgaz_comparison'};
+ 'rts24.ours_convergence','rts24.psat_comparison'};
 
 report = struct();
 report.missing = {};

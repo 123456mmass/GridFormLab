@@ -104,10 +104,42 @@ end
 end
 
 function results = solve_model(model, max_iter, tolerance, verbose)
+%SOLVE_MODEL Newton-Raphson iteration with strict failure semantics.
+%   Failure semantics contract (Phase B):
+%     C1 invalid input/schema failures are thrown by pf_prepare_case BEFORE
+%        entering solve_model (stable error identifiers, bus/index reported).
+%     C2 numerical-solve failures return a non-converged result with:
+%          converged = false
+%          reason         in {singular_jacobian, nonfinite_system,
+%                              nonfinite_newton_step, nonfinite_state,
+%                              max_iterations}
+%          max_mismatch   (final max|mismatch|, finite when available)
+%          iterations     (count at point of return)
+%          finite_status  (string: 'all_finite' or 'nonfinite_at_index_N')
+%     The converged path is UNCHANGED: the new checks are dead on convergence
+%     (rcond(J) >> 1e-13, all states finite) so iterations/mismatch/result
+%     are bit-for-bit identical to the pre-hardening solver.
+%
+%   Newton iteration order (Phase B contract, mandatory correction D):
+%     1. compute mismatch
+%     2. check mismatch finite
+%     3. compute analytic Jacobian
+%     4. check Jacobian finite
+%     5. check conditioning (rcond >= 1e-13)
+%     6. solve Newton step
+%     7. check Newton step finite
+%     8. update state
+%     9. check updated state finite
+%    10. enforce fixed REF/PV quantities (non-positive V reset)
+%    11. check convergence
+rcond_threshold = 1e-13;   % declared upfront; matches nonlinear_newton.m:28
+
 x = pf_initial_state(model);
 mismatch_history = zeros(max_iter, 1);
 converged = false;
 iter = 0;
+reason = '';
+finite_status = 'all_finite';
 
 while iter < max_iter
     iter = iter + 1;
@@ -120,18 +152,95 @@ while iter < max_iter
         fprintf('Iteration %2d: Max Mismatch = %.6e\n', iter, max_mismatch);
     end
 
+    % (2) Mismatch finiteness -- nonfinite mismatch means the system is
+    % already broken (e.g. NaN propagating from a prior diverged step).
+    if any(~isfinite(mismatch))
+        reason = 'nonfinite_system';
+        finite_status = finite_status_string(mismatch);
+        if verbose
+            fprintf('\n*** FAILURE: non-finite mismatch at iteration %d ***\n\n', iter);
+        end
+        [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
+        results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, false, 'Newton-Raphson');
+        results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+        return;
+    end
+
     if max_mismatch < tolerance
         converged = true;
+        reason = 'converged';
         if verbose
             fprintf('\n*** CONVERGED in %d iterations ***\n\n', iter);
         end
         break;
     end
 
+    % (3) Analytic Jacobian.
     J = pf_build_jacobian(V, delta, P_calc, Q_calc, model);
+
+    % (4) Jacobian finiteness -- a nonfinite Jacobian is a numerical failure,
+    % not a singular one.
+    if any(~isfinite(J(:)))
+        reason = 'nonfinite_system';
+        finite_status = 'nonfinite_jacobian';
+        if verbose
+            fprintf('\n*** FAILURE: non-finite Jacobian at iteration %d ***\n\n', iter);
+        end
+        [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
+        results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, false, 'Newton-Raphson');
+        results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+        return;
+    end
+
+    % (5) Conditioning -- rcond(J) < 1e-13 means the Jacobian is singular or
+    % numerically rank-deficient (e.g. islanded bus -> zero Ybus row).
+    rc = rcond(J);
+    if ~isfinite(rc) || rc < rcond_threshold
+        reason = 'singular_jacobian';
+        finite_status = sprintf('rcond_%.2e', rc);
+        if verbose
+            fprintf('\n*** FAILURE: singular Jacobian (rcond=%.2e) at iteration %d ***\n\n', rc, iter);
+        end
+        [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
+        results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, false, 'Newton-Raphson');
+        results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+        return;
+    end
+
+    % (6) Newton step.
     delta_x = J \ mismatch;
+
+    % (7) Newton step finiteness.
+    if any(~isfinite(delta_x))
+        reason = 'nonfinite_newton_step';
+        finite_status = finite_status_string(delta_x);
+        if verbose
+            fprintf('\n*** FAILURE: non-finite Newton step at iteration %d ***\n\n', iter);
+        end
+        [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
+        results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, false, 'Newton-Raphson');
+        results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+        return;
+    end
+
+    % (8) Update state.
     x = x + delta_x;
 
+    % (9) Updated state finiteness.
+    if any(~isfinite(x))
+        reason = 'nonfinite_state';
+        finite_status = finite_status_string(x);
+        if verbose
+            fprintf('\n*** FAILURE: non-finite state at iteration %d ***\n\n', iter);
+        end
+        [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
+        results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, false, 'Newton-Raphson');
+        results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+        return;
+    end
+
+    % (10) Enforce fixed REF/PV quantities (non-positive V reset). Runs only
+    % when x is finite, which is now guaranteed by step (9).
     for i = 1:model.n_V
         v_pos = model.n_delta + i;
         if x(v_pos) <= 0
@@ -144,12 +253,37 @@ while iter < max_iter
     end
 end
 
-if ~converged && verbose
-    fprintf('\n*** WARNING: Did not converge in %d iterations ***\n\n', max_iter);
+if ~converged
+    reason = 'max_iterations';
+    finite_status = finite_status_string(x);
+    if verbose
+        fprintf('\n*** WARNING: Did not converge in %d iterations ***\n\n', max_iter);
+    end
 end
 
 [delta_final, V_final] = pf_state_to_voltage_angle(x, model);
 results = pf_build_results(model, V_final, delta_final, mismatch_history, iter, converged, 'Newton-Raphson');
+results = attach_failure_fields(results, reason, max_mismatch, finite_status);
+end
+
+function results = attach_failure_fields(results, reason, max_mismatch, finite_status)
+% Attach the Phase B failure-semantics fields to a result struct. These are
+% additive: existing field consumers (CPF, Q-limit loop, solve_case) read
+% r.converged, which is unchanged. solve_case.m:177 already guards max_mismatch
+% with isfield.
+results.reason = reason;
+results.max_mismatch = max_mismatch;
+results.finite_status = finite_status;
+end
+
+function s = finite_status_string(v)
+%FINITE_STATUS_STRING  Compact finite-status tag for failure reporting.
+if all(isfinite(v(:)))
+    s = 'all_finite';
+else
+    bad = find(~isfinite(v(:)), 1);
+    s = sprintf('nonfinite_at_index_%d', bad);
+end
 end
 
 function [violated_buses, fixed_Q, limit_type] = find_q_limit_violations(model, results, tolerance)

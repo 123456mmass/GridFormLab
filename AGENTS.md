@@ -38,10 +38,13 @@ These instructions apply to the entire repository.
   for the classical path.
 - TS plot angle is `delta_i(t)-delta_i(0)` (PSAT `delta_Syn` style). Stability
   decisions use COI-relative and pairwise metrics, not the plotted common drift.
-- Production packages (`+pfsolver`,`+stability`,`+smib`,`+pfapp`,`+pfchecks`,
-  `+cases`,`internal`) contain no `fsolve`/`optimoptions`/`fmincon`/`fminsearch`
-  (guarded by `test_no_external_solver_dependency`). `fsolve` is permitted only
-  in `compat/powerflow_fsolve.m` as a reference comparison tool.
+- Production packages AND every directory `pf_init_paths` adds to the path
+  (`internal`, `compat`, `scripts`, `docs`) contain no
+  `fsolve`/`optimoptions`/`fmincon`/`fminsearch`/`lsqnonlin`/`optimset`
+  (guarded by `test_no_external_solver_dependency`, which scans the real
+  MATLAB path, not a hard-coded list). `fsolve` survives only in `legacy/`
+  (off the path) and `docs/probes/` (off the path) as reference/diagnostic
+  code; it is never a production dependency.
 - Kundur Table E12.3 is reference/case-study data only, never a numerical
   acceptance target. Never tune parameters, scales, time constants, saturation,
   load model, finite-difference step or solver tolerance to match it.

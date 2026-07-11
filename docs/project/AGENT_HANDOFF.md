@@ -118,12 +118,14 @@ Run `compare_case14_ts_three_way` after any TS change.
 3. Higher-order EMF6 TS is pinned to a FIXED corrector. Adaptive residual
    convergence is validated only for the classical path; an audited adaptive
    EMF6 path is future work.
-4. The calibrated `kundur_ex126_kundur_ssa` / `kundur_ex126_book_e123_ssa`
-   family still lives in `+stability` (fsolve-free, not in catalog/launcher/
-   tests). It carries historical tuning knobs and a `<0.5% vs Table E12.3`
-   claim. Relocating the whole family to `legacy/` is desirable but deferred
-   (it is referenced by `scripts/diagnostics`/`scripts/reporting` Kundur
-   tools); it must never be re-introduced as a production acceptance target.
+4. RESOLVED (2026-07-11, session 2): the calibrated `kundur_ex126_kundur_ssa`
+   / `kundur_ex126_book_e123_ssa` / `genrou_ssa` / `sixth_order_ssa` /
+   `classical_analysis` family and `kundur_e123_reference` were moved from
+   `+stability` to `legacy/kundur/`, off the MATLAB path. They carried
+   historical tuning knobs and a calibrated Table E12.3 reproduction target;
+   the reporting/validation/diagnostic scripts that depended on them were
+   moved to `legacy/kundur/` as well. They must never be re-introduced as a
+   production acceptance target.
 5. Pre-existing stale data-shape expectations in `test_kundur_book_input_manifest`
    and `test_matpower6_case14` (10-col/5-col vs the documented 12-col/7-col
    contract) were corrected to match `AGENTS.md`.

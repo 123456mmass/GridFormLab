@@ -6,7 +6,7 @@
   claims from any report or plan.
 - Markdown under `source/figures/` is generated evidence, not an authoritative
   contract. Obsolete Kundur comparison summaries that claimed a calibrated
-  `<0.5%` reproduction were removed.
+  calibrated sub-percent reproduction were removed.
 - Kundur Table E12.3 is reference data only. A result is reportable only when
   it is regenerated from the current in-house implementation and backed by a
   passing test or documented cross-validation script.

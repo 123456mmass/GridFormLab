@@ -36,7 +36,7 @@ test or a documented cross-validation script may be presented as results.
   implementation.
 - Higher-order TS still uses fixed corrector iterations.
 - Kundur Table E12.3 is reference data, not a passing benchmark. The published
-  inputs have not yielded a reproducible all-root `<0.5%` match.
+  inputs have not yielded a reproducible all-root sub-percent match.
 - The calibrated Kundur wrapper is diagnostic-only and must not be used in a
   report, presentation, catalog, or acceptance test.
 

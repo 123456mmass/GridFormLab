@@ -1,0 +1,84 @@
+function step = ts_step_kernel(x, y, h, dae_f, dae_g, Y, Jyy, opt)
+%TS_STEP_KERNEL Shared implicit-trapezoidal single-step kernel.
+%   STEP = ts_step_kernel(X, Y, H, DAE_F, DAE_G, Y_ADM, JYY, OPT) performs one
+%   implicit-trapezoidal step of size H. Both fixed-step and adaptive drivers
+%   call THIS kernel so the predictor/corrector/residual logic is never
+%   duplicated.
+%
+%   OPT.corrector_mode:
+%     'adaptive' (default) — iterate until update+residual converge (Padiyar,
+%        EMF6 adaptive path). Re-solves g at the corrected state.
+%     'fixed'             — exactly OPT.max_corrector_iter Picard iterations,
+%        no early exit, no re-solve at corrected state (EMF6 fixed path).
+%
+%   JYY is the precomputed dg/dy at the step start (reused, re-evaluated only
+%   on line-search failure). Pass [] to compute fresh at (x,y).
+
+g_tol = opt.algebraic_tolerance;
+max_citer = opt.max_corrector_iter;
+abs_tol = opt.corrector_abs_tol;
+rel_tol = opt.corrector_rel_tol;
+jac_fn = @stability.ts_jac_y_fd;
+mode = 'adaptive';
+if isfield(opt,'corrector_mode') && ~isempty(opt.corrector_mode)
+    mode = lower(opt.corrector_mode);
+end
+
+if isempty(Jyy), Jyy = jac_fn(x, y, Y, dae_g); end
+
+% Consistent algebraic state at current x (reuse precomputed Jyy).
+[y, ~] = stability.ts_algebraic_solve(x, y, Y, dae_g, jac_fn, g_tol, Jyy);
+f0 = dae_f(x, y);
+
+x_pred = x + h*f0;
+y_pred = y;
+
+converged = false; upd = 0; resn = 0; ci_used = 0;
+switch mode
+case 'adaptive'
+    for ci = 1:max_citer
+        [y_pred, ~] = stability.ts_algebraic_solve(x_pred, y_pred, Y, dae_g, jac_fn, g_tol, Jyy);
+        f1 = dae_f(x_pred, y_pred);
+        x_new = x + 0.5*h*(f0 + f1);
+        [y_new, ~] = stability.ts_algebraic_solve(x_new, y_pred, Y, dae_g, jac_fn, g_tol, Jyy);
+        R = x_new - x - 0.5*h*(f0 + dae_f(x_new, y_new));
+        upd = norm(x_new - x_pred, inf);
+        resn = norm(R, inf);
+        x_pred = x_new; y_pred = y_new;
+        ci_used = ci;
+        tol_now = abs_tol + rel_tol*max(1, norm(x_pred, inf));
+        if upd <= tol_now && resn <= tol_now
+            converged = true; break;
+        end
+    end
+case 'fixed'
+    for ci = 1:max(1, max_citer)
+        [y_pred, ~] = stability.ts_algebraic_solve(x_pred, y_pred, Y, dae_g, jac_fn, g_tol, Jyy);
+        f1 = dae_f(x_pred, y_pred);
+        x_pred = x + 0.5*h*(f0 + f1);
+        ci_used = ci;
+    end
+    % Final residual (matches EMF6 fixed-path reporting).
+    [y_fin, ~] = stability.ts_algebraic_solve(x_pred, y_pred, Y, dae_g, jac_fn, g_tol, Jyy);
+    R = x_pred - x - 0.5*h*(f0 + dae_f(x_pred, y_fin));
+    resn = norm(R, inf);
+    upd = resn;
+    converged = (resn <= 1e-6);
+otherwise
+    error('ts_step_kernel:badMode','Unknown corrector_mode "%s".',mode);
+end
+
+alg_res = norm(dae_g(x_pred, y_pred, Y), inf);
+all_finite = all(isfinite(x_pred)) && all(isfinite(y_pred)) && ...
+    all(isfinite(f0)) && all(isfinite(resn));
+
+step = struct( ...
+    'x_full', x_pred, 'y_full', y_pred, ...
+    'f0', f0, 'f1', dae_f(x_pred, y_pred), ...
+    'corrector_iterations', ci_used, ...
+    'corrector_residual', resn, ...
+    'corrector_update', upd, ...
+    'corrector_converged', converged, ...
+    'algebraic_residual', alg_res, ...
+    'finite', all_finite);
+end

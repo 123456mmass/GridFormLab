@@ -47,7 +47,12 @@ end
 % with SSSA (stability.emf6_dae / stability.synchronous_emf6_ssa). The
 % legacy calibrated GENTPJ names (flux6/genpj6/kundur6) also route through
 % the unified EMF6 path so SSSA and TS never diverge onto a second model.
-if strcmpi(opt.model,'emf6')
+if any(strcmpi(opt.model,{'padiyar_1_1_avr','padiyar_1_1_manual'}))
+    if strcmpi(opt.model,'padiyar_1_1_manual'), opt.excitation='manual'; else, opt.excitation='avr'; end
+    if opt.verbose, fprintf('[ts_simulate] Dispatching to Padiyar model 1.1 (%s).\n',opt.excitation); end
+    res=stability.ts_simulate_padiyar_model11(case_data,opt);
+    return;
+elseif strcmpi(opt.model,'emf6')
     if opt.verbose, fprintf('[ts_simulate] Dispatching to EMF6 (emf6_dae) path.\n'); end
     res = stability.ts_simulate_emf6(case_data, opt);
     return;

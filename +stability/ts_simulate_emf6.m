@@ -35,6 +35,10 @@ if isfield(opt,'corrector_mode') && ~isempty(opt.corrector_mode)
 else
     cmode = 'fixed';
 end
+max_citer = pf_get_option(opt,'max_corrector_iter',10);
+abs_tol = pf_get_option(opt,'corrector_abs_tol',1e-10);
+rel_tol = pf_get_option(opt,'corrector_rel_tol',1e-8);
+cfail = pf_get_option(opt,'corrector_failure','error');
 if strcmp(cmode,'fixed')
     if isfield(opt,'corrector_iter') && ~isempty(opt.corrector_iter)
         citer = opt.corrector_iter;
@@ -43,10 +47,6 @@ if strcmp(cmode,'fixed')
     end
 else
     citer = 0;
-    max_citer = pf_get_option(opt,'max_corrector_iter',10);
-    abs_tol = pf_get_option(opt,'corrector_abs_tol',1e-10);
-    rel_tol = pf_get_option(opt,'corrector_rel_tol',1e-8);
-    cfail = pf_get_option(opt,'corrector_failure','error');
 end
 verbose = pf_get_option(opt,'verbose',false);
 
@@ -105,7 +105,7 @@ for it = 1:nt-1
     t_now = t(it); t_next = t(it+1);
     Y_now  = set_topo(t_now);
     Y_next = set_topo(t_next);
-    if ~equalY(Y_now,Ycur), jac_y = jac_y_fd(x,y,Y_now,dae_g,nb); Ycur = Y_now; end
+    jac_y = jac_y_fd(x,y,Y_now,dae_g,nb); Ycur = Y_now;
 
     % Consistent algebraic state at current x (seed with previous y).
     y = solve_g(x, y, Y_now, dae_g, jac_y, g_tol);
@@ -121,53 +121,24 @@ for it = 1:nt-1
     % RHS from two different topologies across the fault/clear boundary. The
     % topology switches at the event boundary (next step). The post-step
     % algebraic state is re-solved with Y_next for the recorded voltage.
-    x_next = x + dt_step*f0;
-    y_next = y;
-
-    switch lower(method)
-        case {'trapezoidal','heun','predictor-corrector','predictor_corrector'}
-            if strcmp(cmode,'adaptive')
-                for ci = 1:max_citer
-                    y_next = solve_g(x_next, y_next, Y_now, dae_g, jac_y, g_tol);
-                    f1 = dae_f(x_next, y_next);
-                    x_new = x + 0.5*dt_step*(f0 + f1);
-                    upd = norm(x_new - x_next, inf);
-                    f1c = dae_f(x_new, solve_g(x_new,y_next,Y_now,dae_g,jac_y,g_tol));
-                    R = x_new - x - 0.5*dt_step*(f0 + f1c);
-                    resn = norm(R, inf);
-                    corr_iters(it) = ci; corr_update(it) = upd; corr_residual(it) = resn;
-                    x_next = x_new;
-                    tol_now = abs_tol + rel_tol*max(1,norm(x_next,inf));
-                    if upd <= tol_now && resn <= tol_now
-                        corr_converged(it) = true; break;
-                    end
-                    if ci == max_citer
-                        corr_converged(it) = false;
-                        if strcmp(cfail,'error')
-                            error('ts_simulate_emf6:correctorNotConverged', ...
-                                ['Corrector did not converge at t=%.4f (step %d): ' ...
-                                'iters=%d update=%.3e residual=%.3e.'], t_next, it, ci, upd, resn);
-                        end
-                    end
-                end
-            else
-                for ci = 1:max(1,citer)
-                    y_next = solve_g(x_next, y_next, Y_now, dae_g, jac_y, g_tol);
-                    f1 = dae_f(x_next, y_next);
-                    x_next = x + 0.5*dt_step*(f0 + f1);
-                end
-                corr_iters(it) = citer;
-                f1f = dae_f(x_next, solve_g(x_next,y_next,Y_now,dae_g,jac_y,g_tol));
-                R = x_next - x - 0.5*dt_step*(f0 + f1f);
-                corr_residual(it) = norm(R, inf);
-                corr_update(it) = norm(R, inf);
-                corr_converged(it) = (corr_residual(it) <= 1e-6);
-            end
-        otherwise
-            error('ts_simulate_emf6:unknownMethod','Unknown method "%s".',method);
+    kopt = struct('algebraic_tolerance',g_tol, ...
+        'max_corrector_iter',max_citer,'corrector_mode',cmode, ...
+        'corrector_abs_tol',abs_tol,'corrector_rel_tol',rel_tol);
+    if strcmp(cmode,'fixed'), kopt.max_corrector_iter=citer; end
+    step = stability.ts_step_kernel(x,y,dt_step,dae_f,dae_g,Y_now,jac_y,kopt);
+    corr_iters(it) = step.corrector_iterations;
+    corr_residual(it) = step.corrector_residual;
+    corr_update(it) = step.corrector_update;
+    corr_converged(it) = step.corrector_converged;
+    if ~step.corrector_converged
+        nonconv = nonconv + 1;
+        if strcmp(cfail,'error') && strcmp(cmode,'adaptive')
+            error('ts_simulate_emf6:correctorNotConverged', ...
+                'Corrector did not converge at t=%.4f (step %d): residual=%.3e.', ...
+                t_next, it, step.corrector_residual);
+        end
     end
-    if ~corr_converged(it), nonconv = nonconv + 1; end
-    x = x_next; y = solve_g(x, y_next, Y_next, dae_g, jac_y, g_tol);
+    x = step.x_full; jac_y = jac_y_fd(x,step.y_full,Y_next,dae_g,nb); y = solve_g(x, step.y_full, Y_next, dae_g, jac_y, g_tol);
 end
 % Final sample.
 delta_hist(nt,:) = x(1:6:end).'; omega_hist(nt,:) = x(2:6:end).';

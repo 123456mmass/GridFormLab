@@ -14,6 +14,7 @@ c=[net('ieee5','IEEE 5-bus',@cases.case_ieee5bus,3,base); ...
    net('ieee14','IEEE 14-bus',@cases.case_ieee14bus,4,base); ...
    net('ieee300','IEEE 300-bus',@cases.case_ieee300bus,3,base); ...
    net('rts24','IEEE RTS 24-bus (RTS-1996)',@cases.case_ieee_rts24_pgaz,15,base); ...
+   net('padiyar_two_area','Padiyar two-area model 1.1 + AVR',@cases.case_padiyar_two_area_4m_avr,3,base); ...
    net('kundur_two_area','Kundur two-area classical',@cases.case_kundur_two_area_classical,8,base); ...
    net('matpower14','MATPOWER case14',@cases.case_matpower6_case14,4,base); ...
    net('case9','WSCC/MATPOWER case9',@cases.case_matpower6_case9,7,base); ...
@@ -26,10 +27,17 @@ c=[net('ieee5','IEEE 5-bus',@cases.case_ieee5bus,3,base); ...
 
 % This case has published sixth-order dynamics; select operational EMF6 by
 % default.  Users can still request its classical model explicitly.
-c(end).sssa_options=struct('model','emf6');
-c(end).ts_options.model='emf6';
-c(end).ts_options.corrector_mode='fixed';
-c(end).ts_options.corrector_iter=3;
+pk=find(strcmp({c.id},'padiyar_two_area'),1);
+c(pk).sssa_options=struct('model','padiyar_1_1_avr');
+c(pk).ts_options.model='padiyar_1_1_avr';
+c(pk).ts_options.dt=0.005; c(pk).ts_options.t_end=3;
+c(pk).ts_options.Zf=1i*0.5;
+
+kk=find(strcmp({c.id},'kundur'),1);
+c(kk).sssa_options=struct('model','emf6');
+c(kk).ts_options.model='emf6';
+c(kk).ts_options.corrector_mode='fixed';
+c(kk).ts_options.corrector_iter=3;
 end
 
 function s=net(id,label,loader,fault_bus,base)

@@ -1,53 +1,64 @@
-function gates = evaluate_validation_gates(ran, contract, mapping, nonconv, timegrid, metrics, tol)
-%EVALUATE_VALIDATION_GATES  Pure gate-evaluation logic for three-way validation.
-%   No side effects, no tool execution — given the ran-flags, contract/mapping
-%   results, non-converged count, time-grid flag, pairwise metrics and
-%   predeclared tolerances, returns explicit gate statuses and the aggregate.
-%   Missing PGAz / execution error / missing metric / non-converged step all
-%   force the corresponding gate (and the aggregate) to FAIL — never a silent
-%   optional pass.
+function [all_pass, report] = evaluate_validation_gates(g)
+%EVALUATE_VALIDATION_GATES  Strict aggregate gate evaluation.
+%   Given a struct of ALL required gate fields (each logical), returns
+%   all_pass = true ONLY if every required gate is present, finite, logical,
+%   and true. Missing field / empty / NaN / non-logical / false / exception
+%   => all_pass = false. A skipped required gate is a failure, never a pass.
 %
-%   ran:       struct(psat, pgaz)  logical — did each reference tool run?
-%   contract:  struct(ybus_pgaz, ybus_psat)  logical — Ybus match?
-%   mapping:   struct(psat, pgaz)  logical — gen-bus mapping correct?
-%   nonconv:   scalar — in-house non-converged step count (must be 0)
-%   timegrid:  logical — time grids equal?
-%   metrics:   struct(.pf.(ps_ours|pg_ours|ps_pg).{dV,dAng},
-%                      .ts.(ps_ours|pg_ours|ps_pg).{dCOI,domega,dPe,dVm})
-%   tol:       struct(.pf.{dV,dAng}, .ts_conv.{...}, .ts_pgaz.{...})
+%   Required gate fields (flat or nested):
+%     production_dependency, no_kundur_acceptance_target, regression,
+%     emf6_no_fault, emf6_shared_model,
+%     case14.contract, case14.mapping, case14.comparison_grid,
+%       case14.event_grid, case14.sample_alignment, case14.extrapolation_used_false,
+%       case14.psat_execution, case14.pgaz_execution, case14.ours_convergence,
+%       case14.psat_comparison, case14.pgaz_plateau, case14.pgaz_comparison,
+%     rts24.* (same set as case14)
+%   case14.extrapolation_used_false and *.pgaz_comparison are required gates
+%   (extrapolation must be false; plateau PGAz must match within tolerance).
 
-gates = struct();
-gates.contract_ybus_pgaz = contract.ybus_pgaz;
-gates.contract_ybus_psat = contract.ybus_psat;
-gates.gen_mapping_psat = mapping.psat;
-gates.gen_mapping_pgaz = mapping.pgaz;
-gates.psat_ran = ran.psat;
-gates.pgaz_ran = ran.pgaz;
-gates.ours_nonconv_zero = (nonconv == 0);
-gates.time_grid_equal = timegrid;
+required = { ...
+ 'production_dependency','no_kundur_acceptance_target','regression', ...
+ 'emf6_no_fault','emf6_shared_model', ...
+ 'case14.contract','case14.mapping','case14.comparison_grid','case14.event_grid', ...
+ 'case14.sample_alignment','case14.extrapolation_used_false','case14.psat_execution', ...
+ 'case14.pgaz_execution','case14.ours_convergence','case14.psat_comparison', ...
+ 'case14.pgaz_plateau','case14.pgaz_comparison', ...
+ 'rts24.contract','rts24.mapping','rts24.comparison_grid','rts24.event_grid', ...
+ 'rts24.sample_alignment','rts24.extrapolation_used_false','rts24.psat_execution', ...
+ 'rts24.pgaz_execution','rts24.ours_convergence','rts24.psat_comparison', ...
+ 'rts24.pgaz_plateau','rts24.pgaz_comparison'};
 
-% Per-pair metric gates (NaN/missing => FAIL). Converged pair (PSAT-Ours)
-% uses the tight tolerance; PGAz-involving pairs use the looser (method-aware)
-% tolerance for PGAz's fixed-3-iteration corrector.
-gates.ps_metrics_ok   = ran.psat && pf_ok(metrics.pf.ps_ours, tol.pf) && ts_ok(metrics.ts.ps_ours, tol.ts_conv);
-gates.pg_metrics_ok   = ran.pgaz && pf_ok(metrics.pf.pg_ours, tol.pf) && ts_ok(metrics.ts.pg_ours, tol.ts_pgaz);
-gates.ps_pg_metrics_ok = ran.psat && ran.pgaz && pf_ok(metrics.pf.ps_pg, tol.pf) && ts_ok(metrics.ts.ps_pg, tol.ts_pgaz);
-
-gates.all_gates_pass = all([ ...
-    gates.contract_ybus_pgaz, gates.contract_ybus_psat, ...
-    gates.gen_mapping_psat, gates.gen_mapping_pgaz, ...
-    gates.psat_ran, gates.pgaz_ran, gates.ours_nonconv_zero, ...
-    gates.time_grid_equal, gates.ps_metrics_ok, gates.pg_metrics_ok, ...
-    gates.ps_pg_metrics_ok]);
+report = struct();
+report.missing = {};
+report.invalid = {};
+report.false = {};
+report.value = struct();
+all_pass = true;
+for i = 1:numel(required)
+    path = strsplit(required{i}, '.');
+    val = get_nested(g, path);
+    if isempty(val)
+        report.missing{end+1} = required{i}; all_pass = false; continue; %#ok<AGROW>
+    end
+    if ~islogical(val) && ~(isnumeric(val) && (val==0 || val==1))
+        report.invalid{end+1} = required{i}; all_pass = false; continue; %#ok<AGROW>
+    end
+    if isnan(val)
+        report.invalid{end+1} = required{i}; all_pass = false; continue; %#ok<AGROW>
+    end
+    report.value.(strrep(required{i},'.','_')) = val;
+    if ~val
+        report.false{end+1} = required{i}; all_pass = false; %#ok<AGROW>
+    end
+end
 end
 
-function ok = ts_ok(m,T)
-ok = isfield(m,'dCOI') && isfinite(m.dCOI) && m.dCOI<=T.dCOI && ...
-     isfield(m,'domega') && isfinite(m.domega) && m.domega<=T.domega && ...
-     isfield(m,'dPe') && isfinite(m.dPe) && m.dPe<=T.dPe && ...
-     isfield(m,'dVm') && isfinite(m.dVm) && m.dVm<=T.dVm;
+function val = get_nested(s, path)
+val = [];
+cur = s;
+for k = 1:numel(path)
+    if ~isstruct(cur) || ~isfield(cur, path{k}), return; end
+    cur = cur.(path{k});
 end
-function ok = pf_ok(m,T)
-ok = isfield(m,'dV') && isfinite(m.dV) && m.dV<=T.dV && ...
-     isfield(m,'dAng') && isfinite(m.dAng) && m.dAng<=T.dAng;
+val = cur;
 end

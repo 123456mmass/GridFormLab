@@ -55,12 +55,15 @@ fb_id = opt.fault_bus;
 if isempty(fb_id), fb_id = gen_buses(1); end
 fb = find(bus_ids == fb_id, 1);
 if isempty(fb), error('ts_simulate_emf6:badFaultBus','fault_bus %g not in bus_ids.',fb_id); end
+fault_enabled = true; if isfield(opt,'fault_enabled') && ~isempty(opt.fault_enabled), fault_enabled = opt.fault_enabled; end
 Yfault = Ypre;
-if isempty(opt.Zf)
-    % Solid three-phase fault: pin V_fault = 0 (row/col zeroed, diag = 1).
-    Yfault(fb,:) = 0; Yfault(:,fb) = 0; Yfault(fb,fb) = 1;
-else
-    Yfault(fb,fb) = Yfault(fb,fb) + 1/opt.Zf;
+if fault_enabled
+    if isempty(opt.Zf)
+        % Solid three-phase fault: pin V_fault = 0 (row/col zeroed, diag = 1).
+        Yfault(fb,:) = 0; Yfault(:,fb) = 0; Yfault(fb,fb) = 1;
+    else
+        Yfault(fb,fb) = Yfault(fb,fb) + 1/opt.Zf;
+    end
 end
 Ypost = Ypre;
 
@@ -70,9 +73,9 @@ Ypost = Ypre;
 % due to floating-point accumulation in the colon grid).
 t = (0:dt:tmax).';
 event_times = [];
-if isfinite(opt.t_fault) && opt.t_fault > t(1) && opt.t_fault < t(end)
+if fault_enabled && isfinite(opt.t_fault) && opt.t_fault > t(1) && opt.t_fault < t(end)
     event_times = [event_times; opt.t_fault]; end
-if isfinite(opt.t_clear) && opt.t_clear > t(1) && opt.t_clear < t(end)
+if fault_enabled && isfinite(opt.t_clear) && opt.t_clear > t(1) && opt.t_clear < t(end)
     event_times = [event_times; opt.t_clear]; end
 event_idx = [];
 for et = event_times.'

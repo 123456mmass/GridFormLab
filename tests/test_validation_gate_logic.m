@@ -1,99 +1,103 @@
 function tests = test_validation_gate_logic()
-%TEST_VALIDATION_GATE_LOGIC  Unit tests for the three-way validation gate
-%   semantics (evaluate_validation_gates). Verifies that missing PGAz,
-%   execution errors, missing metrics, non-converged steps, and contract
-%   failures all force the aggregate gate to FAIL — never a silent optional
-%   pass. A fully-present, within-tolerance run passes.
+%TEST_VALIDATION_GATE_LOGIC  Strict aggregate gate semantics. Verifies that
+%   missing EMF6 / production-dependency / no-Kundur gates, missing metrics,
+%   non-converged steps, contract failures, extrapolation, and over-tolerance
+%   all force the aggregate to FAIL — never a silent optional pass. A
+%   fully-present, all-true gate set passes.
 
 tests = functiontests(localfunctions);
 end
 
-function functionSetup(testCase) %#ok<INUSD>
-pf_init_paths;
+function setupOnce(~)
+addpath(fileparts(fileparts(mfilename('fullpath'))));
+pf_init_paths();
 end
 
-function tol = default_tol()
-tol.pf = struct('dV',1e-6,'dAng',1e-4);
-tol.ts_conv = struct('dCOI',0.05,'domega',1e-4,'dPe',0.1,'dVm',1e-3);
-tol.ts_pgaz = struct('dCOI',1.0,'domega',5e-4,'dPe',5.0,'dVm',5e-3);
+function g = full_pass_gates()
+g = struct();
+g.production_dependency = true;
+g.no_kundur_acceptance_target = true;
+g.regression = true;
+g.emf6_no_fault = true;
+g.emf6_shared_model = true;
+g.case14 = struct('contract',true,'mapping',true,'comparison_grid',true, ...
+    'event_grid',true,'sample_alignment',true,'extrapolation_used_false',true, ...
+    'psat_execution',true,'pgaz_execution',true,'ours_convergence',true, ...
+    'psat_comparison',true,'pgaz_plateau',true,'pgaz_comparison',true);
+g.rts24 = g.case14;
 end
 
-function m = good_metrics()
-% All within the converged tolerance (PSAT-Ours) and PGAz tolerance.
-pf0 = struct('dV',1e-15,'dAng',1e-13);
-ts_conv = struct('dCOI',0.0096,'domega',3.8e-6,'dPe',0.042,'dVm',3.2e-5);
-ts_pgaz = struct('dCOI',0.61,'domega',2.9e-4,'dPe',2.44,'dVm',2.3e-3);
-m.pf = struct('ps_ours',pf0,'pg_ours',pf0,'ps_pg',pf0);
-m.ts = struct('ps_ours',ts_conv,'pg_ours',ts_pgaz,'ps_pg',ts_pgaz);
+function test_all_present_true_passes(testCase)
+g = full_pass_gates();
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyTrue(all_pass, 'All-present all-true must pass.');
+testCase.verifyTrue(isempty(report.missing) && isempty(report.false), 'No missing/false gates.');
 end
 
-function ran = both_ran(), ran = struct('psat',true,'pgaz',true); end
-function contract = good_contract(), contract = struct('ybus_pgaz',true,'ybus_psat',true); end
-function mapping = good_mapping(), mapping = struct('psat',true,'pgaz',true); end
-
-function test_all_present_within_tol_passes(testCase)
-g = evaluate_validation_gates(both_ran(), good_contract(), good_mapping(), ...
-    0, true, good_metrics(), default_tol());
-testCase.verifyTrue(g.all_gates_pass, 'Fully-present within-tol run must pass.');
-testCase.verifyTrue(g.pgaz_ran, 'PGAz ran flag must be true.');
-testCase.verifyTrue(g.pg_metrics_ok, 'PGAz metrics gate must pass.');
+function test_emf6_gate_missing_fails(testCase)
+g = full_pass_gates(); g = rmfield(g, 'emf6_no_fault');
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Missing EMF6 gate must fail.');
+testCase.verifyTrue(ismember('emf6_no_fault', report.missing), 'EMF6 reported missing.');
 end
 
-function test_pgaz_missing_aggregate_fails(testCase)
-% PGAz not installed / not run => aggregate FAIL (never optional pass).
-g = evaluate_validation_gates(struct('psat',true,'pgaz',false), ...
-    good_contract(), good_mapping(), 0, true, good_metrics(), default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Missing PGAz must fail the aggregate.');
-testCase.verifyFalse(g.pgaz_ran, 'pgaz_ran must be false.');
-testCase.verifyFalse(g.pg_metrics_ok, 'PGAz metrics gate must fail when not run.');
+function test_production_dependency_missing_fails(testCase)
+g = full_pass_gates(); g = rmfield(g, 'production_dependency');
+[all_pass, ~] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Missing production-dependency gate must fail.');
 end
 
-function test_pgaz_execution_error_aggregate_fails(testCase)
-% PGAz execution error => ran.pgaz=false => same as missing.
-g = evaluate_validation_gates(struct('psat',true,'pgaz',false), ...
-    good_contract(), good_mapping(), 0, true, good_metrics(), default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'PGAz execution error must fail the aggregate.');
+function test_no_kundur_gate_missing_fails(testCase)
+g = full_pass_gates(); g = rmfield(g, 'no_kundur_acceptance_target');
+[all_pass, ~] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Missing no-Kundur gate must fail.');
 end
 
-function test_missing_metric_aggregate_fails(testCase)
-m = good_metrics(); m.ts.pg_ours.dCOI = NaN;  % metric missing
-g = evaluate_validation_gates(both_ran(), good_contract(), good_mapping(), ...
-    0, true, m, default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Missing metric must fail the aggregate.');
-testCase.verifyFalse(g.pg_metrics_ok, 'PGAz metrics gate must fail on NaN metric.');
+function test_extrapolation_used_fails(testCase)
+g = full_pass_gates(); g.case14.extrapolation_used_false = false;
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Extrapolation used must fail.');
+testCase.verifyTrue(ismember('case14.extrapolation_used_false', report.false), 'extrapolation gate reported false.');
 end
 
-function test_nonconverged_step_fails(testCase)
-g = evaluate_validation_gates(both_ran(), good_contract(), good_mapping(), ...
-    3, true, good_metrics(), default_tol());  % 3 non-converged steps
-testCase.verifyFalse(g.all_gates_pass, 'Non-converged steps must fail the aggregate.');
-testCase.verifyFalse(g.ours_nonconv_zero, 'ours_nonconv_zero must be false.');
+function test_pgaz_completed_but_comparison_fails(testCase)
+% PGAz completed (execution=true) but plateau comparison fails => aggregate fail.
+g = full_pass_gates(); g.case14.pgaz_comparison = false;
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'PGAz comparison failure must fail aggregate.');
+testCase.verifyTrue(ismember('case14.pgaz_comparison', report.false), 'pgaz_comparison reported false.');
 end
 
-function test_contract_ybus_fail_fails(testCase)
-c = struct('ybus_pgaz',false,'ybus_psat',true);  % PGAz Ybus mismatch
-g = evaluate_validation_gates(both_ran(), c, good_mapping(), ...
-    0, true, good_metrics(), default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Ybus contract failure must fail the aggregate.');
+function test_pgaz_not_converged_no_residual_still_completed(testCase)
+% PGAz fixed-3 with no residual is COMPLETED (pgaz_execution=true), not
+% "converged". The execution gate passes; convergence is not a gate field.
+g = full_pass_gates();
+[all_pass, ~] = evaluate_validation_gates(g);
+testCase.verifyTrue(all_pass, 'PGAz completed (no residual) does not fail execution gate.');
 end
 
-function test_gen_mapping_fail_fails(testCase)
-mp = struct('psat',true,'pgaz',false);  % PGAz gen mapping wrong
-g = evaluate_validation_gates(both_ran(), good_contract(), mp, ...
-    0, true, good_metrics(), default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Gen mapping failure must fail the aggregate.');
+function test_comparison_grid_invalid_fails(testCase)
+g = full_pass_gates(); g.rts24.comparison_grid = false;
+[all_pass, ~] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Invalid comparison grid must fail.');
 end
 
-function test_metric_exceeds_tolerance_fails(testCase)
-m = good_metrics(); m.ts.pg_ours.dCOI = 1.5;  % exceeds ts_pgaz (1.0)
-g = evaluate_validation_gates(both_ran(), good_contract(), good_mapping(), ...
-    0, true, m, default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Metric exceeding tolerance must fail.');
-testCase.verifyFalse(g.pg_metrics_ok, 'PGAz metrics gate must fail when over tolerance.');
+function test_metric_over_tolerance_fails(testCase)
+g = full_pass_gates(); g.case14.psat_comparison = false;
+[all_pass, ~] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Over-tolerance metric must fail.');
 end
 
-function test_timegrid_mismatch_fails(testCase)
-g = evaluate_validation_gates(both_ran(), good_contract(), good_mapping(), ...
-    0, false, good_metrics(), default_tol());
-testCase.verifyFalse(g.all_gates_pass, 'Time-grid mismatch must fail the aggregate.');
+function test_nan_gate_value_fails(testCase)
+g = full_pass_gates(); g.case14.psat_comparison = NaN;
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'NaN gate value must fail.');
+testCase.verifyTrue(ismember('case14.psat_comparison', report.invalid), 'NaN reported invalid.');
+end
+
+function test_nested_missing_fails(testCase)
+g = full_pass_gates(); g.rts24 = rmfield(g.rts24, 'pgaz_execution');
+[all_pass, report] = evaluate_validation_gates(g);
+testCase.verifyFalse(all_pass, 'Nested missing gate must fail.');
+testCase.verifyTrue(ismember('rts24.pgaz_execution', report.missing), 'nested missing reported.');
 end

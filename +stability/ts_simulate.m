@@ -25,7 +25,8 @@ opt = struct('t_end',15.0,'dt',0.01,'fault_bus',[],'t_fault',1.0,'t_clear',1.1, 
     'corrector_mode','adaptive','corrector_iter',[], ...
     'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
     'max_corrector_iter',10,'corrector_failure','error', ...
-    'pm_mode','balanced','verbose',true,'H',[],'D',[],'Xdp',[],'model','classical','load_model','cc_p_cz_q');
+    'pm_mode','balanced','verbose',true,'H',[],'D',[],'Xdp',[],'model','classical','load_model','cc_p_cz_q', ...
+    'fault_enabled',true);
 if nargin > 1 && isstruct(varargin{1})
     fn = fieldnames(varargin{1});
     for k=1:numel(fn), opt.(fn{k}) = varargin{1}.(fn{k}); end
@@ -180,7 +181,7 @@ for it=1:nt-1
     % pre-event topology for the entire step, then the topology switches
     % at the event boundary. The next step starts with the post-event topology.
     % This prevents trapezoidal averaging of RHS from different topologies.
-    fault_on_now = t_now >= opt.t_fault && t_now < opt.t_clear;
+    fault_on_now = opt.fault_enabled && t_now >= opt.t_fault && t_now < opt.t_clear;
 
     % Predictor: explicit Euler
     f0 = rhs_fixed(t_now, x, fault_on_now);
@@ -248,7 +249,7 @@ for it=1:nt-1
     delta(it+1,:) = x(1:ng).'; omega(it+1,:) = x(ng+1:end).';
 
     % Recompute algebraic with the ACTUAL topology at t_next
-    fault_on_next = t_next >= opt.t_fault && t_next < opt.t_clear;
+    fault_on_next = opt.fault_enabled && t_next >= opt.t_fault && t_next < opt.t_clear;
     [V,~,Pek] = solve_network(x(1:ng),Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on_next,opt);
     Pe(it+1,:) = Pek.'; Vhist(it+1,:) = abs(V).';
 end
@@ -276,7 +277,7 @@ res=struct('t',t,'delta',delta,'omega',omega,'Pe_pu',Pe,'Pe_MW',Pe*base, ...
 
     function dx=rhs(tnow,xx) %#ok<USD>
         del=xx(1:ng); w=xx(ng+1:end);
-        fault_on=tnow>=opt.t_fault && tnow<opt.t_clear;
+        fault_on=opt.fault_enabled && tnow>=opt.t_fault && tnow<opt.t_clear;
         [~,~,Pek]=solve_network(del,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
         dx=[ws*(w-1); (Pm-Pek-D.*(w-1))./(2*H)];
     end

@@ -64,3 +64,29 @@ end
 testCase.verifyEmpty(hits, ...
     'Production docs must not contain a Kundur <0.5% claim (move to legacy/).');
 end
+
+function test_no_literature_range_acceptance_in_tests(testCase)
+% Guard: no production test may use Kundur / E12.3 / external-literature
+% frequency or damping ranges as a pass/fail acceptance criterion. The
+% in-house model is validated by physics/model-contract tests and
+% cross-validation, never by matching literature numbers. Literature ranges
+% are allowed ONLY in scripts/diagnostics/ (diagnostic-only, off the test
+% path).
+root = fileparts(fileparts(mfilename('fullpath')));
+tests_dir = fullfile(root,'tests');
+fl = dir(fullfile(tests_dir,'*.m'));
+hits = strings(0,1);
+for k=1:numel(fl)
+    p = fullfile(fl(k).folder, fl(k).name);
+    src = fileread(p);
+    % A literature-range acceptance test: asserts freq/zeta bounds AND
+    % references Kundur/literature/E12.3 as the source of those bounds.
+    has_range_assert = ~isempty(regexp(src, 'verify(Greater|Less)Than\s*\(\s*(freq|zeta)', 'once'));
+    has_lit_ref = ~isempty(regexp(src, '(Kundur|E12\.3|literature|paper|independent.*reproduc)', 'once'));
+    if has_range_assert && has_lit_ref
+        hits(end+1,1) = string(p); %#ok<AGROW>
+    end
+end
+testCase.verifyEmpty(hits, ...
+    'Tests must not use Kundur/literature frequency/damping ranges as acceptance.');
+end

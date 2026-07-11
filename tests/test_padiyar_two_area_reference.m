@@ -161,15 +161,16 @@ for excitation={'manual','avr'}
 end
 
 function test_table_9_5_matching_permutation_invariant(testCase)
-% The diagnostic metrics must be invariant to the ORDER of either the
-% computed or reference eigenvalue vectors. The deterministic global
-% assignment helper picks successive minima over the full distance matrix;
-% the invariant property is the SORTED MULTISET of absolute errors (the
-% total cost distribution), which is what the diagnostic reports. The
-% specific (ref_idx, got_idx) pair assignment can be order-dependent when
-% reference eigenvalues are near-degenerate (a documented limitation of
-% greedy assignment versus a full Hungarian solver; we do not use a
-% toolbox assignment solver). The permutation guard covers what must hold.
+% Provable invariant under reordering of either input. The matching helper is
+% a deterministic greedy successive-minimum one-to-one matching (NOT a global
+% optimum assignment). It does NOT guarantee a global minimum total cost, and
+% the specific (ref_idx, got_idx) pairing can change when reference or
+% computed eigenvalues have equal or near-equal distances. The property that
+% DOES hold — and is what this guard verifies — is that the SORTED MULTISET of
+% absolute errors is invariant to the ordering of either input, match counts
+% are preserved, and matched indices remain unique (one-to-one). This is the
+% diagnostic invariant; the matching is used for reporting only, never as an
+% acceptance gate.
 c=cases.case_padiyar_two_area_4m_avr();
 r=stability.padiyar_model11_ssa(c,struct('excitation','avr','fd_eps',1e-6));
 ref=c.reference.table95_eigenvalues(:); ref=ref(abs(ref)>0.01);
@@ -265,14 +266,23 @@ function cmp=table95_comparison(got,ref)
 %   Padiyar Table 9.5 is an external published reference used as a secondary
 %   cross-check, never a fitted target or a numerical acceptance gate.
 %
-%   Matching uses a deterministic global assignment (greedy-by-minimum-cost
-%   over the full distance matrix, not order-dependent per-element greedy),
-%   so the metrics are invariant to the ordering of either input. The metric
-%   is absolute complex distance |lambda_computed - lambda_book|.
+%   Matching is a deterministic greedy successive-minimum one-to-one matching
+%   over the full |complex distance| matrix with mutual exclusion (base MATLAB
+%   only; no Hungarian/toolbox assignment solver). This is GREEDY: at each
+%   iteration it takes the global minimum of the remaining matrix, then marks
+%   that row/column used. It does NOT guarantee a global minimum total cost
+%   (a Hungarian solver could yield a lower total by accepting a locally
+%   suboptimal pairing). The specific (ref_idx, computed_idx) pairing can
+%   change when reference or computed eigenvalues have equal or near-equal
+%   distances; only the SORTED absolute-error multiset is invariant to the
+%   ordering of either input. The metric is absolute complex distance
+%   |lambda_computed - lambda_book|. Used for diagnostic reporting only;
+%   never an acceptance gate (see test_table_9_5_matching_permutation_invariant
+%   and the guard test_no_table95_acceptance_gate).
 ref=ref(:); got=got(:);
 cmp.reference_name='Padiyar Table 9.5';
 cmp.reference_source='Padiyar, Power System Dynamics (2nd ed.), Sec. 9.6.1';
-cmp.matching_method='deterministic global assignment (min total |complex distance|)';
+cmp.matching_method='deterministic greedy successive-minimum one-to-one matching';
 cmp.matching_metric='absolute complex distance |lambda_computed - lambda_book|';
 cmp.required_for_acceptance=false;
 cmp.reference_values=ref;
@@ -295,8 +305,9 @@ if any(~isfinite(ref)) || any(~isfinite(got))
     return;
 end
 cmp.invalid_input=false;
-% Full distance matrix and global one-to-one assignment via successive
-% minima with mutual exclusion (deterministic; no toolbox assignment solver).
+% Full distance matrix and greedy successive-minimum one-to-one matching
+% with mutual exclusion (deterministic; no toolbox/Hungarian solver). Greedy,
+% NOT global optimum: does not guarantee minimum total cost.
 D=abs(got-ref.');  % numel(ref) x numel(got)
 nmatch=min(numel(ref),numel(got));
 abs_err=zeros(nmatch,1);

@@ -26,8 +26,9 @@ Perturbation:   Δxdot = Jxx Δx + Jxy Δy + Jxu Δu
                 0     = Jyx Δx + Jyy Δy + Jyu Δu
 ```
 
-where `x` = differential states, `y` = algebraic variables (network bus voltages as
-`[Re(V); Im(V)]` interleaved per bus), `u` = inputs (see §4).
+where `x` = differential states, `y` = algebraic variables (network bus voltages,
+interleaved per bus as `y = [Re(V1), Im(V1), ..., Re(Vnb), Im(Vnb)]^T`, length `2*nb`),
+`u` = inputs (see §4).
 
 ## 2. Algebraic elimination (Schur complement)
 
@@ -92,7 +93,8 @@ autonomous DAE (no infinite bus / no governor), so `Afull * shift ≈ 0` where `
 - DAE source: `padiyar_model11_dae.m` — `differential_residual` (L121),
   `network_residual` (L138), `all_currents` (L175).
 - State order per machine: `[delta, omega, Eqp, Edp]` (L103-104).
-- Algebraic `y`: `[Re(V_b); Im(V_b)]` interleaved, `2*nb` (L81-84).
+- Algebraic `y`: `y = [Re(V1), Im(V1), ..., Re(Vnb), Im(Vnb)]^T` (interleaved per
+  bus, length `2*nb`; L81-84).
 - Input `u` (parameters, NOT a dynamic input channel): `{H, D, Pm, Efd0}`.
 - Manual excitation: `Efd(t) = Efd0` (fixed input, `padiyar_model11_dae.m:126`).
   The synchronous-machine differential equations (delta, omega, Eqp, Edp) are unchanged;
@@ -114,7 +116,8 @@ autonomous DAE (no infinite bus / no governor), so `Afull * shift ≈ 0` where `
 - DAE source: `synchronous_emf6_ssa.m` — `differential_residual` (L152),
   `network_residual` (L167). `emf6_dae.m` is a thin adapter that wraps the SSSA.
 - State order per machine: `[delta, omega, Eqp, Edp, Eqpp, Edpp]` (L136, L138-141).
-- Algebraic `y`: `[Re(V_b); Im(V_b)]`, `2*nb` (L109).
+- Algebraic `y`: `y = [Re(V1), Im(V1), ..., Re(Vnb), Im(Vnb)]^T` (interleaved per
+  bus, length `2*nb`; L109).
 - Input `u` (parameters): `{H_system, D_system, Tm, Efd}`.
 - Jacobian: computed by the SSSA itself via `numerical_jacobian` (L216) and passed
   precomputed to `multimachine_ssa`.
@@ -153,12 +156,21 @@ arbitrary values leaves `Afull` and the eigenvalues unchanged to `AbsTol 1e-12`.
 
 Table 9.5 is used ONLY as a secondary diagnostic cross-check
 (`test_table_9_5_diagnostic_comparison`). The 18 non-near-zero physical roots are matched
-against the computed eigenvalues with a deterministic global assignment (successive minima
-over the full distance matrix, no toolbox assignment solver); the near-zero pair
-(`|λ| ≤ 0.01`) is excluded by a pre-declared structural rule because Padiyar attributes it
-to load-flow/numerical error. The comparison returns finite metrics (absolute/relative
-errors, matched indices, unmatched modes, reference provenance) with
-`required_for_acceptance = false`.
+against the computed eigenvalues using a deterministic greedy successive-minimum
+one-to-one matching over the full `|complex distance|` matrix with mutual exclusion (base
+MATLAB only; no Hungarian/toolbox assignment solver). The near-zero pair (`|λ| ≤ 0.01`) is
+excluded by a pre-declared structural rule because Padiyar attributes it to load-flow/
+numerical error. The comparison returns finite metrics (absolute/relative errors, matched
+indices, unmatched modes, reference provenance) with `required_for_acceptance = false`.
+
+**Matching limitation (documented).** This is GREEDY, not a global optimum assignment: at
+each iteration it takes the global minimum of the remaining distance matrix, then marks that
+row/column used. It does NOT guarantee a global minimum total cost — a Hungarian solver
+could yield a lower total by accepting a locally suboptimal pairing. The specific
+(ref_idx, computed_idx) pairing can change when reference or computed eigenvalues have equal
+or near-equal distances; only the SORTED absolute-error multiset is invariant to the
+ordering of either input (verified by `test_table_9_5_matching_permutation_invariant`). The
+matching is used for diagnostic reporting only and is never an acceptance gate.
 
 Table 9.5 is NOT a numerical acceptance gate. There is no `verifyLessThan` assertion on the
 matched eigenvalue distance to the book, and no tolerance such as `0.06` controls regression

@@ -9,7 +9,15 @@ if nargin < 2 || isempty(options), options=struct(); end
 requested_model='';
 if isfield(options,'model'), requested_model=lower(char(options.model)); end
 
-if ~strcmp(requested_model,'classical') && ...
+if any(strcmp(requested_model,{'padiyar_1_1_avr','padiyar_1_1_manual'}))
+    if strcmp(requested_model,'padiyar_1_1_manual')
+        options.excitation='manual';
+    else
+        options.excitation='avr';
+    end
+    result=stability.padiyar_model11_ssa(case_data,options);
+    result.metadata.plugin='padiyar_model_1_1';
+elseif ~strcmp(requested_model,'classical') && ...
         isfield(case_data,'bus_data') && isfield(case_data,'machines') && ...
         isfield(case_data.machines,'reactances') && ...
         isfield(case_data.machines.reactances,'Xdpp')

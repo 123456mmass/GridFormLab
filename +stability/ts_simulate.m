@@ -42,11 +42,19 @@ if strcmp(opt.corrector_mode,'fixed') && isempty(opt.corrector_iter)
 end
 
 % --- Model dispatch: single entry point for classical and 6th-order -------
-if any(strcmpi(opt.model,{'flux6','genpj6','emf6','kundur6'}))
+% The operational EMF6 model is the single sixth-order equation set shared
+% with SSSA (stability.emf6_dae / stability.synchronous_emf6_ssa). The
+% legacy calibrated GENTPJ names (flux6/genpj6/kundur6) also route through
+% the unified EMF6 path so SSSA and TS never diverge onto a second model.
+if strcmpi(opt.model,'emf6')
+    if opt.verbose, fprintf('[ts_simulate] Dispatching to EMF6 (emf6_dae) path.\n'); end
+    res = stability.ts_simulate_emf6(case_data, opt);
+    return;
+elseif any(strcmpi(opt.model,{'flux6','genpj6','kundur6'}))
     if opt.verbose
-        fprintf('[ts_simulate] Dispatching to 6th-order %s path.\n',opt.model);
+        fprintf('[ts_simulate] Dispatching to EMF6 (emf6_dae) path [legacy alias %s].\n',opt.model);
     end
-    res = stability.ts_simulate_genpj6(case_data, opt);
+    res = stability.ts_simulate_emf6(case_data, opt);
     return;
 end
 

@@ -12,35 +12,44 @@ function setupOnce(~)
     pf_init_paths();
 end
 
-function test_kundur_flux6_via_general_engine(testCase)
-    % The parameter-driven GENTPJ model must run through the same
-    % transient-simulation entry point as classical cases.
+function test_kundur_emf6_via_general_engine(testCase)
+    % The operational EMF6 model must run through the same transient-simulation
+    % entry point as classical cases, and must share its equation set with the
+    % EMF6 SSSA (single source: stability.emf6_dae).
     case_data = cases.kundur_ex126_book_case();
-    ssa = stability.multicase_sssa(case_data);
+    ssa = stability.multicase_sssa(case_data, struct('model','emf6','load_model','cz'));
     testCase.verifyEqual(numel(ssa.eigenvalues),24);
     testCase.verifyTrue(all(isfinite(ssa.eigenvalues)));
     testCase.verifyLessThan(norm([ssa.debug_residual_f;ssa.debug_residual_g],inf),1e-8);
 
-    opt = struct('model','flux6','t_end',0.7,'dt',1e-3,'fault_bus',8, ...
-        't_fault',0.5,'t_clear',0.6,'Zf',[],'method','trapezoidal', ...
-        'corrector_mode','fixed','corrector_iter',1,'verbose',false);
+    opt = struct('model','emf6','t_end',0.7,'dt',1e-3,'fault_bus',8, ...
+        't_fault',0.5,'t_clear',0.6,'Zf',1i*0.1,'method','trapezoidal', ...
+        'corrector_mode','fixed','corrector_iter',2,'load_model','cz','verbose',false);
     r = stability.ts_simulate(case_data, opt);
-    testCase.verifyEqual(r.model, '6th-order GENTPJ full nonlinear');
+    testCase.verifyEqual(r.model_key, 'emf6');
+    testCase.verifyEqual(r.engine, 'stability.synchronous_emf6_ssa');
+    testCase.verifyEqual(r.model, 'emf6');
     testCase.verifyEqual(numel(r.gen_buses), 4);
     testCase.verifySize(r.delta,[numel(r.t),4]);
     testCase.verifySize(r.omega,size(r.delta));
-    testCase.verifySize(r.Pgen,size(r.delta));
+    testCase.verifySize(r.Pe_pu,size(r.delta));
     testCase.verifySize(r.Vbus,[numel(r.t),size(case_data.bus_data,1)]);
     testCase.verifyTrue(all(isfinite(r.delta),'all'));
     testCase.verifyTrue(all(isfinite(r.omega),'all'));
-    testCase.verifyTrue(all(isfinite(r.Pgen),'all'));
+    testCase.verifyTrue(all(isfinite(r.Pe_pu),'all'));
     testCase.verifyTrue(all(isfinite(r.Vbus),'all'));
-
-    % The public standalone wrapper must remain numerically compatible.
-    r0 = stability.kundur_fault_simulation_6th_order(struct('bus',8,'tclear',0.1, ...
-        'tmax',0.7,'dt',1e-3,'tfault_start',0.5,'method','trapezoidal','corrector_iter',1));
-    testCase.verifyLessThan(max(abs(rad2deg(r.delta-r0.delta)),[],'all'), 1e-6);
-    testCase.verifyLessThan(max(abs(r.omega-r0.omega),[],'all'), 1e-10);
+    % Shared equation set: TS uses the same DAE as SSSA (small initial residual).
+    testCase.verifyLessThan(r.initial_dae_residual, 1e-9);
+    % Fault must depress the fault-bus voltage below its pre-fault value.
+    fb = find(r.bus_ids == opt.fault_bus, 1);
+    tf = find(abs(r.t - opt.t_fault) < 1e-14, 1);
+    testCase.verifyLessThan(r.Vbus(tf,fb), r.Vbus(tf-1,fb)*0.95, ...
+        'Fault-bus voltage must drop at fault application.');
+    % No-fault equilibrium: with no disturbance the state must not drift.
+    opt_nf = opt; opt_nf.t_fault = 99; opt_nf.t_clear = 99.1;
+    r_nf = stability.ts_simulate(case_data, opt_nf);
+    testCase.verifyLessThan(max(abs(r_nf.delta(end,:) - r_nf.delta(1,:)),[],'all'), 1e-10);
+    testCase.verifyLessThan(max(abs(r_nf.omega),[],'all'), 1e-10);
 end
 
 function test_case14_matches_validated_engine(testCase)

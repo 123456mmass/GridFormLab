@@ -2,13 +2,17 @@
 
 **Generated:** 2026-07-12 (FRESH this session — all values computed in this invocation,
 no saved metrics replayed as fresh).
-**Validated source commit:** `a09830b` (Phase C closure: make Table 9.5 comparison
-diagnostic-only). This is the source/tests/docs commit whose behavior the artifact records;
-the artifact itself is committed separately in C4 and is NOT a validated source. The
-pre-closure validated source commit was `25badd0` (Phase C2); the pre-closure artifact
-commit was `dd26bdd`. The closure commit `a09830b` supersedes both as the validated
-source: it removes the hidden Table 9.5 acceptance gate, retracts the unsupported FD-noise
-causal claim, and corrects the provenance wording.
+**Validated source commit:** `e23185a` (Phase C terminology: honest matching-method name +
+explicit y-order). This is the source/tests/docs commit whose behavior the artifact records;
+the artifact itself is committed separately in C6 and is NOT a validated source. The
+terminology closure `e23185a` is terminology-only: it renames the matching method from the
+overstated "deterministic global assignment (min total |complex distance|)" to the accurate
+"deterministic greedy successive-minimum one-to-one matching", documents the limitation
+explicitly (no global-minimum-total-cost guarantee; pairing can change under equal/near-equal
+distances), and makes the algebraic y-ordering explicit
+(`y = [Re(V1), Im(V1), ..., Re(Vnb), Im(Vnb)]^T`). No matching results, tolerances, DAE,
+Jacobian, or SSSA code changed. Prior closure chain: `a09830b` (C3, diagnostic-only) and
+`9f86881` (C4, artifact); pre-closure source `25badd0` (Phase C2) and artifact `dd26bdd`.
 **MATLAB:** R2026a Update 3.
 
 ## Scope
@@ -24,9 +28,9 @@ published/literature acceptance targets:
 
 | Path | DAE source | x order/machine | x count | y order | ref-angle | Jacobian | TS shared |
 |---|---|---|---|---|---|---|---|
-| Padiyar manual | `padiyar_model11_dae.m` | delta,omega,Eqp,Edp | 16 | Re/Im(V), 2*nb | full (none) | FD by multimachine_ssa | yes |
+| Padiyar manual | `padiyar_model11_dae.m` | delta,omega,Eqp,Edp | 16 | `[Re(V1),Im(V1),…,Re(Vnb),Im(Vnb)]^T` (2*nb) | full (none) | FD by multimachine_ssa | yes |
 | Padiyar AVR | same | +Efd | 20 | same | full | FD | yes |
-| EMF6 | `synchronous_emf6_ssa.m` (emf6_dae wraps) | delta,omega,Eqp,Edp,Eqpp,Edpp | 24 | Re/Im(V), 2*nb | Afull + Ared (coi) | numerical_jacobian by SSSA | yes |
+| EMF6 | `synchronous_emf6_ssa.m` (emf6_dae wraps) | delta,omega,Eqp,Edp,Eqpp,Edpp | 24 | `[Re(V1),Im(V1),…,Re(Vnb),Im(Vnb)]^T` (2*nb) | Afull + Ared (coi) | numerical_jacobian by SSSA | yes |
 
 Input vector `u`: no dynamic input channel. Padiyar `u` = params {H,D,Pm,Efd0/Vref};
 EMF6 `u` = params {H_system,D_system,Tm,Efd}. Documented in `docs/SSSA_CONTRACT.md`.
@@ -146,14 +150,20 @@ Table 9.5 is an external published reference, NOT a numerical acceptance gate. T
 `required_for_acceptance = false`.
 
 18 non-near-zero physical roots matched against computed eigenvalues using a deterministic
-global assignment (successive minima over the full distance matrix; no toolbox assignment
-solver). The near-zero pair (`|λ| ≤ 0.01`) is excluded by a pre-declared structural rule
-because Padiyar attributes it to load-flow/numerical error. The matched indices are unique
-(one-to-one), and the sorted absolute-error multiset is invariant to the ordering of either
-input (verified by `test_table_9_5_matching_permutation_invariant`). The specific
-(ref_idx, computed_idx) pairing is order-dependent when reference eigenvalues are
-near-degenerate — a documented limitation of greedy assignment versus a full Hungarian
-solver; a toolbox assignment solver is not used.
+greedy successive-minimum one-to-one matching over the full `|complex distance|` matrix
+with mutual exclusion (base MATLAB only; no Hungarian/toolbox assignment solver). The
+near-zero pair (`|λ| ≤ 0.01`) is excluded by a pre-declared structural rule because Padiyar
+attributes it to load-flow/numerical error. The matched indices are unique (one-to-one),
+and the sorted absolute-error multiset is invariant to the ordering of either input
+(verified by `test_table_9_5_matching_permutation_invariant`).
+
+**Matching limitation (documented).** This is GREEDY, not a global optimum assignment: at
+each iteration it takes the global minimum of the remaining distance matrix, then marks that
+row/column used. It does NOT guarantee a global minimum total cost — a Hungarian solver
+could yield a lower total by accepting a locally suboptimal pairing. The specific
+(ref_idx, computed_idx) pairing can change when reference or computed eigenvalues have equal
+or near-equal distances; only the sorted absolute-error multiset is invariant to input
+ordering. The matching is used for diagnostic reporting only and is never an acceptance gate.
 
 | book λ | computed λ | abs_err | freq err % | damping err % |
 |---|---|---|---|---|
@@ -189,7 +199,7 @@ fact.
 - **AVR** (5 states): `Efd_dot = (KA*(Vref - |Vt|) - Efd)/TA` (`:133`);
   `Vref = |Vt| + Efd/KA` at initialization (`:110`). `u = {H, D, Pm, Vref}`.
 
-## 12. Test counts (fresh run on C3 = `a09830b`)
+## 12. Test counts (fresh run on C5 = `e23185a`)
 
 | Test file | Passed | Failed | Incomplete |
 |---|---|---|---|
@@ -229,10 +239,10 @@ fact.
 | SSSA_NO_UNSUPPORTED_CAUSAL_CLAIM | PASS |
 | SSSA_NO_PARAMETER_TUNING | PASS |
 | SSSA_NO_EXTERNAL_SOLVER | PASS |
-| ARTIFACT_SOURCE_PROVENANCE | PASS (validated source = a09830b; pre-closure source = 25badd0; pre-closure artifact = dd26bdd) |
+| ARTIFACT_SOURCE_PROVENANCE | PASS (validated source = e23185a; prior closure source = a09830b; prior artifact = 9f86881; pre-closure source = 25badd0; pre-closure artifact = dd26bdd) |
 | DOCUMENTATION_MATCHES_RUNTIME | PASS (docs/SSSA_CONTRACT.md) |
-| TARGETED_TESTS | PASS (62/0/0 on a09830b) |
-| FULL_REGRESSION | PASS (284/0/0 on a09830b) |
+| TARGETED_TESTS | PASS (62/0/0 on e23185a) |
+| FULL_REGRESSION | PASS (284/0/0 on e23185a) |
 
 Padiyar Table 9.5 proximity itself is NOT a required gate. There is no
 `TABLE95_MATCH = PASS/FAIL` based on a book tolerance; the matched absolute difference is
@@ -268,7 +278,8 @@ r = runtests('tests','IncludeSubfolders',true);
 
 ## 15. Explicit statements
 
-- All values above are from fresh runs on C3 (`a09830b`) in this session (no saved .mat replayed as fresh).
+- All values above are from fresh runs on C5 (`e23185a`) in this session (no saved .mat replayed as fresh).
+- Terminology closure (C5) is wording-only: no matching results, tolerances, DAE, Jacobian, or SSSA code changed. Matching algorithm unchanged, so matched eigenvalue distances are bit-identical to the C3 run.
 - No parameter tuning to match PSAT/PGAz/Kundur/Table 9.5.
 - No tolerance was relaxed after seeing a result (all tolerances pre-declared).
 - No hidden non-convergence (all equilibrium residuals < 1e-10).

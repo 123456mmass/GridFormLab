@@ -13,6 +13,11 @@ kundur_ex126_update.zip
 output/gui_capture/
 /output/
 
+# EXCEPTION: track committed validation artifacts (evidence), not the whole output/ tree.
+!output/validation/
+!output/validation/artifacts/
+!output/validation/artifacts/*.md
+
 # Keep repo lean: code (.m) and docs (.md) only on GitHub.
 # Reference PDFs, extracted page images, fonts, local scratch and
 # compiled report artefacts stay on the local machine only.

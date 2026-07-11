@@ -1,5 +1,17 @@
 # Kundur Example 12.6 / Table E12.3 reproduction memory (2026-07-10)
 
+> **STATUS (2026-07-11): LEGACY / CALIBRATED REFERENCE — not a production
+> validation.** This memory records the historical calibrated reproduction
+> effort (the `kundur_ex126_kundur_ssa` / `kundur_ex126_book_e123_ssa` family,
+> now reference-only in `+stability`). It is NOT in the production catalog,
+> launcher, or acceptance tests, and the `<0.5%` reproduction goal below is
+> NOT an acceptance criterion for the production model. The production
+> sixth-order model is the operational EMF6 model
+> (`stability.emf6_dae` / `stability.synchronous_emf6_ssa` /
+> `stability.ts_simulate_emf6`), which uses only published parameters and no
+> calibration knobs. Per `AGENTS.md`, Kundur Table E12.3 is reference/
+> case-study data only.
+
 ## Goal
 Reproduce all 24 Kundur Example 12.6 / Table E12.3 eigenvalues with published
 parameters and `<0.5%` error, using an in-house MATLAB model only.

@@ -51,7 +51,7 @@ fprintf(fid,'Initial rotor angles (deg):\n\n');
 gbus = sort(rg.gen_buses);
 fprintf(fid,'| Gen | PSAT | Ours |\n|---:|---:|---:|\n');
 for k=1:4, fprintf(fid,'| %d | %.3f | %.3f |\n',gbus(k),dps(1,k),do(1,k)); end
-fprintf(fid,'\nThis independently cross-validates the in-house 6th-order model (the same model validated to <0.5%% vs Kundur Table E12.3 for SSSA). The ~1.9 deg COI-frame difference comes from the integration scheme (PSAT implicit-Newton trapezoidal vs in-house Heun predictor-corrector) and the ~0.14 deg PF/load-model offset.\n');
+fprintf(fid,'\nThis cross-validates the in-house operational EMF6 6th-order TS (published parameters, no calibration knobs) against PSAT. The ~1.9 deg COI-frame difference comes from the integration scheme (PSAT implicit-Newton trapezoidal vs in-house Heun predictor-corrector) and the ~0.14 deg PF/load-model offset. (The historical calibrated book-reproduction SSSA achieved <0.5%% on selected rotor rows vs Table E12.3; that is a legacy reference, NOT a production acceptance target.)\n');
 
 % --- PSAT Pe (p_Syn) ---
 pc_cols = find(~cellfun('isempty',regexpi(ps.uvars,'^p_Syn_\d')));

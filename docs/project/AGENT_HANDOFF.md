@@ -11,6 +11,46 @@ A local safety stash named `safety-before-rollback-to-47b1cd6-2026-07-11`
 contains the discarded post-reset rewrite. Do not pop it into `main`; inspect
 individual files first.
 
+## 2026-07-11 EMF6 unification + fsolve removal (this session)
+
+The operational EMF6 model is now the SINGLE sixth-order equation set shared
+by SSSA and higher-order TS:
+- SSSA: `stability.multicase_sssa` dispatches every sixth-order case to
+  `stability.synchronous_emf6_ssa` (in-house Newton, no fsolve).
+- TS: `stability.ts_simulate` routes `model='emf6'` (and the legacy aliases
+  `flux6`/`genpj6`/`kundur6`) to the new `stability.ts_simulate_emf6`, which
+  consumes `stability.emf6_dae` directly (`dae_f(x,y)`, `dae_g(x,y,Y)`,
+  `electrical_power(x,y)`). Fixed corrector (default `corrector_iter=3`);
+  adaptive mode is present but NOT advertised as validated.
+- Event grid snaps fault/clear times to exact grid points (the classical
+  engine's `t_now >= t_fault` comparison is otherwise one step late under
+  floating-point accumulation).
+
+fsolve/optimoptions removed from all production packages. Moved to `legacy/`:
+`synchronous_flux_ssa`, `kundur_ex126_book_flux_ssa`, `sauer_pai_flux_ssa`,
+the `sauer_pai_ex83_ssa_*_tmp` trio, `genpj6_dae`, `ts_simulate_genpj6`,
+`kundur_fault_simulation_6th_order`, `kundur_e123_{family,primitive}_compare`,
+and their three tests. `powerflow_fsolve` moved to `compat/` (reference tool,
+assume-guarded). The calibrated `kundur_ex126_kundur_ssa`/`book_e123_ssa`
+family remains in `+stability` as fsolve-free reference implementations but is
+NOT in the catalog, launcher, or acceptance tests.
+
+Full regression: 141 tests, 140 passed, 0 failed, 1 PSAT-filtered.
+Cross-validation reproduced on this host:
+- Case14 PSAT-vs-Ours: PF 4.49e-6 pu / 8.07e-4 deg; TS 0.0196 deg /
+  7.54e-6 pu / 0.0750 MW / 5.40e-5 pu; 0 non-converged steps (matches the
+  documented baseline exactly -- classical path undisturbed).
+- Kundur 12.6 EMF6-vs-PSAT: 1.89 deg / 3.67e-4 pu (tol 5 / 1e-3), 1 non-conv
+  step of 6000 during the solid fault, init residual 2.13e-14. EMF6 uses only
+  published parameters; no calibration.
+- RTS-24: in-house TS runs clean (0 non-conv, max resid 2.3e-8). PSAT is not
+  installed on this host and no saved RTS-24 PSAT reference exists here, so
+  the PSAT leg is NOT re-verified (the documented baseline is from the
+  original PSAT environment and is not re-fabricated).
+
+Reproduce with: `pf_init_paths; runtests('tests','IncludeSubfolders',true);`
+and `pf_init_paths; run_cross_validation;`
+
 ## Stable entry points
 
 - `run_powerflow.m`
@@ -66,21 +106,38 @@ Run `compare_case14_ts_three_way` after any TS change.
 
 ## Known technical debt — do not hide
 
-1. Some historical sixth-order/diagnostic files still call Optimization
-   Toolbox `fsolve`; migrate them to `internal/core/nonlinear_newton` or move
-   them out of production packages. Do not add new `fsolve` use.
-2. The operational EMF6 SSSA and the older GENTPJ TS path are not yet one
-   implementation. `test_emf6_model/test_ts_uses_same_emf6_dae` documents the
-   remaining integration gap.
-3. Higher-order TS is pinned to fixed corrector iterations. Adaptive residual
-   convergence is validated only for the classical path.
-4. Kundur book-model work must be validated against printed parameters and
-   PSAT using identical conventions before changing production defaults.
+1. RESOLVED (2026-07-11): production packages no longer call `fsolve`/
+   `optimoptions`; the historical sixth-order/diagnostic files that did are in
+   `legacy/`. `compat/powerflow_fsolve.m` remains as an assume-guarded
+   reference comparison tool.
+2. RESOLVED (2026-07-11): the operational EMF6 SSSA and higher-order TS now
+   share one equation set (`stability.emf6_dae`). `test_emf6_model` and
+   `test_emf6_contract` cover the no-fault equilibrium, shared-model,
+   initialization-consistency, torque/power-identity, reference-angle
+   invariance and regression contracts.
+3. Higher-order EMF6 TS is pinned to a FIXED corrector. Adaptive residual
+   convergence is validated only for the classical path; an audited adaptive
+   EMF6 path is future work.
+4. The calibrated `kundur_ex126_kundur_ssa` / `kundur_ex126_book_e123_ssa`
+   family still lives in `+stability` (fsolve-free, not in catalog/launcher/
+   tests). It carries historical tuning knobs and a `<0.5% vs Table E12.3`
+   claim. Relocating the whole family to `legacy/` is desirable but deferred
+   (it is referenced by `scripts/diagnostics`/`scripts/reporting` Kundur
+   tools); it must never be re-introduced as a production acceptance target.
+5. Pre-existing stale data-shape expectations in `test_kundur_book_input_manifest`
+   and `test_matpower6_case14` (10-col/5-col vs the documented 12-col/7-col
+   contract) were corrected to match `AGENTS.md`.
 
 ## Safe continuation order
 
-1. Remove remaining production `fsolve` dependencies without changing PF/TS
-   baselines.
-2. Unify EMF6 TS and SSSA around `emf6_dae` and add no-fault equilibrium tests.
-3. Run full regression and both Case14/RTS-24 cross-validations.
-4. Commit new files before any branch/reset operation.
+1. DONE (2026-07-11): removed production `fsolve` dependencies without
+   changing the classical PF/TS baselines.
+2. DONE (2026-07-11): unified EMF6 TS and SSSA around `emf6_dae`; added
+   no-fault-equilibrium and equation-derived contract tests.
+3. DONE (2026-07-11): full regression (141/140/0/1 PSAT-filtered) and the
+   Case14 + Kundur6 cross-validations reproduced. RTS-24 PSAT leg could not be
+   re-run on this host (PSAT absent) and is reported as not re-verified.
+4. NEXT: audit/relocate the calibrated `kundur_ex126_kundur_ssa` family to
+   `legacy/` (item 4 above); add a residual-based adaptive EMF6 corrector
+   with tests (item 3 above); re-run RTS-24 vs PSAT where PSAT is available.
+5. Always commit new files before any branch/reset operation.

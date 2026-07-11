@@ -9,7 +9,8 @@ ref_re = [-0.111; -0.492; -0.506];
 ref_im = [ 3.430;  6.820;  7.020];
 book = complex(ref_re, ref_im);
 
-% --- Ours (book-reproduction 6th-order, validated <0.5% vs Table E12.3) ---
+% --- Ours (calibrated book-reproduction 6th-order; legacy reference, NOT a
+%     production acceptance target) ---
 ssa = stability.kundur_ex126_book_e123_ssa();
 ev = ssa.eigenvalues(:);
 osc_o = ev(imag(ev)>0.5 & real(ev)<0);

@@ -25,10 +25,26 @@ These instructions apply to the entire repository.
   `1=PQ`.
 - Classical TS default: adaptive implicit trapezoidal corrector, exact fault
   event grid, update and trapezoidal-residual convergence checks.
-- Higher-order GENTPJ/EMF6 currently uses its dedicated fixed corrector; do not
-  describe it as adaptive until the path is audited and tested.
+- Sixth-order model: the operational EMF6 model
+  (`stability.emf6_dae` / `stability.synchronous_emf6_ssa`) is the SINGLE
+  equation set shared by SSSA and higher-order TS (`stability.ts_simulate_emf6`).
+  It uses the in-house Newton solver and published parameters only -- no
+  calibration knobs. The historical primitive-flux (psi-state) and calibrated
+  GENTPJ (Kundur Table E12.3) realizations are in `legacy/`, off the MATLAB
+  path, and are not in the catalog, launcher, or acceptance tests.
+- Higher-order EMF6 TS uses a FIXED corrector (default `corrector_iter=3`).
+  Do NOT describe it as adaptive until a residual-based convergence/
+  rejection path is audited and tested. Adaptive corrector is validated only
+  for the classical path.
 - TS plot angle is `delta_i(t)-delta_i(0)` (PSAT `delta_Syn` style). Stability
   decisions use COI-relative and pairwise metrics, not the plotted common drift.
+- Production packages (`+pfsolver`,`+stability`,`+smib`,`+pfapp`,`+pfchecks`,
+  `+cases`,`internal`) contain no `fsolve`/`optimoptions`/`fmincon`/`fminsearch`
+  (guarded by `test_no_external_solver_dependency`). `fsolve` is permitted only
+  in `compat/powerflow_fsolve.m` as a reference comparison tool.
+- Kundur Table E12.3 is reference/case-study data only, never a numerical
+  acceptance target. Never tune parameters, scales, time constants, saturation,
+  load model, finite-difference step or solver tolerance to match it.
 
 ## Required checks
 

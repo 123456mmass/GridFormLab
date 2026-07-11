@@ -109,42 +109,57 @@ testCase.verifyLessThan(rf, EQ_TOL, 'runtime differential residual at init');
 testCase.verifyLessThan(rg, EQ_TOL, 'runtime algebraic residual at init');
 % The initializer used the in-house Newton solver (not fsolve).
 testCase.verifyTrue(isfield(init,'newton_iterations') && init.newton_iterations >= 0);
-% Equilibrium electrical power equals the held mechanical torque (constant-Tm).
-Pe0 = dae.electrical_power(init.x0, init.y0);
-testCase.verifyLessThan(max(abs(Pe0 - init.Tm)), EQ_TOL, 'Pe = Tm at equilibrium');
+% Independent consistency: the EMF6 terminal real power (network frame,
+% from init Id/Iq) must equal the PF-solved generation at each generator bus.
+% (init.Tm is the same formula as electrical_power, so Pe0==Tm would be
+% circular; instead we cross-check against the independent PF result.)
+Pe_net = zeros(init.ng,1);
+for k=1:init.ng
+    b=init.bus_idx(k); V=complex(init.y0(2*b-1),init.y0(2*b));
+    delta=init.x0((k-1)*6+1);
+    Ig=stability.kundur_book_network_current(init.Id(k),init.Iq(k),delta);
+    Pe_net(k)=real(V*conj(Ig));
+end
+testCase.verifyLessThan(max(abs(Pe_net - dae.pf.P_generation(init.bus_idx))), EQ_TOL, ...
+    'EMF6 terminal Pe == PF generation (independent of init.Tm)');
 end
 
 function test_4_torque_power_identity(testCase)
-% (4) Torque / power identity: Te = Vd*Id + Vq*Iq + Ra*(Id^2 + Iq^2),
-% generator current positive into the network, stator loss accounted for.
+% (4) Torque / power identity from INDEPENDENT calculations (not circular
+% with init.Tm or the swing equation):
+%   (a) frame invariance:  Vd*Id+Vq*Iq  ==  real(V*conj(Ig))
+%       (dq-frame power vs network-phasor power; Ig = kundur_book_network_current)
+%   (b) stator copper loss: Te = (Vd*Id+Vq*Iq) + Ra*(Id^2+Iq^2)
+%       where Te = dae.electrical_power (direct electrical torque)
+%   (c) PF consistency: real(V*conj(Ig)) ~= pf.P_generation  (EMF6 vs PF solver)
+%   (d) sign: generator injects real power (>0 into network)
 [c,dae] = emf6_fixture('cc_p_cz_q');
 ROUND_TOL = 1e-10;
 init = dae.init;
 Ra = c.machines.reactances.Ra * (c.base_values.S_base_MVA/c.machines.base.S_MVA);
-Te = zeros(init.ng,1);
+Te_dae = dae.electrical_power(init.x0, init.y0);   % direct electrical torque
+Pe_dq = zeros(init.ng,1); Pe_net = zeros(init.ng,1); Te_loss = zeros(init.ng,1);
 for k = 1:init.ng
     b = init.bus_idx(k);
     V = complex(init.y0(2*b-1), init.y0(2*b));
     delta = init.x0((k-1)*6+1);
     [Vd,Vq] = stability.kundur_book_dq(V, delta);
-    Te(k) = Vd*init.Id(k) + Vq*init.Iq(k) + Ra*(init.Id(k)^2 + init.Iq(k)^2);
-end
-% Mechanical torque equals electrical torque at equilibrium.
-testCase.verifyLessThan(max(abs(init.Tm - Te)), ROUND_TOL, 'Tm = Te identity');
-% Electrical power from the swing equation equals Te at equilibrium (w=0).
-Pe0 = dae.electrical_power(init.x0, init.y0);
-testCase.verifyLessThan(max(abs(Pe0 - Te)), ROUND_TOL, 'Pe(swing) = Te at equilibrium');
-% Network injection convention: generator current into network balances
-% KCL (g = 0 already verified); here we confirm the sign of Ig (positive
-% injection) matches Id,Iq via kundur_book_network_current.
-for k = 1:init.ng
-    delta = init.x0((k-1)*6+1);
     Ig = stability.kundur_book_network_current(init.Id(k), init.Iq(k), delta);
-    % Terminal complex power S = V * conj(Ig); its real part is Pe (>0 out).
-    b = init.bus_idx(k);
-    V = complex(init.y0(2*b-1), init.y0(2*b));
-    testCase.verifyTrue(real(V*conj(Ig)) > 0, 'generator injects real power');
+    Pe_dq(k)  = Vd*init.Id(k) + Vq*init.Iq(k);          % dq-frame terminal power
+    Pe_net(k) = real(V*conj(Ig));                        % network-frame terminal power
+    Te_loss(k) = Ra*(init.Id(k)^2 + init.Iq(k)^2);       % stator copper loss
 end
+% (a) frame invariance: dq and network frames give the same terminal power.
+testCase.verifyLessThan(max(abs(Pe_dq - Pe_net)), ROUND_TOL, ...
+    'Pe(dq frame) == Pe(network frame)');
+% (b) stator copper loss: air-gap torque = terminal power + stator loss.
+testCase.verifyLessThan(max(abs(Te_dae - (Pe_dq + Te_loss))), ROUND_TOL, ...
+    'Te = Pe_terminal + Ra*(Id^2+Iq^2) (stator loss accounted)');
+% (c) independent PF consistency: network terminal Pe == PF-solved generation.
+testCase.verifyLessThan(max(abs(Pe_net - dae.pf.P_generation(init.bus_idx))), ROUND_TOL, ...
+    'terminal Pe == PF generation (independent solver)');
+% (d) sign convention: generators inject real power into the network.
+testCase.verifyTrue(all(Pe_net > 0), 'generator current positive into network');
 end
 
 function test_5_reference_angle_invariance(testCase)

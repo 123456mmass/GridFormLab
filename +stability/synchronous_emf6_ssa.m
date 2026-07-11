@@ -47,7 +47,10 @@ result.debug_residual_f=rf; result.debug_residual_g=rg;
 result.fd_eps=options.fd_eps; result.case_data=case_data;
 result.newton_iterations=init.newton_iterations;
 result.newton_residual=nr; result.dae_f=f; result.dae_g=g_with_network;
-result.electrical_power=@(x,y) electrical_power_from_swing(x,y,f,init,u);
+% electrical_power is computed DIRECTLY from electrical variables (Vd, Vq,
+% Id, Iq), NOT reverse-derived from Tm/omega_dot/swing equation:
+%   Te = Vd*Id + Vq*Iq + Ra*(Id^2 + Iq^2)   (air-gap electrical torque, pu)
+result.electrical_power=@(x,y) electrical_power_direct(x,y,init,m);
 result.units=u; result.options=options;
 result.coefficients=struct('c_d',m.c_d,'d_d',m.d_d, ...
     'c_q',m.c_q,'d_q',m.d_q);
@@ -223,10 +226,13 @@ for j=1:ny
 end
 end
 
-function Pe=electrical_power_from_swing(x,y,f,init,u)
-dx=f(x,y); Pe=zeros(init.ng,1);
+function Te=electrical_power_direct(x,y,init,m)
+% Direct air-gap electrical torque from the dq stator variables:
+%   Te = Vd*Id + Vq*Iq + Ra*(Id^2 + Iq^2)
+% This is independent of the swing equation (no use of Tm, omega, omega_dot).
+Te=zeros(init.ng,1);
 for k=1:init.ng
-    ii=(k-1)*6; w=x(ii+2);
-    Pe(k)=init.Tm(k)-u.D_system(k)*w-2*u.H_system(k)*dx(ii+2);
+    [Id,Iq,Vd,Vq]=machine_algebraic(x,y,init,m,k);
+    Te(k)=Vd*Id+Vq*Iq+m.Ra(k)*(Id^2+Iq^2);
 end
 end

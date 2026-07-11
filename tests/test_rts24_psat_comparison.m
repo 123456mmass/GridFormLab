@@ -364,8 +364,12 @@ function test_psat_integration_optional(testCase)
 % Integration test: if PSAT is available, run the comparison and
 % assert that metrics are within tolerance.
 % Uses corrector_iter=3 (fair comparison with PSAT's converged Newton).
-psat_root = 'C:/Users/User/Downloads/psat-2.1.11-mat/psat';
-if ~exist(psat_root, 'dir')
+psat_root = '';
+for p = {'/home/birds/Documents/psat-2.1.11-mat/psat', ...
+         'C:/Users/User/Downloads/psat-2.1.11-mat/psat'}
+    if exist(p{1}, 'dir'), psat_root = p{1}; break; end
+end
+if isempty(psat_root)
     testCase.assumeFalse(true, 'PSAT not found; skipping integration test.');
     return;
 end

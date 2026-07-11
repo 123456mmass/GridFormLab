@@ -16,9 +16,13 @@ function ps = run_psat_rts24(psat_case)
 
 global Settings Bus Varout Varname DAE clpsat Syn Fault Line PQ Shunt SW PV
 
-psat_root = 'C:/Users/User/Downloads/psat-2.1.11-mat/psat';
+psat_root = '';
+for p = {'/home/birds/Documents/psat-2.1.11-mat/psat', ...
+           'C:/Users/User/Downloads/psat-2.1.11-mat/psat'}
+    if exist(p{1},'dir'), psat_root = p{1}; break; end
+end
 if ~exist(psat_root,'dir')
-    error('run_psat_rts24:noPSAT','PSAT not found at %s', psat_root);
+    error('run_psat_rts24:noPSAT','PSAT not found');
 end
 addpath(genpath(psat_root));
 old = pwd; cleanup = onCleanup(@() cd(old)); %#ok<NASGU>

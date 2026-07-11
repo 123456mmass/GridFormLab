@@ -69,6 +69,7 @@ if isfield(case_data,'pgaz') && isfield(case_data.pgaz,'ABus_con')
 else
     Vb = case_data.base_values.V_base_kV * ones(nb,1);
 end
+Vb(Vb==0) = 1;   % avoid zero base (e.g. per-unit single-level cases like case14)
 
 % --- Bus.con: [bus, Vb_kV, V0, th0_rad, area, zone] ------------------------
 area = ones(nb,1); zone = ones(nb,1);
@@ -90,11 +91,15 @@ Vn_to   = Vb(ld(:,2));   % to-bus kV
 % (lines connecting different voltage bases), 0 for regular lines.
 % Verified from @LNclass/base.m: idx=find(con(:,7)), kt=con(idx,7).
 kt = zeros(nl,1);
-is_xfmr = abs(Vn_from - Vn_to) > 1;   % different voltage base = transformer
+tap = ld(:,6); tap(tap==0) = 1;
+% Transformer if different voltage base OR off-nominal tap (off-nominal
+% taps at the same base, e.g. case14 branches 4-7/4-9/5-6, must still be
+% flagged so PSAT applies col-11 tap). For RTS-24 every tap!=1 branch also
+% has a voltage-base difference, so this is a no-op there.
+is_xfmr = (abs(Vn_from - Vn_to) > 1) | (abs(tap - 1) > 1e-6);
 kt(is_xfmr) = Vn_from(is_xfmr) ./ Vn_to(is_xfmr);
 
 B_total = 2 * ld(:,5);  % in-house stores B_half; PSAT stores B_total
-tap = ld(:,6); tap(tap==0) = 1;
 Line_con = zeros(nl,16);
 Line_con(:,1)  = ld(:,1);      % from
 Line_con(:,2)  = ld(:,2);      % to
@@ -135,13 +140,18 @@ for k=1:npv
                    bd(r,12), bd(r,11), 1.05, 0.95, area(r), 1];
 end
 
-% PQ.con: [bus Sn Vn P0_pu Q0_pu Vmax Vmin area u]
+% PQ.con: [bus Sn Vn P0_pu Q0_pu Vmax Vmin Vdep_flag u]
+%   col 8 = voltage-dependent conversion flag (0 = pure constant power,
+%   matching the in-house solver). Verified from @PQclass/gcall.m: when
+%   V>Vmax (col 6) and col 8 != 0, PSAT converts the load to constant-
+%   impedance (P = P0*V^2/Vmax^2). Setting col 8 = 0 disables this so PSAT
+%   uses constant-power loads identical to the in-house PF.
 npq = numel(load_idx);
 PQ_con = zeros(npq,9);
 for k=1:npq
     r = load_idx(k);
     PQ_con(k,:) = [bd(r,1), Sbase, Vb(r), bd(r,7), bd(r,8), ...
-                   1.05, 0.95, area(r), 1];
+                   1.05, 0.95, 0, 1];   % col 8 = 0 (no V-dep conversion)
 end
 
 % --- Shunt.con: [bus Sn Vn fn Gs_pu Bs_pu u] -------------------------------

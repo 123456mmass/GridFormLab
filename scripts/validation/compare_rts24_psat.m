@@ -23,14 +23,18 @@ fprintf('=== IEEE RTS-24: In-house vs PSAT Cross-Validation ===\n');
 fprintf('    (ALL matrices from rts24_to_psat_case, no d_024_mdl)\n\n');
 
 % --- Check PSAT availability ------------------------------------------------
-psat_root = 'C:/Users/User/Downloads/psat-2.1.11-mat/psat';
-have_psat = exist(psat_root, 'dir') > 0;
+psat_root = '';
+for p = {'/home/birds/Documents/psat-2.1.11-mat/psat', ...
+           'C:/Users/User/Downloads/psat-2.1.11-mat/psat'}
+    if exist(p{1},'dir'), psat_root = p{1}; break; end
+end
+have_psat = ~isempty(psat_root) && exist(psat_root, 'dir') > 0;
 if ~have_psat
-    fprintf('PSAT not found at %s.  Skipping PSAT comparison.\n', psat_root);
+    fprintf('PSAT not found.  Skipping PSAT comparison.\n');
     report = struct('psat_available', false);
     return;
 end
-fprintf('PSAT found.  Running cross-validation...\n\n');
+fprintf('PSAT found at %s.  Running cross-validation...\n\n', psat_root);
 
 % --- Load in-house case and convert to PSAT format --------------------------
 c = cases.case_ieee_rts24_pgaz();

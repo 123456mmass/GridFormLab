@@ -1,7 +1,10 @@
 # SSSA Contract — Small-Signal Stability Analysis
 
-**Validated source commit:** `e5549ed` (Phase B closure). Values in this document are from
-a fresh run on 2026-07-12 (MATLAB R2026a). They are reported, not fitted.
+**Validated source commit:** `25badd0` (Phase C2 — SSSA FD convergence and reference
+independence tests). The Phase C SSSA validation artifact (`output/validation/artifacts/sssa_validation.md`)
+was committed separately in `dd26bdd` as a generated artifact; the artifact is not itself a
+validated source. Values in this document are from a fresh run on 2026-07-12 (MATLAB R2026a).
+They are reported, not fitted.
 
 ## Scope
 
@@ -148,16 +151,24 @@ This is enforced by the falsification test `test_reference_eigenvalues_do_not_dr
 in `tests/test_padiyar_two_area_reference.m`: corrupting `table95_eigenvalues` to
 arbitrary values leaves `Afull` and the eigenvalues unchanged to `AbsTol 1e-12`.
 
-Table 9.5 is used only as a secondary cross-check (`test_table_9_5_secondary_crosscheck`):
-the 18 non-near-zero physical roots are matched greedily against the computed eigenvalues,
-with a pre-declared tolerance of `0.06`. The near-zero pair (`|λ| ≤ 0.01`) is excluded
-because Padiyar attributes it to load-flow/numerical error. The failure message states
-explicitly: "Published Table 9.5 is a secondary cross-check, never a fitted target."
+Table 9.5 is used ONLY as a secondary diagnostic cross-check
+(`test_table_9_5_diagnostic_comparison`). The 18 non-near-zero physical roots are matched
+against the computed eigenvalues with a deterministic global assignment (successive minima
+over the full distance matrix, no toolbox assignment solver); the near-zero pair
+(`|λ| ≤ 0.01`) is excluded by a pre-declared structural rule because Padiyar attributes it
+to load-flow/numerical error. The comparison returns finite metrics (absolute/relative
+errors, matched indices, unmatched modes, reference provenance) with
+`required_for_acceptance = false`.
 
-No parameter, scale, time constant, saturation, load model, finite-difference step, or
-solver tolerance is tuned to match Table 9.5. If a computed value disagrees with the book,
-the disagreement is reported with a root-cause hypothesis (model convention, load model,
-printed precision, parameter provenance) — not masked.
+Table 9.5 is NOT a numerical acceptance gate. There is no `verifyLessThan` assertion on the
+matched eigenvalue distance to the book, and no tolerance such as `0.06` controls regression
+pass/fail. The observed maximum matched absolute difference is approximately `4.3e-2`
+(reported, not gated). The FD plateau study changes the computed eigenvalues by approximately
+`1e-7` between `h=1e-5` and `h=1e-6`, so the observed reference offset cannot be attributed
+to FD-step noise. The remaining difference is unresolved and may reflect model, data,
+convention, initialization, or publication-precision differences. No parameter, scale, time
+constant, saturation, load model, finite-difference step, or solver tolerance was adjusted to
+reduce it.
 
 ## 7. No-calibration / no-literature-acceptance
 

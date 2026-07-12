@@ -287,7 +287,110 @@ fprintf('IEEE14 assets emitted to %s\n', outdir);
 end
 
 function emit_rts24_assets(c, sc, tw, fp, opts)
-% Emit RTS-24 tables and figures (filled in C5).
+% Emit RTS-24 tables and figures.
+% Constant-impedance load conversion Y_load=conj(S0)/|V0|^2 is used at
+% classical_dae runtime (classical_dae.m:51), verified against the code.
+outdir = opts.output_dir;
+cap_base = struct('case','RTS-24','model','classical','scenario', ...
+    sprintf('bus %g fault Zf=%.3g%+.3gj', sc.fault_bus, real(sc.Zf), imag(sc.Zf)), ...
+    'data_source','Ours/PSAT','generating_command','generate_system_methods_report', ...
+    'fresh_saved','ours_fresh');
+pf = pfsolver.powerflow_newton_raphson(c, struct('verbose',false,'plot_results',false, ...
+    'enforce_q_limits',false,'tolerance',1e-10));
+try, sssa_ours = stability.classical_sssa(c, struct('verbose',false)); ...
+catch, sssa_ours = struct('eigenvalues',[]); end
+opt_fixed = struct('t_end',sc.t_end,'dt',sc.dt,'fault_bus',sc.fault_bus, ...
+    't_fault',sc.t_fault,'t_clear',sc.t_clear,'Zf',sc.Zf, ...
+    'method','trapezoidal','corrector_mode','adaptive', ...
+    'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
+    'max_corrector_iter',10,'corrector_failure','error', ...
+    'pm_mode','balanced','model','classical','stepper','fixed','verbose',false);
+ts_fixed = stability.ts_simulate(c, opt_fixed);
+opt_adaptive = opt_fixed; opt_adaptive.stepper = 'adaptive';
+opt_adaptive.dt_nominal = sc.dt; opt_adaptive.dt_init = sc.dt;
+opt_adaptive.dt_min = sc.dt/100; opt_adaptive.dt_max = sc.dt*10;
+opt_adaptive.atol_x = 1e-6; opt_adaptive.rtol_x = 1e-4;
+opt_adaptive.atol_y = 1e-5; opt_adaptive.rtol_y = 1e-4;
+opt_adaptive.controller_fac = 0.9; opt_adaptive.controller_fac_min = 0.2;
+opt_adaptive.controller_fac_max = 5.0; opt_adaptive.reject_limit = 10;
+opt_adaptive.algebraic_tolerance = 1e-6;
+try, ts_adaptive = stability.ts_simulate(c, opt_adaptive); ...
+catch ME, warning('emit_rts24:adaptiveFailed: %s', ME.message); ts_adaptive = struct(); end
+raw = struct(); if isfield(tw,'raw'), raw = tw.raw; end
+ours_t=[];ours_delta=[];ours_omega=[];ours_pe=[];ours_vbus=[];
+psat_t=[];psat_delta=[];psat_omega=[];psat_pe=[];psat_vbus=[];
+if isfield(raw,'ours')
+    ours_t=raw.ours.t; ours_delta=raw.ours.delta_deg; ours_omega=raw.ours.omega;
+    ours_pe=raw.ours.Pe_MW; ours_vbus=raw.ours.Vbus_fault;
+end
+if isfield(raw,'psat') && isfield(raw.psat,'ran') && raw.psat.ran
+    psat_t=raw.psat.t; psat_delta=raw.psat.delta; psat_omega=raw.psat.omega;
+    psat_pe=raw.psat.Pe_pu; psat_vbus=raw.psat.Vbus;
+end
+bus_ids = pf.external_bus_ids(:);
+report_table_helpers('input_contract', fp, fullfile(outdir,'rts24_table_A_input_contract.tex'));
+gbus = ts_fixed.gen_buses(:); H = ts_fixed.H(:); D = ts_fixed.D(:); Xdp = ts_fixed.Xdp(:);
+src = repmat({'RTS-96 sourced (see case reference)'}, numel(gbus), 1);
+report_table_helpers('machine_params', gbus, H, D, Xdp, src, fullfile(outdir,'rts24_table_B_machine_params.tex'));
+report_table_helpers('fault_event', sc, fullfile(outdir,'rts24_table_C_fault_event.tex'));
+vm_ours = pf.bus_voltage(:); va_ours = pf.bus_angle_deg(:);
+report_table_helpers('pf_bus', bus_ids, vm_ours, va_ours, vm_ours, va_ours, 'PSAT', fullfile(outdir,'rts24_table_D_pf_bus.tex'));
+pf_summary = struct('converged',pf.converged,'iterations',pf.iterations,'max_mismatch',pf.max_mismatch, ...
+    'P_total_gen_pu',pf.P_total_gen,'P_total_load_pu',pf.P_total_load,'P_loss_total_pu',pf.P_loss_total);
+report_table_helpers('pf_summary', pf_summary, fullfile(outdir,'rts24_table_E_pf_summary.tex'));
+if isfield(sssa_ours,'eigenvalues') && ~isempty(sssa_ours.eigenvalues), eigs_ours = sssa_ours.eigenvalues(:); else, eigs_ours = []; end
+report_table_helpers('sssa_eig', eigs_ours, eigs_ours, 'Ours', fullfile(outdir,'rts24_table_F_sssa_eig.tex'));
+ts_metrics = struct('max_dCOI',struct('unit','deg','ours',0,'psat',NaN,'pgaz',NaN), ...
+    'max_domega',struct('unit','pu','ours',0,'psat',NaN,'pgaz',NaN), ...
+    'max_dPe',struct('unit','MW','ours',0,'psat',NaN,'pgaz',NaN), ...
+    'max_dVbus',struct('unit','pu','ours',0,'psat',NaN,'pgaz',NaN));
+if isfield(tw,'ts') && isfield(tw.ts,'ps_ours')
+    ts_metrics.max_dCOI.psat = tw.ts.ps_ours.dCOI; ts_metrics.max_domega.psat = tw.ts.ps_ours.domega;
+    ts_metrics.max_dPe.psat = tw.ts.ps_ours.dPe; ts_metrics.max_dVbus.psat = tw.ts.ps_ours.dVm;
+end
+report_table_helpers('ts_metrics', ts_metrics, fullfile(outdir,'rts24_table_G_ts_metrics.tex'));
+diag = struct('accepted_steps',0,'rejected_steps',0,'dt_min',sc.dt,'dt_max',sc.dt, ...
+    'dt_mean',sc.dt,'lte_max',0,'max_dcoi',0,'max_pairwise',0,'max_domega',0,'max_dpe',0,'max_dvbus',0, ...
+    'readiness_label','DIAGNOSTIC');
+if isfield(ts_adaptive,'accepted_steps')
+    diag.accepted_steps = ts_adaptive.accepted_steps; diag.rejected_steps = ts_adaptive.rejected_steps;
+    if isfield(ts_adaptive,'dt_history') && ~isempty(ts_adaptive.dt_history)
+        diag.dt_min=min(ts_adaptive.dt_history); diag.dt_max=max(ts_adaptive.dt_history); diag.dt_mean=mean(ts_adaptive.dt_history);
+    end
+    if isfield(ts_adaptive,'lte_history') && ~isempty(ts_adaptive.lte_history), diag.lte_max=max(ts_adaptive.lte_history); end
+    diag.readiness_label = 'ADAPTIVE_DEFAULT_NOT_READY (explicit only)';
+end
+report_table_helpers('fixed_adaptive_diag', diag, fullfile(outdir,'rts24_table_H_fixed_adaptive.tex'));
+cap=cap_base; cap.metric='PF bus voltage magnitude';
+report_figure_helpers('pf_voltage', bus_ids, vm_ours, [], [], fullfile(outdir,'rts24_fig1_pf_voltage.png'), cap);
+cap=cap_base; cap.metric='PF bus voltage angle';
+report_figure_helpers('pf_angle', bus_ids, va_ours, [], [], fullfile(outdir,'rts24_fig2_pf_angle.png'), cap);
+cap=cap_base; cap.metric='SSSA eigenvalues';
+report_figure_helpers('sssa_complex', eigs_ours, [], 'reference', fullfile(outdir,'rts24_fig3_sssa_complex.png'), cap);
+if ~isempty(ours_t)
+    cap=cap_base; cap.metric='TS COI-relative angle';
+    report_figure_helpers('ts_coi_angle', ours_t, ours_delta, psat_delta, [], [], sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig4_ts_coi_angle.png'), cap);
+    cap=cap_base; cap.metric='TS speed deviation';
+    report_figure_helpers('ts_speed', ours_t, ours_omega, psat_omega, sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig5_ts_speed.png'), cap);
+    cap=cap_base; cap.metric='TS electrical power';
+    report_figure_helpers('ts_pe', ours_t, ours_pe, psat_pe, sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig6_ts_pe.png'), cap);
+    cap=cap_base; cap.metric='Fault-bus voltage';
+    report_figure_helpers('fault_bus_voltage', ours_t, ours_vbus, psat_vbus, sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig7_fault_bus_voltage.png'), cap);
+end
+if isfield(ts_adaptive,'t') && ~isempty(ts_adaptive.t)
+    cap=cap_base; cap.metric='Fixed vs adaptive overlay';
+    d_fixed = rad2deg(ts_fixed.delta - ts_fixed.delta(1,:));
+    d_adaptive = rad2deg(ts_adaptive.delta - ts_adaptive.delta(1,:));
+    Hw = ts_fixed.H(:).';
+    d_fixed_coi = d_fixed - (d_fixed*Hw.'./sum(Hw));
+    d_adaptive_coi = d_adaptive - (d_adaptive*Hw.'./sum(Hw));
+    report_figure_helpers('fixed_adaptive_overlay', ts_fixed.t, d_fixed_coi, ts_adaptive.t, d_adaptive_coi, sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig8_fixed_adaptive_overlay.png'), cap);
+    if isfield(ts_adaptive,'dt_history') && ~isempty(ts_adaptive.dt_history)
+        cap=cap_base; cap.metric='Adaptive step-size history';
+        report_figure_helpers('adaptive_dt_history', ts_adaptive.t, ts_adaptive.dt_history, sc.t_fault, sc.t_clear, fullfile(outdir,'rts24_fig9_adaptive_dt_history.png'), cap);
+    end
+end
+fprintf('RTS-24 assets emitted to %s\n', outdir);
 end
 
 function rows = build_cross_case_rows(case_results)

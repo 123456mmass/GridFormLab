@@ -1,17 +1,17 @@
 {
-  "git_head": "b8ae8fbc500cd4a1534d6908829b5c7ac737bd23",
-  "timestamp": "2026-07-13 01:02:38",
+  "git_head": "d5b4d47722c44acc3584dcb9b78bf7ad4b8292ad",
+  "timestamp": "2026-07-13 01:13:33",
   "timezone": "+0700",
   "matlab_version": "26.1.0.3276743 (R2026a) Update 3",
   "entry_point": "generate_system_methods_report",
   "origin_main": "f59076ff018fabfac1fed97442ac8e2c9be9c2b6",
   "cases": [
     {
-      "case_function": "case_matpower6_case14",
+      "case_function": "case_ieee_rts24_pgaz",
       "solver_model_stepper": "classical PF/SSSA/TS fixed+adaptive",
-      "source_reference_status": "PSAT+PGAz via tracked adapters",
-      "fresh_saved_status": "ours_fresh; psat/pgaz fresh-or-saved per contract",
-      "input_contract_fingerprint": "392C80629C624E27250B83FF26FA559380C4A012E2066D61FB703592E8E59DBB",
+      "source_reference_status": "PSAT via tracked adapter; PGAz contract status",
+      "fresh_saved_status": "ours_fresh; psat fresh-or-saved per contract",
+      "input_contract_fingerprint": "AB250D8500F7CFA2649EDE85A2F9F3C03BA848342F807CF3CFAABEABF63370C4",
       "output_filenames": []
     }
   ]

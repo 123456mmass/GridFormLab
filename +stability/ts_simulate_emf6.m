@@ -99,6 +99,11 @@ g_tol = 1e-12;            % tight, so no-fault equilibrium is preserved
 
 Ycur = Ypre;
 
+% Phase 1: route through the model-strategy contract (thin adapter into the
+% canonical ts_step_kernel). Bit-identical to the legacy call verified by
+% tests/test_ts_strategy_equivalence.m.
+strat = stability.ts_model_strategy('emf6', dae);
+
 set_topo = @(tnow) stability.ts_topology_at(tnow, opt, Ypre, Yfault, Ypost);
 for it = 1:nt-1
     dt_step = dt_arr(it);
@@ -127,7 +132,7 @@ for it = 1:nt-1
         'max_corrector_iter',max_citer,'corrector_mode',cmode, ...
         'corrector_abs_tol',abs_tol,'corrector_rel_tol',rel_tol);
     if strcmp(cmode,'fixed'), kopt.max_corrector_iter=citer; end
-    step = stability.ts_step_kernel(x,y,dt_step,dae_f,dae_g,Y_now,jac_y,kopt);
+    step = stability.ts_step_kernel(strat,x,y,dt_step,Y_now,kopt);
     corr_iters(it) = step.corrector_iterations;
     corr_residual(it) = step.corrector_residual;
     corr_update(it) = step.corrector_update;

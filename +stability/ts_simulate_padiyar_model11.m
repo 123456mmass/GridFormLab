@@ -42,6 +42,10 @@ kopt=struct('algebraic_tolerance',opt.algebraic_tolerance, ...
     'max_corrector_iter',opt.max_corrector_iter, ...
     'corrector_abs_tol',opt.corrector_abs_tol, ...
     'corrector_rel_tol',opt.corrector_rel_tol);
+% Phase 1: route through the model-strategy contract (thin adapter into the
+% canonical ts_step_kernel). Bit-identical to the legacy call verified by
+% tests/test_ts_strategy_equivalence.m.
+strat=stability.ts_model_strategy('padiyar',dae);
 
 for it=1:nt-1
     h=t(it+1)-t(it);
@@ -52,7 +56,7 @@ for it=1:nt-1
     check_algebraic(alg_info,t(it),it,opt.algebraic_tolerance);
     alg_iters(it)=alg_info.iterations; alg_res(it)=alg_info.final_residual;
     f0=f(x,y); record(it);
-    step=stability.ts_step_kernel(x,y,h,f,g,Ynow,Jyy,kopt);
+    step=stability.ts_step_kernel(strat,x,y,h,Ynow,kopt);
     citer(it)=step.corrector_iterations; cres(it)=step.corrector_residual;
     cupd(it)=step.corrector_update; cconv(it)=step.corrector_converged;
     if ~step.corrector_converged

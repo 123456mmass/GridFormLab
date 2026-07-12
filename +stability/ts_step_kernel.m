@@ -1,9 +1,18 @@
 function step = ts_step_kernel(x, y, h, dae_f, dae_g, Y, Jyy, opt)
-%TS_STEP_KERNEL Shared implicit-trapezoidal single-step kernel.
+%TS_STEP_KERNEL Shared implicit-trapezoidal single-step kernel (CANONICAL).
 %   STEP = ts_step_kernel(X, Y, H, DAE_F, DAE_G, Y_ADM, JYY, OPT) performs one
 %   implicit-trapezoidal step of size H. Both fixed-step and adaptive drivers
 %   call THIS kernel so the predictor/corrector/residual logic is never
-%   duplicated.
+%   duplicated. This is the single production trapezoidal implementation.
+%
+%   Strategy form (Phase 1):
+%   STEP = ts_step_kernel(STRATEGY, X, Y, H, Y_ADM, OPT) where STRATEGY is built
+%   by stability.ts_model_strategy. The strategy wraps the model's dae_f,
+%   dae_g, and jac_y closures; this entry dispatches into the legacy signature
+%   path so routing Padiyar/EMF6 through the strategy is bit-identical to the
+%   legacy call (verified by tests/test_ts_strategy_equivalence.m). The
+%   strategy form is a thin adapter — it introduces no second trapezoidal
+%   implementation.
 %
 %   OPT.corrector_mode:
 %     'adaptive' (default) — iterate until update+residual converge (Padiyar,
@@ -13,6 +22,22 @@ function step = ts_step_kernel(x, y, h, dae_f, dae_g, Y, Jyy, opt)
 %
 %   JYY is the precomputed dg/dy at the step start (reused, re-evaluated only
 %   on line-search failure). Pass [] to compute fresh at (x,y).
+
+% --- Strategy dispatch (Phase 1): thin adapter into the legacy path ---------
+% Strategy form: ts_step_kernel(strategy, x, y, h, Y, opt)  -> 6 args.
+% Legacy form:   ts_step_kernel(x, y, h, dae_f, dae_g, Y, Jyy, opt) -> 8 args.
+if isstruct(x) && isfield(x,'model')
+    strategy = x;
+    x_state = y;
+    y_state = h;
+    h_step = dae_f;
+    Y_adm = dae_g;
+    opt_s = Y;
+    Jyy_s = strategy.jac_y(x_state, y_state, Y_adm);
+    step = stability.ts_step_kernel(x_state, y_state, h_step, strategy.dae_f, ...
+        strategy.dae_g, Y_adm, Jyy_s, opt_s);
+    return;
+end
 
 g_tol = opt.algebraic_tolerance;
 max_citer = opt.max_corrector_iter;

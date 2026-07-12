@@ -62,7 +62,7 @@ primary source was not confirmed by direct bibliographic inspection this session
 the estimator must be proven by the analytic unit test (Test C) before production
 use. Wikipedia is navigation only.
 
-## Phase status
+## Phase status — ALL DONE
 
 - Phase 0: DONE — fresh baseline (284/284/0/0) + characterization tests.
 - Phase 1: DONE — generic one-step contract (ts_model_strategy + generalized
@@ -73,19 +73,38 @@ use. Wikipedia is navigation only.
 - Phase 3: DONE — generic adaptive controller (ts_adaptive_driver) with step
   doubling (denominator 3), LTE estimator, weighted state-aware norm,
   accept/reject, dt controller (exponent 1/3), exact event landing, fail-closed.
-  8 LTE unit tests on ẍ+x=0 (local O(h³) factor ~8, global O(h²) factor ~4,
-  Richardson denominator 3, controller exponent 1/3).
-- Phase 4: DONE — Padiyar adaptive (manual + AVR); 15s long-horizon gate;
-  no-fault drift < 1e-6.
+- Phase 4: DONE — Padiyar adaptive (manual + AVR); 15s long-horizon gate.
 - Phase 5: DONE — EMF6 adaptive; Kundur 12.6 vs PSAT < 5 deg (1.90 deg fresh).
 - Phase 6: DONE — classical adaptive; fixed-vs-adaptive common-grid < 1.0 deg.
-- Phase 7: IN PROGRESS — cross-model convergence + fresh PSAT + full regression.
-  Full regression: 342 passed / 0 failed / 0 incomplete. Fresh Case14 + RTS-24
-  PSAT re-run. EMF6 adaptive vs PSAT: 1.90 deg.
-- Phase 8: pending — default switch (separate commit, only if all gates pass).
+- Phase 7: DONE — cross-model convergence + fresh PSAT + full regression
+  (342/0/0). Fresh Case14 + RTS-24 PSAT both PASS.
+- Phase 8: DONE — production default switched to adaptive (separate commit).
 
-See approved plan `/home/birds/.claude/plans/nifty-dazzling-peacock.md` and
-`docs/project/plans/adaptive_ts_track_a.md`.
+## Final state (commit 87d4bad)
+
+- HEAD: `87d4bad695f66b73d6a85d5d0387f7c7337beaa7`
+- origin/main: `0534132160b28041f9ba33709cdc8eaa4510f404` (no advance)
+- merge-base: `0534132` (= origin/main; 9 commits ahead, 0 behind)
+- Full regression (fresh): 346 passed / 0 failed / 0 incomplete.
+- Fresh Case14 PSAT: PASS (dCOI=0.0096 deg, dw=3.816e-6).
+- Fresh RTS-24 PSAT: PASS (dCOI=0.0068 deg, dw=4.620e-6).
+- EMF6 adaptive vs PSAT (Kundur 12.6): 1.90 deg < 5 deg.
+- `test_no_external_solver_dependency`: 12/12 PASS (no fsolve/external in production).
+- No Track B / shared-policy files touched (verified by diff).
+- Working tree clean.
+
+## Reproduce
+
+```matlab
+restoredefaultpath;
+cd('/home/birds/Documents/Power-flow-adaptive');
+pf_init_paths;
+r = runtests('tests','IncludeSubfolders',true);   % 346/346/0/0
+% Fresh PSAT CV (requires PSAT at /home/birds/Documents/psat-2.1.11-mat/psat):
+addpath('/tmp'); track_a_phase7_cv;
+% Adaptive cross-model:
+addpath('/tmp'); track_a_adaptive_xval;
+```
 
 ## File ownership (Track A)
 

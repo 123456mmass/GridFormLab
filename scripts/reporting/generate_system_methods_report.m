@@ -162,10 +162,61 @@ try
         cr.entry.output_filenames = {fullfile(pad.output_dir,'table_pf_bus.tex'), ...
             fullfile(pad.output_dir,'table_eigenvalues.tex')};
     end
+    % Emit fixed-vs-adaptive overlay for Padiyar (model 1.1 AVR).
+    emit_padiyar_fixed_adaptive(c, sc, pad, opts);
 catch ME
     warning('run_padiyar:failed: %s', ME.message);
     cr.entry.fresh_saved_status = ['FAILED: ' ME.message];
 end
+end
+
+function emit_padiyar_fixed_adaptive(c, sc, pad, opts)
+% Run Padiyar model-1.1 fixed + adaptive TS and emit the overlay figure.
+outdir = opts.output_dir;
+% padiyar_dir is the sibling Padiyar assets dir (cherry-picked from C0).
+padiyar_dir = fullfile(fileparts(fileparts(opts.output_dir)), 'padiyar_two_area');
+if ~exist(padiyar_dir,'dir'), padiyar_dir = pad.output_dir; end
+opt_fixed = struct('t_end',sc.t_end,'dt',sc.dt,'fault_bus',sc.fault_bus, ...
+    't_fault',sc.t_fault,'t_clear',sc.t_clear,'Zf',sc.Zf, ...
+    'method','trapezoidal','corrector_mode','adaptive', ...
+    'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
+    'max_corrector_iter',10,'corrector_failure','error', ...
+    'model','padiyar_1_1_avr','excitation','avr', ...
+    'stepper','fixed','verbose',false);
+ts_fixed = stability.ts_simulate(c, opt_fixed);
+opt_adaptive = opt_fixed; opt_adaptive.stepper = 'adaptive';
+opt_adaptive.dt_nominal = sc.dt; opt_adaptive.dt_init = sc.dt;
+opt_adaptive.dt_min = sc.dt/100; opt_adaptive.dt_max = sc.dt*10;
+opt_adaptive.atol_x = 1e-6; opt_adaptive.rtol_x = 1e-4;
+opt_adaptive.atol_y = 1e-5; opt_adaptive.rtol_y = 1e-4;
+opt_adaptive.controller_fac = 0.9; opt_adaptive.controller_fac_min = 0.2;
+opt_adaptive.controller_fac_max = 5.0; opt_adaptive.reject_limit = 10;
+opt_adaptive.algebraic_tolerance = 1e-6;
+try
+    ts_adaptive = stability.ts_simulate(c, opt_adaptive);
+catch ME
+    warning('emit_padiyar_fixed_adaptive:adaptiveFailed: %s', ME.message);
+    return;
+end
+cap = struct('case','Padiyar 4M2A','model','model-1.1 AVR','scenario', ...
+    sprintf('bus %g fault Zf=%.3g%+.3gj', sc.fault_bus, real(sc.Zf), imag(sc.Zf)), ...
+    'data_source','Ours fixed+adaptive','generating_command','generate_system_methods_report', ...
+    'fresh_saved','ours_fresh','metric','Fixed vs adaptive COI angle');
+d_fixed = rad2deg(ts_fixed.delta - ts_fixed.delta(1,:));
+d_adaptive = rad2deg(ts_adaptive.delta - ts_adaptive.delta(1,:));
+Hw = ts_fixed.H(:).';
+d_fixed_coi = d_fixed - (d_fixed*Hw.'./sum(Hw));
+d_adaptive_coi = d_adaptive - (d_adaptive*Hw.'./sum(Hw));
+report_figure_helpers('fixed_adaptive_overlay', ts_fixed.t, d_fixed_coi, ...
+    ts_adaptive.t, d_adaptive_coi, sc.t_fault, sc.t_clear, ...
+    fullfile(padiyar_dir,'padiyar_fixed_adaptive_overlay.png'), cap);
+% Also emit adaptive dt history if available.
+if isfield(ts_adaptive,'dt_history') && ~isempty(ts_adaptive.dt_history)
+    cap.metric = 'Adaptive step-size history';
+    report_figure_helpers('adaptive_dt_history', ts_adaptive.t, ts_adaptive.dt_history, ...
+        sc.t_fault, sc.t_clear, fullfile(padiyar_dir,'padiyar_adaptive_dt_history.png'), cap);
+end
+fprintf('Padiyar fixed/adaptive overlay emitted to %s\n', padiyar_dir);
 end
 
 % =========================================================================

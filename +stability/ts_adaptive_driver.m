@@ -71,12 +71,25 @@ if strcmp(opt.corrector_mode,'fixed')
         kopt.max_corrector_iter = 3;
     end
 end
+% R1: when a provider is present on the strategy, thread the step-start time t
+% and the immutable event_context through kopt so the provider-aware kernel
+% path can evaluate u at the trapezoidal endpoints (t, t+h/2, t+h). When no
+% provider is present, kopt carries no t/event_context and the legacy kernel
+% path is taken UNCHANGED (FP-identical).
+has_provider = isfield(strat,'provider') && ~isempty(strat.provider);
+if has_provider
+    kopt.t = 0;   % overwritten per-step below
+    kopt.event_context = [];
+    if isfield(opt,'event_context') && ~isempty(opt.event_context)
+        kopt.event_context = opt.event_context;
+    end
+end
 
 % --- Accepted trajectory storage -------------------------------------------
 t_acc = t0;
 x = x0(:); y = y0(:);
 Y_rec0 = events.Ypre;
-rec0 = strat.reconstruct(x, y, Y_rec0);
+rec0 = reconstruct_at(strat, x, y, Y_rec0, has_provider, t0, kopt);
 delta_hist = rec0.delta;   % row [1, ng]
 omega_hist = rec0.omega;
 Pe_hist = rec0.Pe;
@@ -124,8 +137,21 @@ while t < t_end - 1e-14
     reject_count = 0;
     accepted = false;
     while ~accepted
+        % R1: thread the step-start time into kopt for the provider-aware path.
+        % The provider is evaluated at t (step start) and t+h (step end) inside
+        % the kernel; the two half-steps evaluate at t and t+h/2 (first half),
+        % then t+h/2 and t+h (second half) — consistent endpoint sampling.
+        if has_provider
+            kopt.t = t;
+        end
         step_full = stability.ts_step_kernel(strat, x, y, h, Y_now, kopt);
+        if has_provider
+            kopt.t = t;
+        end
         step_h1  = stability.ts_step_kernel(strat, x, y, h/2, Y_now, kopt);
+        if has_provider
+            kopt.t = t + h/2;
+        end
         step_h2  = stability.ts_step_kernel(strat, step_h1.x_full, step_h1.y_full, h/2, Y_now, kopt);
         x_halfhalf = step_h2.x_full; y_halfhalf = step_h2.y_full;
         x_full = step_full.x_full;
@@ -164,8 +190,16 @@ while t < t_end - 1e-14
                 Y_right = stability.ts_topology_at(t + 1e-14, events, events.Ypre, events.Yfault, events.Ypost);
                 y_left = y;
                 if strat.needs_algebraic_solve
-                    Jyy_r = strat.jac_y(x, y, Y_right);
-                    [y_right, alg_r] = stability.ts_algebraic_solve(x, y, Y_right, strat.dae_g, @stability.ts_jac_y_fd, g_tol, Jyy_r);
+                    if has_provider
+                        % R1 provider-aware right-topology re-solve.
+                        u_ev = stability.eval_input_provider(strat.provider, t, kopt.event_context);
+                        Jyy_r = strat.jac_y_u(x, y, Y_right, u_ev);
+                        [y_right, alg_r] = stability.ts_algebraic_solve_u(x, y, Y_right, ...
+                            strat.dae_g_u, strat.jac_y_u, g_tol, Jyy_r, u_ev);
+                    else
+                        Jyy_r = strat.jac_y(x, y, Y_right);
+                        [y_right, alg_r] = stability.ts_algebraic_solve(x, y, Y_right, strat.dae_g, @stability.ts_jac_y_fd, g_tol, Jyy_r);
+                    end
                     if ~alg_r.converged
                         error('ts_adaptive_driver:eventAlgebraic', ...
                             'Right-topology algebraic solve failed at event t=%.6g: residual=%.3e.', t, alg_r.final_residual);
@@ -188,7 +222,7 @@ while t < t_end - 1e-14
             % voltage (event convention §6). Pass the current-topology Y so
             % classical (linear-network) reconstruction uses the right Y.
             Y_rec = stability.ts_topology_at(t, events, events.Ypre, events.Yfault, events.Ypost);
-            rec = strat.reconstruct(x, y, Y_rec);
+            rec = reconstruct_at(strat, x, y, Y_rec, has_provider, t, kopt);
             delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
             omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
             Pe_hist = [Pe_hist; rec.Pe]; %#ok<AGROW>
@@ -268,4 +302,17 @@ if max(abs(Y(:) - events.Ypre(:)),[],'all') == 0, name = 'pre'; return; end
 if max(abs(Y(:) - events.Yfault(:)),[],'all') == 0, name = 'fault'; return; end
 if max(abs(Y(:) - events.Ypost(:)),[],'all') == 0, name = 'post'; return; end
 name = 'unknown';
+end
+
+function rec = reconstruct_at(strat, x, y, Y, has_provider, t, kopt)
+%RECONSTRUCT_AT  Output reconstruction that respects the provider path (R1).
+%   On the provider-aware path, use strat.reconstruct_u (which takes u) if
+%   present; otherwise fall back to strat.reconstruct (output recording only,
+%   no effect on integration). On the legacy path, call strat.reconstruct.
+if has_provider && isfield(strat,'reconstruct_u') && ~isempty(strat.reconstruct_u)
+    u = stability.eval_input_provider(strat.provider, t, kopt.event_context);
+    rec = strat.reconstruct_u(x, y, Y, u);
+else
+    rec = strat.reconstruct(x, y, Y);
+end
 end

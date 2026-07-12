@@ -41,7 +41,20 @@ case 'emf6'
 case 'classical'
     strategy = classical_strategy(dae, opt);
 otherwise
-    error('ts_model_strategy:badModel','Unknown model "%s".', model);
+    if isstruct(model)
+        % R2: prebuilt strategy struct (validated upstream by validate_ts_strategy).
+        % Bypass factory construction but NOT schema validation.
+        strategy = model;
+    else
+        error('ts_model_strategy:badModel','Unknown model "%s".', model);
+    end
+end
+% R1: optional input provider (default absent = exact legacy behavior).
+% When absent, the kernel calls the original dae_f/dae_g closures with NO u
+% argument (FP-identical to the pre-R1 path). When present, the kernel uses
+% the separate provider-aware path (strategy.dae_f_u / dae_g_u).
+if ~isfield(strategy,'provider')
+    strategy.provider = [];   % absent => legacy path
 end
 end
 

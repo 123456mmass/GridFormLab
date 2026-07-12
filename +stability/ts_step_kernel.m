@@ -33,6 +33,15 @@ if isstruct(x) && isfield(x,'model')
     h_step = dae_f;
     Y_adm = dae_g;
     opt_s = Y;
+    % R1: provider-aware path is SEPARATE from legacy. When strategy.provider
+    % is absent (empty), the legacy path below is taken UNCHANGED — the original
+    % dae_f/dae_g closures are called with NO u argument, FP-identical to the
+    % pre-R1 behavior. When a provider is present, the provider-aware path
+    % (provider_step) is used instead.
+    if isfield(strategy,'provider') && ~isempty(strategy.provider)
+        step = provider_step(strategy, x_state, y_state, h_step, Y_adm, opt_s);
+        return;
+    end
     if isfield(strategy,'needs_algebraic_solve') && ~strategy.needs_algebraic_solve
         % Classical (linear) model: algebraic state is solved inside dae_f via
         % a direct linear V=Y\Iinj; there is no nonlinear dae_g and no Jyy.
@@ -195,6 +204,151 @@ all_finite = all(isfinite(x_pred)) && all(isfinite(f0)) && all(isfinite(resn));
 step = struct( ...
     'x_full', x_pred, 'y_full', y_pred, ...
     'f0', f0, 'f1', dae_f(x_pred, y_pred, Y), ...
+    'corrector_iterations', ci_used, ...
+    'corrector_residual', resn, ...
+    'corrector_update', upd, ...
+    'corrector_converged', converged, ...
+    'algebraic_residual', alg_res, ...
+    'finite', all_finite);
+end
+
+% =========================================================================
+function step = provider_step(strategy, x, y, h, Y, opt)
+%PROVIDER_STEP  Trapezoidal step with an exogenous input provider (R1).
+%   This is the provider-aware path, SEPARATE from the legacy path. The
+%   strategy MUST carry a non-empty .provider (immutable, side-effect-free)
+%   and provider-aware closures:
+%     strategy.dae_f_u = @(x,y,u) differential RHS
+%     strategy.dae_g_u = @(x,y,Y,u) algebraic residual ([] for linear models)
+%     strategy.jac_y_u = @(x,y,Y,u) dg/dy ([] for linear models)
+%   The provider is evaluated at the step endpoints t and t+h via
+%   eval_input_provider(provider, t, event_context). The trapezoidal
+%   predictor/corrector/residual logic mirrors the legacy kernel exactly;
+%   only the dae_f/dae_g calls receive the evaluated u.
+%
+%   opt.t and opt.event_context carry the step-start time and the immutable
+%   left/right event context (R1 endpoint semantics). They are set by the
+%   driver when a provider is in use; absent opt.t defaults to 0 (constant-u
+%   degenerate case, used only by synthetic unit tests).
+
+provider = strategy.provider;
+t0 = 0; if isfield(opt,'t') && ~isempty(opt.t), t0 = opt.t; end
+event_context = []; if isfield(opt,'event_context') && ~isempty(opt.event_context)
+    event_context = opt.event_context; end
+
+g_tol = opt.algebraic_tolerance;
+max_citer = opt.max_corrector_iter;
+abs_tol = opt.corrector_abs_tol;
+rel_tol = opt.corrector_rel_tol;
+mode = 'adaptive';
+if isfield(opt,'corrector_mode') && ~isempty(opt.corrector_mode)
+    mode = lower(opt.corrector_mode);
+end
+
+% Evaluate u at the step-start endpoint (t0). The step-end endpoint (t0+h) is
+% evaluated inside the corrector for the trapezoidal RHS.
+u0 = stability.eval_input_provider(provider, t0, event_context);
+
+if strategy.needs_algebraic_solve
+    dae_g_u = strategy.dae_g_u;
+    jac_y_u = strategy.jac_y_u;
+    Jyy = jac_y_u(x, y, Y, u0);
+    [y, alg0] = stability.ts_algebraic_solve_u(x, y, Y, dae_g_u, jac_y_u, g_tol, Jyy, u0);
+    if ~alg0.converged, error('ts_step_kernel:algebraic', ...
+        'Pre-step algebraic solve did not converge: residual=%.3e (tol=%.3e).', alg0.final_residual, g_tol); end
+    f0 = strategy.dae_f_u(x, y, u0);
+    x_pred = x + h*f0;
+    y_pred = y;
+    converged = false; upd = 0; resn = 0; ci_used = 0;
+    u1 = stability.eval_input_provider(provider, t0 + h, event_context);
+    switch mode
+    case 'adaptive'
+        for ci = 1:max_citer
+            [y_pred, alg1] = stability.ts_algebraic_solve_u(x_pred, y_pred, Y, dae_g_u, jac_y_u, g_tol, Jyy, u1);
+            if ~alg1.converged, error('ts_step_kernel:algebraic', ...
+                'Corrector algebraic solve did not converge: residual=%.3e (tol=%.3e).', alg1.final_residual, g_tol); end
+            f1 = strategy.dae_f_u(x_pred, y_pred, u1);
+            x_new = x + 0.5*h*(f0 + f1);
+            [y_new, alg2] = stability.ts_algebraic_solve_u(x_new, y_pred, Y, dae_g_u, jac_y_u, g_tol, Jyy, u1);
+            if ~alg2.converged, error('ts_step_kernel:algebraic', ...
+                'Corrector algebraic solve did not converge: residual=%.3e (tol=%.3e).', alg2.final_residual, g_tol); end
+            R = x_new - x - 0.5*h*(f0 + strategy.dae_f_u(x_new, y_new, u1));
+            upd = norm(x_new - x_pred, inf);
+            resn = norm(R, inf);
+            x_pred = x_new; y_pred = y_new;
+            ci_used = ci;
+            tol_now = abs_tol + rel_tol*max(1, norm(x_pred, inf));
+            if upd <= tol_now && resn <= tol_now
+                converged = true; break;
+            end
+        end
+    case 'fixed'
+        for ci = 1:max(1, max_citer)
+            [y_pred, algf] = stability.ts_algebraic_solve_u(x_pred, y_pred, Y, dae_g_u, jac_y_u, g_tol, Jyy, u1);
+            if ~algf.converged, error('ts_step_kernel:algebraic', ...
+                'Fixed corrector algebraic solve did not converge: residual=%.3e (tol=%.3e).', algf.final_residual, g_tol); end
+            f1 = strategy.dae_f_u(x_pred, y_pred, u1);
+            x_pred = x + 0.5*h*(f0 + f1);
+            ci_used = ci;
+        end
+        [y_fin, algfin] = stability.ts_algebraic_solve_u(x_pred, y_pred, Y, dae_g_u, jac_y_u, g_tol, Jyy, u1);
+        if ~algfin.converged, error('ts_step_kernel:algebraic', ...
+            'Fixed-mode final algebraic solve did not converge: residual=%.3e (tol=%.3e).', algfin.final_residual, g_tol); end
+        y_pred = y_fin;
+        R = x_pred - x - 0.5*h*(f0 + strategy.dae_f_u(x_pred, y_fin, u1));
+        resn = norm(R, inf);
+        upd = resn;
+        converged = (resn <= 1e-6);
+    otherwise
+        error('ts_step_kernel:badMode','Unknown corrector_mode "%s".',mode);
+    end
+    alg_res = norm(dae_g_u(x_pred, y_pred, Y, u1), inf);
+else
+    % Linear model (e.g. classical): algebraic state solved inside dae_f_u.
+    dae_f_u = strategy.dae_f_u;
+    f0 = dae_f_u(x, y, Y, u0);
+    x_pred = x + h*f0;
+    y_pred = y;
+    converged = false; upd = 0; resn = 0; ci_used = 0;
+    u1 = stability.eval_input_provider(provider, t0 + h, event_context);
+    switch mode
+    case 'adaptive'
+        for ci = 1:max_citer
+            f1 = dae_f_u(x_pred, y_pred, Y, u1);
+            x_new = x + 0.5*h*(f0 + f1);
+            f1_new = dae_f_u(x_new, y_pred, Y, u1);
+            R = x_new - x - 0.5*h*(f0 + f1_new);
+            upd = norm(x_new - x_pred, inf);
+            resn = norm(R, inf);
+            x_pred = x_new;
+            ci_used = ci;
+            tol_now = abs_tol + rel_tol*max(1, norm(x_pred, inf));
+            if upd <= tol_now && resn <= tol_now
+                converged = true; break;
+            end
+        end
+    case 'fixed'
+        for ci = 1:max(1, max_citer)
+            f1 = dae_f_u(x_pred, y_pred, Y, u1);
+            x_pred = x + 0.5*h*(f0 + f1);
+            ci_used = ci;
+        end
+        R = x_pred - x - 0.5*h*(f0 + dae_f_u(x_pred, y_pred, Y, u1));
+        resn = norm(R, inf);
+        upd = resn;
+        converged = (resn <= 1e-6);
+    otherwise
+        error('ts_step_kernel:badMode','Unknown corrector_mode "%s".',mode);
+    end
+    alg_res = 0;
+end
+
+all_finite = all(isfinite(x_pred)) && all(isfinite(y_pred)) && ...
+    all(isfinite(f0)) && all(isfinite(resn));
+
+step = struct( ...
+    'x_full', x_pred, 'y_full', y_pred, ...
+    'f0', f0, 'f1', strategy.dae_f_u(x_pred, y_pred, u1), ...
     'corrector_iterations', ci_used, ...
     'corrector_residual', resn, ...
     'corrector_update', upd, ...

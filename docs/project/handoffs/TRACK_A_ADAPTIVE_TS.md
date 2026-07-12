@@ -64,10 +64,28 @@ use. Wikipedia is navigation only.
 
 ## Phase status
 
-- Phase 0: IN PROGRESS (baseline + characterization committed below).
-- Phases 1–8: pending; see approved plan
-  `/home/birds/.claude/plans/nifty-dazzling-peacock.md` and
-  `docs/project/plans/adaptive_ts_track_a.md`.
+- Phase 0: DONE — fresh baseline (284/284/0/0) + characterization tests.
+- Phase 1: DONE — generic one-step contract (ts_model_strategy + generalized
+  ts_step_kernel); Padiyar/EMF6 fixed equivalence bit-identical (AbsTol=0).
+- Phase 2: DONE — classical fixed mechanical migration (classical_dae +
+  expand_machines_classical + classical_step); legacy inline corrector removed;
+  one canonical trapezoidal implementation.
+- Phase 3: DONE — generic adaptive controller (ts_adaptive_driver) with step
+  doubling (denominator 3), LTE estimator, weighted state-aware norm,
+  accept/reject, dt controller (exponent 1/3), exact event landing, fail-closed.
+  8 LTE unit tests on ẍ+x=0 (local O(h³) factor ~8, global O(h²) factor ~4,
+  Richardson denominator 3, controller exponent 1/3).
+- Phase 4: DONE — Padiyar adaptive (manual + AVR); 15s long-horizon gate;
+  no-fault drift < 1e-6.
+- Phase 5: DONE — EMF6 adaptive; Kundur 12.6 vs PSAT < 5 deg (1.90 deg fresh).
+- Phase 6: DONE — classical adaptive; fixed-vs-adaptive common-grid < 1.0 deg.
+- Phase 7: IN PROGRESS — cross-model convergence + fresh PSAT + full regression.
+  Full regression: 342 passed / 0 failed / 0 incomplete. Fresh Case14 + RTS-24
+  PSAT re-run. EMF6 adaptive vs PSAT: 1.90 deg.
+- Phase 8: pending — default switch (separate commit, only if all gates pass).
+
+See approved plan `/home/birds/.claude/plans/nifty-dazzling-peacock.md` and
+`docs/project/plans/adaptive_ts_track_a.md`.
 
 ## File ownership (Track A)
 

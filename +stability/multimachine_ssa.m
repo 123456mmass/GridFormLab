@@ -41,7 +41,98 @@ else
     free_y = 1:ny;
 end
 
-Afull = Jxx - Jxy(:,free_y) * (Jyy(free_y,free_y) \ Jyx(free_y,:));
+% R4: Separate variable/residual ownership for voltage constraints.
+% vcon_vars: algebraic variables whose perturbations are constrained.
+% vcon_rows: residual rows (KCL) replaced by voltage/reference constraints.
+% vcon_eq:   equations defining those constraints (FIXED y-only:
+%            vcon_eq(y, constant_reference), so dvcon_eq/dx = 0 => Jcon_x=0).
+% free_y and vcon are STRICTLY field-level mutually exclusive. When vcon is
+% used, the COMPLETE vcon set (vcon_vars + vcon_rows + vcon_eq) is required.
+% Dimensions: nr=size(Jyy,1) (residual rows); ny=size(Jyy,2) (variables).
+% Reduced Jyy(free_rows, free_vars) must be SQUARE and full-rank.
+nr = size(Jyy,1); ny_size = size(Jyy,2);
+has_freey = isfield(model,'free_y') && ~isempty(model.free_y);
+has_vcon  = isfield(model,'vcon_vars') || isfield(model,'vcon_rows') || isfield(model,'vcon_eq');
+if has_freey && has_vcon
+    error('multimachine_ssa:exclusiveOwnership', ...
+        'free_y and vcon_* are strictly mutually exclusive.');
+end
+if has_vcon
+    % Require the COMPLETE vcon set.
+    vcon_fields = {'vcon_vars','vcon_rows','vcon_eq'};
+    for k = 1:numel(vcon_fields)
+        if ~isfield(model, vcon_fields{k})
+            error('multimachine_ssa:partialVcon', ...
+                'vcon requires the COMPLETE set: vcon_vars, vcon_rows, vcon_eq.');
+        end
+    end
+    vcon_vars = model.vcon_vars(:).';
+    vcon_rows = model.vcon_rows(:).';
+    if numel(vcon_vars) ~= numel(vcon_rows)
+        error('multimachine_ssa:vconMismatch', ...
+            'vcon_vars (%d) and vcon_rows (%d) must have the same cardinality.', ...
+            numel(vcon_vars), numel(vcon_rows));
+    end
+    free_vars = setdiff(1:ny_size, vcon_vars);
+    free_rows = setdiff(1:nr, vcon_rows);
+    if numel(free_vars) ~= numel(free_rows)
+        error('multimachine_ssa:vconSquare', ...
+            'Reduced Jyy would be %dx%d (non-square). free_vars=%d, free_rows=%d.', ...
+            numel(free_rows), numel(free_vars), numel(free_vars), numel(free_rows));
+    end
+    % Validate indices: unique, finite integers, in range.
+    all_idx = [vcon_vars, vcon_rows];
+    if any(all_idx ~= floor(all_idx)) || any(all_idx < 1) || ...
+       any(vcon_vars > ny_size) || any(vcon_rows > nr) || ...
+       numel(unique(vcon_vars)) ~= numel(vcon_vars) || ...
+       numel(unique(vcon_rows)) ~= numel(vcon_rows)
+        error('multimachine_ssa:vconBadIndex', ...
+            'vcon indices must be unique finite integers in range.');
+    end
+    % Validate Jcon_x == 0 (FIXED y-only constraint; state-dependent is out of scope).
+    % FD-check dvcon_eq/dx at the operating point.
+    vcon_eq_fn = model.vcon_eq;
+    g_vcon = vcon_eq_fn(model.x0, model.y0);
+    if numel(g_vcon) ~= numel(vcon_rows)
+        error('multimachine_ssa:vconEqDim', ...
+            'vcon_eq output length %d must match vcon_rows length %d.', ...
+            numel(g_vcon), numel(vcon_rows));
+    end
+    h_fd = 1e-6;
+    if isfield(model,'fd_eps') && ~isempty(model.fd_eps), h_fd = model.fd_eps; end
+    Jcon_x = zeros(numel(vcon_rows), numel(model.x0));
+    for j = 1:numel(model.x0)
+        xp = model.x0; xm = model.x0; xp(j) = xp(j) + h_fd; xm(j) = xm(j) - h_fd;
+        Jcon_x(:,j) = (vcon_eq_fn(xp, model.y0) - vcon_eq_fn(xm, model.y0)) / (2*h_fd);
+    end
+    if max(abs(Jcon_x(:))) > 1e-6
+        error('multimachine_ssa:stateDependentConstraintUnsupported', ...
+            'vcon_eq is state-dependent (max|dvcon_eq/dx|=%.3e). Only FIXED y-only constraints are supported.', ...
+            max(abs(Jcon_x(:))));
+    end
+    % Validate Jcon_y (w.r.t. vcon_vars) has full rank.
+    Jcon_y = zeros(numel(vcon_rows), numel(vcon_vars));
+    for j = 1:numel(vcon_vars)
+        yp = model.y0; ym = model.y0;
+        yp(vcon_vars(j)) = yp(vcon_vars(j)) + h_fd;
+        ym(vcon_vars(j)) = ym(vcon_vars(j)) - h_fd;
+        Jcon_y(:,j) = (vcon_eq_fn(model.x0, yp) - vcon_eq_fn(model.x0, ym)) / (2*h_fd);
+    end
+    if rcond(Jcon_y) < eps
+        error('multimachine_ssa:vconRankDeficient', ...
+            'Constraint Jacobian Jcon_y is rank-deficient (rcond=%.3e).', rcond(Jcon_y));
+    end
+    % Paired Schur with separate free_rows/free_vars.
+    Afull = Jxx - Jxy(:,free_vars) * (Jyy(free_rows,free_vars) \ Jyx(free_rows,:));
+    free_y_used = free_vars;   % for metadata
+elseif has_freey
+    free_vars = free_y; free_rows = free_y;
+    Afull = Jxx - Jxy(:,free_vars) * (Jyy(free_rows,free_vars) \ Jyx(free_rows,:));
+    free_y_used = free_vars;
+else
+    Afull = Jxx - Jxy(:,free_y) * (Jyy(free_y,free_y) \ Jyx(free_y,:));
+    free_y_used = free_y;
+end
 lambda_full = eig(Afull);
 [Vfull, ~] = eig(Afull);
 
@@ -59,7 +150,7 @@ result = struct();
 result.Afull = Afull;
 result.Ared = Ared;
 result.Jxx = Jxx; result.Jxy = Jxy; result.Jyx = Jyx; result.Jyy = Jyy;
-result.free_y = free_y;
+result.free_y = free_y_used;
 result.eigenvalues = lambda_full;
 result.reduced_eigenvalues = lambda_reduced;
 result.mode_shapes = Vfull;

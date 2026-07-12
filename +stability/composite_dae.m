@@ -27,22 +27,59 @@ function dae = composite_dae(case_data, devices, opt)
 %   inclusive via cumulative sums. Slicing uses nx (ns is optional metadata).
 %
 %   Source: project R3 design (docs/project/plans/ibr_interface_foundation.md).
+%
+%   B5 case schema: MATPOWER-mpc-only. case_data MUST be a scalar struct
+%   with a scalar .mpc MATPOWER struct (baseMVA, bus, gen, branch). The
+%   schema is validated at entry BEFORE any PF call or field access; an
+%   invalid schema fails with composite_dae:unsupportedCaseSchema. Non-mpc
+%   case schemas are NOT supported here (extracting shared normalize_case
+%   is separate refactoring, out of scope).
 
 if nargin < 3 || isempty(opt), opt = struct(); end
 if isempty(devices)
     error('composite_dae:emptyDevices', ...
         'Cannot build a composite with zero devices.');
 end
+% --- B5: MATPOWER-mpc-only schema validation at ENTRY ---------------------
+% Validate case_data is a scalar struct containing a scalar mpc struct with
+% the required MATPOWER fields (baseMVA, bus, gen, branch) and valid basic
+% dimensions BEFORE any PF solver call and BEFORE any case_data.mpc access.
+% This corrects the ordering bug where mpc = case_data.mpc (L42) preceded
+% the isfield guard (L43). composite_dae is MATPOWER-mpc-only; extracting
+% shared normalize_case is separate refactoring (out of scope).
+if ~isstruct(case_data) || ~isscalar(case_data)
+    error('composite_dae:unsupportedCaseSchema', ...
+        'case_data must be a scalar struct with a .mpc MATPOWER field.');
+end
+if ~isfield(case_data,'mpc') || ~isstruct(case_data.mpc) || ~isscalar(case_data.mpc)
+    error('composite_dae:unsupportedCaseSchema', ...
+        'case_data.mpc must be a scalar MATPOWER mpc struct.');
+end
+mpc = case_data.mpc;
+mpc_req = {'baseMVA','bus','gen','branch'};
+for k = 1:numel(mpc_req)
+    if ~isfield(mpc, mpc_req{k})
+        error('composite_dae:unsupportedCaseSchema', ...
+            'case_data.mpc missing required MATPOWER field "%s".', mpc_req{k});
+    end
+end
+if ~isscalar(mpc.baseMVA) || ~isfinite(mpc.baseMVA) || mpc.baseMVA <= 0
+    error('composite_dae:unsupportedCaseSchema', ...
+        'case_data.mpc.baseMVA must be a positive finite scalar.');
+end
+if ~ismatrix(mpc.bus) || size(mpc.bus,1) < 1
+    error('composite_dae:unsupportedCaseSchema', ...
+        'case_data.mpc.bus must have at least one row.');
+end
+if ~ismatrix(mpc.branch) || size(mpc.branch,1) < 1
+    error('composite_dae:unsupportedCaseSchema', ...
+        'case_data.mpc.branch must have at least one row.');
+end
 % --- Power flow (in-house Newton) for the shared network ------------------
 pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false, ...
     'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
 if ~pf.converged
     error('composite_dae:powerFlow','In-house Newton PF did not converge.');
-end
-mpc = case_data.mpc;
-if ~isfield(case_data,'mpc')
-    % normalize_case path (reuse classical_dae's normalizer indirectly)
-    [mpc,~,~] = normalize_case_local(case_data);
 end
 bus_ids = pf.external_bus_ids(:);
 nb = numel(bus_ids);
@@ -254,20 +291,6 @@ end
 end
 
 % =========================================================================
-function [mpc,mach,freq] = normalize_case_local(case_data)
-% Minimal local normalizer (mirrors classical_dae's normalize_case).
-if isfield(case_data,'mpc')
-    mpc = case_data.mpc; mpc.case_name = 'MATPOWER';
-    freq = 60;
-    if isfield(case_data,'base_values') && isfield(case_data.base_values,'frequency_Hz')
-        freq = case_data.base_values.frequency_Hz;
-    end
-    mach = [];
-else
-    error('composite_dae:unsupportedCase', 'case_data must have .mpc for now.');
-end
-end
-
 function Y = build_ybus_local(mpc, pf)
 % Build Ybus + load admittance from mpc + PF result (mirrors classical_dae).
 bus = mpc.bus; br = mpc.branch; nb = size(bus,1); Y = complex(zeros(nb));

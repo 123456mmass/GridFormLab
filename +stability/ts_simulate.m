@@ -65,14 +65,20 @@ if has_bundle && has_mfn
         'opt.model_bundle and opt.model_fn are mutually exclusive.');
 end
 if has_bundle
-    % R2 behavior (Phase 5): validate and execute the bundle. For now
-    % (mechanical phase) this branch is reached only by the synthetic test
-    % which calls the bundle execution path directly.
-    res = run_model_bundle(opt.model_bundle, case_data, opt);
+    % R2/B1: validate the explicit bundle BEFORE execution. Malformed
+    % bundles fail closed with validate_ts_bundle:* / validate_ts_strategy:*
+    % / validate_sssa_model:* error IDs, BEFORE run_model_bundle touches
+    % any solver. (Previously validate_ts_bundle was dead code — only tests
+    % called it; production never validated.)
+    bundle = stability.validate_ts_bundle(opt.model_bundle);
+    res = run_model_bundle(bundle, case_data, opt);
     return;
 end
 if has_mfn
     bundle = opt.model_fn(case_data, opt);
+    % B1: validate the factory-produced bundle BEFORE execution, same as
+    % the explicit model_bundle path.
+    bundle = stability.validate_ts_bundle(bundle);
     res = run_model_bundle(bundle, case_data, opt);
     return;
 end

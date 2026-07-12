@@ -143,3 +143,31 @@ Run `compare_case14_ts_three_way` after any TS change.
    `legacy/` (item 4 above); add a residual-based adaptive EMF6 corrector
    with tests (item 3 above); re-run RTS-24 vs PSAT where PSAT is available.
 5. Always commit new files before any branch/reset operation.
+
+## 2026-07-13 Report rebuild (report/system-methods-v2 branch)
+
+Canonical PF/SSSA/TS technical report rebuilt (C0-C8) on
+docs/source/report_system_methods_update.tex from the equation-audited
+14-section architecture. All tables/figures emitted fresh by
+generate_system_methods_report against report HEAD 4f78cac.
+
+Verification (all on report branch):
+- Full regression: 351/351 passed, 0 failed, 0 incomplete.
+- test_no_external_solver_dependency: PASS (real MATLAB path scan).
+- Equation provenance audit: READY (101 equations, 0 gaps).
+- LaTeX: 13-page PDF, 0 undefined references (compiled twice).
+- Stale claims grep: 0 hits ("12 of 12", "May 2026", "PSAT not installed",
+  CPF/OPF scope all removed).
+- git diff origin/main..HEAD: report allowlist only; run_ts.m dirty edit and
+  AGENT_HANDOFF.md advisor directive preserved untouched on main's working tree.
+
+PSAT observed installed at ~/Documents/psat-2.1.11-mat/ (contradicts old
+handoff "PSAT not installed"). IEEE14: PSAT fresh, PF dV=6.661e-16,
+TS dCOI=0.0096 deg, psat_comparison=PASS. RTS-24: PSAT fresh, PF dV=4.441e-16,
+TS dCOI=0.0068 deg (matches prior baseline 0.0067). PGAz runs but TS
+discrepancy is diagnostic only (reported honestly, does not fail gate).
+
+ADAPTIVE_DEFAULT_SWITCH_READY=NOT_READY (adaptive timestep is explicit,
+not default). IBR_PRODUCTION_INTEGRATION_READY=NOT_STARTED.
+
+No push, no merge. The dirty run_ts.m edit on main is excluded user work.

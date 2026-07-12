@@ -100,17 +100,15 @@ rejection_history = struct('time',{},'attempted_dt',{},'error_norm',{}, ...
     'reason',{},'retry_dt',{},'topology',{},'algebraic_residual',{}, ...
     'rejection_count',{});
 event_diagnostics = struct('time',{},'side',{},'topology',{}, ...
-    'algebraic_residual',{});
+    'event_id',{},'algebraic_residual',{});
 
-% --- Event times (sorted, unique) -----------------------------------------
-event_times = [];
-if events.fault_enabled
-    if isfinite(events.t_fault) && events.t_fault > t0 && events.t_fault < t_end
-        event_times = [event_times; events.t_fault]; end
-    if isfinite(events.t_clear) && events.t_clear > t0 && events.t_clear < t_end
-        event_times = [event_times; events.t_clear]; end
-end
-event_times = sort(unique(event_times));
+% --- Event times (sorted, unique; prevalidated for coincidence) ------------
+% B3: use the shared prevalidator with the FROZEN event_tol (1e-10),
+% independent of local dt. Coincident events fail closed here BEFORE
+% stepping. event_id lookup maps each event time to its named transition
+% ('fault_on' for t_fault, 'fault_off' for t_clear).
+event_tol = 1e-10;
+event_times = stability.ts_prevalidate_events(events, t_span, event_tol);
 
 t = t0;
 ng = strat.state_split.ng;
@@ -121,9 +119,12 @@ while t < t_end - 1e-14
     % Next event within dt? Shrink dt to land exactly on the event.
     t_target = t + dt;
     next_event = [];
+    next_event_id = "";
     for et = event_times.'
-        if et > t + 1e-14 && et < t_target + 1e-14
-            next_event = et; t_target = et; break;
+        if et > t + event_tol && et < t_target + event_tol
+            next_event = et; t_target = et;
+            next_event_id = event_id_lookup(et, events);
+            break;
         end
     end
     if t_target > t_end, t_target = t_end; end
@@ -183,45 +184,36 @@ while t < t_end - 1e-14
             dt_history = [dt_history; h]; %#ok<AGROW>
             lte_history = [lte_history; err]; %#ok<AGROW>
             accepted = true;
-            % Event landing: if we landed on an event, switch topology and
-            % re-solve y under the right topology; record left/right diag.
+            % Event landing: if we landed on an event, switch topology ONCE
+            % and re-solve y under the right topology via the SHARED helper
+            % ts_event_transition (B3). The right topology is selected by
+            % event_id DIRECTLY (not via ts_topology_at(t +/- delta)).
             % Public sample uses the RIGHT-limit y (per event convention §6).
-            if ~isempty(next_event) && abs(t - next_event) < 1e-14
-                Y_right = stability.ts_topology_at(t + 1e-14, events, events.Ypre, events.Yfault, events.Ypost);
-                y_left = y;
-                if strat.needs_algebraic_solve
-                    if has_provider
-                        % R1 provider-aware right-topology re-solve.
-                        u_ev = stability.eval_input_provider(strat.provider, t, kopt.event_context);
-                        Jyy_r = strat.jac_y_u(x, y, Y_right, u_ev);
-                        [y_right, alg_r] = stability.ts_algebraic_solve_u(x, y, Y_right, ...
-                            strat.dae_g_u, strat.jac_y_u, g_tol, Jyy_r, u_ev);
-                    else
-                        Jyy_r = strat.jac_y(x, y, Y_right);
-                        [y_right, alg_r] = stability.ts_algebraic_solve(x, y, Y_right, strat.dae_g, @stability.ts_jac_y_fd, g_tol, Jyy_r);
-                    end
-                    if ~alg_r.converged
-                        error('ts_adaptive_driver:eventAlgebraic', ...
-                            'Right-topology algebraic solve failed at event t=%.6g: residual=%.3e.', t, alg_r.final_residual);
-                    end
-                    alg_res_right = alg_r.final_residual;
-                else
-                    y_right = y;  % classical: re-solved inline in dae_f next step
-                    alg_res_right = 0;
-                end
-                event_diagnostics = [event_diagnostics; struct( ...
-                    'time', t, 'side', 'right', 'topology', 'right', ...
-                    'algebraic_residual', alg_res_right)]; %#ok<AGROW>
+            if ~isempty(next_event) && abs(t - next_event) < event_tol
+                [y_right, Y_right, event_context_right, ev_diag] = ...
+                    stability.ts_event_transition(t, next_event_id, events, ...
+                    x, y, strat, kopt, has_provider, event_tol);
+                event_diagnostics = [event_diagnostics; ev_diag]; %#ok<AGROW>
+                % Left-side diagnostic (the arrival-step algebraic residual).
                 event_diagnostics = [event_diagnostics; struct( ...
                     'time', t, 'side', 'left', 'topology', 'left', ...
+                    'event_id', char(next_event_id), ...
                     'algebraic_residual', alg_res)]; %#ok<AGROW>
                 y = y_right;
+            else
+                % Non-event step: reconstruct uses the step's own Y_now.
+                Y_right = Y_now;
+                event_context_right = [];
             end
             % Record the public sample AFTER any event topology switch, so
             % the stored Vbus at t_event reflects the right-limit (faulted)
-            % voltage (event convention §6). Pass the current-topology Y so
-            % classical (linear-network) reconstruction uses the right Y.
-            Y_rec = stability.ts_topology_at(t, events, events.Ypre, events.Yfault, events.Ypost);
+            % voltage (event convention §6). For event steps use Y_right;
+            % for non-event steps use the current-topology Y (Y_now).
+            if ~isempty(next_event) && abs(t - next_event) < event_tol
+                Y_rec = Y_right;
+            else
+                Y_rec = stability.ts_topology_at(t, events, events.Ypre, events.Yfault, events.Ypost);
+            end
             rec = reconstruct_at(strat, x, y, Y_rec, has_provider, t, kopt);
             delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
             omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
@@ -267,8 +259,11 @@ while t < t_end - 1e-14
             h = dt;
             t_target = t + h;
             % Re-check event landing with the new smaller dt.
+            next_event = [];
+            next_event_id = "";
             for et = event_times.'
-                if et > t + 1e-14 && et < t_target + 1e-14
+                if et > t + event_tol && et < t_target + event_tol
+                    next_event = et; next_event_id = event_id_lookup(et, events);
                     t_target = et; h = t_target - t; break;
                 end
             end
@@ -314,5 +309,19 @@ if has_provider && isfield(strat,'reconstruct_u') && ~isempty(strat.reconstruct_
     rec = strat.reconstruct_u(x, y, Y, u);
 else
     rec = strat.reconstruct(x, y, Y);
+end
+end
+
+function id = event_id_lookup(et, events)
+%EVENT_ID_LOOKUP  Map a declared event time to its named transition (B3).
+%   Returns 'fault_on' for t_fault, 'fault_off' for t_clear. Used to pass
+%   an EXPLICIT event identity to ts_event_transition (no t+eps discovery).
+if events.fault_enabled && isfinite(events.t_fault) && abs(et - events.t_fault) < 1e-14
+    id = "fault_on";
+elseif events.fault_enabled && isfinite(events.t_clear) && abs(et - events.t_clear) < 1e-14
+    id = "fault_off";
+else
+    error('ts_adaptive_driver:badEventTime', ...
+        'Event time %.10g does not match t_fault or t_clear.', et);
 end
 end

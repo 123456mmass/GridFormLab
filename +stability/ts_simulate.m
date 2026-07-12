@@ -574,15 +574,14 @@ fault_enabled = opt.fault_enabled;
 if ~fault_enabled
     t_fault = inf; t_clear = inf;
 end
+% Build the events struct (shared convention with ts_topology_at and
+% ts_event_transition). B3: prevalidate coincident events BEFORE stepping.
+events_b = struct('fault_enabled',fault_enabled,'t_fault',t_fault, ...
+    't_clear',t_clear,'Ypre',topo.Ypre,'Yfault',topo.Yfault,'Ypost',topo.Ypost);
+event_tol = 1e-10;
+event_times = stability.ts_prevalidate_events(events_b, [0, t_end], event_tol);
 % Event-aware grid (snap fault/clear to grid).
 t = (0:dt:t_end).';
-event_times = [];
-if isfinite(t_fault) && t_fault > t(1) && t_fault < t(end)
-    event_times = [event_times; t_fault];
-end
-if isfinite(t_clear) && t_clear > t(1) && t_clear < t(end)
-    event_times = [event_times; t_clear];
-end
 for et = event_times.'
     [~, idx] = min(abs(t - et));
     if abs(t(idx) - et) > dt * 1e-10
@@ -613,15 +612,27 @@ if has_provider
     end
 end
 for k = 2:nt
-    tk = t(k-1); hk = t(k) - t(k-1);
-    Y_now = stability.ts_topology_at(tk, ...
-        struct('fault_enabled',fault_enabled,'t_fault',t_fault,'t_clear',t_clear, ...
-              'Ypre',topo.Ypre,'Yfault',topo.Yfault,'Ypost',topo.Ypost), ...
+    tk_prev = t(k-1); tk = t(k); hk = tk - tk_prev;
+    % B3: arrival step uses LEFT topology (selected by time via
+    % ts_topology_at, the single source for normal step selection).
+    Y_now = stability.ts_topology_at(tk_prev, events_b, ...
         topo.Ypre, topo.Yfault, topo.Ypost);
-    if has_provider, kopt.t = tk; end
+    if has_provider, kopt.t = tk_prev; end
     step = stability.ts_step_kernel(strat, x, y, hk, Y_now, kopt);
     x = step.x_full; y = step.y_full;
-    rec = reconstruct_at(strat, x, y, Y_now, has_provider, tk, kopt);
+    % B3: if this step landed on a declared event, switch ONCE to the right
+    % topology via ts_event_transition (event_id explicit, no t+eps). Then
+    % reconstruct using t(k) and the right-limit Y. Otherwise reconstruct
+    % with the step's own Y_now.
+    [next_event_id, on_event] = event_id_at(tk, event_times, events_b, event_tol);
+    if on_event
+        [y_right, Y_rec, ~, ~] = stability.ts_event_transition( ...
+            tk, next_event_id, events_b, x, y, strat, kopt, has_provider, event_tol);
+        y = y_right;
+    else
+        Y_rec = Y_now;
+    end
+    rec = reconstruct_at(strat, x, y, Y_rec, has_provider, tk, kopt);
     delta_hist(k,:) = rec.delta; omega_hist(k,:) = rec.omega;
     Pe_hist(k,:) = rec.Pe; Vbus_hist(k,:) = rec.Vbus;
 end
@@ -651,6 +662,24 @@ end
 
 function tf = has_bundle_field(opt, name)
 tf = isfield(opt, name) && ~isempty(opt.(name));
+end
+
+function [id, on_event] = event_id_at(tk, event_times, events, event_tol)
+%EVENT_ID_AT  Look up the named event_id at time tk, if tk is a declared event.
+%   B3: returns the explicit event_id ('fault_on'|'fault_off') if tk matches a
+%   declared event time within event_tol; otherwise on_event=false (non-event
+%   step). No t+eps discovery — exact match by event_tol.
+id = "";
+on_event = false;
+for et = event_times.'
+    if abs(tk - et) <= event_tol
+        if events.fault_enabled && isfinite(events.t_fault) && abs(et - events.t_fault) <= event_tol
+            id = "fault_on"; on_event = true; return;
+        elseif events.fault_enabled && isfinite(events.t_clear) && abs(et - events.t_clear) <= event_tol
+            id = "fault_off"; on_event = true; return;
+        end
+    end
+end
 end
 
 function rec = reconstruct_at(strat, x, y, Y, has_provider, t, kopt)

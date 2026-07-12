@@ -4,6 +4,26 @@ function tests = test_ts_classical_adaptive()
 %   a fault scenario with finite bounded trajectory, exact event landing, and the
 %   frozen adaptive result schema. Fixed-vs-adaptive common-grid equivalence is
 %   within pre-declared tolerances.
+%
+% --- 1.0 deg threshold provenance (honest) -------------------------------
+% The 1.0 deg fixed-vs-adaptive threshold below is an ASSUMED_DIAGNOSTIC
+% regression guard, NOT an a-priori-justified production tolerance.
+%   - First appeared: this file, introduced in Phase 6 commit 0b890a4.
+%   - Commit 0b890a4 was authored AFTER adaptive results were already
+%     observed (Phases 3-5); the threshold was chosen while viewing results.
+%   - No recorded executable selection study exists for it.
+%   - Therefore it CANNOT honestly be called "selected" or "a-priori
+%     justified". Status:
+%       FIXED_VS_ADAPTIVE_1DEG_REGRESSION_GUARD = PASS/FAIL (non-regression
+%         guard only, kept unchanged per honesty-closure policy: do NOT
+%         relax/increase/remove/tune).
+%       FIXED_VS_ADAPTIVE_PRODUCTION_TOLERANCE_JUSTIFIED = NOT_READY.
+%   - A future separately-approved prospective tolerance study
+%     (docs/project/plans/adaptive_tolerance_study_proposal.md) may produce
+%     justified thresholds; until then this guard is diagnostic-only.
+%   - The comparison is expanded to REPORT delta/omega/Pe/Vbus with COI,
+%     bus-ID, and gen-ID mapping (via adaptive_ts_compare_fixed), but NO new
+%     acceptance thresholds are invented for Pe/Vbus.
 
 tests = functiontests(localfunctions);
 end
@@ -67,39 +87,31 @@ end
 
 function test_fixed_vs_adaptive_common_grid(testCase)
 % Phase 6: fixed-vs-adaptive common-grid equivalence for Case14 classical.
-% Interpolate the adaptive raw trajectory onto the fixed canonical grid using
-% interp_no_extrapolate (per-event-segment, no cross-event, no extrapolation).
-% Tolerance rationale (declared a priori, NOT borrowed from PSAT): the fixed
-% path uses exact ci=10 Picard iterations while the adaptive path uses a
+% Uses the shared helper adaptive_ts_compare_fixed, which ALONE owns ID
+% mapping, event-segmented interp_no_extrapolate, the COI frame, and the
+% structural checks. The comparison REPORTS delta/omega/Pe/Vbus (COI, gen-ID
+% mapped, bus-ID mapped); the 1.0 deg / 1e-3 pu bounds below are the ONLY
+% acceptance assertions, kept as the historical ASSUMED_DIAGNOSTIC regression
+% guard (see file header provenance). NO new acceptance thresholds are imposed
+% on Pe/Vbus; those are reported as diagnostics only.
+rep = adaptive_ts_compare_fixed('case_matpower6_case14','classical', ...
+    struct('t_end',5,'dt',0.01,'fault_bus',4,'t_fault',1.0,'t_clear',1.1, ...
+    'Zf',1i*0.1,'pm_mode','pgaz','corrector_mode','adaptive', ...
+    'corrector_iter',10,'max_corrector_iter',10));
+m = rep.metrics;
+% Structural invariants must hold (hard gate, same as the helper asserts).
+testCase.verifyTrue(rep.structural_pass, 'structural invariants must hold.');
+% Historical ASSUMED_DIAGNOSTIC regression guard (NOT a justified tolerance).
+% Rationale (declared when introduced, NOT borrowed from PSAT): the fixed path
+% uses exact ci=10 Picard iterations while the adaptive path uses a
 % residual-checked corrector that may converge in fewer iterations; the
 % resulting trajectory difference is bounded by the corrector tolerance, not
-% by the LTE budget. Pre-declared: COI angle < 1.0 deg, speed < 1e-3 pu.
-c = cases.case_matpower6_case14();
-opt_fixed = struct('t_end',5,'dt',0.01,'fault_bus',4,'t_fault',1.0,'t_clear',1.1, ...
-    'Zf',1i*0.1,'pm_mode','pgaz','corrector_mode','fixed','corrector_iter',10,'verbose',false);
-r_fixed = stability.ts_simulate(c, opt_fixed);
-r_adapt = run_classical_adaptive(5);
-tg = r_fixed.t;
-% Segment by event: interpolate each segment separately (no cross-event).
-seg_edges = [0; 1.0; 1.1; 5];
-delta_f_interp = zeros(numel(tg), numel(r_fixed.delta(1,:)));
-delta_a_interp = zeros(numel(tg), numel(r_adapt.delta(1,:)));
-omega_f_interp = zeros(numel(tg), numel(r_fixed.omega(1,:)));
-omega_a_interp = zeros(numel(tg), numel(r_adapt.omega(1,:)));
-for s = 1:numel(seg_edges)-1
-    lo = seg_edges(s); hi = seg_edges(s+1);
-    idx_tg = find(tg >= lo - 1e-14 & tg <= hi + 1e-14);
-    idx_f = find(r_fixed.t >= lo - 1e-14 & r_fixed.t <= hi + 1e-14);
-    idx_a = find(r_adapt.t >= lo - 1e-14 & r_adapt.t <= hi + 1e-14);
-    for k = 1:size(delta_f_interp,2)
-        delta_f_interp(idx_tg,k) = interp_no_extrapolate(r_fixed.t(idx_f), r_fixed.delta(idx_f,k), tg(idx_tg));
-        delta_a_interp(idx_tg,k) = interp_no_extrapolate(r_adapt.t(idx_a), r_adapt.delta(idx_a,k), tg(idx_tg));
-        omega_f_interp(idx_tg,k) = interp_no_extrapolate(r_fixed.t(idx_f), r_fixed.omega(idx_f,k), tg(idx_tg));
-        omega_a_interp(idx_tg,k) = interp_no_extrapolate(r_adapt.t(idx_a), r_adapt.omega(idx_a,k), tg(idx_tg));
-    end
-end
-ddelta = max(abs(rad2deg(delta_f_interp - delta_a_interp)),[],'all');
-domega = max(abs(omega_f_interp - omega_a_interp),[],'all');
-testCase.verifyLessThan(ddelta, 1.0, 'Fixed-vs-adaptive COI angle < 1.0 deg (corrector-mode difference).');
-testCase.verifyLessThan(domega, 1e-3, 'Fixed-vs-adaptive speed < 1e-3 pu.');
+% by the LTE budget. 1.0 deg / 1e-3 pu.
+testCase.verifyLessThan(m.delta_coi_deg, 1.0, ...
+    'Fixed-vs-adaptive COI angle < 1.0 deg (ASSUMED_DIAGNOSTIC guard).');
+testCase.verifyLessThan(m.omega_pu, 1e-3, ...
+    'Fixed-vs-adaptive speed < 1e-3 pu (ASSUMED_DIAGNOSTIC guard).');
+% Pe and Vbus are REPORTED as diagnostics only (no acceptance threshold).
+fprintf('[Case14 classical] Pe diff=%.4f MW  Vbus diff=%.3e pu  Vbus_fault diff=%.3e pu (diagnostics, NOT gates)\n', ...
+    m.Pe_MW, m.Vbus_pu, m.Vbus_fault_pu);
 end

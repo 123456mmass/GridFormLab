@@ -68,9 +68,12 @@ end
 Ypost = Ypre;
 
 % --- Stepper dispatch (Phase 5) --------------------------------------------
-% opt.stepper='fixed' (default): canonical fixed-step path (bit-identical to
-%   the validated baseline). Fixed-step EMF6 Jyy caching is UNCHANGED (Open Q5).
+% opt.stepper='fixed' (default if stepper is absent or 'fixed'): canonical
+%   fixed-step path (bit-identical to the validated baseline).
 % opt.stepper='adaptive': variable-dt LTE/reject path via ts_adaptive_driver.
+%   Adaptive is reached only when opt.stepper is explicitly 'adaptive'; the
+%   production default is fixed. Catalog/run_ts may inject stepper='adaptive'.
+% Fixed-step EMF6 Jyy caching is UNCHANGED (Open Q5).
 if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
     res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost);
     return;

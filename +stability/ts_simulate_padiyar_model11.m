@@ -22,9 +22,11 @@ if opt.fault_enabled
 end
 
 % --- Stepper dispatch (Phase 4) --------------------------------------------
-% opt.stepper='fixed' (default): canonical fixed-step path (bit-identical to
-%   the validated baseline).
+% opt.stepper='fixed' (default if stepper is absent or 'fixed'): canonical
+%   fixed-step path (bit-identical to the validated baseline).
 % opt.stepper='adaptive': variable-dt LTE/reject path via ts_adaptive_driver.
+%   Adaptive is reached only when opt.stepper is explicitly 'adaptive'; the
+%   production default is fixed. Catalog/run_ts may inject stepper='adaptive'.
 if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
     res = run_adaptive(case_data,opt,dae,ns,ng,nb,Ypre,Yfault,Ypost);
     return;

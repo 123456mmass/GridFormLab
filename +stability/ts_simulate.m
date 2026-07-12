@@ -175,9 +175,11 @@ end
 Ypost_da = Ypre_da;
 
 % --- Stepper dispatch (Phase 6) --------------------------------------------
-% opt.stepper='fixed' (default): canonical fixed-step path (bit-identical to
-%   the validated baseline).
+% opt.stepper='fixed' (default if stepper is absent or 'fixed'): canonical
+%   fixed-step path (bit-identical to the validated baseline).
 % opt.stepper='adaptive': variable-dt LTE/reject path via ts_adaptive_driver.
+%   Adaptive is reached only when opt.stepper is explicitly 'adaptive'; the
+%   production default is fixed. Catalog/run_ts may inject stepper='adaptive'.
 if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
     res = run_classical_adaptive(opt, cdae, strat, mpc, gbus, base);
     return;

@@ -13,6 +13,7 @@ ts_options.t_fault = 1.0;         % fault application time (s)
 ts_options.t_clear = 1.1;         % fault clearing time (s)
 ts_options.Zf = 0 + 0.1j;         % fault impedance (pu): Rf + jXf
 ts_options.method = 'trapezoidal';
+ts_options.stepper = 'adaptive';   % Phase 8: production default is adaptive (variable dt, LTE/reject)
 ts_options.corrector_mode = 'adaptive';
 ts_options.corrector_abs_tol = 1e-10;
 ts_options.corrector_rel_tol = 1e-8;

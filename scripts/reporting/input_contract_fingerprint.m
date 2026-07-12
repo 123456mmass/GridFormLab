@@ -158,8 +158,8 @@ keys = fieldnames(fp);
 parts = cell(numel(keys),1);
 for i = 1:numel(keys)
     v = fp.(keys{i});
-    if isnumeric(v), v = mat2str(v(:).'); end
-    if ischar(v), parts{i} = [keys{i} '=' v]; else, parts{i} = keys{i}; end
+    s = val_to_str(v);
+    parts{i} = [keys{i} '=' s];
 end
 s = strjoin(parts, '|');
 try
@@ -170,4 +170,30 @@ try
 catch
     h = s;   % fallback: return the string itself
 end
+end
+
+function s = val_to_str(v)
+% Robust conversion of any value to a single-row string for hashing.
+if ischar(v), s = strjoin(cellstr(v'), ''); return; end
+if isnumeric(v)
+    if isempty(v), s = '[]'; else, s = mat2str(v(:).'); end
+    return;
+end
+if islogical(v), s = mat2str(v(:).'); return; end
+if iscell(v)
+    s = 'cell{';
+    for i = 1:numel(v), s = [s val_to_str(v{i}) ',']; end
+    s = [s '}'];
+    return;
+end
+if isstruct(v)
+    s = 'struct{';
+    fns = fieldnames(v);
+    for i = 1:numel(fns)
+        s = [s fns{i} ':' val_to_str(v.(fns{i})) ','];
+    end
+    s = [s '}'];
+    return;
+end
+s = 'other';
 end

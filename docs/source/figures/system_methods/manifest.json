@@ -1,0 +1,18 @@
+{
+  "git_head": "b8ae8fbc500cd4a1534d6908829b5c7ac737bd23",
+  "timestamp": "2026-07-13 01:02:38",
+  "timezone": "+0700",
+  "matlab_version": "26.1.0.3276743 (R2026a) Update 3",
+  "entry_point": "generate_system_methods_report",
+  "origin_main": "f59076ff018fabfac1fed97442ac8e2c9be9c2b6",
+  "cases": [
+    {
+      "case_function": "case_matpower6_case14",
+      "solver_model_stepper": "classical PF/SSSA/TS fixed+adaptive",
+      "source_reference_status": "PSAT+PGAz via tracked adapters",
+      "fresh_saved_status": "ours_fresh; psat/pgaz fresh-or-saved per contract",
+      "input_contract_fingerprint": "392C80629C624E27250B83FF26FA559380C4A012E2066D61FB703592E8E59DBB",
+      "output_filenames": []
+    }
+  ]
+}

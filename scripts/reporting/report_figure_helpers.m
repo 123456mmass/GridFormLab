@@ -110,7 +110,7 @@ for k = 1:size(delta_ours,2)
     c = colors(mod(k-1,size(colors,1))+1,:);
     plot(ax, t, delta_ours(:,k), '-', 'Color', c, 'LineWidth', 1.4);
 end
-if ~isempty(delta_psat)
+if ~isempty(delta_psat) && size(delta_psat,1) == numel(t)
     for k = 1:size(delta_psat,2)
         c = colors(mod(k-1,size(colors,1))+1,:);
         plot(ax, t, delta_psat(:,k), '--', 'Color', c, 'LineWidth', 1.0);
@@ -130,7 +130,7 @@ for k = 1:size(w_ours,2)
     c = colors(mod(k-1,size(colors,1))+1,:);
     plot(ax, t, w_ours(:,k)-1, '-', 'Color', c, 'LineWidth', 1.3);
 end
-if ~isempty(w_psat)
+if ~isempty(w_psat) && size(w_psat,1) == numel(t)
     for k = 1:size(w_psat,2)
         c = colors(mod(k-1,size(colors,1))+1,:);
         plot(ax, t, w_psat(:,k)-1, '--', 'Color', c, 'LineWidth', 1.0);
@@ -150,7 +150,7 @@ for k = 1:size(pe_ours,2)
     c = colors(mod(k-1,size(colors,1))+1,:);
     plot(ax, t, pe_ours(:,k), '-', 'Color', c, 'LineWidth', 1.3);
 end
-if ~isempty(pe_psat)
+if ~isempty(pe_psat) && size(pe_psat,1) == numel(t)
     for k = 1:size(pe_psat,2)
         c = colors(mod(k-1,size(colors,1))+1,:);
         plot(ax, t, pe_psat(:,k), '--', 'Color', c, 'LineWidth', 1.0);
@@ -166,7 +166,7 @@ function plot_fault_bus_voltage(t, v_ours, v_psat, t_fault, t_clear, path, capti
 f = newfig(900, 450);
 ax = axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 plot(ax, t, v_ours, sm().ours.line_style, 'Color', sm().ours.color, 'LineWidth', 1.6);
-if ~isempty(v_psat)
+if ~isempty(v_psat) && numel(v_psat) == numel(t)
     plot(ax, t, v_psat, sm().psat.line_style, 'Color', sm().psat.color, 'LineWidth', 1.4);
 end
 mark_events(ax, t_fault, t_clear);
@@ -177,20 +177,28 @@ export(f, path);
 write_caption(path, caption_meta);
 end
 
-function plot_fixed_adaptive_overlay(t, delta_fixed, delta_adaptive, t_fault, t_clear, path, caption_meta)
+function plot_fixed_adaptive_overlay(t_fixed, delta_fixed, t_adaptive, delta_adaptive, t_fault, t_clear, path, caption_meta)
 f = newfig(900, 600);
 tl = tiledlayout(f, 2, 1, 'Padding','compact','TileSpacing','compact');
 ax1 = nexttile(tl); hold(ax1,'on'); grid(ax1,'on'); box(ax1,'on');
-plot(ax1, t, delta_fixed, sm().fixed.line_style, 'Color', sm().fixed.color, 'LineWidth', 1.5);
-plot(ax1, t, delta_adaptive, sm().adaptive.line_style, 'Color', sm().adaptive.color, 'LineWidth', 1.5);
+plot(ax1, t_fixed, delta_fixed, sm().fixed.line_style, 'Color', sm().fixed.color, 'LineWidth', 1.5);
+plot(ax1, t_adaptive, delta_adaptive, sm().adaptive.line_style, 'Color', sm().adaptive.color, 'LineWidth', 1.5);
 mark_events(ax1, t_fault, t_clear);
 xlabel('Time (s)'); ylabel('COI angle (deg)'); title('Fixed vs adaptive overlay');
 legend({sm().fixed.display, sm().adaptive.display}, 'Location','best');
 ax2 = nexttile(tl); hold(ax2,'on'); grid(ax2,'on'); box(ax2,'on');
-diff = delta_fixed - delta_adaptive;
-plot(ax2, t, diff, '-', 'Color', [0.5 0 0.5], 'LineWidth', 1.3);
+% Plot difference only when grids are identical (no extrapolation).
+if numel(t_fixed) == numel(t_adaptive) && isequaln(t_fixed, t_adaptive)
+    diff = delta_fixed - delta_adaptive;
+    plot(ax2, t_fixed, diff, '-', 'Color', [0.5 0 0.5], 'LineWidth', 1.3);
+    ylabel('Difference (deg)');
+else
+    text(ax2, 0.5, 0.5, 'Grids differ: difference panel omitted (no extrapolation)', ...
+        'Units','normalized','HorizontalAlignment','center');
+    ylabel('(n/a)');
+end
 mark_events(ax2, t_fault, t_clear);
-xlabel('Time (s)'); ylabel('Difference (deg)'); title('Fixed $-$ adaptive');
+xlabel('Time (s)'); title('Fixed $-$ adaptive');
 export(f, path);
 write_caption(path, caption_meta);
 end

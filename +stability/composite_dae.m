@@ -162,13 +162,76 @@ if ~isempty(fault_bus) && ~isempty(Zf)
     end
 end
 
+% --- B4: Optional explicit vcon (voltage constraint) input contract --------
+% vcon is OPTIONAL. When present, it declares KCL residual rows to be
+% REPLACED by FIXED y-only constraint equations (e.g. slack-bus voltage
+% specification). Explicit, declared — never inferred from bus type.
+%
+% Contract (frozen):
+%   opt.vcon.vars - algebraic variable indices constrained (1-based into y)
+%   opt.vcon.rows - KCL residual rows replaced (1-based into g, length 2*nb)
+%   opt.vcon.eq  - USER-FACING constraint residual eq(y, ref), FIXED y-only
+%   opt.vcon.ref - reference value(s) bound into eq (scalar or vector)
+%
+% Cardinality: numel(vars)==numel(rows) REQUIRED (one replaced row per
+% constraint). INDEX VALUES may differ (vars=[1,2],rows=[3,4] is VALID).
+% The runtime handle stored is vcon_eq(x,y) = eq(y,ref) (adapter drops x,
+% binds ref); the user-facing eq(y,ref) is NEVER called by multimachine_ssa.
+% Serializable metadata dae.vcon stores vars/rows/kind only (NO handle).
+vcon = struct('vars',[],'rows',[],'eq',[],'ref',[],'kind','');
+has_vcon = isfield(opt,'vcon') && ~isempty(opt.vcon) && ...
+    (~isempty(opt.vcon.vars) || ~isempty(opt.vcon.rows));
+if has_vcon
+    v = opt.vcon;
+    if ~isstruct(v) || ~isfield(v,'vars') || ~isfield(v,'rows') || ~isfield(v,'eq')
+        error('composite_dae:partialVcon', ...
+            'vcon requires fields vars, rows, eq (and ref for eq(y,ref)).');
+    end
+    vcon.vars = v.vars(:).';
+    vcon.rows = v.rows(:).';
+    if ~isa(v.eq,'function_handle')
+        error('composite_dae:badVconEq', 'vcon.eq must be a function handle eq(y,ref).');
+    end
+    if isfield(v,'ref') && ~isempty(v.ref)
+        vcon.ref = v.ref;
+    else
+        vcon.ref = [];
+    end
+    % Cardinality: numel(vars)==numel(rows) REQUIRED.
+    if numel(vcon.vars) ~= numel(vcon.rows)
+        error('composite_dae:vconCardinality', ...
+            'vcon.vars (%d) and vcon.rows (%d) must have EQUAL cardinality (index values may differ).', ...
+            numel(vcon.vars), numel(vcon.rows));
+    end
+    % Validate indices: unique, finite integers, in range.
+    nr = 2*nb; ny = 2*nb;
+    all_idx = [vcon.vars, vcon.rows];
+    if any(all_idx ~= floor(all_idx)) || any(all_idx < 1) || ...
+       any(vcon.vars > ny) || any(vcon.rows > nr) || ...
+       numel(unique(vcon.vars)) ~= numel(vcon.vars) || ...
+       numel(unique(vcon.rows)) ~= numel(vcon.rows)
+        error('composite_dae:badVconIndex', ...
+            'vcon indices must be unique finite integers in range.');
+    end
+    % Build the runtime adapter @(x,y) eq(y, ref). FIXED y-only: drops x,
+    % binds ref. The runtime handle keeps the (x,y) ABI so the SAME SSSA
+    % checker path works for any future non-y-only variant (B6 verifies
+    % dvcon_eq/dx==0 at runtime).
+    ref_bound = vcon.ref;
+    vcon_eq_handle = @(x,y) v.eq(y, ref_bound);
+    vcon.eq = vcon_eq_handle;
+    vcon.kind = 'fixed_y_only';
+    vcon.ref_serializable = ref_bound;   % for metadata (no handle)
+end
+
 % --- Composite closures ---------------------------------------------------
 % dae_f(t,x,y,u,event_context): concatenate device differential RHS.
 dae_f = @(t,x,y,u,event_context) composite_f(t, x, y, u, event_context, ...
     devices, offsets, u_offsets);
-% dae_g(t,x,y,Y,u,event_context): network KCL g = Y*V - Ibus (canonical YV-I).
+% dae_g(t,x,y,Y,u,event_context): network KCL g = Y*V - Ibus (canonical YV-I),
+% with declared vcon rows REPLACED by vcon_eq components (B4).
 dae_g = @(t,x,y,Y,u,event_context) composite_g(t, x, y, Y, u, event_context, ...
-    devices, offsets, u_offsets, bus_map, nb);
+    devices, offsets, u_offsets, bus_map, nb, vcon);
 % current_injection(t,x,y,u,event_context): Ibus per bus (complex).
 current_injection = @(t,x,y,u,event_context) composite_Ibus(t, x, y, u, ...
     event_context, devices, offsets, u_offsets, bus_map, nb);
@@ -214,6 +277,15 @@ for k = 1:nd
     meta(k).u_range = (u_offsets(k)+1):(u_offsets(k)+dev.nu);
 end
 dae.metadata = meta;
+% B4: vcon ownership. Store the runtime handle separately (NOT serialized
+% with metadata). dae.vcon holds serializable ownership data only.
+if has_vcon
+    dae.vcon_eq = vcon.eq;   % runtime handle model.vcon_eq(x,y), for SSSA
+    dae.vcon = struct('vars',vcon.vars,'rows',vcon.rows, ...
+        'kind',vcon.kind,'ref',vcon.ref_serializable);
+else
+    dae.vcon = struct('vars',[],'rows',[],'kind','','ref',[]);
+end
 end
 
 % =========================================================================
@@ -233,13 +305,25 @@ for k = 1:nd
 end
 end
 
-function g = composite_g(t, x, y, Y, u, event_context, devices, offsets, u_offsets, bus_map, nb)
+function g = composite_g(t, x, y, Y, u, event_context, devices, offsets, u_offsets, bus_map, nb, vcon)
 % Canonical KCL: g = Y*V - Ibus (YV-I). Devices return positive injection.
+% B4: when vcon is declared, the KCL residual rows in vcon.rows are
+% REPLACED (exactly once each) by the corresponding vcon_eq(x,y) components.
 V = complex(y(1:2:end), y(2:2:end));
 Ibus = composite_Ibus(t, x, y, u, event_context, devices, offsets, u_offsets, bus_map, nb);
 gc = Y*V - Ibus;   % canonical YV-I
 g = zeros(2*nb,1);
 g(1:2:end) = real(gc); g(2:2:end) = imag(gc);
+% B4: replace declared KCL rows with vcon_eq components (FIXED y-only).
+if ~isempty(vcon.rows)
+    gcon = vcon.eq(x, y);   % runtime adapter @(x,y) eq(y,ref)
+    if numel(gcon) ~= numel(vcon.rows)
+        error('composite_dae:vconEqDim', ...
+            'vcon.eq output length %d must match vcon.rows length %d.', ...
+            numel(gcon), numel(vcon.rows));
+    end
+    g(vcon.rows) = gcon(:);
+end
 end
 
 function Ibus = composite_Ibus(t, x, y, u, event_context, devices, offsets, u_offsets, bus_map, nb)

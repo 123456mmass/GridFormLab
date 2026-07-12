@@ -55,6 +55,7 @@ s.dae_f = @(x,y) dae.dae_f(x,y);
 s.dae_g = @(x,y,Y) dae.dae_g(x,y,Y);
 s.jac_y = @(x,y,Y) stability.ts_jac_y_fd(x,y,Y,dae.dae_g);
 s.needs_jyy = true;
+s.needs_algebraic_solve = true;
 s.electrical_power = @(x,y) dae.electrical_power(x,y);
 s.state_split = struct('ng',ng,'ns',ns, ...
     'delta_idx',1:ns:(ns*ng), 'omega_idx',2:ns:(ns*ng));
@@ -70,6 +71,7 @@ s.dae_f = @(x,y) dae.dae_f(x,y);
 s.dae_g = @(x,y,Y) dae.dae_g(x,y,Y);
 s.jac_y = @(x,y,Y) stability.ts_jac_y_fd(x,y,Y,dae.dae_g);
 s.needs_jyy = true;
+s.needs_algebraic_solve = true;
 s.electrical_power = @(x,y) dae.electrical_power(x,y);
 s.state_split = struct('ng',ng,'ns',ns, ...
     'delta_idx',1:ns:(ns*ng), 'omega_idx',2:ns:(ns*ng));

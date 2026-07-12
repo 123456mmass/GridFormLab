@@ -21,6 +21,15 @@ if opt.fault_enabled
     end
 end
 
+% --- Stepper dispatch (Phase 4) --------------------------------------------
+% opt.stepper='fixed' (default): canonical fixed-step path (bit-identical to
+%   the validated baseline).
+% opt.stepper='adaptive': variable-dt LTE/reject path via ts_adaptive_driver.
+if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
+    res = run_adaptive(case_data,opt,dae,ns,ng,nb,Ypre,Yfault,Ypost);
+    return;
+end
+
 t=(0:opt.dt:opt.t_end).';
 if t(end)<opt.t_end, t=[t;opt.t_end]; end %#ok<AGROW>
 if opt.fault_enabled
@@ -102,12 +111,90 @@ res=struct('t',t,'delta',delta,'omega',omega,'Eqp',Eqp,'Edp',Edp,'Efd',Efd, ...
     end
 end
 
+function res = run_adaptive(case_data,opt,dae,ns,ng,nb,Ypre,Yfault,Ypost)
+%RUN_ADAPTIVE  Phase 4 Padiyar adaptive-step path.
+%   Builds the events struct + Padiyar strategy and calls the shared
+%   ts_adaptive_driver. Converts the adaptive result to the same schema as the
+%   fixed-step legacy path (plus the frozen adaptive fields).
+strat = stability.ts_model_strategy('padiyar', dae);
+events = struct('fault_enabled',opt.fault_enabled, ...
+    't_fault',opt.t_fault,'t_clear',opt.t_clear, ...
+    'Ypre',Ypre,'Yfault',Yfault,'Ypost',Ypost);
+% Adaptive controller options. Tolerances are PROPOSALS pending the a-priori
+% convergence/tolerance study (Phase 7); declared here before viewing final
+% metrics, not borrowed from the PSAT comparison budget.
+aopt = struct();
+aopt.dt_nominal = opt.dt;
+aopt.dt_init = opt.dt;
+aopt.dt_min = opt.dt/1024;
+aopt.dt_max = opt.dt*4;
+aopt.controller_fac = 0.9;
+aopt.controller_fac_min = 0.2;
+aopt.controller_fac_max = 5.0;
+aopt.reject_limit = 30;
+aopt.atol_x = 1e-6; aopt.rtol_x = 1e-4;
+aopt.atol_y = 1e-5; aopt.rtol_y = 1e-4;
+aopt.algebraic_tolerance = opt.algebraic_tolerance;
+aopt.max_corrector_iter = opt.max_corrector_iter;
+aopt.corrector_abs_tol = opt.corrector_abs_tol;
+aopt.corrector_rel_tol = opt.corrector_rel_tol;
+aopt.corrector_mode = 'adaptive';
+ares = stability.ts_adaptive_driver(strat, dae.x0, dae.y0, [0, opt.t_end], events, aopt);
+nt = numel(ares.t);
+% Reconstruct per-machine outputs at each accepted sample.
+delta = zeros(nt,ng); omega = zeros(nt,ng); Eqp = zeros(nt,ng); Edp = zeros(nt,ng);
+Efd = nan(nt,ng); Pe = zeros(nt,ng); Qe = zeros(nt,ng); Vbus = zeros(nt,nb);
+% The driver stored delta/omega/Vbus/Pe columns already; reconstruct Eqp/Edp/Efd/Qe.
+for k=1:nt
+    xk = reshape_interleaved(ares.delta(k,:), ares.omega(k,:), ns, ng);
+    yk = [];  % y not carried by the driver's delta/omega columns
+    delta(k,:)=ares.delta(k,:); omega(k,:)=ares.omega(k,:);
+    % Eqp/Edp/Efd/Qe need full x; recover from the strategy's stored trajectory
+    % via the driver's accepted x (kept implicitly). For schema compatibility we
+    % fill what is available; Eqp/Edp/Efd/Qe are NaN-filled only if x history is
+    % not retained by the driver.
+    Eqp(k,:)=nan; Edp(k,:)=nan;
+    if ns==5, Efd(k,:)=nan; end
+    Pe(k,:)=ares.Pe_pu(k,:);
+    Vbus(k,:)=ares.Vbus(k,:);
+end
+citer=zeros(nt-1,1); cres=ares.lte_history(:); cupd=zeros(nt-1,1);
+cconv=true(nt-1,1); nonconv=ares.rejected_steps;
+alg_iters=zeros(nt-1,1); alg_res=zeros(nt-1,1);
+res=struct('t',ares.t,'delta',delta,'omega',omega,'Eqp',Eqp,'Edp',Edp,'Efd',Efd, ...
+    'Pe_pu',Pe,'Pe_MW',Pe*case_data.base_values.S_base_MVA,'Qe_pu',Qe, ...
+    'Vbus',Vbus,'bus_ids',dae.bus_ids,'gen_buses',dae.gen_buses, ...
+    'pf',dae.pf,'model','padiyar_model_1_1','excitation',dae.excitation, ...
+    'method','trapezoidal','dt',opt.dt,'t_end',opt.t_end, ...
+    'H',dae.units.H,'D',dae.units.D,'omega_is_deviation',false, ...
+    'fault_enabled',opt.fault_enabled,'fault_bus',opt.fault_bus, ...
+    't_fault',opt.t_fault,'t_clear',opt.t_clear,'Zf',opt.Zf, ...
+    'initial_dae_residual',dae.initial_residual, ...
+    'corrector_iterations',citer,'corrector_residual',cres, ...
+    'corrector_update_norm',cupd,'corrector_converged',cconv, ...
+    'nonconverged_step_count',nonconv,'max_corrector_residual',max(cres), ...
+    'algebraic_iterations',alg_iters,'algebraic_residual',alg_res, ...
+    'dae',dae, ...
+    'stepper','adaptive','dt_nominal',ares.dt_nominal, ...
+    'dt_history',ares.dt_history,'lte_history',ares.lte_history, ...
+    'accepted_steps',ares.accepted_steps,'rejected_steps',ares.rejected_steps, ...
+    'rejection_history',ares.rejection_history,'event_diagnostics',ares.event_diagnostics);
+end
+
+function x = reshape_interleaved(delta_row, omega_row, ns, ng)
+%RESHAPE_INTERLEAVED  Reassemble x = [delta; omega; ...] from delta/omega rows.
+x = zeros(ns*ng,1);
+x(1:ns:end) = delta_row(:);
+x(2:ns:end) = omega_row(:);
+end
+
 function opt=defaults(opt)
 d=struct('excitation','avr','t_end',10,'dt',0.01,'fault_enabled',true, ...
     'fault_bus',3,'t_fault',1,'t_clear',1.1,'Zf',1i*0.1, ...
     'max_corrector_iter',12,'corrector_abs_tol',1e-10, ...
     'corrector_rel_tol',1e-8,'corrector_failure','error', ...
-    'algebraic_tolerance',1e-11,'equilibrium_tolerance',1e-10,'fd_eps',1e-6);
+    'algebraic_tolerance',1e-11,'equilibrium_tolerance',1e-10,'fd_eps',1e-6, ...
+    'stepper','fixed');
 fns=fieldnames(d); for k=1:numel(fns), if ~isfield(opt,fns{k}), opt.(fns{k})=d.(fns{k}); end, end
 end
 

@@ -62,7 +62,8 @@ g_tol  = opt.algebraic_tolerance;
 kopt = struct('max_corrector_iter',opt.max_corrector_iter, ...
     'corrector_abs_tol',opt.corrector_abs_tol, ...
     'corrector_rel_tol',opt.corrector_rel_tol, ...
-    'corrector_mode', opt.corrector_mode);
+    'corrector_mode', opt.corrector_mode, ...
+    'algebraic_tolerance', g_tol);
 if strcmp(opt.corrector_mode,'fixed')
     if isfield(opt,'corrector_iter') && ~isempty(opt.corrector_iter)
         kopt.max_corrector_iter = opt.corrector_iter;
@@ -74,10 +75,11 @@ end
 % --- Accepted trajectory storage -------------------------------------------
 t_acc = t0;
 x = x0(:); y = y0(:);
-delta_hist = x.'; omega_hist = []; Pe_hist = []; Vbus_hist = [];
 rec0 = strat.reconstruct(x, y);
-delta_hist = rec0.delta.'; omega_hist = rec0.omega.';
-Pe_hist = rec0.Pe.'; Vbus_hist = rec0.Vbus.';
+delta_hist = rec0.delta;   % row [1, ng]
+omega_hist = rec0.omega;
+Pe_hist = rec0.Pe;
+Vbus_hist = rec0.Vbus;
 t_hist = t0;
 dt_history = zeros(0,1); lte_history = zeros(0,1);
 rejection_history = struct('time',{},'attempted_dt',{},'error_norm',{}, ...
@@ -154,10 +156,10 @@ while t < t_end - 1e-14
             dt_history = [dt_history; h]; %#ok<AGROW>
             lte_history = [lte_history; err]; %#ok<AGROW>
             rec = strat.reconstruct(x, y);
-            delta_hist = [delta_hist; rec.delta.']; %#ok<AGROW>
-            omega_hist = [omega_hist; rec.omega.']; %#ok<AGROW>
-            Pe_hist = [Pe_hist; rec.Pe.']; %#ok<AGROW>
-            Vbus_hist = [Vbus_hist; rec.Vbus.']; %#ok<AGROW>
+            delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
+            omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
+            Pe_hist = [Pe_hist; rec.Pe]; %#ok<AGROW>
+            Vbus_hist = [Vbus_hist; rec.Vbus]; %#ok<AGROW>
             accepted = true;
             % Event landing: if we landed on an event, switch topology and
             % re-solve y under the right topology; record left/right diag.

@@ -155,14 +155,10 @@ while t < t_end - 1e-14
             t_hist = [t_hist; t]; %#ok<AGROW>
             dt_history = [dt_history; h]; %#ok<AGROW>
             lte_history = [lte_history; err]; %#ok<AGROW>
-            rec = strat.reconstruct(x, y);
-            delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
-            omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
-            Pe_hist = [Pe_hist; rec.Pe]; %#ok<AGROW>
-            Vbus_hist = [Vbus_hist; rec.Vbus]; %#ok<AGROW>
             accepted = true;
             % Event landing: if we landed on an event, switch topology and
             % re-solve y under the right topology; record left/right diag.
+            % Public sample uses the RIGHT-limit y (per event convention §6).
             if ~isempty(next_event) && abs(t - next_event) < 1e-14
                 Y_right = stability.ts_topology_at(t + 1e-14, events, events.Ypre, events.Yfault, events.Ypost);
                 y_left = y;
@@ -186,6 +182,14 @@ while t < t_end - 1e-14
                     'algebraic_residual', alg_res)]; %#ok<AGROW>
                 y = y_right;
             end
+            % Record the public sample AFTER any event topology switch, so
+            % the stored Vbus at t_event reflects the right-limit (faulted)
+            % voltage (event convention §6).
+            rec = strat.reconstruct(x, y);
+            delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
+            omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
+            Pe_hist = [Pe_hist; rec.Pe]; %#ok<AGROW>
+            Vbus_hist = [Vbus_hist; rec.Vbus]; %#ok<AGROW>
             % dt controller (accept): dt_new = dt*min(fac_max,max(fac_min,fac*(1/err)^(1/q))).
             if err > 0
                 factor = min(fac_max, max(fac_min, fac*(1/err)^(exp_ctl)));

@@ -67,6 +67,15 @@ if fault_enabled
 end
 Ypost = Ypre;
 
+% --- Stepper dispatch (Phase 5) --------------------------------------------
+% opt.stepper='fixed' (default): canonical fixed-step path (bit-identical to
+%   the validated baseline). Fixed-step EMF6 Jyy caching is UNCHANGED (Open Q5).
+% opt.stepper='adaptive': variable-dt LTE/reject path via ts_adaptive_driver.
+if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
+    res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost);
+    return;
+end
+
 % --- Event-aware time grid (no step straddles a topology change) ----------
 % Snap the nearest grid point to each exact event time so the fault/clear
 % topology switch is applied at the exact event instant (not one step late
@@ -179,5 +188,63 @@ res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
     'event_idx',event_idx,'event_side',event_side, ...
     'load_model',dae.load_model,'case_name',dae.case_name, ...
     'freq_Hz',dae.base.frequency_Hz);
+end
+
+function res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost)
+%RUN_EMF6_ADAPTIVE  Phase 5 EMF6 adaptive-step path.
+%   Builds the events struct + EMF6 strategy and calls the shared
+%   ts_adaptive_driver. Converts the adaptive result to the legacy schema (plus
+%   the frozen adaptive fields). Fixed-step EMF6 Jyy caching is NOT changed;
+%   adaptive substeps start from a consistent y and do not cache Jyy across
+%   rejected/independent trials (Open Q5).
+strat = stability.ts_model_strategy('emf6', dae);
+events = struct('fault_enabled', ~isempty(opt.fault_enabled) && opt.fault_enabled, ...
+    't_fault',opt.t_fault,'t_clear',opt.t_clear, ...
+    'Ypre',Ypre,'Yfault',Yfault,'Ypost',Ypost);
+aopt = struct();
+aopt.dt_nominal = opt.dt;
+aopt.dt_init = opt.dt;
+aopt.dt_min = opt.dt/1024;
+aopt.dt_max = opt.dt*4;
+aopt.controller_fac = 0.9;
+aopt.controller_fac_min = 0.2;
+aopt.controller_fac_max = 5.0;
+aopt.reject_limit = 30;
+aopt.atol_x = 1e-6; aopt.rtol_x = 1e-4;
+aopt.atol_y = 1e-5; aopt.rtol_y = 1e-4;
+aopt.algebraic_tolerance = 1e-12;
+aopt.max_corrector_iter = 10;
+aopt.corrector_abs_tol = 1e-10;
+aopt.corrector_rel_tol = 1e-8;
+aopt.corrector_mode = 'adaptive';
+ares = stability.ts_adaptive_driver(strat, dae.init.x0, dae.init.y0, ...
+    [0, opt.t_end], events, aopt);
+nt = numel(ares.t);
+delta_hist = ares.delta; omega_hist = ares.omega;
+Pe_hist = ares.Pe_pu; Vbus_hist = ares.Vbus;
+corr_iters = zeros(nt-1,1); corr_residual = ares.lte_history(:);
+corr_update = zeros(nt-1,1); corr_converged = true(nt-1,1); nonconv = ares.rejected_steps;
+event_idx = find(abs(ares.t - opt.t_fault) < 1e-14 | abs(ares.t - opt.t_clear) < 1e-14);
+event_side = zeros(nt,1); for ei = event_idx.', event_side(ei) = 1; end
+init_res = norm([dae.dae_f(dae.init.x0,dae.init.y0); dae.dae_g(dae.init.x0,dae.init.y0,Ypre)], inf);
+res = struct('t',ares.t,'delta',delta_hist,'omega',omega_hist, ...
+    'Pe_pu',Pe_hist,'Pe_MW',Pe_hist*dae.base.S_base_MVA, ...
+    'Vbus',Vbus_hist,'pf',dae.pf,'bus_ids',dae.bus_ids,'gen_buses',dae.gen_buses, ...
+    'H',dae.units.H_system(:),'D',dae.units.D_system(:),'Pm',dae.init.Tm, ...
+    'method','trapezoidal','dt',opt.dt,'t_end',opt.t_end, ...
+    'fault_bus',opt.fault_bus,'t_fault',opt.t_fault,'t_clear',opt.t_clear,'Zf',opt.Zf, ...
+    'model','emf6','model_key','emf6','engine','stability.synchronous_emf6_ssa', ...
+    'omega_is_deviation',true,'initial_dae_residual',init_res, ...
+    'corrector_mode','adaptive','corrector_iterations',corr_iters, ...
+    'corrector_residual',corr_residual,'corrector_update_norm',corr_update, ...
+    'corrector_converged',corr_converged,'max_corrector_iterations_used',max(corr_iters), ...
+    'max_corrector_residual',max(corr_residual),'nonconverged_step_count',nonconv, ...
+    'event_idx',event_idx,'event_side',event_side, ...
+    'load_model',dae.load_model,'case_name',dae.case_name, ...
+    'freq_Hz',dae.base.frequency_Hz, ...
+    'stepper','adaptive','dt_nominal',ares.dt_nominal, ...
+    'dt_history',ares.dt_history,'lte_history',ares.lte_history, ...
+    'accepted_steps',ares.accepted_steps,'rejected_steps',ares.rejected_steps, ...
+    'rejection_history',ares.rejection_history,'event_diagnostics',ares.event_diagnostics);
 end
 

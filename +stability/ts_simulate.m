@@ -611,6 +611,20 @@ if has_provider
         kopt.event_context = opt.event_context;
     end
 end
+% B9: bundle adaptive routing via canonical ts_adaptive_driver. When
+% opt.stepper == 'adaptive', delegate to ts_adaptive_driver (which already
+% shares ts_step_kernel and, after B3, ts_event_transition). DO NOT
+% duplicate step-doubling/acceptance/rollback/event logic. Default stays
+% FIXED (absent or 'fixed' => fixed-step loop below).
+stepper = 'fixed';
+if isfield(opt,'stepper') && ~isempty(opt.stepper)
+    stepper = lower(opt.stepper);
+end
+if strcmp(stepper, 'adaptive')
+    res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
+        events_b, opt, kopt, has_provider);
+    return;
+end
 for k = 2:nt
     tk_prev = t(k-1); tk = t(k); hk = tk - tk_prev;
     % B3: arrival step uses LEFT topology (selected by time via
@@ -646,6 +660,63 @@ res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
     'method',opt.method,'dt',dt,'t_end',t_end, ...
     'fault_bus',opt.fault_bus,'t_fault',t_fault,'t_clear',t_clear,'Zf',opt.Zf);
 % R2 provenance metadata (no function handles serialized).
+if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
+    res.metadata = bundle.metadata;
+else
+    res.metadata = struct();
+end
+if has_bundle_field(opt,'model_bundle')
+    res.metadata.dispatch = 'explicit_model_bundle';
+elseif has_bundle_field(opt,'model_fn')
+    res.metadata.dispatch = 'explicit_model_fn';
+else
+    res.metadata.dispatch = 'built_in_string';
+end
+end
+
+function res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
+    events_b, opt, kopt, has_provider) %#ok<INUSD>
+%RUN_MODEL_BUNDLE_ADAPTIVE  B9: delegate bundle adaptive to ts_adaptive_driver.
+%   Builds the adaptive opt struct from the bundle opt and calls
+%   stability.ts_adaptive_driver, which already shares ts_step_kernel and
+%   ts_event_transition (B3). NO duplicated step-doubling/acceptance/rollback/
+%   event logic. Result schema aligned with the fixed-step bundle result.
+aopt = struct();
+aopt.dt_nominal = opt.dt;
+aopt.dt_init = opt.dt;
+if isfield(opt,'dt_min'), aopt.dt_min = opt.dt_min; else, aopt.dt_min = opt.dt/100; end
+if isfield(opt,'dt_max'), aopt.dt_max = opt.dt_max; else, aopt.dt_max = opt.dt*10; end
+aopt.atol_x = 1e-6; aopt.rtol_x = 1e-4;
+aopt.atol_y = 1e-5; aopt.rtol_y = 1e-4;
+if isfield(opt,'atol_x'), aopt.atol_x = opt.atol_x; end
+if isfield(opt,'rtol_x'), aopt.rtol_x = opt.rtol_x; end
+if isfield(opt,'atol_y'), aopt.atol_y = opt.atol_y; end
+if isfield(opt,'rtol_y'), aopt.rtol_y = opt.rtol_y; end
+aopt.algebraic_tolerance = kopt.algebraic_tolerance;
+aopt.max_corrector_iter = kopt.max_corrector_iter;
+aopt.corrector_abs_tol = kopt.corrector_abs_tol;
+aopt.corrector_rel_tol = kopt.corrector_rel_tol;
+aopt.corrector_mode = kopt.corrector_mode;
+aopt.controller_fac = 0.9;
+aopt.controller_fac_min = 0.2;
+aopt.controller_fac_max = 5.0;
+aopt.reject_limit = 10;
+ares = stability.ts_adaptive_driver(strat, x0, y0, [0, opt.t_end], events_b, aopt);
+% Assemble the result schema to match the fixed-step bundle result.
+res = struct('t',ares.t,'delta',ares.delta,'omega',ares.omega, ...
+    'Pe_pu',ares.Pe_pu,'Vbus',ares.Vbus,'model',strat.model, ...
+    'gen_buses',mapping.gen_buses,'bus_ids',mapping.bus_ids, ...
+    'method',opt.method,'dt',opt.dt,'t_end',opt.t_end, ...
+    'fault_bus',opt.fault_bus,'t_fault',events_b.t_fault, ...
+    't_clear',events_b.t_clear,'Zf',opt.Zf);
+res.stepper = 'adaptive';
+res.dt_history = ares.dt_history;
+res.lte_history = ares.lte_history;
+res.accepted_steps = ares.accepted_steps;
+res.rejected_steps = ares.rejected_steps;
+res.rejection_history = ares.rejection_history;
+res.event_diagnostics = ares.event_diagnostics;
+% Provenance.
 if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
     res.metadata = bundle.metadata;
 else

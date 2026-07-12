@@ -139,3 +139,48 @@ testCase.verifyTrue(isempty(strat.provider), 'provider absent when set to [].');
 % The legacy run must still produce a finite trajectory.
 testCase.verifyTrue(all(isfinite(r1.delta(:))), 'legacy classical trajectory finite.');
 end
+
+function test_absent_vs_empty_provider_exact_equality(testCase)
+% B8: absent-vs-empty provider legacy equivalence. Run the SAME strategy
+% three ways: (1) no provider field; (2) provider=[] explicitly; (3) pure
+% legacy ts_simulate string run. Assert EXACT equality (AbsTol=0) of all
+% trajectory/output fields that should be identical: delta, omega, Pe, Vbus.
+c = cases.case_matpower6_case14();
+opt_base = struct('t_end',1,'dt',0.02,'fault_bus',4,'t_fault',1.0, ...
+    't_clear',1.1,'Zf',1i*0.1,'pm_mode','pgaz','corrector_mode','adaptive', ...
+    'corrector_iter',10,'max_corrector_iter',10,'verbose',false);
+% (3) Pure legacy string run.
+r_legacy = stability.ts_simulate(c, opt_base);
+% Build a bundle with NO provider field.
+cdae = stability.classical_dae(c, opt_base);
+strat_no_provider = stability.ts_model_strategy('classical', cdae);
+% (strat_no_provider.provider defaults to [] via ts_model_strategy L56-58.)
+bundle1 = struct();
+ts1 = struct('strategy',strat_no_provider,'x0',cdae.x0,'y0',cdae.y0, ...
+    'topology',struct('Ypre',cdae.Ynet,'Yfault',cdae.Ynet,'Ypost',cdae.Ynet), ...
+    'mapping',struct('bus_ids',cdae.bus_ids,'gen_buses',cdae.gen_buses), ...
+    'metadata',struct('device_id','test','device_type','classical','provenance','test'));
+bundle1.ts = ts1; bundle1.metadata = struct('dispatch','explicit_model_bundle');
+opt1 = opt_base; opt1.model_bundle = bundle1;
+r_no_provider = stability.ts_simulate(c, opt1);
+% Build a bundle with provider=[] explicitly.
+strat_empty = strat_no_provider;
+strat_empty.provider = [];
+bundle2 = bundle1; bundle2.ts.strategy = strat_empty;
+opt2 = opt_base; opt2.model_bundle = bundle2;
+r_empty = stability.ts_simulate(c, opt2);
+% AbsTol=0 exact equality across all three.
+testCase.verifyEqual(r_no_provider.delta, r_empty.delta, 'AbsTol', 0, ...
+    'no-provider vs provider=[] delta bit-identical.');
+testCase.verifyEqual(r_no_provider.omega, r_empty.omega, 'AbsTol', 0, ...
+    'no-provider vs provider=[] omega bit-identical.');
+testCase.verifyEqual(r_no_provider.Pe_pu, r_empty.Pe_pu, 'AbsTol', 0, ...
+    'no-provider vs provider=[] Pe bit-identical.');
+testCase.verifyEqual(r_no_provider.Vbus, r_empty.Vbus, 'AbsTol', 0, ...
+    'no-provider vs provider=[] Vbus bit-identical.');
+% Both bundle runs must equal the pure-legacy string run (AbsTol=0).
+testCase.verifyEqual(r_no_provider.delta, r_legacy.delta, 'AbsTol', 0, ...
+    'bundle no-provider == legacy string delta.');
+testCase.verifyEqual(r_empty.delta, r_legacy.delta, 'AbsTol', 0, ...
+    'bundle provider=[] == legacy string delta.');
+end

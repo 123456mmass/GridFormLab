@@ -1,4 +1,4 @@
-function out = run_three_way_validation(case_name, scenario, plateau_ci)
+function out = run_three_way_validation(case_name, scenario, plateau_ci, return_raw)
 %RUN_THREE_WAY_VALIDATION  Fresh Ours + PSAT + PGAz three-way cross-validation.
 %   All three tools run FRESH (no saved trajectories). PSAT/PGAz are reference
 %   tools only (never production deps). Generators mapped by bus ID. COI frame
@@ -14,13 +14,38 @@ function out = run_three_way_validation(case_name, scenario, plateau_ci)
 %   honestly (gates.pgaz_status) when available. The plateau-PGAz-vs-Ours
 %   comparison uses a TIGHT tolerance (0.05 deg COI) justified a priori by
 %   the PSAT-Ours converged-trapezoidal baseline (~0.01 deg at dt=0.01).
+%
+%   RETURN_RAW (optional, 4th arg, default false): when true, the output struct
+%   additionally carries raw trajectories (out.raw) for the report generator to
+%   plot without re-running the tools. This is a mechanical, structured-output
+%   addition only — no duplicate mapping/interpolation/metric logic, no change
+%   to gates, tolerances, mappings, or acceptance criteria. The raw block is
+%   populated only for tools that ran successfully (ran=true); on failure the
+%   corresponding raw fields are empty and the failure metadata is preserved.
+%
+%   Fail-soft: when PSAT/PGAz execution is caught as a failure, NO reference-
+%   tool trajectory field (ps.t, TS.t, etc.) is dereferenced afterward. The
+%   ran=false status and failure metadata are returned; the caller (report
+%   orchestrator) explicitly selects a metadata-validated SAVED artifact.
+%
+%   MATLAB path safety: the MATLAB path is snapshotted before any PSAT/PGAz
+%   addpath and restored on exit (onCleanup), so external PSAT/PGAz paths
+%   cannot contaminate the regression suite or test_no_external_solver_dependency.
 if nargin<2, scenario=struct(); end
 if nargin<3 || isempty(plateau_ci), plateau_ci=8; end
+if nargin<4, return_raw=false; end
 sc = struct('fault_bus',4,'t_fault',1.0,'t_clear',1.1,'Zf',1i*0.1, ...
     'dt',0.01,'t_end',15.0);
 fn = fieldnames(scenario); for k=1:numel(fn), sc.(fn{k})=scenario.(fn{k}); end
 root = pf_init_paths;
-addpath('/home/birds/Documents/PGAz_V1.1.1');
+
+% --- MATLAB path snapshot (restored on exit, even on PSAT/PGAz throw) -------
+path_snapshot = path();
+path_cleanup = onCleanup(@() path(path_snapshot)); %#ok<NASGU>
+
+% --- PSAT/PGAz temp-file cleanup (registered as files are created) ----------
+temp_files = {};
+temp_cleanup = onCleanup(@() remove_temp_files(temp_files)); %#ok<NASGU>
 
 c = cases.(case_name)();
 if ~isfield(c,'machines') || isempty(c.machines)
@@ -59,14 +84,21 @@ Hu = arrayfun(@(b) c.machines.units(find([c.machines.units.bus]==b,1)).H, gbus_o
 ro = coi_relative(d_ours, w_ours, Hu, gbus_ours);
 
 % --- PSAT (fresh) ---
-psat = struct('ran',false,'completed',false,'pf_conv',false,'td_points',NaN);
-ps = []; gbus_ps=[]; 
+% Fail-soft: ps is initialized empty; on catch, ps stays empty and psat.ran
+% remains false. NO dereference of ps.t after a failed catch.
+psat = struct('ran',false,'completed',false,'pf_conv',false,'td_points',NaN, ...
+    'failure_metadata', struct('failed',false,'error_id','','error_message','', ...
+    'adapter','','attempt_time',''));
+ps = []; gbus_ps=[];
 try
     if strcmp(case_name,'case_matpower6_case14')
         ps = run_psat_case14(sc);
     else
         pc = rts24_to_psat_case(c,'Zf',sc.Zf,'fault_bus',sc.fault_bus, ...
             't_fault',sc.t_fault,'t_clear',sc.t_clear);
+        % Register any temp PSAT case files for cleanup (rts24_to_psat_case
+        % may write temp .m files into the PSAT working dir).
+        temp_files = register_temp_files(temp_files, pc);
         ps = run_psat_rts24(pc);
     end
     if isfield(ps,'syn_bus') && ~isfield(ps,'delta_bus'), ps.delta_bus = ps.syn_bus; end
@@ -77,11 +109,20 @@ try
     psat.completed = ~isempty(ps.t) && ps.t(end)>=sc.t_end-1e-6;
     psat.td_points = ps.td_points;
     gbus_ps = sort(ps.delta_bus);
-catch e, warning('PSAT failed: %s', e.message); end
+catch e
+    warning('PSAT failed: %s', e.message);
+    psat.failure_metadata = struct('failed',true, ...
+        'error_id',e.identifier,'error_message',e.message, ...
+        'adapter','run_psat_case14/run_psat_rts24', ...
+        'attempt_time',datestr(now,'yyyy-mm-dd HH:MM:SS'));
+    ps = [];   % ensure no downstream dereference of ps.t
+end
 
 % --- PGAz (fresh, plateau corrector count) ---
 pgaz = struct('ran',false,'completed',false,'corrector_iter',plateau_ci, ...
-    'converged',false,'residual_available',false,'nt',NaN);
+    'converged',false,'residual_available',false,'nt',NaN, ...
+    'failure_metadata', struct('failed',false,'error_id','','error_message','', ...
+    'adapter','','attempt_time',''));
 TS = []; gbus_pg=[];
 try
     sys = case_to_pgaz_sys(c);
@@ -98,16 +139,24 @@ try
     pgaz.converged = false;
     pgaz.residual_available = false;
     gbus_pg = sort(TS.gen_bus);
-catch e, warning('PGAz failed: %s', e.message); end
+catch e
+    warning('PGAz failed: %s', e.message);
+    pgaz.failure_metadata = struct('failed',true, ...
+        'error_id',e.identifier,'error_message',e.message, ...
+        'adapter','pgaz_ts', ...
+        'attempt_time',datestr(now,'yyyy-mm-dd HH:MM:SS'));
+    TS = [];   % ensure no downstream dereference of TS.t
+end
 
 % --- Time-grid semantics ---
+% Safe dereference: only access ps.t / TS.t when the tool ran successfully.
 grid = struct();
 grid.common_tg = tg;
 grid.ours_nt = numel(r.t);
 grid.psat_nt = psat.td_points;
 grid.pgaz_nt = pgaz.nt;
-grid.raw_grid_equal_ours_psat = psat.ran && isequaln(r.t, ps.t);   % exact
-grid.raw_grid_equal_ours_pgaz = pgaz.ran && numel(r.t)==numel(TS.t) && isequaln(r.t, TS.t);
+grid.raw_grid_equal_ours_psat = psat.ran && ~isempty(ps) && isequaln(r.t, ps.t);
+grid.raw_grid_equal_ours_pgaz = pgaz.ran && ~isempty(TS) && numel(r.t)==numel(TS.t) && isequaln(r.t, TS.t);
 % comparison_grid_valid: common grid monotonic, covers [0,t_end], events on grid
 grid.comparison_grid_valid = all(diff(tg)>0) && abs(tg(1))<1e-12 && abs(tg(end)-sc.t_end)<1e-9 ...
     && any(abs(tg-sc.t_fault)<sc.dt/2) && any(abs(tg-sc.t_clear)<sc.dt/2);
@@ -115,17 +164,20 @@ grid.comparison_grid_valid = all(diff(tg)>0) && abs(tg(1))<1e-12 && abs(tg(end)-
 grid.event_grid_valid = any(abs(tg-sc.t_fault)<sc.dt/2) && any(abs(tg-sc.t_clear)<sc.dt/2);
 
 % --- Interpolate (NO zero-fill/extrapolation) + sample alignment ---
-[dps,wps,peps,vps_fault,psat_interp_ok] = interp_tool(ps.t, ps.delta, ps.omega, ps.Pe_pu, ps.Vbus, ...
-    ps.vbus_ids, ps.delta_bus, tg, sc.fault_bus, @rad2deg, 100);
-[dpg,wpg,pepg,vpg_fault,pgaz_interp_ok] = interp_tool(TS.t, TS.delta_deg, TS.omega, ...
-    TS.Pe_pu*TS.baseMVA, TS.Vm, [], TS.gen_bus, tg, sc.fault_bus, @(x)x, 1);
+% Safe: interp_tool guards on isempty(t_raw) internally.
+[dps,wps,peps,vps_fault,psat_interp_ok] = interp_tool(safe_t(ps), safe_delta(ps), ...
+    safe_omega(ps), safe_pe(ps), safe_vbus(ps), safe_vbus_ids(ps), safe_delta_bus(ps), ...
+    tg, sc.fault_bus, @rad2deg, 100);
+[dpg,wpg,pepg,vpg_fault,pgaz_interp_ok] = interp_tool(safe_t(TS), safe_delta_deg(TS), ...
+    safe_omega(TS), safe_pe_pgaz(TS), safe_vm(TS), [], safe_gen_bus(TS), ...
+    tg, sc.fault_bus, @(x)x, 1);
 grid.sample_alignment_psat = psat.ran && psat_interp_ok;
 grid.sample_alignment_pgaz = pgaz.ran && pgaz_interp_ok;
 % extrapolation_used is always false (interp_tool errors instead of extrapolating)
 grid.extrapolation_used = false;
 
-psat_map_ok = psat.ran && isequal(gbus_ps(:), gbus_ours(:));
-pgaz_map_ok = pgaz.ran && isequal(gbus_pg(:), gbus_ours(:));
+psat_map_ok = psat.ran && ~isempty(gbus_ps) && isequal(gbus_ps(:), gbus_ours(:));
+pgaz_map_ok = pgaz.ran && ~isempty(gbus_pg) && isequal(gbus_pg(:), gbus_ours(:));
 
 % --- COI frame (inertia-weighted, both angle and speed) ---
 drel_p=[]; wrel_p=[]; drel_g=[]; wrel_g=[];
@@ -200,6 +252,33 @@ out = struct('case',case_name,'scenario',sc,'gen_buses',gbus_ours, ...
     'psat',psat,'pgaz',pgaz,'ours_nonconv',ours_nonconv,'ours_completed',ours_completed, ...
     'tol',TOL);
 
+% --- Structured raw-trajectory return (for report generator plotting) -------
+% Populated only when return_raw=true. Raw fields are empty for tools that
+% did not run (ran=false); failure_metadata is preserved on the psat/pgaz
+% structs above. No duplicate mapping/interpolation/metric logic here —
+% the generator reuses coi_relative/interp_no_extrapolate on these raw arrays.
+if return_raw
+    out.raw = struct();
+    out.raw.common_tg = tg;
+    out.raw.ours = struct('t',r.t,'delta_deg',d_ours,'omega',w_ours, ...
+        'Pe_MW',pe_ours,'Vbus_fault',v_ours_fault,'gen_buses',gbus_ours, ...
+        'bus_ids',bus_ids_ours,'H',Hu,'fresh',true);
+    out.raw.psat = struct('t',safe_t(ps),'delta',safe_delta(ps),'omega',safe_omega(ps), ...
+        'Pe_pu',safe_pe(ps),'Vbus',safe_vbus(ps),'vbus_ids',safe_vbus_ids(ps), ...
+        'delta_bus',safe_delta_bus(ps),'gen_buses',gbus_ps,'H',Hu, ...
+        'fresh',psat.ran,'ran',psat.ran,'failure_metadata',psat.failure_metadata);
+    out.raw.pgaz = struct('t',safe_t(TS),'delta_deg',safe_delta_deg(TS), ...
+        'omega',safe_omega(TS),'Pe_pu',safe_pe_pgaz(TS),'Vm',safe_vm(TS), ...
+        'gen_buses',gbus_pg,'H',Hu,'baseMVA',safe_basemva(TS), ...
+        'fresh',pgaz.ran,'ran',pgaz.ran,'failure_metadata',pgaz.failure_metadata);
+    out.raw.mappings = struct('gen_buses_ours',gbus_ours, ...
+        'gen_buses_psat',gbus_ps,'gen_buses_pgaz',gbus_pg, ...
+        'bus_ids_ours',bus_ids_ours,'fault_bus',sc.fault_bus);
+    out.raw.status = struct('ours_fresh',true,'psat_fresh',psat.ran, ...
+        'pgaz_fresh',pgaz.ran,'psat_failed',psat.failure_metadata.failed, ...
+        'pgaz_failed',pgaz.failure_metadata.failed);
+end
+
 fprintf('\n=== Three-way validation: %s (fault bus %d, PGAz ci=%d) ===\n', case_name, sc.fault_bus, plateau_ci);
 fprintf('Contract Ybus: PGAz %s (%.2e)  PSAT %s (%.2e)\n', gate(contract_ybus_pgaz),cc.Ybus_max_dY_pgaz,gate(contract_ybus_psat),cc.Ybus_max_dY_psat);
 fprintf('Gen mapping: PSAT %s  PGAz %s\n', gate(psat_map_ok), gate(pgaz_map_ok));
@@ -211,6 +290,65 @@ if psat.ran, fprintf('PSAT vs Ours : PF dV=%.3e dAng=%.3e | TS dCOI=%.4f dw=%.3e
 if pgaz.ran, fprintf('PGAz vs Ours : PF dV=%.3e dAng=%.3e | TS dCOI=%.4f dw=%.3e dPe=%.4f dVm=%.3e\n', pf.pg_ours.dV,pf.pg_ours.dAng,ts.pg_ours.dCOI,ts.pg_ours.domega,ts.pg_ours.dPe,ts.pg_ours.dVm); end
 if psat.ran&&pgaz.ran, fprintf('PSAT vs PGAz : PF dV=%.3e dAng=%.3e | TS dCOI=%.4f dw=%.3e dPe=%.4f dVm=%.3e\n', pf.ps_pg.dV,pf.ps_pg.dAng,ts.ps_pg.dCOI,ts.ps_pg.domega,ts.ps_pg.dPe,ts.ps_pg.dVm); end
 fprintf('GATES: psat_comparison=%s pgaz_comparison=%s | ALL_GATES_PASS=%s\n', gate(gates.psat_comparison), gate(gates.pgaz_comparison), gate(gates.all_gates_pass));
+end
+
+% =========================================================================
+% Safe accessors: return empty when the reference-tool struct is empty (failed
+% or not run), so no downstream code dereferences a missing .t field.
+% =========================================================================
+function v = safe_t(s)
+if isempty(s) || ~isfield(s,'t'), v = []; else, v = s.t; end
+end
+function v = safe_delta(s)
+if isempty(s) || ~isfield(s,'delta'), v = []; else, v = s.delta; end
+end
+function v = safe_delta_deg(s)
+if isempty(s) || ~isfield(s,'delta_deg'), v = []; else, v = s.delta_deg; end
+end
+function v = safe_omega(s)
+if isempty(s) || ~isfield(s,'omega'), v = []; else, v = s.omega; end
+end
+function v = safe_pe(s)
+if isempty(s) || ~isfield(s,'Pe_pu'), v = []; else, v = s.Pe_pu; end
+end
+function v = safe_pe_pgaz(s)
+if isempty(s) || ~isfield(s,'Pe_pu'), v = []; else, v = s.Pe_pu; end
+end
+function v = safe_vbus(s)
+if isempty(s) || ~isfield(s,'Vbus'), v = []; else, v = s.Vbus; end
+end
+function v = safe_vbus_ids(s)
+if isempty(s) || ~isfield(s,'vbus_ids'), v = []; else, v = s.vbus_ids; end
+end
+function v = safe_delta_bus(s)
+if isempty(s) || ~isfield(s,'delta_bus'), v = []; else, v = s.delta_bus; end
+end
+function v = safe_gen_bus(s)
+if isempty(s) || ~isfield(s,'gen_bus'), v = []; else, v = s.gen_bus; end
+end
+function v = safe_vm(s)
+if isempty(s) || ~isfield(s,'Vm'), v = []; else, v = s.Vm; end
+end
+function v = safe_basemva(s)
+if isempty(s) || ~isfield(s,'baseMVA'), v = []; else, v = s.baseMVA; end
+end
+
+function files = register_temp_files(files, pc)
+% Register temp PSAT case files for onCleanup removal. pc may carry a
+% .temp_files field (cell of paths) from rts24_to_psat_case; if so, append.
+if isempty(pc), return; end
+if isstruct(pc) && isfield(pc,'temp_files') && ~isempty(pc.temp_files)
+    files = [files; pc.temp_files];
+end
+end
+
+function remove_temp_files(files)
+% Remove temp PSAT/PGAz case files, ignoring errors (best-effort cleanup).
+for i = 1:numel(files)
+    if exist(files{i}, 'file')
+        try, delete(files{i}); catch, end
+    end
+end
 end
 
 function [d,w,pe,vf,ok] = interp_tool(t_raw, delta_raw, omega_raw, pe_raw, V_raw, vbus_ids, gen_bus, tg, fault_bus, degfun, pe_scale)

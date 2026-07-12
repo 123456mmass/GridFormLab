@@ -96,12 +96,15 @@ function s = classical_strategy(dae, ~)
 % g. The algebraic state is solved exactly inside dae_f (via solve_network),
 % so needs_algebraic_solve=false and the kernel uses classical_step (which
 % skips ts_algebraic_solve). Jyy is [] (the "Jacobian" is -Y, exact and constant
-% per topology). needs_jyy=false.
+% per topology). needs_jyy=false. dae_g and jac_y are [] (empty, NOT function
+% handles) to satisfy validate_ts_strategy's linear-model contract; the kernel
+% never calls jac_y/dae_g on the classical path (it returns via classical_step
+% at ts_step_kernel.m:49 before reaching the jac_y call at L52).
 ng = dae.ng; nb = dae.nb;
 s.model = 'classical';
 s.dae_f = @(x,y,Y) dae.dae_f(x,y,Y);
 s.dae_g = [];
-s.jac_y = @(~,~,~) [];
+s.jac_y = [];
 s.needs_jyy = false;
 s.needs_algebraic_solve = false;
 s.electrical_power = @(x,y,Y) dae.electrical_power(x,y,Y);

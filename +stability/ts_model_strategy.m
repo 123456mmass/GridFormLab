@@ -59,7 +59,7 @@ s.needs_algebraic_solve = true;
 s.electrical_power = @(x,y) dae.electrical_power(x,y);
 s.state_split = struct('ng',ng,'ns',ns, ...
     'delta_idx',1:ns:(ns*ng), 'omega_idx',2:ns:(ns*ng));
-s.reconstruct = @(x,y) padiyar_reconstruct(x,y,dae);
+s.reconstruct = @(x,y,~) padiyar_reconstruct(x,y,dae);
 end
 
 function s = emf6_strategy(dae, ~)
@@ -75,7 +75,7 @@ s.needs_algebraic_solve = true;
 s.electrical_power = @(x,y) dae.electrical_power(x,y);
 s.state_split = struct('ng',ng,'ns',ns, ...
     'delta_idx',1:ns:(ns*ng), 'omega_idx',2:ns:(ns*ng));
-s.reconstruct = @(x,y) emf6_reconstruct(x,y,dae);
+s.reconstruct = @(x,y,~) emf6_reconstruct(x,y,dae);
 end
 
 function s = classical_strategy(dae, ~)
@@ -94,7 +94,7 @@ s.needs_algebraic_solve = false;
 s.electrical_power = @(x,y,Y) dae.electrical_power(x,y,Y);
 s.state_split = struct('ng',ng,'ns',2, ...
     'delta_idx',1:ng, 'omega_idx',(ng+1):(2*ng));
-s.reconstruct = @(x,y) classical_reconstruct(x,y,dae);
+s.reconstruct = @(x,y,Y) classical_reconstruct(x,y,dae,Y);
 end
 
 function out = padiyar_reconstruct(x,y,dae)
@@ -116,15 +116,34 @@ out.Pe = dae.electrical_power(x,y).';
 out.Vbus = abs(complex(y(1:2:end),y(2:2:end))).';
 end
 
-function out = classical_reconstruct(x,y,dae)
-% Classical output reconstruction. y carries the network voltages; Pe and Vbus
-% are derived from the linear network solution. When called for recording, the
-% driver passes the current-topology Y via dae.electrical_power(x,y,Y); here we
-% use the base Ynet as a fallback (recording at the pre-fault topology is the
-% common case; the driver re-solves with the actual topology for Vbus).
+function out = classical_reconstruct(x,y,dae,Y)
+% Classical output reconstruction using the current-topology Y. Vbus comes from
+% the linear network solution V = (Y+Ygen)\Iinj at (delta, Y); Pe likewise.
+if nargin < 4 || isempty(Y), Y = dae.Ynet; end
 ng = dae.ng; nb = dae.nb;
 out.delta = x(1:ng).';
 out.omega = x(ng+1:2*ng).';
-out.Pe = dae.electrical_power(x, y, dae.Ynet).';
-out.Vbus = abs(complex(y(1:2:2*nb), y(2:2:2*nb))).';
+out.Pe = dae.electrical_power(x, y, Y).';
+% Classical solve_network_linear is internal to classical_dae; recompute V here
+% for Vbus. Since classical has no y-state coupling (V is a function of delta
+% and Y only), re-solve the linear network at (delta, Y).
+V = classical_solve_v(x, dae, Y);
+out.Vbus = abs(V).';
+end
+
+function V = classical_solve_v(x, dae, Y)
+%CLASSICAL_SOLVE_V  Direct linear network solve V = (Y+Ygen)\Iinj for Vbus.
+%   Mirrors classical_dae/solve_network_linear (bit-identical).
+Eqmag = dae.Eqmag; gbus = dae.gen_buses; bus_ids = dae.bus_ids; Xdp = dae.Xdp;
+delta = x(1:numel(gbus));
+nb = size(Y,1); ng = numel(gbus);
+Yloc = Y; Iinj = zeros(nb,1);
+for k = 1:ng
+    b = find(bus_ids == gbus(k), 1);
+    yg = 1/(1i*Xdp(k));
+    E = Eqmag(k)*exp(1i*delta(k));
+    Yloc(b,b) = Yloc(b,b) + yg;
+    Iinj(b) = Iinj(b) + E*yg;
+end
+V = Yloc \ Iinj;
 end

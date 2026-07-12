@@ -75,7 +75,8 @@ end
 % --- Accepted trajectory storage -------------------------------------------
 t_acc = t0;
 x = x0(:); y = y0(:);
-rec0 = strat.reconstruct(x, y);
+Y_rec0 = events.Ypre;
+rec0 = strat.reconstruct(x, y, Y_rec0);
 delta_hist = rec0.delta;   % row [1, ng]
 omega_hist = rec0.omega;
 Pe_hist = rec0.Pe;
@@ -184,8 +185,10 @@ while t < t_end - 1e-14
             end
             % Record the public sample AFTER any event topology switch, so
             % the stored Vbus at t_event reflects the right-limit (faulted)
-            % voltage (event convention §6).
-            rec = strat.reconstruct(x, y);
+            % voltage (event convention §6). Pass the current-topology Y so
+            % classical (linear-network) reconstruction uses the right Y.
+            Y_rec = stability.ts_topology_at(t, events, events.Ypre, events.Yfault, events.Ypost);
+            rec = strat.reconstruct(x, y, Y_rec);
             delta_hist = [delta_hist; rec.delta]; %#ok<AGROW>
             omega_hist = [omega_hist; rec.omega]; %#ok<AGROW>
             Pe_hist = [Pe_hist; rec.Pe]; %#ok<AGROW>

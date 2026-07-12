@@ -33,7 +33,7 @@ strat.needs_jyy = false;
 strat.needs_algebraic_solve = false;
 strat.electrical_power = @(~,~,~) [];
 strat.state_split = struct('ng',1,'ns',2,'delta_idx',1,'omega_idx',2);
-strat.reconstruct = @(x,~) struct('delta',x(1),'omega',x(2),'Pe',0,'Vbus',zeros(0,1));
+strat.reconstruct = @(x,~,~) struct('delta',x(1),'omega',x(2),'Pe',0,'Vbus',zeros(0,1));
 end
 
 function opt = base_opt(dt)
@@ -187,7 +187,7 @@ strat.needs_jyy = false;
 strat.needs_algebraic_solve = false;
 strat.electrical_power = @(~,~,~) [];
 strat.state_split = struct('ng',1,'ns',2,'delta_idx',1,'omega_idx',2);
-strat.reconstruct = @(x,~) struct('delta',x(1),'omega',x(2),'Pe',0,'Vbus',zeros(0,1));
+strat.reconstruct = @(x,~,~) struct('delta',x(1),'omega',x(2),'Pe',0,'Vbus',zeros(0,1));
 opt = base_opt(0.01);
 opt.dt_min = 1e-4; opt.dt_max = 0.01;
 opt.atol_x = 1e-12; opt.rtol_x = 1e-12;   % very tight -> forces rejection

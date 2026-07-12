@@ -1,9 +1,11 @@
-function adaptive_phase7_cv()
-%ADAPTIVE_PHASE7_CV  Tracked aggregate fresh PSAT cross-validation runner.
-%   Replaces the untracked /tmp/track_a_phase7_cv.m. Runs the FIXED canonical
-%   PSAT baseline FRESH on Case14 and RTS-24 (fault bus 15) and prints the
-%   primary PSAT comparison metrics for both. PSAT is a reference tool only
-%   (never a production dependency).
+function ts_fixed_psat_phase7_cv()
+%TS_FIXED_PSAT_PHASE7_CV  Tracked aggregate FIXED canonical PSAT cross-validation.
+%   Replaces the untracked /tmp/track_a_phase7_cv.m. Renamed for terminology
+%   honesty: this runner executes the FIXED canonical PSAT baseline, not an
+%   adaptive comparison. Runs the FIXED canonical PSAT baseline FRESH on
+%   Case14 and RTS-24 (fault bus 15) and prints the primary PSAT comparison
+%   metrics for both. PSAT is a reference tool only (never a production
+%   dependency).
 %
 %   This runner reports the FIXED canonical PSAT baseline. It is NOT adaptive
 %   held-out evidence. Adaptive-vs-fixed diagnostics are produced by

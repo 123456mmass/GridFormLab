@@ -1,18 +1,20 @@
-function adaptive_case14_cv()
-%ADAPTIVE_CASE14_CV  Tracked Case14 fresh PSAT cross-validation entry point.
-%   Replaces the untracked /tmp/track_a_case14_cv.m. Calls
-%   run_three_way_validation FRESH (no saved trajectories) on Case14 and
-%   prints the primary PSAT comparison metrics. PSAT is a reference tool
-%   only (never a production dependency).
+function ts_fixed_psat_rts24_cv()
+%TS_FIXED_PSAT_RTS24_CV  Tracked RTS-24 FIXED canonical PSAT cross-validation.
+%   Replaces the untracked /tmp/track_a_rts24_cv.m. Renamed for terminology
+%   honesty: this runner executes the FIXED canonical PSAT baseline, not an
+%   adaptive comparison. Calls run_three_way_validation FRESH (no saved
+%   trajectories) on RTS-24 (fault bus 15) and prints the primary PSAT
+%   comparison metrics. PSAT is a reference tool only (never a production
+%   dependency).
 %
 %   This is the FIXED canonical PSAT baseline (the production engine runs
 %   fixed-step by default after the honesty closure). It is NOT adaptive
 %   held-out evidence; adaptive-vs-fixed diagnostics are produced by
 %   adaptive_ts_compare_fixed and adaptive_ts_diagnostic.
 pf_init_paths;
-o = run_three_way_validation('case_matpower6_case14');
+o = run_three_way_validation('case_ieee_rts24_pgaz', struct('fault_bus',15));
 g = o.gates;
-fprintf('\n=== CASE14 FRESH PSAT CV (fixed canonical) ===\n');
+fprintf('\n=== RTS-24 FRESH PSAT CV (fixed canonical) ===\n');
 fprintf('psat_execution=%s td=%g\n', gate(g.psat_execution), o.psat.td_points);
 fprintf('ours_convergence=%s nonconv=%d\n', gate(g.ours_convergence), o.ours_nonconv);
 fprintf('psat_comparison(primary)=%s\n', gate(g.psat_comparison));

@@ -77,7 +77,7 @@ no merge):
    `scripts/validation/adaptive_ts_compare_fixed.m` (owns ID mapping,
    event-segmented `interp_no_extrapolate`, COI frame, metrics, structural
    checks). Replaces every `/tmp` runner with tracked scripts:
-   `adaptive_case14_cv.m`, `adaptive_rts24_cv.m`, `adaptive_phase7_cv.m`,
+   `ts_fixed_psat_case14_cv.m`, `ts_fixed_psat_rts24_cv.m`, `ts_fixed_psat_phase7_cv.m`,
    `adaptive_ts_diagnostic.m`. No whole-trajectory `interp1` across events.
 3. **Honest NOT_READY tolerance contract** — replaces the tautological
    `test_ts_tolerance_selection.m` with a contract asserting NOT_READY;
@@ -96,7 +96,7 @@ no merge):
    - Case14: psat_comparison=PASS, dCOI=0.0096 deg, dw=3.816e-6, dPe=0.0422 MW.
    - RTS-24: psat_comparison=PASS, dCOI=0.0068 deg, dw=4.620e-6, dPe=0.0827 MW.
    - These are FIXED-step production results, NOT adaptive held-out evidence.
-   - Reproduce: `adaptive_phase7_cv` (tracked).
+   - Reproduce: `ts_fixed_psat_phase7_cv` (tracked).
 2. **Adaptive-vs-fixed diagnostics** (event-segmented, report-only):
    - Case14 classical: structural_pass=1, delta_coi=0.0630 deg, pairwise=0.6962
      deg, Pe=55.77 MW, Vbus=3.38e-1 pu.
@@ -149,7 +149,7 @@ Versus merge-base `0534132` (= origin/main): **28 new + 6 modified** files,
 - `+stability/classical_dae.m`, `expand_machines_classical.m`,
   `ts_adaptive_driver.m`, `ts_model_strategy.m` (4).
 - `scripts/validation/adaptive_ts_compare_fixed.m` (shared helper),
-  `adaptive_case14_cv.m`, `adaptive_rts24_cv.m`, `adaptive_phase7_cv.m`,
+  `ts_fixed_psat_case14_cv.m`, `ts_fixed_psat_rts24_cv.m`, `ts_fixed_psat_phase7_cv.m`,
   `adaptive_ts_diagnostic.m` (5).
 - `tests/test_corrector_terminology.m`, `test_ts_adaptive_convergence.m`,
   `test_ts_adaptive_heldout_diagnostic.m`, `test_ts_adaptive_lte.m`,
@@ -193,7 +193,7 @@ adaptive_ts_diagnostic;
 runtests('tests/test_ts_tolerance_selection.m');   % 4/4
 % Fresh fixed canonical PSAT (requires PSAT at
 % /home/birds/Documents/psat-2.1.11-mat/psat; reference tool, not a prod dep):
-adaptive_phase7_cv;       % Case14 + RTS-24 fresh PSAT
+ts_fixed_psat_phase7_cv;       % Case14 + RTS-24 fresh PSAT
 ```
 
 ## Equation provenance

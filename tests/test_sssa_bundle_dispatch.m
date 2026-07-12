@@ -38,7 +38,7 @@ function test_model_bundle_dispatch(testCase)
 % opt.model_bundle (pre-built) => use bundle.sssa.model.
 bundle = fixtures.synthetic_sssa_bundle();
 opt = struct('model_bundle', bundle);
-r = stability.multicase_ssa(struct(), opt);
+r = stability.multicase_sssa(struct(), opt);
 testCase.verifyTrue(all(isfinite(r.eigenvalues)), 'finite eigenvalues.');
 testCase.verifyEqual(r.metadata.dispatch, 'explicit_model_bundle', ...
     'provenance = explicit_model_bundle.');
@@ -49,15 +49,15 @@ function test_bundle_and_model_fn_fail_closed(testCase)
 bundle = fixtures.synthetic_sssa_bundle();
 opt = struct('model_bundle', bundle, 'model_fn', @fixtures.synthetic_sssa_bundle);
 testCase.verifyError(@() stability.multicase_sssa(struct(), opt), ...
-    'multicase_ssa:exclusiveDispatch');
+    'multicase_sssa:exclusiveDispatch');
 end
 
 function test_bundle_and_sssa_model_fail_closed(testCase)
 % model_bundle + sssa_model => exclusiveDispatch.
 bundle = fixtures.synthetic_sssa_bundle();
 opt = struct('model_bundle', bundle, 'sssa_model', bundle.sssa.model);
-testCase.verifyError(@() stability.multicase_ssa(struct(), opt), ...
-    'multicase_ssa:exclusiveDispatch');
+testCase.verifyError(@() stability.multicase_sssa(struct(), opt), ...
+    'multicase_sssa:exclusiveDispatch');
 end
 
 function test_mfn_and_sssa_model_fail_closed(testCase)
@@ -65,8 +65,8 @@ function test_mfn_and_sssa_model_fail_closed(testCase)
 bundle = fixtures.synthetic_sssa_bundle();
 opt = struct('model_fn', @fixtures.synthetic_sssa_bundle, ...
     'sssa_model', bundle.sssa.model);
-testCase.verifyError(@() stability.multicase_ssa(struct(), opt), ...
-    'multicase_ssa:exclusiveDispatch');
+testCase.verifyError(@() stability.multicase_sssa(struct(), opt), ...
+    'multicase_sssa:exclusiveDispatch');
 end
 
 function test_analytic_eigenvalue_oracle(testCase)
@@ -74,7 +74,7 @@ function test_analytic_eigenvalue_oracle(testCase)
 % Verify the SSSA result matches to a tight tolerance.
 bundle = fixtures.synthetic_sssa_bundle();
 opt = struct('sssa_model', bundle.sssa.model);
-r = stability.multicase_ssa(struct(), opt);
+r = stability.multicase_sssa(struct(), opt);
 ev = sort(r.eigenvalues, 'ComparisonMethod','real');
 % Analytic: eig([0 1; -1 0]) = [+1i; -1i].
 testCase.verifyEqual(real(ev(1)), 0, 'AbsTol', 1e-9, 'first ev real ~0.');
@@ -87,6 +87,6 @@ function test_built_in_string_unchanged(testCase)
 % Use a real Padiyar case via the built-in path.
 c = cases.case_padiyar_two_area_4m_avr();
 opt = struct('model','padiyar_1_1_manual','excitation','manual');
-r = stability.multicase_ssa(c, opt);
+r = stability.multicase_sssa(c, opt);
 testCase.verifyTrue(all(isfinite(r.eigenvalues)), 'built-in finite eigenvalues.');
 end

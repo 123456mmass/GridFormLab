@@ -34,10 +34,14 @@ case 'two_constraints'
         'vcon_vars',[1,2,3,4], 'vcon_rows',[1,2,3,4], ...
         'vcon_eq',@(x,y) [y(1)-1.0; y(2)-0; y(3)-1.0; y(4)-0]);
 case 'state_dependent'
-    % vcon_eq depends on x (Jcon_x != 0) => must fail-closed.
+    % vcon_eq depends on x (Jcon_x != 0) => must fail-closed at B6 Jx check.
+    % At the operating point x0=[0;1], y0=[1;0;1;0]: vcon_eq = [0+0; 0+1] = [0;1].
+    % model.g(vcon_rows) at y0 = [y(3)-1; y(4)-0] = [0;0]. To exercise the Jx
+    % check (not value consistency), make vcon_eq match g at the operating
+    % point: use x(1)-x0(1) and x(2)-x0(2) so vcon_eq(x0,y0)=g(y0)=[0;0].
     vcon_spec = struct( ...
         'vcon_vars',[3,4], 'vcon_rows',[3,4], ...
-        'vcon_eq',@(x,y) [y(3)-1.0+x(1); y(4)-0+x(2)]);
+        'vcon_eq',@(x,y) [(y(3)-1.0) + (x(1)-0); (y(4)-0) + (x(2)-1)]);
 case 'rank_deficient'
     % vcon_eq has rank-deficient Jacobian (both constraints identical).
     vcon_spec = struct( ...

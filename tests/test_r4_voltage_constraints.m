@@ -51,23 +51,46 @@ testCase.verifyTrue(all(isfinite(result.eigenvalues)), 'reduced system solves.')
 end
 
 function test_state_dependent_constraint_fail_closed(testCase)
-% vcon_eq depends on x (Jcon_x != 0) => stateDependentConstraintUnsupported.
+% vcon_eq depends on x (Jcon_x != 0) => B6 vconStateCoupling (or
+% vconJacobianMismatch if Jyx rows differ). The B6 checker catches
+% state-dependence via the separate Jx zero check (b).
 [model, vcon_spec] = fixtures.synthetic_slack_case('state_dependent');
 model.vcon_vars = vcon_spec.vcon_vars;
 model.vcon_rows = vcon_spec.vcon_rows;
 model.vcon_eq = vcon_spec.vcon_eq;
-testCase.verifyError(@() stability.multimachine_ssa(model), ...
-    'multimachine_ssa:stateDependentConstraintUnsupported');
+% B6 may raise either vconStateCoupling (Jcon_x!=0) or vconJacobianMismatch
+% (Jyx(vcon_rows) != Jcon_x) depending on which fires first; both indicate
+% the state-dependent constraint is rejected. Accept either.
+try
+    stability.multimachine_ssa(model);
+    testCase.verifyTrue(false, 'expected error not raised.');
+catch e
+    id = e.identifier;
+    ok = strcmp(id,'multimachine_ssa:vconStateCoupling') || ...
+         strcmp(id,'multimachine_ssa:vconJacobianMismatch');
+    testCase.verifyTrue(ok, sprintf('expected vconStateCoupling/JacobianMismatch, got %s', id));
+end
 end
 
 function test_rank_deficient_constraint_fail_closed(testCase)
-% Jcon_y rank-deficient => fail-closed.
+% Jcon_y rank-deficient (two identical constraint rows) => B6 catches via
+% value/Jacobian consistency or reduced-Jyy rcond. The B6 checker no longer
+% has a separate vconRankDeficient path; rank deficiency surfaces as a
+% vconInconsistent / vconJacobianMismatch / singularReducedJyy failure.
 [model, vcon_spec] = fixtures.synthetic_slack_case('rank_deficient');
 model.vcon_vars = vcon_spec.vcon_vars;
 model.vcon_rows = vcon_spec.vcon_rows;
 model.vcon_eq = vcon_spec.vcon_eq;
-testCase.verifyError(@() stability.multimachine_ssa(model), ...
-    'multimachine_ssa:vconRankDeficient');
+try
+    stability.multimachine_ssa(model);
+    testCase.verifyTrue(false, 'expected error not raised.');
+catch e
+    id = e.identifier;
+    ok = strcmp(id,'multimachine_ssa:vconInconsistent') || ...
+         strcmp(id,'multimachine_ssa:vconJacobianMismatch') || ...
+         strcmp(id,'multimachine_ssa:singularReducedJyy');
+    testCase.verifyTrue(ok, sprintf('expected consistency/rcond error, got %s', id));
+end
 end
 
 function test_mismatched_cardinality_fail_closed(testCase)

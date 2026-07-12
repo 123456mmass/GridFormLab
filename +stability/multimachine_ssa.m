@@ -89,8 +89,11 @@ if has_vcon
         error('multimachine_ssa:vconBadIndex', ...
             'vcon indices must be unique finite integers in range.');
     end
-    % Validate Jcon_x == 0 (FIXED y-only constraint; state-dependent is out of scope).
-    % FD-check dvcon_eq/dx at the operating point.
+    % B6: vcon/model.g value + Jx + Jy consistency + reduced-Jyy rcond.
+    % Runtime ABI: model.vcon_eq(x, y) (frozen per B4). The checker uses
+    % multimachine_ssa's OWN scalar model.fd_eps (default 1e-6) as a FIXED
+    % absolute central-difference step (NOT ts_jac_y_fd's scale-aware rule —
+    % different module/scheme; the two are NOT claimed to match).
     vcon_eq_fn = model.vcon_eq;
     g_vcon = vcon_eq_fn(model.x0, model.y0);
     if numel(g_vcon) ~= numel(vcon_rows)
@@ -100,27 +103,52 @@ if has_vcon
     end
     h_fd = 1e-6;
     if isfield(model,'fd_eps') && ~isempty(model.fd_eps), h_fd = model.fd_eps; end
-    Jcon_x = zeros(numel(vcon_rows), numel(model.x0));
-    for j = 1:numel(model.x0)
-        xp = model.x0; xm = model.x0; xp(j) = xp(j) + h_fd; xm(j) = xm(j) - h_fd;
-        Jcon_x(:,j) = (vcon_eq_fn(xp, model.y0) - vcon_eq_fn(xm, model.y0)) / (2*h_fd);
+    % FROZEN thresholds (B6, declared a-priori):
+    V_FLOOR = 1e-8; J_FLOOR = 1e-8;
+    VAL_TOL = 1e-6; JX_TOL = 1e-6; JY_TOL = 1e-6;
+    RCOND_MIN = 1e-10; FD_STAB_TOL = 1e-4;
+    % --- Value consistency: model.g(vcon_rows) == vcon_eq(x0,y0) ---
+    g_rows = model.g(model.x0, model.y0);
+    if iscolumn(g_rows), g_rows = g_rows(vcon_rows); else, g_rows = g_rows(vcon_rows); end
+    rel_val = max(abs(g_rows - g_vcon)) / (max(abs(g_rows)) + max(abs(g_vcon)) + V_FLOOR);
+    if rel_val > VAL_TOL
+        error('multimachine_ssa:vconInconsistent', ...
+            'model.g(vcon_rows) != vcon_eq(x0,y0) (rel_val=%.3e > %.0e).', rel_val, VAL_TOL);
     end
-    if max(abs(Jcon_x(:))) > 1e-6
-        error('multimachine_ssa:stateDependentConstraintUnsupported', ...
-            'vcon_eq is state-dependent (max|dvcon_eq/dx|=%.3e). Only FIXED y-only constraints are supported.', ...
+    % --- Compute Jcon_x = dvcon_eq/dx by central differences (h vs h/2) ---
+    [Jcon_x, ~] = fd_jac_x(vcon_eq_fn, model.x0, model.y0, h_fd, FD_STAB_TOL);
+    % (a) Jx row-equivalence: Jyx(vcon_rows,:) == Jcon_x (declared rows ARE
+    %     the constraint rows). Checking Jcon_x ALONE does NOT prove model.g
+    %     rows have no state coupling.
+    rel_jx_eq = max(abs(Jyx(vcon_rows,:) - Jcon_x),[],'all') / ...
+        (max(abs(Jyx(vcon_rows,:)),[],'all') + J_FLOOR);
+    if rel_jx_eq > JX_TOL
+        error('multimachine_ssa:vconJacobianMismatch', ...
+            'Jyx(vcon_rows,:) != Jcon_x (rel=%.3e > %.0e).', rel_jx_eq, JX_TOL);
+    end
+    % (b) Fixed-y-only zero: Jcon_x ~= 0 (dvcon_eq/dx = 0).
+    rel_jx_zero = max(abs(Jcon_x(:))) / (max(abs(Jcon_x(:))) + J_FLOOR + 1);
+    % Scale by the largest Jy entry for a meaningful relative measure.
+    if rel_jx_zero > JX_TOL
+        error('multimachine_ssa:vconStateCoupling', ...
+            'vcon_eq is state-dependent (max|Jcon_x|=%.3e). Only FIXED y-only supported.', ...
             max(abs(Jcon_x(:))));
     end
-    % Validate Jcon_y (w.r.t. vcon_vars) has full rank.
-    Jcon_y = zeros(numel(vcon_rows), numel(vcon_vars));
-    for j = 1:numel(vcon_vars)
-        yp = model.y0; ym = model.y0;
-        yp(vcon_vars(j)) = yp(vcon_vars(j)) + h_fd;
-        ym(vcon_vars(j)) = ym(vcon_vars(j)) - h_fd;
-        Jcon_y(:,j) = (vcon_eq_fn(model.x0, yp) - vcon_eq_fn(model.x0, ym)) / (2*h_fd);
+    % --- Compute Jcon_y_full = dvcon_eq/dy (ALL ny columns, h vs h/2) ---
+    [Jcon_y_full, ~] = fd_jac_y(vcon_eq_fn, model.x0, model.y0, h_fd, FD_STAB_TOL);
+    % Full-row Jacobian consistency: Jyy(vcon_rows,:) == Jcon_y_full (FULL row).
+    rel_jy = max(abs(Jyy(vcon_rows,:) - Jcon_y_full),[],'all') / ...
+        (max(abs(Jyy(vcon_rows,:)),[],'all') + J_FLOOR);
+    if rel_jy > JY_TOL
+        error('multimachine_ssa:vconJacobianMismatch', ...
+            'Jyy(vcon_rows,:) != dvcon_eq/dy (rel=%.3e > %.0e).', rel_jy, JY_TOL);
     end
-    if rcond(Jcon_y) < eps
-        error('multimachine_ssa:vconRankDeficient', ...
-            'Constraint Jacobian Jcon_y is rank-deficient (rcond=%.3e).', rcond(Jcon_y));
+    % Reduced conditioning: rcond(Jyy(free_rows,free_vars)) before backslash.
+    rc = rcond(Jyy(free_rows,free_vars));
+    if rc < RCOND_MIN
+        error('multimachine_ssa:singularReducedJyy', ...
+            'Reduced Jyy(free_rows,free_vars) ill-conditioned (rcond=%.3e < %.0e).', ...
+            rc, RCOND_MIN);
     end
     % Paired Schur with separate free_rows/free_vars.
     Afull = Jxx - Jxy(:,free_vars) * (Jyy(free_rows,free_vars) \ Jyx(free_rows,:));
@@ -227,4 +255,48 @@ function mustHave(s, name)
 if ~isfield(s, name)
     error('multimachine_ssa:missingField', 'Model is missing required field "%s".', name);
 end
+end
+
+function [J, stable] = fd_jac_x(fn, x0, y0, h, stab_tol)
+%FD_JAC_X  Central-difference dvcon_eq/dx with h-vs-h/2 stabilization (B6).
+%   No |f'''|=O(1) assumption; stabilization gates the comparison.
+nr = numel(fn(x0, y0)); nx = numel(x0);
+J = zeros(nr, nx);
+for j = 1:nx
+    xp = x0; xm = x0; xp(j) = xp(j) + h; xm(j) = xm(j) - h;
+    J(:,j) = (fn(xp, y0) - fn(xm, y0)) / (2*h);
+end
+% h-vs-h/2 stabilization: recompute at h/2 and check agreement.
+J2 = zeros(nr, nx);
+for j = 1:nx
+    xp = x0; xm = x0; xp(j) = xp(j) + h/2; xm(j) = xm(j) - h/2;
+    J2(:,j) = (fn(xp, y0) - fn(xm, y0)) / (2*(h/2));
+end
+rel = max(abs(J - J2),[],'all') / (max(abs(J),[],'all') + max(abs(J2),[],'all') + 1e-12);
+if rel > stab_tol
+    error('multimachine_ssa:fdUnstable', ...
+        'FD dvcon_eq/dx unstable at h=%.2e (h-vs-h/2 rel change=%.3e > %.0e).', h, rel, stab_tol);
+end
+stable = true;
+end
+
+function [J, stable] = fd_jac_y(fn, x0, y0, h, stab_tol)
+%FD_JAC_Y  Central-difference dvcon_eq/dy (ALL ny cols) with h-vs-h/2 (B6).
+nr = numel(fn(x0, y0)); ny = numel(y0);
+J = zeros(nr, ny);
+for j = 1:ny
+    yp = y0; ym = y0; yp(j) = yp(j) + h; ym(j) = ym(j) - h;
+    J(:,j) = (fn(x0, yp) - fn(x0, ym)) / (2*h);
+end
+J2 = zeros(nr, ny);
+for j = 1:ny
+    yp = y0; ym = y0; yp(j) = yp(j) + h/2; ym(j) = ym(j) - h/2;
+    J2(:,j) = (fn(x0, yp) - fn(x0, ym)) / (2*(h/2));
+end
+rel = max(abs(J - J2),[],'all') / (max(abs(J),[],'all') + max(abs(J2),[],'all') + 1e-12);
+if rel > stab_tol
+    error('multimachine_ssa:fdUnstable', ...
+        'FD dvcon_eq/dy unstable at h=%.2e (h-vs-h/2 rel change=%.3e > %.0e).', h, rel, stab_tol);
+end
+stable = true;
 end

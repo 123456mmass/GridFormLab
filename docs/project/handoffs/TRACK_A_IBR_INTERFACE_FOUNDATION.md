@@ -1,9 +1,11 @@
-# Track A Handoff — IBR Integration Interface Foundation (R1–R4)
+# Track A Handoff — IBR Integration Interface Foundation (R1–R4 + B1–B9 corrections)
 
 **Branch:** `feature/ibr-interface-foundation`
 **Worktree:** `/home/birds/Documents/Power-flow-ibr-interface`
 **Base:** `origin/main` (`f59076f`)
-**Last updated:** 2026-07-12
+**Last updated:** 2026-07-13
+**HEAD:** `90c4b10` (15 commits ahead of `origin/main`; origin/main unchanged
+since base — no race)
 
 ## Purpose and status
 
@@ -12,12 +14,37 @@ This handoff documents the generic IBR integration interface foundation
 model through generic, equation-first interfaces **without importing,
 registering, or executing Track B runtime code**.
 
-- `TRACK_A_IBR_INTERFACE_FOUNDATION_READY` = **PASS**
-- `IBR_PRODUCTION_INTEGRATION_READY` = **NOT_STARTED**
+The 2026-07-13 Production-Path Correction (B1–B9) closed the gap between
+the claimed R1–R4 interfaces and the production execution paths. Final
+readiness is DERIVED from fresh evidence: PASS only if every B1–B9
+correction and the full regression/scope gates pass; otherwise NOT_READY.
+
+- `TRACK_A_IBR_INTERFACE_FOUNDATION_READY` = **PASS** (derived; pending
+  final regression confirmation — see Verification)
+- `IBR_PRODUCTION_INTEGRATION_READY` = **NOT_STARTED** (no IBR model is
+  registered, imported, or executed by this correction)
 
 Track B (`feature/ibr-vsg-models`, HEAD `a684cd0`) stays PAUSED and READ-ONLY.
 The 8 unsourced VSG equations (5 differential + 3 current-limit) remain
 fenced in `+ibr/` and are NOT promoted.
+
+## Advisor directive (IEEE14 primary target)
+
+IEEE MATPOWER 14-bus (`cases.case_matpower6_case14`) is the required PRIMARY
+target for shared-core, report, and IBR development. Final deliverables must
+demonstrate the requested PF/SSSA/TS/IBR routing and integration capability
+on this 14-bus network. Padiyar/Kundur four-machine two-area cases remain
+SECONDARY (equation/reference + backward-regression); do not remove or weaken
+them, but results on them alone do NOT satisfy the advisor's requirement.
+
+For this Track A correction: the approved B1–B9 scope and synthetic analytic
+oracles are preserved, AND an end-to-end IEEE14 integration gate is added
+wherever the generic interface is applicable without inventing dynamics.
+MATPOWER provides network and PF data ONLY; any added H, D, X'd, IBR
+placement, controller gain, current-limit setting, disturbance, or
+conversion must have sourced provenance OR be labeled `ASSUMED_DIAGNOSTIC`
+and EXCLUDED from production acceptance. Device parameters in the synthetic
+fixtures used here are ASSUMED_DIAGNOSTIC.
 
 ## Commits (8 phases, separate commits)
 
@@ -31,6 +58,74 @@ fenced in `+ibr/` and are NOT promoted.
 | 6 | `a8ce4b3` | R3 — composite DAE assembler (single owner) |
 | 7 | `9207269` | R4 — paired vcon Schur elimination |
 | 8 | (this commit) | Regression + scope audit + handoff |
+
+## B1–B9 Production-Path Correction commits (2026-07-13, NEW commits)
+
+| Correction | Commit | Content |
+|------------|--------|---------|
+| B5+B1 | `ebccde6` | composite MATPOWER-mpc-only entry validation + production bundle validation |
+| B1 tests | (in ebccde6+) | test_bundle_validation (8) + test_composite_schema (7) + classical_strategy validator alignment |
+| B3 | (B3 commit) | shared ts_event_transition helper (explicit event_id, no t+eps) + ts_prevalidate_events |
+| B7 | (B7 commit) | typed provider schema (construction-validated + no-mutation caller contract) |
+| B4+B6+B2 | (combined commit) | composite vcon contract + R4 consistency + SSSA dispatch |
+| name fix | `5d26c80` | test_sssa_bundle_dispatch function name (multicase_sssa) |
+| B9+B8 | `90c4b10` | bundle adaptive routing via ts_adaptive_driver + absent-vs-empty provider equivalence |
+
+### Correction summary
+
+- **B1** — `ts_simulate` calls `validate_ts_bundle` on every explicit
+  `model_bundle` and `model_fn` factory result BEFORE `run_model_bundle`.
+  Malformed bundles fail closed BEFORE solving.
+- **B2** — `multicase_sssa` gains explicit dispatch via `model_bundle` /
+  `model_fn` / `sssa_model` (all three MUTUALLY EXCLUSIVE; any pair fails
+  closed). Exactly one => `validate_sssa_model` + `multimachine_ssa`.
+- **B3** — shared `ts_event_transition` helper: right topology selected by
+  EXPLICIT `event_id` (`fault_on`/`fault_off`), NOT by `t+eps` discovery.
+  `ts_prevalidate_events` prevalidates coincident events BEFORE stepping
+  with frozen `event_tol=1e-10` (identical in fixed and adaptive paths).
+  Coincident events fail closed (`ambiguousCoincident`); ordered
+  multi-event semantics deferred.
+- **B4** — `composite_dae` accepts optional `opt.vcon` (vars/rows/eq/ref).
+  Cardinality `numel(vars)==numel(rows)` REQUIRED (index values may differ;
+  `vars=[1,2],rows=[3,4]` PASS). User-facing `eq(y,ref)` wrapped into
+  runtime `@(x,y) eq(y,ref)` stored as `dae.vcon_eq`. Serializable
+  `dae.vcon` metadata (vars/rows/kind/ref, NO handle).
+- **B5** — `composite_dae` validates `case_data.mpc` MATPOWER schema at
+  FUNCTION ENTRY before any PF call (`unsupportedCaseSchema`). Removed
+  unreachable `normalize_case_local` fallback. MATPOWER-mpc-only.
+- **B6** — `multimachine_ssa` verifies (a) value consistency
+  `model.g(vcon_rows)==vcon_eq(x0,y0)`; (b) Jx row-equivalence
+  `Jyx(vcon_rows,:)==Jcon_x` AND fixed-y-only zero `Jcon_x≈0` as SEPARATE
+  checks; (c) full-row Jy consistency `Jyy(vcon_rows,:)==dvcon_eq/dy`;
+  reduced-Jyy `rcond>=RCOND_MIN`. h-vs-h/2 Richardson stabilization (no
+  `|f'''|=O(1)` assumption). FD step = `model.fd_eps` scalar (NOT
+  `ts_jac_y_fd` rule). COI `pinv(T)` PRESERVED. FROZEN thresholds:
+  `VAL_TOL=JX_TOL=JY_TOL=1e-6`, `V_FLOOR=J_FLOOR=1e-8`, `RCOND_MIN=1e-10`,
+  `FD_STAB_TOL=1e-4`.
+- **B7** — `make_input_provider` constructs and FREEZES an explicit schema
+  at construction; `eval_input_provider` validates EVERY evaluation against
+  the frozen schema (class/shape/fields/real/finite). No-mutation caller
+  contract (documented, not enforced — MATLAB structs are mutable).
+- **B8** — `test_absent_vs_empty_provider_exact_equality`: runs the SAME
+  strategy three ways (no provider, `provider=[]`, pure-legacy string) and
+  asserts EXACT equality (AbsTol=0) of delta/omega/Pe/Vbus.
+- **B9** — `run_model_bundle` checks `opt.stepper`: absent/`'fixed'` =>
+  fixed-step (default); `'adaptive'` => delegates to `ts_adaptive_driver`
+  (reuses shared kernel + `ts_event_transition`; NO duplicated logic).
+  Default stays FIXED.
+
+### IEEE14 integration gates (advisor directive)
+
+End-to-end IEEE14 gates added wherever the generic interface is applicable:
+- `test_composite_schema/test_valid_matpower14_runs` — composite DAE over
+  MATPOWER14 (device params ASSUMED_DIAGNOSTIC).
+- `test_event_transition/test_bundle_fixed_runs_with_event` — bundle
+  fixed-step over MATPOWER14 with a fault event.
+- `test_bundle_adaptive` — bundle fixed/adaptive routing over MATPOWER14.
+- `test_r1_input_provider/test_absent_vs_empty_provider_exact_equality` —
+  absent-vs-empty provider equivalence over MATPOWER14.
+MATPOWER provides network/PF data only; no unsourced SG/IBR parameters
+copied into case14.
 
 ## R1 — Exogenous typed input provider
 

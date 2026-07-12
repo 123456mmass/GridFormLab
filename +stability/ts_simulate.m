@@ -154,17 +154,34 @@ end
 
 delta=zeros(nt,ng); omega=zeros(nt,ng); Pe=zeros(nt,ng); Vhist=zeros(nt,nb);
 delta(1,:)=delta0.'; omega(1,:)=ones(1,ng);
-[V,~,Pe0]=solve_network(delta0,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,0,opt);
-switch lower(opt.pm_mode)
-    case {'balanced','pe0'}
-        Pm=Pe0;
-    case {'pfpg','pgaz','pg'}
-        Pm=zeros(ng,1);
-        for kk=1:ng
-            bb=find(mpc.bus(:,1)==gbus(kk),1); Pm(kk)=pf.P_generation(bb);
-        end
-    otherwise
-        error('ts_simulate:unknownPmMode','Unknown pm_mode "%s".',opt.pm_mode);
+
+% --- Build the classical DAE + strategy (Phase 2) --------------------------
+% Route the fixed-step classical path through the shared one-step contract
+% (ts_model_strategy('classical',...) + ts_step_kernel). The algebraic contract
+% is linear (V=(Y+Ygen)\Iinj), solved exactly inside dae_f; no nonlinear dae_g,
+% no Jyy. Bit-identical to the legacy inline corrector verified by
+% tests/test_ts_classical_strategy_equivalence.m and tests/test_ts_characterization_fixed.m.
+cdae = stability.classical_dae(case_data, opt);
+strat = stability.ts_model_strategy('classical', cdae);
+Pm = cdae.Pm;
+
+% Fault topology matrices (event-aware, single source: ts_topology_at).
+Ypre_da = cdae.Ynet;
+Yfault_da = Ypre_da;
+if opt.fault_enabled
+    fb = find(mpc.bus(:,1)==opt.fault_bus,1);
+    Yfault_da(fb,fb) = Yfault_da(fb,fb) + 1/opt.Zf;
+end
+Ypost_da = Ypre_da;
+
+% Initial output sample (pre-fault topology).
+[V,~,Pe0] = solve_network(delta0,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,0,opt);
+if strcmpi(opt.pm_mode,'balanced') || strcmpi(opt.pm_mode,'pe0')
+    % Pm already set to Pe0 via classical_dae; nothing to redo.
+elseif strcmpi(opt.pm_mode,'pfpg') || strcmpi(opt.pm_mode,'pgaz') || strcmpi(opt.pm_mode,'pg')
+    % Pm already set from PF generation via classical_dae.
+else
+    error('ts_simulate:unknownPmMode','Unknown pm_mode "%s".',opt.pm_mode);
 end
 Pe(1,:)=Pe0.'; Vhist(1,:)=abs(V).';
 
@@ -176,86 +193,52 @@ corr_converged = true(nt-1,1);
 nonconv_count = 0;
 
 x=[delta0; ones(ng,1)];
+y = cdae.y0(:);
+kopt_cl = struct('max_corrector_iter',opt.max_corrector_iter, ...
+    'corrector_abs_tol',opt.corrector_abs_tol, ...
+    'corrector_rel_tol',opt.corrector_rel_tol, ...
+    'corrector_mode',opt.corrector_mode);
+if strcmp(opt.corrector_mode,'fixed')
+    kopt_cl.max_corrector_iter = opt.corrector_iter;
+end
+
 for it=1:nt-1
     dt_step = dt_arr(it);
     t_now = t(it);
     t_next = t(it+1);
 
-    % Determine topology for this step. The fault status at t_now determines
-    % the pre-event topology. If t_next is an event time, the step uses the
-    % pre-event topology for the entire step, then the topology switches
-    % at the event boundary. The next step starts with the post-event topology.
-    % This prevents trapezoidal averaging of RHS from different topologies.
-    fault_on_now = opt.fault_enabled && t_now >= opt.t_fault && t_now < opt.t_clear;
+    % Topology for this step: the fault status at t_now determines the
+    % pre-event topology used for the entire step (no trapezoidal step
+    % averages RHS from two topologies). The topology switches at the event
+    % boundary; the next step starts with the post-event topology.
+    Y_now  = stability.ts_topology_at(t_now,  opt, Ypre_da, Yfault_da, Ypost_da);
+    Y_next = stability.ts_topology_at(t_next, opt, Ypre_da, Yfault_da, Ypost_da);
 
-    % Predictor: explicit Euler
-    f0 = rhs_fixed(t_now, x, fault_on_now);
-    xnext = x + dt_step * f0;
-
-    if strcmp(opt.corrector_mode,'adaptive')
-        % Adaptive Picard corrector with trapezoidal residual check
-        for ci = 1:opt.max_corrector_iter
-            f1 = rhs_fixed(t_next, xnext, fault_on_now);
-            x_new = x + 0.5*dt_step*(f0 + f1);
-            update_norm = norm(x_new - xnext, inf);
-            % Check the residual at the candidate state itself.  Checking
-            % only the Picard update can accept a state whose trapezoidal
-            % equation is still not solved.
-            f1_new = rhs_fixed(t_next, x_new, fault_on_now);
-            R_new = x_new - x - 0.5*dt_step*(f0 + f1_new);
-            residual_norm = norm(R_new, inf);
-            corr_iters(it) = ci;
-            corr_update(it) = update_norm;
-            corr_residual(it) = residual_norm;
-            xnext = x_new;
-            tol_now = opt.corrector_abs_tol + ...
-                opt.corrector_rel_tol * max(1, norm(xnext, inf));
-            if update_norm <= tol_now && residual_norm <= tol_now
-                corr_converged(it) = true;
-                break;
-            end
-            if ci == opt.max_corrector_iter
-                corr_converged(it) = false;
-                % Recompute final residual for reporting
-                f1_final = rhs_fixed(t_next, xnext, fault_on_now);
-                R = xnext - x - 0.5*dt_step*(f0 + f1_final);
-                corr_residual(it) = norm(R, inf);
-                if strcmp(opt.corrector_failure, 'error')
-                    error('ts_simulate:correctorNotConverged', ...
-                        ['Corrector did not converge at t=%.4f (step %d). ' ...
-                        'Iterations=%d, update=%.3e, residual=%.3e. ' ...
-                        'Consider increasing max_corrector_iter or loosening tolerance.'], ...
-                        t_next, it, ci, update_norm, corr_residual(it));
-                end
-            end
+    step = stability.ts_step_kernel(strat, x, y, dt_step, Y_now, kopt_cl);
+    corr_iters(it) = step.corrector_iterations;
+    corr_residual(it) = step.corrector_residual;
+    corr_update(it) = step.corrector_update;
+    corr_converged(it) = step.corrector_converged;
+    if ~step.corrector_converged
+        nonconv_count = nonconv_count + 1;
+        % Legacy fixed corrector uses a loose residual check (<= 1e-6) and does
+        % NOT raise on non-convergence (only the adaptive corrector errors when
+        % corrector_failure='error'). Preserve this behavior bit-identically.
+        if strcmp(opt.corrector_mode,'adaptive') && strcmp(opt.corrector_failure, 'error')
+            error('ts_simulate:correctorNotConverged', ...
+                ['Corrector did not converge at t=%.4f (step %d). ' ...
+                'Iterations=%d, update=%.3e, residual=%.3e.'], ...
+                t_next, it, step.corrector_iterations, ...
+                step.corrector_update, step.corrector_residual);
         end
-        % Final residual (for converged steps)
-        if corr_converged(it)
-            f1_final = rhs_fixed(t_next, xnext, fault_on_now);
-            R = xnext - x - 0.5*dt_step*(f0 + f1_final);
-            corr_residual(it) = norm(R, inf);
-        end
-    else
-        % Fixed corrector (backward compatible)
-        for ci=1:max(1,opt.corrector_iter)
-            f1 = rhs_fixed(t_next, xnext, fault_on_now);
-            xnext = x + 0.5*dt_step*(f0 + f1);
-        end
-        corr_iters(it) = opt.corrector_iter;
-        f1_final = rhs_fixed(t_next, xnext, fault_on_now);
-        R = xnext - x - 0.5*dt_step*(f0 + f1_final);
-        corr_residual(it) = norm(R, inf);
-        corr_update(it) = norm(R, inf);  % for fixed mode, update ~ residual
-        corr_converged(it) = corr_residual(it) <= 1e-6;  % loose check
     end
-    if ~corr_converged(it), nonconv_count = nonconv_count + 1; end
 
-    x = xnext;
+    x = step.x_full; y = step.y_full;
     delta(it+1,:) = x(1:ng).'; omega(it+1,:) = x(ng+1:end).';
 
-    % Recompute algebraic with the ACTUAL topology at t_next
-    fault_on_next = opt.fault_enabled && t_next >= opt.t_fault && t_next < opt.t_clear;
-    [V,~,Pek] = solve_network(x(1:ng),Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on_next,opt);
+    % Recompute algebraic with the ACTUAL topology at t_next (right-limit V).
+    [V,~,Pek] = solve_network(x(1:ng),Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp, ...
+        (opt.fault_enabled && t_next >= opt.t_fault && t_next < opt.t_clear), opt);
     Pe(it+1,:) = Pek.'; Vhist(it+1,:) = abs(V).';
 end
 if opt.verbose
@@ -279,19 +262,6 @@ res=struct('t',t,'delta',delta,'omega',omega,'Pe_pu',Pe,'Pe_MW',Pe*base, ...
     'max_corrector_residual',max(corr_residual), ...
     'nonconverged_step_count',nonconv_count, ...
     'event_idx',event_idx, 'event_side',event_side);
-
-    function dx=rhs(tnow,xx) %#ok<USD>
-        del=xx(1:ng); w=xx(ng+1:end);
-        fault_on=opt.fault_enabled && tnow>=opt.t_fault && tnow<opt.t_clear;
-        [~,~,Pek]=solve_network(del,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
-        dx=[ws*(w-1); (Pm-Pek-D.*(w-1))./(2*H)];
-    end
-
-    function dx=rhs_fixed(~,xx,fault_on)
-        del=xx(1:ng); w=xx(ng+1:end);
-        [~,~,Pek]=solve_network(del,Eqmag,Ynet,gbus,mpc.bus(:,1),Xdp,fault_on,opt);
-        dx=[ws*(w-1); (Pm-Pek-D.*(w-1))./(2*H)];
-    end
 end
 
 % =========================================================================

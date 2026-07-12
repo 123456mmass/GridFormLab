@@ -76,11 +76,23 @@ s.state_split = struct('ng',ng,'ns',ns, ...
 s.reconstruct = @(x,y) emf6_reconstruct(x,y,dae);
 end
 
-function s = classical_strategy(~, ~)
-% Classical strategy is implemented in Phase 2 (classical_dae wrapper +
-% solve_network extraction). Phase 1 only wires the nonlinear DAE models.
-error('ts_model_strategy:classicalNotReady', ...
-    'Classical strategy is Phase 2 work (classical_dae wrapper). Not yet available.');
+function s = classical_strategy(dae, ~)
+% Classical model: direct linear network solve V = (Y+Ygen)\Iinj. No nonlinear
+% g. The algebraic state is solved exactly inside dae_f (via solve_network),
+% so needs_algebraic_solve=false and the kernel uses classical_step (which
+% skips ts_algebraic_solve). Jyy is [] (the "Jacobian" is -Y, exact and constant
+% per topology). needs_jyy=false.
+ng = dae.ng; nb = dae.nb;
+s.model = 'classical';
+s.dae_f = @(x,y,Y) dae.dae_f(x,y,Y);
+s.dae_g = [];
+s.jac_y = @(~,~,~) [];
+s.needs_jyy = false;
+s.needs_algebraic_solve = false;
+s.electrical_power = @(x,y,Y) dae.electrical_power(x,y,Y);
+s.state_split = struct('ng',ng,'ns',2, ...
+    'delta_idx',1:ng, 'omega_idx',(ng+1):(2*ng));
+s.reconstruct = @(x,y) classical_reconstruct(x,y,dae);
 end
 
 function out = padiyar_reconstruct(x,y,dae)
@@ -100,4 +112,17 @@ out.delta = x(1:ns:ns*ng).';
 out.omega = x(2:ns:ns*ng).';
 out.Pe = dae.electrical_power(x,y).';
 out.Vbus = abs(complex(y(1:2:end),y(2:2:end))).';
+end
+
+function out = classical_reconstruct(x,y,dae)
+% Classical output reconstruction. y carries the network voltages; Pe and Vbus
+% are derived from the linear network solution. When called for recording, the
+% driver passes the current-topology Y via dae.electrical_power(x,y,Y); here we
+% use the base Ynet as a fallback (recording at the pre-fault topology is the
+% common case; the driver re-solves with the actual topology for Vbus).
+ng = dae.ng; nb = dae.nb;
+out.delta = x(1:ng).';
+out.omega = x(ng+1:2*ng).';
+out.Pe = dae.electrical_power(x, y, dae.Ynet).';
+out.Vbus = abs(complex(y(1:2:2*nb), y(2:2:2*nb))).';
 end

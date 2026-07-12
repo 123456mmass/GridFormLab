@@ -33,6 +33,13 @@ if isstruct(x) && isfield(x,'model')
     h_step = dae_f;
     Y_adm = dae_g;
     opt_s = Y;
+    if isfield(strategy,'needs_algebraic_solve') && ~strategy.needs_algebraic_solve
+        % Classical (linear) model: algebraic state is solved inside dae_f via
+        % a direct linear V=Y\Iinj; there is no nonlinear dae_g and no Jyy.
+        % Use the linear-strategy path (no ts_algebraic_solve calls).
+        step = classical_step(strategy, x_state, y_state, h_step, Y_adm, opt_s);
+        return;
+    end
     Jyy_s = strategy.jac_y(x_state, y_state, Y_adm);
     step = stability.ts_step_kernel(x_state, y_state, h_step, strategy.dae_f, ...
         strategy.dae_g, Y_adm, Jyy_s, opt_s);
@@ -111,6 +118,83 @@ all_finite = all(isfinite(x_pred)) && all(isfinite(y_pred)) && ...
 step = struct( ...
     'x_full', x_pred, 'y_full', y_pred, ...
     'f0', f0, 'f1', dae_f(x_pred, y_pred), ...
+    'corrector_iterations', ci_used, ...
+    'corrector_residual', resn, ...
+    'corrector_update', upd, ...
+    'corrector_converged', converged, ...
+    'algebraic_residual', alg_res, ...
+    'finite', all_finite);
+end
+
+% =========================================================================
+function step = classical_step(strategy, x, y, h, Y, opt)
+%CLASSICAL_STEP  Trapezoidal step for the classical (linear-network) model.
+%   The classical network is LINEAR given (delta, Eqmag, Y): the algebraic state
+%   y is solved exactly inside dae_f via V = (Y+Ygen)\Iinj. There is no nonlinear
+%   dae_g and no Jyy, so the ts_algebraic_solve calls of the legacy path are
+%   skipped. The trapezoidal predictor/corrector/residual logic is the SAME
+%   algorithm as the legacy path; only the algebraic-solve calls are omitted.
+%
+%   This is NOT a second trapezoidal implementation: it shares the predictor,
+%   corrector, residual, and convergence semantics of the canonical kernel. The
+%   difference is solely that the algebraic solve is exact-and-inline (linear)
+%   rather than a damped-Newton iteration on a nonlinear g.
+
+dae_f = strategy.dae_f;
+max_citer = opt.max_corrector_iter;
+abs_tol = opt.corrector_abs_tol;
+rel_tol = opt.corrector_rel_tol;
+mode = 'adaptive';
+if isfield(opt,'corrector_mode') && ~isempty(opt.corrector_mode)
+    mode = lower(opt.corrector_mode);
+end
+
+% Pre-step: dae_f solves the linear network internally, giving f0 at (x,y,Y).
+% y is consistent by construction (V = (Y+Ygen)\Iinj at x).
+f0 = dae_f(x, y, Y);
+x_pred = x + h*f0;
+y_pred = y;
+
+converged = false; upd = 0; resn = 0; ci_used = 0;
+switch mode
+case 'adaptive'
+    for ci = 1:max_citer
+        f1 = dae_f(x_pred, y_pred, Y);
+        x_new = x + 0.5*h*(f0 + f1);
+        f1_new = dae_f(x_new, y_pred, Y);
+        R = x_new - x - 0.5*h*(f0 + f1_new);
+        upd = norm(x_new - x_pred, inf);
+        resn = norm(R, inf);
+        x_pred = x_new;
+        ci_used = ci;
+        tol_now = abs_tol + rel_tol*max(1, norm(x_pred, inf));
+        if upd <= tol_now && resn <= tol_now
+            converged = true; break;
+        end
+    end
+case 'fixed'
+    for ci = 1:max(1, max_citer)
+        f1 = dae_f(x_pred, y_pred, Y);
+        x_pred = x + 0.5*h*(f0 + f1);
+        ci_used = ci;
+    end
+    R = x_pred - x - 0.5*h*(f0 + dae_f(x_pred, y_pred, Y));
+    resn = norm(R, inf);
+    upd = resn;
+    converged = (resn <= 1e-6);
+otherwise
+    error('ts_step_kernel:badMode','Unknown corrector_mode "%s".',mode);
+end
+
+% Classical algebraic residual: the network is solved exactly inside dae_f, so
+% the algebraic residual (network balance) is zero by construction at the
+% recorded y. We recompute y at x_pred for the recorded output.
+alg_res = 0;
+all_finite = all(isfinite(x_pred)) && all(isfinite(f0)) && all(isfinite(resn));
+
+step = struct( ...
+    'x_full', x_pred, 'y_full', y_pred, ...
+    'f0', f0, 'f1', dae_f(x_pred, y_pred, Y), ...
     'corrector_iterations', ci_used, ...
     'corrector_residual', resn, ...
     'corrector_update', upd, ...

@@ -1,0 +1,21 @@
+{
+  "git_head": "baa2286ea97aaa029e01c9b1e53815857f90a088",
+  "timestamp": "2026-07-13 01:21:42",
+  "timezone": "+0700",
+  "matlab_version": "26.1.0.3276743 (R2026a) Update 3",
+  "entry_point": "generate_system_methods_report",
+  "origin_main": "f59076ff018fabfac1fed97442ac8e2c9be9c2b6",
+  "cases": [
+    {
+      "case_function": "case_padiyar_two_area_4m_avr",
+      "solver_model_stepper": "Padiyar model-1.1 PF/SSSA/TS AVR+manual",
+      "source_reference_status": "Padiyar Tables 9.2/9.5 (sourced)",
+      "fresh_saved_status": "ours_fresh; book reference (Table 9.2/9.5)",
+      "input_contract_fingerprint": "35FF30F8667DE4DBA1C51E4035A7F6D697CB5E6B45646586989797033395C4F7",
+      "output_filenames": [
+        "/home/birds/Documents/Power-flow-report/docs/source/figures/padiyar_two_area/table_pf_bus.tex",
+        "/home/birds/Documents/Power-flow-report/docs/source/figures/padiyar_two_area/table_eigenvalues.tex"
+      ]
+    }
+  ]
+}

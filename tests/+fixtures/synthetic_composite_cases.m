@@ -94,4 +94,3 @@ function V = get_V(y, bus_id)
 b = bus_id;
 V = complex(y(2*b-1), y(2*b));
 end
-

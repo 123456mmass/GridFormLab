@@ -1,0 +1,7 @@
+case: Padiyar 4M2A
+model: model-1.1 AVR
+scenario: bus 3 fault Zf=0+0.5j
+data_source: Ours fixed+adaptive
+generating_command: generate_system_methods_report
+fresh_saved: ours_fresh
+metric: Fixed vs adaptive COI angle

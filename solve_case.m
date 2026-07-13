@@ -14,7 +14,8 @@ parse(p,varargin{:});
 analysis=lower(char(p.Results.analysis));
 case_id=lower(char(p.Results.case));
 user_opt=p.Results.options;
-interactive=isempty(analysis);
+interactive=isempty(analysis)||isempty(case_id);
+case_selection_interactive=isempty(case_id);
 
 analyses=struct( ...
     'id',{'pf','sssa','ts'}, ...
@@ -38,6 +39,31 @@ idx=find(strcmp(case_id,{registry.id}),1);
 if isempty(idx), error('solve_case:case','Case %s is not supported for %s.',case_id,analysis); end
 entry=registry(idx); case_data=entry.loader();
 
+pf_opt=struct(); sssa_opt=struct(); ts_opt=struct();
+switch analysis
+    case 'pf'
+        pf_defaults=struct('verbose',true,'plot_results',true, ...
+            'max_iter',50,'tolerance',1e-10,'enforce_q_limits',true, ...
+            'q_limit_tolerance',1e-6,'max_q_limit_switches',20);
+        pf_opt=merge_options(pf_defaults,user_opt);
+        if case_selection_interactive
+            [pf_opt,accepted]=prompt_pf_options(pf_opt,entry.label);
+            if ~accepted, result=[]; return; end
+        end
+    case 'sssa'
+        sssa_opt=merge_options(entry.options,user_opt);
+        if case_selection_interactive
+            [sssa_opt,accepted]=prompt_sssa_options(case_data,sssa_opt,entry.label);
+            if ~accepted, result=[]; return; end
+        end
+    case 'ts'
+        ts_opt=merge_options(entry.options,user_opt);
+        if case_selection_interactive
+            [ts_opt,accepted]=prompt_ts_options(case_data,ts_opt,entry.label);
+            if ~accepted, result=[]; return; end
+        end
+end
+
 logdir=fullfile(root,'output','logs');
 if ~exist(logdir,'dir'), mkdir(logdir); end
 stamp=datestr(now,'yyyymmdd_HHMMSS');
@@ -56,19 +82,18 @@ print_case_manifest(case_data);
 
 switch analysis
     case 'pf'
-        opt=merge_options(struct('verbose',true,'plot_results',true, ...
-            'max_iter',50,'tolerance',1e-10,'enforce_q_limits',true),user_opt);
+        opt=pf_opt;
         print_run_options(opt);
         result=pfsolver.powerflow_newton_raphson(case_data,opt);
         print_pf_checks(result,opt);
     case 'sssa'
-        opt=merge_options(entry.options,user_opt);
+        opt=sssa_opt;
         print_run_options(opt);
         result=stability.multicase_sssa(case_data,opt);
         result=annotate_sssa_result(result,opt);
         print_sssa_checks(result);
     case 'ts'
-        opt=merge_options(entry.options,user_opt);
+        opt=ts_opt;
         print_run_options(opt);
         result=stability.ts_simulate(case_data,opt);
         if ~isfield(opt,'plot_results') || opt.plot_results
@@ -130,6 +155,275 @@ end
 function out=merge_options(defaults,user)
 out=defaults; names=fieldnames(user);
 for k=1:numel(names), out.(names{k})=user.(names{k}); end
+end
+
+function [opt,accepted]=prompt_pf_options(opt,case_label)
+prompts={ ...
+    'Maximum Newton iterations'; ...
+    'Power-mismatch tolerance (pu)'; ...
+    'Enforce generator Q limits (true/false)'; ...
+    'Q-limit violation tolerance (pu)'; ...
+    'Maximum PV-to-PQ switching rounds'; ...
+    'Verbose output (true/false)'; ...
+    'Plot results (true/false)'};
+defaults={num_text(opt.max_iter),num_text(opt.tolerance), ...
+    logical_text(opt.enforce_q_limits),num_text(opt.q_limit_tolerance), ...
+    num_text(opt.max_q_limit_switches),logical_text(opt.verbose), ...
+    logical_text(opt.plot_results)};
+accepted=false;
+while true
+    answer=inputdlg(prompts,sprintf('PF settings — %s',case_label), ...
+        repmat([1 58],numel(prompts),1),defaults,struct('Resize','on'));
+    if isempty(answer), return; end
+    [candidate,message]=parse_pf_dialog(opt,answer);
+    if isempty(message)
+        opt=candidate; accepted=true; return;
+    end
+    errordlg(message,'Invalid PF settings','modal');
+    defaults=answer;
+end
+end
+
+function [opt,message]=parse_pf_dialog(opt,a)
+message='';
+values=cellfun(@str2double,a([1 2 4 5]));
+if any(~isfinite(values))
+    message='All numeric PF settings must be finite numbers.';
+    return;
+end
+opt.max_iter=values(1); opt.tolerance=values(2);
+opt.q_limit_tolerance=values(3); opt.max_q_limit_switches=values(4);
+[opt.enforce_q_limits,ok_q]=parse_logical_text(a{3});
+[opt.verbose,ok_verbose]=parse_logical_text(a{6});
+[opt.plot_results,ok_plot]=parse_logical_text(a{7});
+if opt.max_iter<1 || opt.max_iter~=fix(opt.max_iter)
+    message='Maximum Newton iterations must be a positive integer.';
+elseif opt.tolerance<=0 || opt.q_limit_tolerance<=0
+    message='PF and Q-limit tolerances must be positive.';
+elseif opt.max_q_limit_switches<0 || ...
+        opt.max_q_limit_switches~=fix(opt.max_q_limit_switches)
+    message='Maximum Q-limit switching rounds must be a nonnegative integer.';
+elseif ~ok_q || ~ok_verbose || ~ok_plot
+    message='Logical PF settings must be true/false or 1/0.';
+end
+end
+
+function [opt,accepted]=prompt_sssa_options(case_data,opt,case_label)
+opt=sssa_dialog_defaults(case_data,opt);
+prompts={ ...
+    'Dynamic model (classical, emf6, padiyar_1_1_avr/manual, or blank)'; ...
+    'Finite-difference step fd_eps'; ...
+    'Stability decision tolerance (1/s)'; ...
+    'Equilibrium tolerance (EMF6)'; ...
+    'Maximum equilibrium Newton iterations (EMF6)'; ...
+    'Load model (EMF6)'};
+defaults={char(opt.model),num_text(opt.fd_eps), ...
+    num_text(opt.stability_tolerance),num_text(opt.equilibrium_tolerance), ...
+    num_text(opt.newton_max_iterations),char(opt.load_model)};
+accepted=false;
+while true
+    answer=inputdlg(prompts,sprintf('SSSA settings — %s',case_label), ...
+        repmat([1 68],numel(prompts),1),defaults,struct('Resize','on'));
+    if isempty(answer), return; end
+    [candidate,message]=parse_sssa_dialog(opt,answer);
+    if isempty(message)
+        opt=candidate; accepted=true; return;
+    end
+    errordlg(message,'Invalid SSSA settings','modal');
+    defaults=answer;
+end
+end
+
+function opt=sssa_dialog_defaults(case_data,opt)
+if ~isfield(opt,'model'), opt.model=''; end
+model=char(opt.model);
+if ~isfield(opt,'fd_eps') || isempty(opt.fd_eps)
+    if strcmpi(model,'emf6'), opt.fd_eps=3e-6; else, opt.fd_eps=1e-6; end
+end
+if ~isfield(opt,'stability_tolerance') || isempty(opt.stability_tolerance)
+    opt.stability_tolerance=1e-7;
+end
+if ~isfield(opt,'equilibrium_tolerance') || isempty(opt.equilibrium_tolerance)
+    opt.equilibrium_tolerance=1e-10;
+end
+if ~isfield(opt,'newton_max_iterations') || isempty(opt.newton_max_iterations)
+    opt.newton_max_iterations=300;
+end
+if ~isfield(opt,'load_model') || isempty(opt.load_model)
+    if isfield(case_data,'operating_point') && ...
+            isfield(case_data.operating_point,'load_model')
+        opt.load_model=case_data.operating_point.load_model;
+    else
+        opt.load_model='cz_p_cz_q';
+    end
+end
+end
+
+function [opt,message]=parse_sssa_dialog(opt,a)
+message='';
+values=cellfun(@str2double,a(2:5));
+if any(~isfinite(values))
+    message='All numeric SSSA settings must be finite numbers.';
+    return;
+end
+opt.model=lower(strtrim(a{1}));
+opt.fd_eps=values(1); opt.stability_tolerance=values(2);
+opt.equilibrium_tolerance=values(3); opt.newton_max_iterations=values(4);
+opt.load_model=strtrim(a{6});
+valid_models={'','classical','emf6','padiyar_1_1_avr','padiyar_1_1_manual'};
+if ~any(strcmp(opt.model,valid_models))
+    message='Unsupported SSSA model selection.';
+elseif opt.fd_eps<=0 || opt.stability_tolerance<=0 || ...
+        opt.equilibrium_tolerance<=0
+    message='SSSA finite-difference and tolerance values must be positive.';
+elseif opt.newton_max_iterations<1 || ...
+        opt.newton_max_iterations~=fix(opt.newton_max_iterations)
+    message='Maximum equilibrium Newton iterations must be a positive integer.';
+elseif isempty(opt.load_model)
+    message='Load model must not be empty.';
+end
+end
+
+function [opt,accepted]=prompt_ts_options(case_data,opt,case_label)
+% Ask for TS settings only after the case and its external bus IDs are known.
+if ~isfield(opt,'pm_mode') || isempty(opt.pm_mode), opt.pm_mode='balanced'; end
+bus_ids=case_bus_ids(case_data);
+if ~isfield(opt,'fault_bus') || isempty(opt.fault_bus) || ...
+        ~ismember(opt.fault_bus,bus_ids)
+    opt.fault_bus=bus_ids(1);
+end
+if ~isfield(opt,'corrector_iter') || isempty(opt.corrector_iter)
+    fixed_iter_default=3;
+else
+    fixed_iter_default=opt.corrector_iter;
+end
+
+bus_text=format_bus_ids(bus_ids);
+prompts={ ...
+    'Simulation end time t_end (s)'; ...
+    'Nominal integration step dt (s)'; ...
+    sprintf('Fault bus: external ID (valid: %s)',bus_text); ...
+    'Fault application time t_fault (s)'; ...
+    'Fault clearing time t_clear (s)'; ...
+    'Fault resistance Rf (pu)'; ...
+    'Fault reactance Xf (pu)'; ...
+    'Integration method (trapezoidal)'; ...
+    'Stepper (fixed or adaptive)'; ...
+    'Corrector mode (adaptive or fixed)'; ...
+    'Corrector absolute tolerance'; ...
+    'Corrector relative tolerance'; ...
+    'Maximum adaptive-corrector iterations'; ...
+    'Fixed corrector iterations'; ...
+    'Mechanical-power mode'; ...
+    'Verbose output (true/false)'; ...
+    'Plot results (true/false)'};
+defaults={num_text(opt.t_end),num_text(opt.dt),num_text(opt.fault_bus), ...
+    num_text(opt.t_fault),num_text(opt.t_clear),num_text(real(opt.Zf)), ...
+    num_text(imag(opt.Zf)),char(opt.method),char(opt.stepper), ...
+    char(opt.corrector_mode),num_text(opt.corrector_abs_tol), ...
+    num_text(opt.corrector_rel_tol),num_text(opt.max_corrector_iter), ...
+    num_text(fixed_iter_default),char(opt.pm_mode), ...
+    logical_text(opt.verbose),logical_text(opt.plot_results)};
+
+accepted=false;
+while true
+    answer=inputdlg(prompts,sprintf('TS settings — %s',case_label), ...
+        repmat([1 62],numel(prompts),1),defaults,struct('Resize','on'));
+    if isempty(answer), return; end
+    [candidate,message]=parse_ts_dialog(opt,answer,bus_ids);
+    if isempty(message)
+        opt=candidate;
+        accepted=true;
+        return;
+    end
+    errordlg(message,'Invalid TS settings','modal');
+    defaults=answer;
+end
+end
+
+function [opt,message]=parse_ts_dialog(opt,a,bus_ids)
+message='';
+values=cellfun(@str2double,a([1:7 11:14]));
+if any(~isfinite(values))
+    message='All numeric TS settings must be finite numbers.';
+    return;
+end
+opt.t_end=values(1); opt.dt=values(2); opt.fault_bus=values(3);
+opt.t_fault=values(4); opt.t_clear=values(5);
+opt.Zf=values(6)+1i*values(7);
+opt.corrector_abs_tol=values(8); opt.corrector_rel_tol=values(9);
+opt.max_corrector_iter=values(10); fixed_iter=values(11);
+opt.method=lower(strtrim(a{8}));
+opt.stepper=lower(strtrim(a{9}));
+opt.corrector_mode=lower(strtrim(a{10}));
+opt.pm_mode=lower(strtrim(a{15}));
+[opt.verbose,ok_verbose]=parse_logical_text(a{16});
+[opt.plot_results,ok_plot]=parse_logical_text(a{17});
+
+if opt.t_end<=0 || opt.dt<=0
+    message='t_end and dt must be positive.';
+elseif opt.t_fault<0 || opt.t_clear<=opt.t_fault || opt.t_clear>opt.t_end
+    message='Require 0 <= t_fault < t_clear <= t_end.';
+elseif opt.fault_bus~=fix(opt.fault_bus) || ~ismember(opt.fault_bus,bus_ids)
+    message=sprintf('Fault bus must be one of these external IDs: %s.', ...
+        format_bus_ids(bus_ids));
+elseif ~strcmp(opt.method,'trapezoidal')
+    message='This launcher currently supports method=trapezoidal only.';
+elseif ~any(strcmp(opt.stepper,{'fixed','adaptive'}))
+    message='Stepper must be fixed or adaptive.';
+elseif ~any(strcmp(opt.corrector_mode,{'fixed','adaptive'}))
+    message='Corrector mode must be fixed or adaptive.';
+elseif opt.corrector_abs_tol<=0 || opt.corrector_rel_tol<=0
+    message='Corrector tolerances must be positive.';
+elseif opt.max_corrector_iter<1 || opt.max_corrector_iter~=fix(opt.max_corrector_iter)
+    message='Maximum corrector iterations must be a positive integer.';
+elseif fixed_iter<1 || fixed_iter~=fix(fixed_iter)
+    message='Fixed corrector iterations must be a positive integer.';
+elseif ~ok_verbose || ~ok_plot
+    message='verbose and plot_results must be true/false or 1/0.';
+else
+    if strcmp(opt.corrector_mode,'fixed'), opt.corrector_iter=fixed_iter; end
+end
+end
+
+function ids=case_bus_ids(c)
+if isfield(c,'mpc') && isfield(c.mpc,'bus')
+    ids=c.mpc.bus(:,1);
+elseif isfield(c,'bus_data')
+    ids=c.bus_data(:,1);
+else
+    error('solve_case:busIds','Selected case does not expose bus IDs.');
+end
+ids=unique(ids(:),'stable');
+end
+
+function text=format_bus_ids(ids)
+ids=ids(:).';
+if numel(ids)<=24
+    text=strjoin(compose('%g',ids),', ');
+else
+    text=sprintf('%s, ... (%d buses total)', ...
+        strjoin(compose('%g',ids(1:20)),', '),numel(ids));
+end
+end
+
+function text=num_text(value)
+text=sprintf('%.12g',value);
+end
+
+function text=logical_text(value)
+if value, text='true'; else, text='false'; end
+end
+
+function [value,ok]=parse_logical_text(text)
+switch lower(strtrim(text))
+    case {'true','1','yes','on'}
+        value=true; ok=true;
+    case {'false','0','no','off'}
+        value=false; ok=true;
+    otherwise
+        value=false; ok=false;
+end
 end
 
 function print_case_manifest(c)
@@ -305,4 +599,3 @@ if isfield(r,'initial_dae_residual')
 end
 if isfield(r,'figure_file'), fprintf('Figure file    : %s\n',r.figure_file); end
 end
-

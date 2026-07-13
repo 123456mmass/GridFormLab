@@ -3,8 +3,9 @@
 **Status:** `IEEE14_IBR_GFL_MODEL_READY` = STRUCTURAL_ONLY.
 `IBR_PRODUCTION_INTEGRATION_READY` = NOT_READY.
 **Branch:** `main`. **Date:** 2026-07-14.
-**Base:** `652eaa0` (Phase 0–4 merged). **Phase 5 HEAD:** `321d98c`
-(includes corrective patch).
+**Base:** `652eaa0` (Phase 0–4 merged). **Phase 5 HEAD:** `d811c30`
+(includes round-1 corrective patch `321d98c` + round-2 corrective patch
+`d811c30`).
 
 ## What was completed
 
@@ -20,7 +21,9 @@ ABI (R3 Rev 2, frozen) and consumed by `mixed_equilibrium_solve` via
 | `9abb5d7` | Phase 5 (1/2): GFL provenance + frozen-contract doc revisions |
 | `41085f6` | Phase 5 (2/2): GFL model + structural tests |
 | `60d8337` | Phase 5 handoff |
-| `321d98c` | Phase 5 corrective patch: complex V0, fail-closed u, bus mapping, param provenance |
+| `321d98c` | Phase 5 corrective patch (round 1): complex V0, fail-closed u, bus mapping, param provenance |
+| `75a06b9` | Phase 5 handoff: record round-1 corrective patch + fresh test counts |
+| `d811c30` | Phase 5 corrective patch (round 2): oversized-u, ref validation, integer bus_position, doc consistency |
 
 ### Files
 
@@ -134,6 +137,52 @@ diff (`9abb5d7` + `41085f6`) against:
 - the v3 plan amendments (Q-sign, system base, bus_position+V0 constructor,
   mixed-equilibrium gate deferred to Phase 9, no `+stability/**` edits).
 
+## Round-2 corrective patch (commit `d811c30`)
+
+A second independent re-review surfaced 4 residual findings (2 High, 2
+Medium). Compact REVISE_MINIMAL patch — no model rebuild, no
+gain/tolerance/equation change:
+
+1. **F1 (High) — oversized `u_dev`:** `refs_from_u` now requires
+   `numel(u_dev)==2` exactly (was `<2`, which silently truncated 3+ element
+   inputs). Oversized → `:badInput`.
+2. **F2 (Medium) — non-finite refs:** constructor validates `P_ref_pu`/
+   `Q_ref_pu` finite before `x0`/`u0` assembly (was silently accepting
+   NaN/Inf). Non-finite → `:badRef`.
+3. **F3 (Medium) — fractional `bus_position`:** constructor requires a finite
+   integer (was falling through to `MATLAB:badsubscript`). Fractional →
+   `:busMappingMismatch`.
+4. **F4 (High doc contract):** Source Matrix, Frozen Contract, Decision
+   Ledger were internally inconsistent on Phase 5/6 status. Item 1 detail →
+   STRUCTURAL_ONLY (was DECISION_REQUIRED/PARTIAL); Phase 6 relabeled
+   "GFM/VSG model" (was "dual-mode transfer"); GFL↔GFM transfer (item 3)
+   scoped to Phases 10-11, NOT Phase 6.
+
+Extended T18/T19/T20 (no new test functions; count stays 21).
+
+### Fresh verification evidence (MATLAB R2025a, after round-2 patch)
+
+```matlab
+restoredefaultpath; cd('C:\Users\User\Desktop\Power-flow'); pf_init_paths;
+runtests('tests/test_ibr_gfl_model.m');              % 21 passed / 0 failed / 0 incomplete
+runtests('tests','IncludeSubfolders',true);         % 579 passed / 0 failed / 4 incomplete
+runtests('tests/test_no_external_solver_dependency.m'); % 12 passed / 0 failed
+```
+
+- Phase 5 suite: **21 passed / 0 failed / 0 incomplete**.
+- Full regression: **579 passed / 0 failed / 4 incomplete** (PSAT not
+  installed; environment, not regression).
+- External-solver guard: **12 passed / 0 failed**.
+- `+stability/**` unchanged (`git diff --name-only 75a06b9..d811c30 -- +stability/` empty).
+- Frozen gains unchanged (grep guard: omega0=376.99..., omega_c=10, kpPLL=0.265,
+  kiPLL=2.65, Kps=1.0, Kis=10.0 in `gfl_model.m` defaults).
+- `git diff --check` clean.
+- Probe re-run: oversized u → `:badInput`; NaN/Inf refs → `:badRef`;
+  fractional bus_position → `:busMappingMismatch` (all 3 findings closed).
+
+The 6-state structure, equations, and frozen gains are unchanged. The
+round-2 patch is additive on top of the round-1 corrective patch (`321d98c`).
+
 ## Next phase
 
 **Phase 6 — REGFM_B1-derived GFM/VSG model.** Build the GFM device
@@ -145,6 +194,6 @@ established in Phase 5. Phase 7 will construct the fixed dual-mode superset
 layout (GFL+GFM in one device) separately — it must not force unsourced GFL
 dynamics into the Phase 5 GFL.
 
-Before Phase 6: inspect current `main` (`41085f6`), trace the REGFM_B1 source
+Before Phase 6: inspect current `main` (`d811c30`), trace the REGFM_B1 source
 equations from `docs/text/90260.pdf`, freeze the GFM state vector + parameter
 table, declare acceptance criteria before results, and obtain user approval.

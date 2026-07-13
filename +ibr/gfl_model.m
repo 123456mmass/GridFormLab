@@ -85,6 +85,13 @@ end
 % bus_position indexes the shared y vector (voltage measurement); bus_id is
 % the external ID used for injection mapping in composite_dae. They MUST
 % refer to the same physical bus: bus_ids(bus_position) == bus_id.
+% Round-2 F3: bus_position must be a finite integer (a fractional position is
+% a caller bug; without this guard it falls through to bus_ids(1.5) and errors
+% with the generic MATLAB:badsubscript instead of our stable ID).
+if ~isfinite(bus_position) || bus_position ~= floor(bus_position)
+    error('ibr:gfl_model:busMappingMismatch', ...
+        'bus_position must be a finite integer (got %.6g).', bus_position);
+end
 if bus_position < 1 || bus_position > numel(bus_ids)
     error('ibr:gfl_model:busMappingMismatch', ...
         'bus_position %d out of range [1, %d] for bus_ids.', bus_position, numel(bus_ids));
@@ -104,6 +111,19 @@ if ~isfinite(V0) || abs(V0) <= 0
 end
 V0_mag = abs(V0);
 theta0 = angle(V0);
+
+% --- F2 (round-2): finite P_ref/Q_ref validation ---------------------------
+% The arguments block only enforces (1,1) double; a non-finite reference
+% (NaN/Inf) would propagate into x0/u0 and the PI integrators, producing
+% silent NaN/Inf trajectories. Validate before any use.
+if ~isfinite(P_ref_pu)
+    error('ibr:gfl_model:badRef', ...
+        'P_ref_pu must be finite (got %.6g).', P_ref_pu);
+end
+if ~isfinite(Q_ref_pu)
+    error('ibr:gfl_model:badRef', ...
+        'Q_ref_pu must be finite (got %.6g).', Q_ref_pu);
+end
 
 % --- Parameters (frozen BEFORE results; see provenance doc) -----------------
 % Defaults reflect the Phase 5 freeze; params may override ONLY for diagnostic
@@ -327,9 +347,12 @@ if isempty(u_dev)
     error('ibr:gfl_model:missingInput', ...
         'u_dev is empty; the GFL requires u=[P_ref;Q_ref] (nu=2).');
 end
-if numel(u_dev) < 2
+% Round-2 F1: reject BOTH undersized and oversized inputs. The nu=2 contract
+% requires exactly 2 elements; a 3+ element u_dev was previously silently
+% truncated (only the first 2 used), hiding an ABI violation.
+if numel(u_dev) ~= 2
     error('ibr:gfl_model:badInput', ...
-        'u_dev has %d element(s); expected 2 ([P_ref;Q_ref]).', numel(u_dev));
+        'u_dev has %d element(s); expected exactly 2 ([P_ref;Q_ref]).', numel(u_dev));
 end
 if ~isfinite(u_dev(1)) || ~isfinite(u_dev(2))
     error('ibr:gfl_model:badInput', ...

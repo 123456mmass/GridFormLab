@@ -128,8 +128,9 @@ selection used the predeclared hierarchy where alternatives existed.
   map, no shadow controller, no synchronism check, no inactive-state
   evolution). REGFM_B1 has no mode switching.
 - ⛔ A bumpless transfer map and inactive-state rule cannot be sourced
-  without inventing a semantic choice. → Blocks Phase 6 and mode-switching
-  missions (Phases 10-11).
+  without inventing a semantic choice. → Blocks the GFL↔GFM transfer /
+  mode-switching missions (Phases 10-11). This does NOT block Phase 6 (the
+  GFM/VSG model, which proceeds from item 2).
 
 ## Current limiter + anti-windup (item 4 — PARTIAL)
 
@@ -179,8 +180,13 @@ selection used the predeclared hierarchy where alternatives existed.
 ## What is blocked (genuine stop, evidence-backed handoff)
 
 - **Phase 4** (mixed equilibrium) — item 8.
-- **Phase 5** (GFL model) — item 1 (RMS reduction decision).
-- **Phase 6** (dual-mode transfer) — item 3.
+- **Phase 5** (GFL model) — STRUCTURAL_ONLY (done; RMS reduction
+  PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC). Production readiness pending
+  source-closing the ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-
+  equilibrium integration.
+- **Phase 6** (GFM/VSG model) — proceeds from item 2 (PARTIAL-TO-CLOSEABLE);
+  NOT blocked by item 3.
+- **GFL↔GFM transfer / mode-switching** (Phases 10-11) — item 3.
 - **Phases 7-17** — depend on 5/6.
 - **Phases 10-13** — items 5, 6.
 

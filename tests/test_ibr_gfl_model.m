@@ -456,6 +456,19 @@ try
 catch e
     testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', '1-element u -> badInput.');
 end
+% Round-2 F1: oversized u (3 elements) must also error (was silently truncated).
+try
+    dev.f(0, x, y0, [0.4; 0.1; 99], struct());
+    testCase.verifyTrue(false, '3-element u must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', '3-element u -> badInput.');
+end
+try
+    dev.current_injection(0, x, y0, [0.4; 0.1; 99], struct());
+    testCase.verifyTrue(false, '3-element u (current_injection) must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', '3-element u (ci) -> badInput.');
+end
 % Valid u still works.
 f_ok = dev.f(0, x, y0, u0, struct());
 testCase.verifyTrue(all(isfinite(f_ok)), 'valid u evaluates finite f.');
@@ -490,6 +503,15 @@ catch e
     testCase.verifyEqual(e.identifier, 'ibr:gfl_model:busMappingMismatch', ...
         'out-of-range -> busMappingMismatch.');
 end
+% Round-2 F3: fractional bus_position must error with our stable ID (was
+% falling through to MATLAB:badsubscript before the integer guard).
+try
+    ibr.gfl_model('IBR_test', 5, 1.5, bus_ids, V0, struct(), 0.4, 0.1);
+    testCase.verifyTrue(false, 'fractional bus_position must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:busMappingMismatch', ...
+        'fractional bus_position -> busMappingMismatch (not MATLAB:badsubscript).');
+end
 end
 
 % =========================================================================
@@ -511,6 +533,20 @@ try
     testCase.verifyTrue(false, 'negative Kis must error.');
 catch e
     testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badParam', 'negative Kis -> badParam.');
+end
+% Round-2 F2: non-finite P_ref/Q_ref must error with :badRef (was silently
+% accepted, propagating NaN/Inf into x0/u0).
+try
+    ibr.gfl_model('t', 2, 2, bus_ids, V0, struct(), NaN, 0.1);
+    testCase.verifyTrue(false, 'NaN P_ref must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badRef', 'NaN P_ref -> badRef.');
+end
+try
+    ibr.gfl_model('t', 2, 2, bus_ids, V0, struct(), 0.4, Inf);
+    testCase.verifyTrue(false, 'Inf Q_ref must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badRef', 'Inf Q_ref -> badRef.');
 end
 % Valid override still works and reclassifies the param DIAGNOSTIC_ONLY.
 dev = ibr.gfl_model('t', 2, 2, bus_ids, V0, struct('Kis', 20.0), 0.4, 0.1);

@@ -190,3 +190,36 @@ The 6-state structure, equations, and frozen gains are unchanged. The
 corrective patch is additive on top of the three Phase 5 commits
 (`9abb5d7`, `41085f6`, `60d8337`).
 
+## Corrective patch (round 2 — input-validation + doc consistency)
+
+A second independent re-review surfaced 4 residual findings (2 High, 2
+Medium). A compact REVISE_MINIMAL patch was applied (no model rebuild, no
+gain/tolerance/equation change):
+
+1. **Oversized `u_dev` rejection (F1, High):** `refs_from_u` now requires
+   `numel(u_dev) == 2` exactly (was `< 2`, which silently truncated 3+
+   element inputs). Oversized inputs now error with `:badInput`. The empty
+   case still gives the more specific `:missingInput`.
+2. **Finite `P_ref`/`Q_ref` validation (F2, Medium):** the constructor now
+   validates `P_ref_pu` and `Q_ref_pu` are finite before `x0`/`u0` assembly
+   (was silently accepting NaN/Inf, which propagated into the PI integrators).
+   Non-finite refs error with `:badRef`.
+3. **Integer `bus_position` guard (F3, Medium):** the constructor now requires
+   `bus_position` to be a finite integer (was falling through to
+   `bus_ids(1.5)` → generic `MATLAB:badsubscript`). Fractional positions now
+   error with `:busMappingMismatch`.
+4. **Documentation consistency (F4, High doc contract):** the Source Matrix,
+   Frozen Contract, and Decision Ledger were internally inconsistent on
+   Phase 5/6 status. Fixed: Item 1 detail → STRUCTURAL_ONLY (was
+   DECISION_REQUIRED/PARTIAL); Phase 6 relabeled "GFM/VSG model" (was
+   "dual-mode transfer"); the GFL↔GFM transfer (item 3) is now correctly
+   scoped to Phases 10-11, NOT Phase 6.
+
+Extended falsification tests (T18/T19/T20): oversized `u_dev` → `:badInput`;
+fractional `bus_position` → `:busMappingMismatch`; NaN/Inf refs → `:badRef`.
+No new test functions; the count stays 21.
+
+The 6-state structure, equations, and frozen gains are unchanged. The
+round-2 patch is additive on top of the round-1 corrective patch
+(`321d98c`).
+

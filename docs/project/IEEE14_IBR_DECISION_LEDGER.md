@@ -210,7 +210,14 @@ registration, no production-readiness claim.
 
 ---
 
-## Item 3 — GFL↔VSG transfer maps + inactive-state rule → PROJECT_DERIVED from continuity + algebraic-residual minimization
+## Item 3 — GFL↔GFM transfer maps + inactive-state rule → PROJECT_DERIVED from continuity + algebraic-residual minimization
+
+> **Scope note (round-2 doc fix):** This item is the GFL↔GFM transfer /
+> mode-switching mission (Phases 10-11), NOT Phase 6. Phase 6 is the
+> GFM/VSG model (item 2, REGFM_B1-derived). The transfer design below is
+> PROJECT_DERIVED but its implementation is gated on the GFM model (Phase 6)
+> and remains a genuine stop for the mode-switching missions until sourced
+> or approved.
 
 ### 1. Exact equations/values required
 
@@ -267,9 +274,10 @@ PROJECT_DERIVED contract, not manual zero-eigenvalue deletion.
 ### 5. Smallest user decision required
 
 None — (a) is PROJECT_DERIVED with continuity/reset equations written before
-the model code (Phase 6). Falsification tests enforce current continuity.
+the model code (the GFL↔GFM transfer mission, Phases 10-11). Falsification
+tests enforce current continuity.
 
-### Falsification tests (Phase 6)
+### Falsification tests (GFL↔GFM transfer mission, Phases 10-11)
 
 - `test_transfer_gfl_to_gfm_current_continuity`: `|I_inj(t+) - I_inj(t-)|`
   within algebraic tolerance.

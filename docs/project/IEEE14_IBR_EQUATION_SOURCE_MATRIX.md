@@ -40,12 +40,19 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 - **Gap:** Ding's GFL is an EMT/LCL model, NOT a positive-sequence RMS model.
   The canonical plan requires "the smallest source-closed positive-sequence
   RMS GFL profile compatible with the project's DAE." A reduced-order
-  positive-sequence GFL (current-source behind coupling reactance with PLL)
-  is the standard utility representation, but no inspected source states its
-  reduced-order state equations explicitly. **Reduced-order GFL state vector
-  = DECISION_REQUIRED** (semantic reduction choice).
-- **Status: PARTIAL.** Full EMT GFL sourced; positive-sequence RMS reduction
-  not sourced.
+  positive-sequence GFL (current-source with PLL-synchronized angle) is the
+  standard utility representation, but no inspected source states its
+  reduced-order state equations explicitly. The RMS reduction (ideal inner
+  loop + LCL elimination) is **PROJECT_DERIVED** (documented in
+  `docs/project/IEEE14_IBR_GFL_PHASE5_PROVENANCE.md`); it is NOT claimed
+  source-closed verbatim. Kps/Kis are **ASSUMED_DIAGNOSTIC** (Ding Table I
+  lacks them; a-priori critically-damped rationale) and are excluded from
+  production acceptance.
+- **Status: STRUCTURAL_ONLY (Phase 5 done).** Full EMT GFL sourced; the
+  positive-sequence RMS reduction is PROJECT_DERIVED (not source-closed
+  verbatim); Kps/Kis are ASSUMED_DIAGNOSTIC. Production readiness pending
+  source-closing the ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-
+  equilibrium integration.
 
 ### Item 2 — VSG/VSM profile from REGFM_B1
 
@@ -79,9 +86,10 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 - **Status: UNSOURCED — GENUINE STOP CONDITION.** A bumpless GFL↔VSG
   transfer map and an inactive-state evolution rule (frozen / tracking /
   shadow-controller) cannot be sourced without inventing a semantic choice.
-  This blocks Phase 6 (dual-mode transfer) and the mode-switching missions
-  (Phases 10-11). Per user directive: "GFL↔GFM transfer or inactive-state
-  behavior would have to be invented" = stop.
+  This blocks the GFL↔GFM transfer / mode-switching missions (Phases 10-11).
+  It does NOT block Phase 6 (the GFM/VSG model, which proceeds from item 2).
+  Per user directive: "GFL↔GFM transfer or inactive-state behavior would have
+  to be invented" = stop.
 
 ### Item 4 — Current limiter + anti-windup
 
@@ -184,8 +192,10 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 retained stop conditions, the mission STOPS at Phase 1 for these items.
 Independent generic work (Phase 2 event architecture, Phase 3 hybrid-state)
 that does NOT assume the missing decisions MAY proceed with synthetic
-fixtures. Phase 4 (mixed equilibrium) is blocked by item 8; Phases 5-6 are
-blocked by items 1/2/3; Phases 10-13 are blocked by items 3/5/6.
+fixtures. Phase 4 (mixed equilibrium) is blocked by item 8; Phase 5 (GFL
+model) is STRUCTURAL_ONLY (done); Phase 6 (GFM/VSG model) proceeds from item 2
+(PARTIAL-TO-CLOSEABLE); the GFL↔GFM transfer / mode-switching missions
+(Phases 10-11) are blocked by item 3; Phases 10-13 are blocked by items 3/5/6.
 
 ## Conventions that ARE source-closed (reusable)
 
@@ -218,6 +228,7 @@ blocked by items 1/2/3; Phases 10-13 are blocked by items 3/5/6.
 - **Phase 5** (GFL model) — STRUCTURAL_ONLY (done; RMS reduction PROJECT_DERIVED,
   Kps/Kis ASSUMED_DIAGNOSTIC; production readiness pending source-closing the
   ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-equilibrium integration).
-- **Phase 6** (dual-mode transfer) — needs transfer maps (item 3).
+- **Phase 6** (GFM/VSG model) — proceeds from item 2 (PARTIAL-TO-CLOSEABLE);
+  the GFL↔GFM transfer maps (item 3) are NOT required for Phase 6.
 - **Phases 7-17** — depend on 5/6.
 - **Phases 10-13** — need synchronism (item 5), delays (item 6).

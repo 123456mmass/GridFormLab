@@ -72,16 +72,45 @@ selection used the predeclared hierarchy where alternatives existed.
 - **GAPS (fenced, not production):** no explicit anti-windup; no mode
   switching (REGFM_B1 is GFM-only).
 
-## GFL model (item 1 — PARTIAL, reduction decision required)
+## GFL model (item 1 — STRUCTURAL_ONLY, Phase 5 frozen)
 
 - **Full EMT GFL (Ding 83340 §II-B, Eqs. 8-10 + 3-6):** 14-state LCL model
   with SRF-PLL. SOURCE_VERBATIM. BUT this is an EMT/LCL model, not a
   positive-sequence RMS model compatible with the project DAE.
-- **Positive-sequence RMS GFL (target):** standard utility representation
-  = current-source behind coupling reactance with PLL-synchronized angle.
-  ⛔ No inspected source states its reduced-order state equations
-  explicitly. The reduction from Ding's EMT to RMS is a DECISION_REQUIRED
-  semantic choice. → Blocks Phase 5 (GFL model) until resolved.
+- **Positive-sequence RMS GFL (Phase 5 freeze, PROJECT_DERIVED reduction):**
+  current-source (NOT behind coupling reactance) with PLL-synchronized angle,
+  the standard utility representation. The reduction from Ding's EMT to RMS
+  is PROJECT_DERIVED (ideal-inner-loop + LCL elimination); see
+  `IEEE14_IBR_GFL_PHASE5_PROVENANCE.md`.
+- **State vector (frozen, 6 states, PROJECT_DERIVED order):**
+  `x_gfl = [delta_pll, eps_pll, P_f, Q_f, phi_P, phi_Q]^T`.
+  The earlier "~6-8 states" range is CLOSED at 6. Ding Eq.9 defines phi_P/phi_Q
+  as differential PI-integrator states; Ding Eq.10 defines i_d*/i_q* as
+  ALGEBRAIC current references (NOT states). No current-reference filter
+  states, no new time constant.
+- **PLL equation form (frozen):** `d(eps_pll)/dt = Vq_pll`,
+  `d(delta_pll)/dt = omega0*(kpPLL*Vq_pll + kiPLL*eps_pll)` (omega0 multiplier
+  PRESENT; relative network frame so the omega_n term drops). REGFM_B1 PLL
+  output limits and low-voltage freeze deferred to Phase 14 (FRT).
+- **Q-sign (frozen):** `i_q* = -Kps*(Qref - Q_f) - Kis*phi_Q` (negative,
+  because Q = -V0*i_q* at lock). `i_d* = +Kps*(Pref - P_f) + Kis*phi_P`.
+- **Base (frozen):** system base only (S_base = 100 MVA); NO Mbase, NO
+  Sbase/Mbase conversion factor. IEEE14 IBRs are grid-connected on the
+  system base.
+- **Parameters (frozen BEFORE results):**
+  - `omega0 = 376.99 rad/s` (SOURCE_VERBATIM, REGFM_B1 Table 1 omega0);
+  - `omega_c = 10 rad/s` (SOURCE_VERBATIM, Ding Table I);
+  - `kpPLL = 0.265 pu`, `kiPLL = 2.65 pu/s` (SOURCE_VERBATIM values from
+    REGFM_B1 Table 1; CASE_DEFINED/PROJECT_MAPPED application to the GFL);
+  - `Kps = 1.0`, `Kis = 10.0 s^-1` (ASSUMED_DIAGNOSTIC — Ding Table I lacks;
+    a-priori critically-damped rationale; excluded from production acceptance).
+- **Constructor inputs:** `gfl_model(device_id, bus_id, bus_position, V0_pu, params)`,
+  `nu=2`, `u=[Pref;Qref]`. V0 = |V_bus| from PF (used for initialization + pole oracle).
+- **Status:** `IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime
+  registration, no production-readiness claim. Mixed-equilibrium /
+  pure-GFL-island-via-solver / SSSA-sharing gates deferred to Phase 9
+  (require `mixed_equilibrium_solve` u-passing changes; no `+stability/**`
+  edits in Phase 5).
 
 ## GFL↔VSG transfer + inactive-state rule (item 3 — ⛔ STOP)
 

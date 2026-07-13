@@ -111,28 +111,33 @@ the reference mode).
 
 ---
 
-## Item 1 — GFL positive-sequence model → PROJECT_DERIVED reduction from Ding + standard utility representation
+## Item 1 — GFL positive-sequence model → PROJECT_DERIVED reduction from Ding + standard utility representation (Phase 5 STRUCTURAL_ONLY freeze)
 
 ### 1. Exact equations/values required
 
 A positive-sequence RMS GFL model compatible with the project DAE (current-
-source behind coupling reactance, PLL-synchronized). State vector:
-`x_gfl = [δ_pll, ε_pll (PLL integrator), P_f (filtered P), Q_f (filtered Q),
-i_d_ref, i_q_ref (current-controller references)]` (~6-8 states, reduced
-from Ding's 14-state EMT).
+source, PLL-synchronized). **Phase 5 frozen state vector (6 states):**
+`x_gfl = [delta_pll, eps_pll, P_f, Q_f, phi_P, phi_Q]^T` (reduced from Ding's
+14-state EMT). The earlier "~6-8 states" range is CLOSED at 6. Ding Eq.9
+defines phi_P/phi_Q as differential PI-integrator states; Ding Eq.10 defines
+i_d*/i_q* as ALGEBRAIC current references (NOT states). No current-reference
+filter states, no new time constant.
 
 ### 2. Verified source candidates
 
 - **Ding 83340 §II-B (pp.3-4), Eqs. 8-10 + shared 3-6:** full EMT GFL
   (14-state: PLL ε_L/δ_inv, P/Q filters, voltage/current PI, LCL filter).
   SOURCE_VERBATIM at equation level.
-- **REGFM_B1 90260:** GFM-only, no GFL.
+- **REGFM_B1 90260:** GFM-only, no GFL. BUT REGFM_B1 Table 1 provides
+  kpPLL=0.265, kiPLL=2.65 (PLL gains, SOURCE_VERBATIM values) adopted as the
+  common IEEE14 dual-mode converter PLL profile (CASE_DEFINED/PROJECT_MAPPED
+  application to the GFL).
 - **Standard utility representation (positive-sequence RMS current source):**
   the conventional GFL for phasor-based stability studies. Not in a single
   inspected source as explicit reduced-order state equations, but is the
   universally accepted reduction documented in power-system stability texts.
 
-### 3. Compatibility + derivation
+### 3. Compatibility + derivation (Phase 5 freeze)
 
 The reduction from Ding's EMT to positive-sequence RMS is a PROJECT_DERIVED
 semantic choice, justified by:
@@ -141,14 +146,20 @@ semantic choice, justified by:
   switching frequency, far above the electromechanical bandwidth. In RMS
   reduction, the inner loops are assumed instantaneous (algebraic), leaving
   the PLL + outer P/Q tracking + filter dynamics.
-- The reduced state vector `[δ_pll, ε_pll, P_f, Q_f, i_d_ref, i_q_ref]`
-  preserves the PLL synchronization (essential for GFL) and the P/Q current
-  references (the GFL's controlled outputs).
+- The reduced 6-state vector preserves the PLL synchronization (essential for
+  GFL) and the P/Q power-loop PI (the GFL's controlled outputs).
+
+**Phase 5 frozen equations (v3):**
+- `d(eps_pll)/dt = Vq_pll`; `d(delta_pll)/dt = omega0*(kpPLL*Vq_pll + kiPLL*eps_pll)`.
+- `d(P_f)/dt = omega_c*(Pinv_meas - P_f)`; `d(Q_f)/dt = omega_c*(Qinv_meas - Q_f)`.
+- `d(phi_P)/dt = +(Pref - P_f)`; `d(phi_Q)/dt = +(Qref - Q_f)`.
+- `i_d* = +Kps*(Pref - P_f) + Kis*phi_P`; `i_q* = -Kps*(Qref - Q_f) - Kis*phi_Q` (Q-sign corrected).
+- `I_gfl = (i_d* + j*i_q*)*exp(j*delta_pll)` (system base; NO Mbase factor).
 
 **Sign/base compatibility:** current INTO network (positive injection,
-matches composite `YV-I`); `S = V·conj(I)`; system base 100 MVA. The GFL's
-current injection `I_gfl(t, x_gfl, y, u_gfl, event_context)` is the device
-output to the composite.
+matches composite `YV-I`); `S = V·conj(I)`; system base 100 MVA only (no
+inverter-base conversion). The GFL's current injection
+`I_gfl(t, x_gfl, y, u_gfl, event_context)` is the device output to the composite.
 
 ### 4. Mutually exclusive choices
 
@@ -164,13 +175,38 @@ None — reduction (a) is PROJECT_DERIVED with documented derivation and
 falsification tests. The continuity/reset equations are written in Phase 5
 before the model code.
 
-### Falsification tests (Phase 5)
+### Parameter freeze (Phase 5, BEFORE results)
 
-- `test_gfl_pll_lock`: single-GFL/infinite-bus, PLL locks to grid angle.
-- `test_gfl_pq_sign`: P/Q sign matches generator convention.
+- `omega0 = 376.99 rad/s` (SOURCE_VERBATIM, REGFM_B1 Table 1 omega0).
+- `omega_c = 10 rad/s` (SOURCE_VERBATIM, Ding Table I).
+- `kpPLL = 0.265 pu`, `kiPLL = 2.65 pu/s` (SOURCE_VERBATIM values from
+  REGFM_B1 Table 1; CASE_DEFINED/PROJECT_MAPPED application to the GFL).
+- `Kps = 1.0`, `Kis = 10.0 s^-1` (ASSUMED_DIAGNOSTIC — Ding Table I lacks;
+  a-priori critically-damped rationale; excluded from production acceptance).
+- `Pref`, `Qref` per-IBR (CASE_DEFINED, IEEE14 dispatch contract).
+
+### Falsification tests (Phase 5, structural-only)
+
+- `test_gfl_pll_lock`: PLL locks to grid angle at equilibrium.
+- `test_gfl_pq_sign`: P/Q sign matches generator convention (S=V·conj(I)).
 - `test_gfl_current_into_network`: positive injection.
-- `test_gfl_equilibrium_residual`: finite residual at the operating point.
-- `test_gfl_jacobian_fd_agreement`: analytic/FD Jacobian agreement.
+- `test_gfl_equilibrium_residual`: finite residual at the v3-initialized point.
+- `test_gfl_jacobian_fd_agreement`: FD Jacobian finite + well-conditioned.
+- Pole oracles: PLL {-11.27,-88.63}@V0=1; power-loop {-10,-10}@V0=1,
+  {-8,-10}@V0=0.8, {-10,-12}@V0=1.2.
+- `test_gfl_direct_feedthrough`: step Pref → i_d* jumps +Kps·ΔPref;
+  step Qref → i_q* jumps -Kps·ΔQref.
+- `test_gfl_no_disturbance_ts_holds`: ts_step_kernel direct, max|x(t)-x0|<1e-6.
+- Guards: no external solver; nx==6; omega0 multiplier present; Q-sign correct.
+
+**Deferred to Phase 9** (require `mixed_equilibrium_solve` u-passing changes;
+no `+stability/**` edits in Phase 5): mixed-equilibrium convergence gate,
+pure-GFL-island rejection via the solver, SSSA/TS equation-sharing gate.
+
+### Status
+
+`IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime
+registration, no production-readiness claim.
 
 ---
 

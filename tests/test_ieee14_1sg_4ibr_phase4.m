@@ -189,8 +189,8 @@ function devs = build_synthetic_devices(case_data, sg_status, dispatch, gfm_devi
 %   sg_status: 'online' | 'tripped'. gfm_device_id: which IBR is GFM (or '').
 %   SG1 is NOT a device in the list; when online, its slack is the PF. When
 %   tripped, no SG device. The IBRs use the synthetic_ibr_equilibrium fixture.
-devs = repmat(struct(), 0, 1);
 ibr_ids = {'IBR2','IBR3','IBR6','IBR8'};
+dev_cells = cell(numel(ibr_ids), 1);
 for k = 1:numel(ibr_ids)
     did = ibr_ids{k};
     bus = case_data.devices.(did).bus;
@@ -200,7 +200,8 @@ for k = 1:numel(ibr_ids)
         mode = 'gfl';
     end
     disp_MW = dispatch.(did);
-    dev = fixtures.synthetic_ibr_equilibrium(string(did), bus, mode, disp_MW);
-    devs = [devs; dev]; %#ok<AGROW>
+    dev_cells{k} = fixtures.synthetic_ibr_equilibrium( ...
+        string(did), bus, mode, disp_MW);
 end
+devs = vertcat(dev_cells{:});
 end

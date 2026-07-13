@@ -193,18 +193,25 @@ y_full = [V1_ref; y_free];
 ec = struct();
 f = dae.dae_f(0, x, y_full, u, ec);
 g = dae.dae_g(0, x, y_full, Y, u, ec);
-% g(1:2) are replaced by the vcon (already enforced by fixing y(1:2)=V1_ref).
-% The residual on the constrained rows is zero by construction; the free rows
-% carry the KCL. Report the full residual for the Newton (constrained rows
-% are zero, free rows are KCL).
-r = [f(:); g(:)];
+% The constrained algebraic variables are fixed explicitly in z, so their
+% paired vcon residual rows must be removed from the Newton system. This is
+% the nonlinear counterpart of the paired free_rows/free_vars elimination
+% used by multimachine_ssa; retaining the zero constraint rows would make
+% the residual two entries longer than the unknown vector.
+free_rows = setdiff(1:numel(g), dae.vcon.rows, 'stable');
+r = [f(:); g(free_rows)];
 end
 
 % =========================================================================
 function J = coupled_jacobian_fd(z, nx, ny_free, residual_fn, fd_eps)
 nz = numel(z);
-J = zeros(nz, nz);
 r0 = residual_fn(z);
+if numel(r0) ~= nz
+    error('mixed_equilibrium_solve:nonSquareResidual', ...
+        'Coupled residual length %d must equal unknown count %d.', ...
+        numel(r0), nz);
+end
+J = zeros(nz, nz);
 for j = 1:nz
     zp = z; zp(j) = zp(j) + fd_eps;
     rp = residual_fn(zp);

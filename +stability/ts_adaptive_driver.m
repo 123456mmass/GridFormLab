@@ -316,6 +316,18 @@ function id = event_id_lookup(et, events)
 %EVENT_ID_LOOKUP  Map a declared event time to its named transition (B3).
 %   Returns 'fault_on' for t_fault, 'fault_off' for t_clear. Used to pass
 %   an EXPLICIT event identity to ts_event_transition (no t+eps discovery).
+%   Phase 2: if events.transitions is present (generic path), look up the
+%   transition by matching time. Legacy fault_on/off path UNCHANGED.
+if isfield(events, 'transitions') && ~isempty(events.transitions)
+    for k = 1:numel(events.transitions)
+        if abs(et - events.transitions(k).time) < 1e-14
+            id = string(events.transitions(k).event_id);
+            return;
+        end
+    end
+    error('ts_adaptive_driver:badEventTime', ...
+        'Event time %.10g does not match any transition.', et);
+end
 if events.fault_enabled && isfinite(events.t_fault) && abs(et - events.t_fault) < 1e-14
     id = "fault_on";
 elseif events.fault_enabled && isfinite(events.t_clear) && abs(et - events.t_clear) < 1e-14

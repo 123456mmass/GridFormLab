@@ -104,7 +104,10 @@ base = mpc.baseMVA;
 ws = 2*pi*freq;
 
 % --- Power flow (in-house Newton) ------------------------------------------
-if opt.verbose, fprintf('[ts_simulate] Running PF (%s)...\n', mpc.case_name); end
+if opt.verbose
+    fprintf('[ts_simulate] Running in-house Newton PF (input schema=%s)...\n', ...
+        mpc.case_name);
+end
 pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false,'plot_results',false, ...
     'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
 if ~pf.converged, error('ts_simulate:pfNotConverged','Power flow did not converge.'); end

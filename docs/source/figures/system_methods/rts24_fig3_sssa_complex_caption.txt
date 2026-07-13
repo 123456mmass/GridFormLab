@@ -1,0 +1,7 @@
+case: RTS-24
+model: classical
+scenario: bus 15 fault Zf=0+0.1j
+data_source: Ours/PSAT
+generating_command: generate_system_methods_report
+fresh_saved: ours_fresh
+metric: SSSA eigenvalues

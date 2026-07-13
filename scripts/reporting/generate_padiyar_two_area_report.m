@@ -9,8 +9,8 @@ pf=pfsolver.powerflow_newton_raphson(c,struct('verbose',false,'plot_results',fal
     'enforce_q_limits',false,'tolerance',1e-11));
 avr=stability.padiyar_model11_ssa(c,struct('excitation','avr','fd_eps',1e-6));
 manual=stability.padiyar_model11_ssa(c,struct('excitation','manual','fd_eps',1e-6));
-scenario=struct('fault_enabled',true,'fault_bus',3,'Zf',1i*0.5, ...
-    't_fault',1,'t_clear',1.1,'t_end',3,'dt',0.005);
+scenario=struct('fault_enabled',true,'fault_bus',101,'Zf',1i*10e-5, ...
+    't_fault',1,'t_clear',1.1,'t_end',20,'dt',0.005);
 ts_avr=stability.ts_simulate_padiyar_model11(c,merge(scenario,struct('excitation','avr')));
 ts_manual=stability.ts_simulate_padiyar_model11(c,merge(scenario,struct('excitation','manual')));
 
@@ -20,7 +20,7 @@ plot_pf(pf,fullfile(outdir,'powerflow_summary.png'));
 plot_pf_precision(c,pf,fullfile(outdir,'pf_precision.png'));
 plot_eigs(c,avr,manual,fullfile(outdir,'eigenvalue_comparison.png'));
 plot_swing_modes(c,avr,manual,fullfile(outdir,'swing_mode_comparison.png'));
-plot_ts_result(ts_avr,'Padiyar two-area',root,'padiyar_two_area', ...
+plot_ts_result(ts_avr,scenario_plot_label('Padiyar two-area',ts_avr),root,'padiyar_two_area', ...
     fullfile(outdir,'fault_comparison.png'));
 plot_ts_avr_vs_manual(ts_avr,ts_manual,fullfile(outdir,'ts_avr_vs_manual.png'));
 write_pf_bus(c,pf,fullfile(outdir,'table_pf_bus.tex'));
@@ -51,7 +51,7 @@ nexttile; bar(categorical(string(b)),pf.bus_angle_deg,'FaceColor',[.85 .42 .12])
 ylabel('Angle (deg)'); title('Bus voltage angle');
 nexttile; bar(categorical(string(b)),pf.P_generation*100,'FaceColor',[.17 .55 .34]); grid on;
 ylabel('MW'); title('Generator active power');
-nexttile; semilogy(1:pf.iterations,pf.mismatch_history(1:pf.iterations),'-o','LineWidth',1.8); grid on;
+nexttile; plot(1:pf.iterations,pf.mismatch_history(1:pf.iterations),'-o','LineWidth',1.8); grid on;
 xlabel('Iteration'); ylabel('Max mismatch (pu)'); title('Newton--Raphson convergence');
 sgtitle('Padiyar two-area power flow'); exportgraphics(f,path,'Resolution',200); close(f);
 end
@@ -117,39 +117,101 @@ sgtitle('Power-flow precision: in-house vs Padiyar Table 9.2 (all errors < 5\tim
 exportgraphics(f,path,'Resolution',200); close(f);
 end
 
-function plot_ts_avr_vs_manual(a,m,path)
-% AVR (solid) vs manual (dashed), SAME format as plot_ts_result.
-gen_ids=a.gen_buses(:)'; ng=numel(gen_ids); colors=lines(ng);
+function paths=plot_ts_avr_vs_manual(a,m,path)
+% AVR (solid) vs manual (dashed), using the canonical separate-figure TS
+% display convention. Plot the stored absolute rotor angle and absolute rotor
+% speed; initial-angle subtraction and omega-1 remain numerical metrics only.
+gen_ids=a.gen_buses(:); ng=numel(gen_ids); colors=lines(ng);
 labels=compose('G%d@Bus%d',(1:ng)',gen_ids);
-da=rad2deg(a.delta-a.delta(1,:)); dm=rad2deg(m.delta-m.delta(1,:));
-t=a.t; f=figure('Visible','off','Color','w','Position',[70 70 1300 820]);
-tl=tiledlayout(f,2,2,'Padding','compact','TileSpacing','compact');
-% Top-left: rotor angle
-ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-for k=1:ng, plot(ax,t,da(:,k),'-','Color',colors(k,:),'LineWidth',1.4); plot(ax,t,dm(:,k),'--','Color',colors(k,:),'LineWidth',1.0); end
-fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'\Delta\delta_i = \delta_i-\delta_i(0) (deg)');
-title(ax,'Absolute rotor-angle deviations (PSAT delta\_Syn style)'); legend(ax,labels,'Location','best');
-% Top-right: speed
-ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-for k=1:ng, plot(ax,t,a.omega-1,'-','Color',colors(k,:),'LineWidth',1.3); plot(ax,t,m.omega-1,'--','Color',colors(k,:),'LineWidth',1.0); end
-fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'Delta omega (pu)');
-title(ax,'Generator speed deviations'); legend(ax,labels,'Location','best');
-% Bottom-left: electrical power
-ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-for k=1:ng, plot(ax,t,a.Pe_MW(:,k),'-','Color',colors(k,:),'LineWidth',1.3); plot(ax,t,m.Pe_MW(:,k),'--','Color',colors(k,:),'LineWidth',1.0); end
+da=rad2deg(a.delta); dm=rad2deg(m.delta);
+wa=absolute_omega(a); wm=absolute_omega(m);
+paths=struct('angle',path, ...
+    'omega',suffixed_path(path,'_omega'), ...
+    'pe',suffixed_path(path,'_pe'), ...
+    'voltage',suffixed_path(path,'_voltage'));
+
+f=comparison_figure('Padiyar AVR vs manual - rotor angle');
+ax=axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+plot_generator_pairs(ax,a.t,da,m.t,dm,colors,labels);
+fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'Rotor angle \delta_i (deg)');
+title(ax,sprintf('Rotor Angles: AVR vs Manual (%s)',scenario_plot_label('',a)));
+exportgraphics(f,paths.angle,'Resolution',180); close(f);
+
+f=comparison_figure('Padiyar AVR vs manual - rotor speed');
+ax=axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+plot_generator_pairs(ax,a.t,wa,m.t,wm,colors,labels);
+fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'\omega_i (pu)');
+title(ax,sprintf('Generator Rotor Speeds: AVR vs Manual (%s)',scenario_plot_label('',a)));
+exportgraphics(f,paths.omega,'Resolution',180); close(f);
+
+f=comparison_figure('Padiyar AVR vs manual - electrical power');
+ax=axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+plot_generator_pairs(ax,a.t,a.Pe_MW,m.t,m.Pe_MW,colors,labels);
 fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'P_e (MW)');
-title(ax,'Electrical power (classical air-gap)'); legend(ax,labels,'Location','best');
-% Bottom-right: fault-bus and minimum voltage
-bi=find(a.bus_ids==a.fault_bus,1); if isempty(bi), bi=1; end
-ax=nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-plot(ax,t,a.Vbus(:,bi),'-k','LineWidth',1.8); plot(ax,t,m.Vbus(:,bi),'--k','LineWidth',1.2);
-plot(ax,t,min(a.Vbus,[],2),'-r','LineWidth',1.3); plot(ax,t,min(m.Vbus,[],2),'--r','LineWidth',1.0);
+title(ax,sprintf('Electrical Power: AVR vs Manual (%s)',scenario_plot_label('',a)));
+exportgraphics(f,paths.pe,'Resolution',180); close(f);
+
+bi=find(a.bus_ids==a.fault_bus,1);
+if isempty(bi)
+    error('generate_padiyar_two_area_report:faultBusMapping', ...
+        'Fault bus %g is absent from the TS bus mapping.',a.fault_bus);
+end
+f=comparison_figure('Padiyar AVR vs manual - voltage');
+ax=axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+plot(ax,a.t,a.Vbus(:,bi),'-k','LineWidth',1.8, ...
+    'DisplayName',sprintf('Bus %g (AVR)',a.fault_bus));
+plot(ax,m.t,m.Vbus(:,bi),'--k','LineWidth',1.2, ...
+    'DisplayName',sprintf('Bus %g (Manual)',a.fault_bus));
+plot(ax,a.t,min(a.Vbus,[],2),'-r','LineWidth',1.3, ...
+    'DisplayName','Minimum |V| (AVR)');
+plot(ax,m.t,min(m.Vbus,[],2),'--r','LineWidth',1.0, ...
+    'DisplayName','Minimum |V| (Manual)');
 fl2(ax,a); xlabel(ax,'Time (s)'); ylabel(ax,'|V| (pu)'); ylim(ax,[0 1.2]);
-title(ax,'Fault-bus and minimum voltage');
-legend(ax,{sprintf('Bus %g (AVR)',a.fault_bus),sprintf('Bus %g (Manual)',a.fault_bus),'Min |V| (AVR)','Min |V| (Manual)'},'Location','best');
-sgtitle(tl,sprintf(['AVR (solid) vs manual (dashed): bus %g fault, Z_f = %.3g%+.3gj pu, %s, dt=%.4g s'], ...
-  a.fault_bus,real(a.Zf),imag(a.Zf),a.method,a.dt),'FontWeight','bold');
-exportgraphics(f,path,'Resolution',180); close(f);
+title(ax,sprintf('Fault-Bus and Minimum Voltage: AVR vs Manual (%s)',scenario_plot_label('',a)));
+legend(ax,'Location','best');
+exportgraphics(f,paths.voltage,'Resolution',180); close(f);
+end
+
+function plot_generator_pairs(ax,ta,ya,tm,ym,colors,labels)
+ng=size(ya,2); generator_handles=gobjects(ng,1);
+for k=1:ng
+    generator_handles(k)=plot(ax,ta,ya(:,k),'-','Color',colors(k,:), ...
+        'LineWidth',1.4,'DisplayName',labels{k});
+    plot(ax,tm,ym(:,k),'--','Color',colors(k,:), ...
+        'LineWidth',1.0,'HandleVisibility','off');
+end
+avr_style=plot(ax,nan,nan,'k-','LineWidth',1.4,'DisplayName','AVR');
+manual_style=plot(ax,nan,nan,'k--','LineWidth',1.0,'DisplayName','Manual excitation');
+legend(ax,[generator_handles;avr_style;manual_style], ...
+    [labels;"AVR";"Manual excitation"],'Location','best');
+end
+
+function w=absolute_omega(r)
+if isfield(r,'omega_is_deviation') && r.omega_is_deviation
+    w=1+r.omega;
+else
+    w=r.omega;
+end
+end
+
+function f=comparison_figure(name)
+f=figure('Visible','off','Name',name,'Color','w','Position',[70 70 1080 680]);
+end
+
+function path_out=suffixed_path(path_in,suffix)
+[folder,name,ext]=fileparts(path_in);
+if isempty(ext), ext='.png'; end
+path_out=fullfile(folder,[name suffix ext]);
+end
+
+function label=scenario_plot_label(prefix,r)
+scenario=sprintf('bus %g fault, 0 to %g s, Z_f=%g%+gj pu', ...
+    r.fault_bus,r.t_end,real(r.Zf),imag(r.Zf));
+if isempty(prefix)
+    label=scenario;
+else
+    label=sprintf('%s (%s)',prefix,scenario);
+end
 end
 
 function fl2(ax,r)
@@ -259,6 +321,11 @@ end
 function write_ts(a,m,path)
 fid=fopen(path,'w'); z=onCleanup(@()fclose(fid)); %#ok<NASGU>
 fprintf(fid,'\\begin{tabular}{llrr}\\toprule {Metric} & {Unit} & {AVR} & {Manual excitation}\\\\ \\midrule\n');
+fprintf(fid,'Fault bus & bus ID & %g & %g\\\\\n',a.fault_bus,m.fault_bus);
+fprintf(fid,'Fault impedance $Z_f$ & pu & {$%g%+gj$} & {$%g%+gj$}\\\\\n', ...
+    real(a.Zf),imag(a.Zf),real(m.Zf),imag(m.Zf));
+fprintf(fid,'Simulation horizon & s & %.3f & %.3f\\\\\n',a.t_end,m.t_end);
+fprintf(fid,'Fixed time step & s & %.4f & %.4f\\\\\n',a.dt,m.dt);
 fprintf(fid,'Initial DAE residual & pu & %.3e & %.3e\\\\\n',a.initial_dae_residual,m.initial_dae_residual);
 fprintf(fid,'Non-converged steps & steps & %d & %d\\\\\n',a.nonconverged_step_count,m.nonconverged_step_count);
 fprintf(fid,'Maximum corrector residual & pu & %.3e & %.3e\\\\\n',a.max_corrector_residual,m.max_corrector_residual);

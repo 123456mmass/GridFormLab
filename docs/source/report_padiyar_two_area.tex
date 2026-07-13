@@ -6,14 +6,13 @@
 \usetikzlibrary{positioning,arrows.meta,calc}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
-\pagestyle{fancy}\fancyhf{}\lhead{Padiyar Two-Area Reference}\rhead{\thepage}
+\pagestyle{fancy}\fancyhf{}\lhead{Power Flow, Small-Signal Stability, and Time-Domain Simulation }\rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
 \renewcommand{\arraystretch}{1.12}
 \captionsetup[table]{skip=7pt}
 \title{\textbf{Padiyar Two-Area Four-Machine System}\\
-\large Power Flow, Small-Signal Stability, and Transient Simulation}
-\author{In-house Power-Flow and Stability Toolkit}
-\date{July 2026}
+\large Power Flow, Small-Signal Stability, and Time-Domain Simulation}
+\date{13 July 2026}
 
 \begin{document}
 \maketitle
@@ -26,11 +25,11 @@ generator uses Padiyar model~1.1, a two-axis transient synchronous-machine
 model, with either manual excitation or the printed single-time-constant AVR.
 The AVR case has five states per generator and twenty states in total. The
 in-house Newton--Raphson power flow, DAE equilibrium, small-signal
-linearisation and implicit-trapezoidal transient simulation are generated from
+linearisation and implicit-trapezoidal time-domain simulation are generated from
 project code. Table~9.5 is used only as a secondary published cross-check; no
 parameter is fitted to its eigenvalues.
 \end{abstract}
-
+\newpage
 \tableofcontents
 \newpage
 
@@ -522,16 +521,83 @@ Differences are reported as model/numerical discrepancies rather than removed
 by calibration. Manual excitation is a separate 16-state study and is not
 expected to reproduce the 20-state AVR table.
 
-\section{Transient simulation}
+\section{Time-Domain Simulation}
 
-The source pages specify no transient-fault case. For a controlled comparison,
-this report defines a project scenario: a temporary balanced fault at bus~3,
-$Z_f=j0.5$ pu, applied at 1.0~s and cleared at 1.1~s, with $\Delta t=0.005$~s.
+The source pages specify no time-domain fault scenario. For a controlled comparison,
+this report defines a project scenario: a temporary balanced fault at bus~101,
+$Z_f=j(10\times10^{-5})=j10^{-4}$ pu, applied at 1.0~s and cleared at 1.1~s,
+simulated from 0 to 20.0~s with $\Delta t=0.005$~s.
 The same network, operating point and disturbance are used for manual and AVR
 configurations. The method uses a fixed nominal time step, exact event samples,
 and an iterative implicit-trapezoidal corrector.
 
 \subsection{Implicit trapezoidal integration}
+
+\subsubsection{Why the implicit trapezoidal method is used}
+
+This choice is numerical, not a post-result fit to a desired trajectory.  The
+implemented Padiyar model is a semi-explicit differential--algebraic system
+\begin{equation}
+ \dot{x}=f(x,y,u),\qquad 0=g(x,y,Y),
+ \label{eq:ts-dae-interface}
+\end{equation}
+in which the machine states $x$ evolve together with the algebraic network
+voltages $y$.  Applying trapezoidal quadrature to the differential equation
+over one interval of length $h$ gives
+\begin{equation}
+ x_{n+1}=x_n+\frac{h}{2}\left[f(x_n,y_n,u_n)
+                  +f(x_{n+1},y_{n+1},u_{n+1})\right],
+ \qquad g(x_{n+1},y_{n+1},Y_{n+1})=0.
+ \label{eq:ts-trapezoidal-update}
+\end{equation}
+Equation~\eqref{eq:ts-trapezoidal-update} is the equation actually solved by
+\path{stability.ts_step_kernel}; the algebraic endpoint condition is solved by
+\path{stability.ts_algebraic_solve}.  The following rationale is a project
+derivation from that implemented equation, rather than a claim that a reference
+prints the project code verbatim.
+
+First, for a smooth exact solution, Taylor expansion about $t_n$ gives the
+one-step defect
+\begin{equation}
+x(t_n+h)-x(t_n)-\frac{h}{2}\left[\dot{x}(t_n)+\dot{x}(t_n+h)\right]
+=-\frac{h^3}{12}x^{(3)}(t_n)+\mathcal{O}(h^4).
+\label{eq:ts-trapezoidal-order}
+\end{equation}
+Thus trapezoidal quadrature has one-step truncation error
+$\mathcal{O}(h^3)$ and global order two.  It therefore
+improves the time-discretisation accuracy over first-order backward Euler at
+the same nominal step while retaining an implicit endpoint solve.  Second,
+its linear stability can be seen without relying on a plot.  For the test
+equation $\dot{x}=\lambda x$, with $z=h\lambda$, the update becomes
+\begin{equation}
+ x_{n+1}=R(z)x_n,\qquad
+ R(z)=\frac{1+z/2}{1-z/2}.
+ \label{eq:ts-trapezoidal-stability}
+\end{equation}
+If $\operatorname{Re}(z)\le0$, then
+$|1-z/2|^2-|1+z/2|^2=-2\operatorname{Re}(z)\ge0$, so
+$|R(z)|\le1$.  The method is therefore A-stable: stable continuous modes are
+not made unstable merely because an explicit method's stability region is too
+small.  This is useful for the coupled machine--network DAE, whose electrical
+and electromechanical modes can have substantially different time scales.
+The step size is nevertheless selected for accuracy and event resolution, not
+made arbitrarily large merely because the method is A-stable.
+
+Third, the implicit endpoint formulation permits the network constraint
+$g=0$ to be re-solved at each accepted endpoint.  When a fault is applied or
+cleared, the integration grid lands exactly on the declared event time, the
+network topology is switched, and the algebraic voltage is re-solved under the
+new topology.  Thus the stored event sample is consistent with the DAE rather
+than being obtained by interpolating across a discontinuous network change.
+
+The method also has limitations.  It is not L-stable because
+$R(z)\rightarrow-1$ as $z\rightarrow-\infty$; very fast decaying components
+are not annihilated in one large step and can appear as numerical ringing if
+$h$ is chosen too large.  Every step also requires nonlinear corrector and
+algebraic Newton iterations.  The implementation therefore checks both the
+trapezoidal residual and the algebraic residual and fails closed when those
+iterations do not converge.  These accuracy and convergence checks, rather
+than A-stability alone, justify an accepted TDS result.
 
 The topology input is piecewise constant:
 \begin{equation}
@@ -655,32 +721,84 @@ trapezoidal residual, iteration count, convergence flag, and non-converged-step
 count; consequently, a plausible plot cannot conceal a failed numerical step.
 
 \begin{table}[H]\centering
-\caption{Transient numerical status and response extrema.}
+\caption{Time-domain-simulation input contract, numerical status, and response
+extrema for the 0--20~s bus-101 fault scenario with
+$Z_f=j10^{-4}$~pu, $t_f=1.0$~s, $t_c=1.1$~s, and
+$\Delta t=0.005$~s.}
 \label{tab:ts-summary}
 \input{figures/padiyar_two_area/table_ts_summary.tex}
 \end{table}
 
 \begin{figure}[H]\centering
-\includegraphics[width=\textwidth]{figures/padiyar_two_area/fault_comparison.png}
-\caption{Bus-3 project fault response (AVR configuration, the book's
-20-state model). Top-left: absolute rotor-angle deviations
-$\delta_i(t)-\delta_i(0)$ (PSAT $\delta_{Syn}$ style). Top-right: generator
-speed deviations. Bottom-left: air-gap electrical power. Bottom-right:
-fault-bus voltage and system minimum voltage. Red markers show fault
-application and clearance. This is the canonical $2\times2$ TS display used
-by the in-house \texttt{run\_ts} launcher; the manual-excitation comparison
-is reported numerically in Table~\ref{tab:ts-summary} above.}
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/fault_comparison.png}
+\caption{Bus-101 project fault response using the AVR configuration (the
+book's 20-state model): stored absolute generator rotor angles
+$\delta_i(t)$ in degrees. No initial-angle subtraction is applied. Red
+markers identify fault application and clearance. The simulated interval is
+0--20~s and $Z_f=j10^{-4}$~pu.}
+\label{fig:ts-avr-angle}
 \end{figure}
 
 \begin{figure}[H]\centering
-\includegraphics[width=\textwidth]{figures/padiyar_two_area/ts_avr_vs_manual.png}
-\caption{Special comparison: AVR (solid) versus manual excitation (dashed)
-for the same bus-3 fault. Each colour is one generator; solid curves use the
-five-state AVR model (the book's configuration), dashed curves hold $E_{fd}$
-constant (16-state manual model). The curves expose the different rotor-angle,
-speed, power, and voltage responses under the identical disturbance.
-Quantitative modal damping is determined from
-\eqref{eq:sssa-modal-metrics} and Table~10, not inferred from visual appearance.}
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/fault_comparison_omega.png}
+\caption{Bus-101 project fault response using the AVR configuration:
+stored absolute rotor speeds $\omega_i(t)$ in per unit. The plotted values
+are the TS result values themselves; the graph does not plot $\omega_i-1$.
+The simulated interval is 0--20~s and $Z_f=j10^{-4}$~pu.}
+\label{fig:ts-avr-omega}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/fault_comparison_pe.png}
+\caption{Bus-101 project fault response using the AVR configuration:
+generator air-gap electrical powers $P_{ei}(t)$ reconstructed from the
+accepted TS states and algebraic bus voltages. The simulated interval is
+0--20~s and $Z_f=j10^{-4}$~pu.}
+\label{fig:ts-avr-pe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/fault_comparison_voltage.png}
+\caption{Bus-101 project fault response using the AVR configuration:
+fault-bus voltage magnitude and the minimum voltage magnitude across the
+network. The simulated interval is 0--20~s and $Z_f=j10^{-4}$~pu.}
+\label{fig:ts-avr-voltage}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/ts_avr_vs_manual.png}
+\caption{Stored absolute rotor angles for the bus-101 fault: AVR (solid)
+versus manual excitation (dashed). Each colour identifies one generator.
+No initial-angle subtraction is applied. The simulated interval is 0--20~s
+and $Z_f=j10^{-4}$~pu.}
+\label{fig:ts-comparison-angle}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/ts_avr_vs_manual_omega.png}
+\caption{Stored absolute rotor speeds $\omega_i(t)$ for the bus-101 fault:
+AVR (solid) versus manual excitation (dashed). No $\omega_i-1$ plotting
+transform is applied. The simulated interval is 0--20~s and
+$Z_f=j10^{-4}$~pu.}
+\label{fig:ts-comparison-omega}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/ts_avr_vs_manual_pe.png}
+\caption{Generator electrical powers for the bus-101 fault: AVR (solid)
+versus manual excitation (dashed). The simulated interval is 0--20~s and
+$Z_f=j10^{-4}$~pu.}
+\label{fig:ts-comparison-pe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.90\textwidth]{figures/padiyar_two_area/ts_avr_vs_manual_voltage.png}
+\caption{Fault-bus and minimum network voltage magnitudes for the bus-101
+fault: AVR (solid) versus manual excitation (dashed). Quantitative modal
+damping is determined from \eqref{eq:sssa-modal-metrics} and Table~10, not
+inferred from visual appearance. The simulated interval is 0--20~s and
+$Z_f=j10^{-4}$~pu.}
+\label{fig:ts-comparison-voltage}
 \end{figure}
 
 \section{Validation context}
@@ -711,7 +829,7 @@ matches to $3.97\times10^{-15}$ (machine precision).
 PSAT: converged). Maximum voltage-magnitude difference $6.66\times10^{-16}$~pu;
 maximum angle difference $3.55\times10^{-14}$~deg (machine precision).
 
-\textbf{Transient stability.} Rotor angles and speeds compared in the
+\textbf{Time-domain simulation.} Rotor angles and speeds compared in the
 inertia-weighted COI frame (generators mapped by bus ID, not column position).
 The in-house adaptive implicit-trapezoidal corrector records 0 non-converged
 steps of 1500. PSAT produces 1509 TD points (extra internal event samples);
@@ -731,7 +849,7 @@ $2.84\times10^{-14}$ (machine precision).
 $4.44\times10^{-16}$~pu; maximum angle difference $6.75\times10^{-14}$~deg
 (machine precision). Pre-fault speed RMSE $6.9\times10^{-15}$~pu.
 
-\textbf{Transient stability.} 0 non-converged steps of 1500. Maximum
+\textbf{Time-domain simulation.} 0 non-converged steps of 1500. Maximum
 COI-relative angle difference $0.0068^\circ$; speed $4.62\times10^{-6}$~pu;
 electrical power $0.083$~MW; fault-bus voltage $5.35\times10^{-6}$~pu.
 

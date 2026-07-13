@@ -740,8 +740,21 @@ function [id, on_event] = event_id_at(tk, event_times, events, event_tol)
 %   B3: returns the explicit event_id ('fault_on'|'fault_off') if tk matches a
 %   declared event time within event_tol; otherwise on_event=false (non-event
 %   step). No t+eps discovery — exact match by event_tol.
+%   Phase 2: if events.transitions is present (generic path), look up the
+%   FIRST transition at tk (sorted by (time, order)). Legacy fault_on/off
+%   path runs UNCHANGED when events.transitions is absent.
 id = "";
 on_event = false;
+if isfield(events, 'transitions') && ~isempty(events.transitions)
+    for k = 1:numel(events.transitions)
+        if abs(tk - events.transitions(k).time) <= event_tol
+            id = string(events.transitions(k).event_id);
+            on_event = true;
+            return;
+        end
+    end
+    return;
+end
 for et = event_times.'
     if abs(tk - et) <= event_tol
         if events.fault_enabled && isfinite(events.t_fault) && abs(et - events.t_fault) <= event_tol

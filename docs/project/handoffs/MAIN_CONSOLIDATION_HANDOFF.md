@@ -24,8 +24,9 @@ or acceptance threshold was changed to force a result.
    - stored absolute rotor angle and speed plots;
    - separate angle/speed/electrical-power/voltage figures;
    - linear Newton--Raphson mismatch plot;
-   - updated `.tex`, `.lyx`, `.pdf`, generated tables/figures, and generation
-     and comparison scripts.
+   - updated `.tex`, `.pdf`, generated tables/figures, and generation and
+     comparison scripts. Local LyX editor files remain outside `main` because
+     their generated whitespace does not satisfy the repository diff gate.
 4. `checkpoint/dialog-system` at `7f33dea` was merged. `run_ts.m` now selects a
    case first and then opens the case-aware settings dialog. The canonical TS
    plotter resolves from the current worktree and opens separate docked figures.

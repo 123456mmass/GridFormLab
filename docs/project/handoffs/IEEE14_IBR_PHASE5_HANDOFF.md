@@ -3,7 +3,8 @@
 **Status:** `IEEE14_IBR_GFL_MODEL_READY` = STRUCTURAL_ONLY.
 `IBR_PRODUCTION_INTEGRATION_READY` = NOT_READY.
 **Branch:** `main`. **Date:** 2026-07-14.
-**Base:** `652eaa0` (Phase 0–4 merged). **Phase 5 HEAD:** `41085f6`.
+**Base:** `652eaa0` (Phase 0–4 merged). **Phase 5 HEAD:** `321d98c`
+(includes corrective patch).
 
 ## What was completed
 
@@ -18,6 +19,8 @@ ABI (R3 Rev 2, frozen) and consumed by `mixed_equilibrium_solve` via
 |--------|---------|
 | `9abb5d7` | Phase 5 (1/2): GFL provenance + frozen-contract doc revisions |
 | `41085f6` | Phase 5 (2/2): GFL model + structural tests |
+| `60d8337` | Phase 5 handoff |
+| `321d98c` | Phase 5 corrective patch: complex V0, fail-closed u, bus mapping, param provenance |
 
 ### Files
 
@@ -64,25 +67,25 @@ Equilibrium init: `phi_P0 = Pref/(V0*Kis)`, `phi_Q0 = Qref/(V0*Kis)`,
 
 No ASSUMED_DIAGNOSTIC value enters production acceptance.
 
-## Fresh verification evidence (MATLAB R2025a, this host)
+## Fresh verification evidence (MATLAB R2025a, this host, after corrective patch)
 
 ```matlab
 restoredefaultpath; cd('C:\Users\User\Desktop\Power-flow'); pf_init_paths;
-runtests('tests/test_ibr_gfl_model.m');              % 16 passed / 0 failed / 0 incomplete
-runtests('tests','IncludeSubfolders',true);         % 574 passed / 0 failed / 4 incomplete
+runtests('tests/test_ibr_gfl_model.m');              % 21 passed / 0 failed / 0 incomplete
+runtests('tests','IncludeSubfolders',true);         % 579 passed / 0 failed / 4 incomplete
 runtests('tests/test_no_external_solver_dependency.m'); % 12 passed / 0 failed
 ```
 
-- Phase 5 suite: **16 passed / 0 failed / 0 incomplete**.
-- Full regression: **574 passed / 0 failed / 4 incomplete**.
+- Phase 5 suite: **21 passed / 0 failed / 0 incomplete** (was 16 before the
+  corrective patch; +5 new falsification tests T17-T21).
+- Full regression: **579 passed / 0 failed / 4 incomplete**.
   - The 4 incomplete are `test_pgaz_conversion_contract` sub-tests, filtered
     by assumption because **PSAT is not installed on this host** (verified:
-    `psat_version` unrecognized). This is an environment limitation, NOT a
-    Phase 5 regression. The Phase 4 handoff's 561/0/0 was recorded on a
-    PSAT-equipped host; on this host the pre-Phase-5 baseline is 557 passed /
-    0 failed / 4 incomplete (PSAT), and Phase 5 adds 16 passed → 573+1=574.
+    `psat_version` unrecognized). Environment limitation, NOT a regression.
 - External-solver guard: **12 passed / 0 failed**.
-- `+stability/**` unchanged (verified: `git diff --name-only 652eaa0..HEAD -- +stability/` empty).
+- `+stability/**` unchanged (verified: `git diff --name-only 60d8337..HEAD -- +stability/` empty).
+- Frozen gains unchanged (grep guard: omega0=376.99..., omega_c=10, kpPLL=0.265,
+  kiPLL=2.65, Kps=1.0, Kis=10.0 in `gfl_model.m` defaults).
 
 ### Pole oracles (predeclared, frozen BEFORE results, all PASS)
 

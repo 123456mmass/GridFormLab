@@ -1,4 +1,66 @@
-# Agent handoff — 2026-07-11
+# Agent handoff — 2026-07-14
+
+## Latest progression and machine-migration checkpoint
+
+The verified IEEE14 IBR Phase 5 checkpoint is `f1d372d`, published on
+`origin/main` on 2026-07-14. Successor mission progression is:
+
+- Phases 0–4: merged and complete.
+- Phase 5: GFL structural model complete at `f1d372d`;
+  `IEEE14_IBR_GFL_MODEL_READY=STRUCTURAL_ONLY`.
+- Phase 6: REGFM_B1-derived GFM/VSG model is parked; planning/implementation
+  has not started.
+- Phases 7–17: not started.
+- `IBR_PRODUCTION_INTEGRATION_READY=NOT_READY`.
+
+Two follow-on commits checkpoint the current workstation for migration:
+
+- `99ab4fe` — user-authorized absolute rotor-angle display policy.
+- `681a3c3` — **WIP/CHECKPOINT** of current Padiyar/IEEE14 report code,
+  report artifacts, validation-only PSAT driver, and report contract test.
+
+### User-authorized rotor-angle display policy
+
+Default TS/result plots use the stored absolute rotor angle `delta_i(t)` with
+no initial-angle, reference-machine, or COI subtraction. Any transformed
+diagnostic plot must be explicitly labeled. Stability decisions continue to
+use COI-relative and pairwise metrics. No solver, state, or default plotter
+implementation was changed for this policy; `scripts/plot_ts_result.m`
+already displayed stored absolute angles.
+
+### WIP report producer → artifact → test mapping
+
+- `scripts/reporting/generate_padiyar_two_area_report.m` orchestrates the
+  two-area report and invokes
+  `scripts/reporting/generate_padiyar_ieee14_psat_tables.m`.
+- `scripts/reporting/generate_padiyar_ieee14_psat_tables.m` computes the
+  report-only IEEE14 Our/PSAT material and invokes the validation-only
+  `scripts/validation/case14/run_psat_case14.m`.
+- Generated/current artifacts are
+  `docs/source/report_padiyar_two_area.{tex,pdf}` and the IEEE14/two-area
+  TeX tables and PNG figures under
+  `docs/source/figures/padiyar_two_area/`.
+- `tests/test_padiyar_ieee14_report_section.m` is the intended structural
+  report contract test.
+
+These report files were captured exactly from the user's current working copy
+for machine migration. They were **not regenerated or freshly revalidated in
+this checkpoint**. By explicit user direction, Agent A ran no MATLAB tests,
+PSAT/report generation, LaTeX compilation, or full regression for commits
+`99ab4fe`/`681a3c3`. Their contents are WIP artifacts, not fresh acceptance
+evidence and not an IBR readiness claim. Generated TeX tables retain
+pre-existing trailing whitespace reported by `git diff --check`; it was not
+rewritten because migration required preserving current contents exactly.
+
+The last verified Phase 5 evidence remains the separate `f1d372d` record:
+21/0/0 Phase 5 tests, 579/0/4 full regression (four PSAT-environment
+incompletes), and 12/0 external-solver guard. Do not attribute those counts to
+the WIP report checkpoint.
+
+Local primary-source material under `docs/text/` was deliberately excluded
+from Git: ignored PDFs plus untracked extracted `ding.txt` and `regfm.txt`.
+The IEEE 1110 PDF version/hash mismatch documented in the Phase 5 handoff
+remains unresolved. Preserve these local files; do not force-add them.
 
 ## Current baseline
 

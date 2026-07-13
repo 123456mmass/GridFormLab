@@ -3,16 +3,18 @@
 **Status:** `IEEE14_IBR_GFL_MODEL_READY` = STRUCTURAL_ONLY.
 `IBR_PRODUCTION_INTEGRATION_READY` = NOT_READY.
 **Branch:** `main`. **Date:** 2026-07-14.
-**Base:** `652eaa0` (Phase 0–4 merged). **Phase 5 HEAD:** `d811c30`
-(includes round-1 corrective patch `321d98c` + round-2 corrective patch
-`d811c30`).
+**Base:** `652eaa0` (Phase 0–4 merged). **Published Phase 5 checkpoint:**
+`f1d372d` (pushed to `origin/main` on 2026-07-14; includes round-1
+corrective patch `321d98c`, round-2 corrective patch `d811c30`, and the
+final Phase 5 evidence update).
 
 ## What was completed
 
 Phase 5 — sourced GFL (grid-following) inverter model, structural-only. The
-first production IBR device of the mission, conforming to the `composite_dae`
-ABI (R3 Rev 2, frozen) and consumed by `mixed_equilibrium_solve` via
-`config.devices` (the mixed-equilibrium gate itself is deferred to Phase 9).
+device factory conforms to the `composite_dae` ABI (R3 Rev 2, frozen), but it
+is not registered in a dispatcher/catalog and is not yet a production runtime
+device. Mixed-equilibrium integration through `config.devices` is deferred to
+Phase 9.
 
 ### Commits
 
@@ -24,17 +26,19 @@ ABI (R3 Rev 2, frozen) and consumed by `mixed_equilibrium_solve` via
 | `321d98c` | Phase 5 corrective patch (round 1): complex V0, fail-closed u, bus mapping, param provenance |
 | `75a06b9` | Phase 5 handoff: record round-1 corrective patch + fresh test counts |
 | `d811c30` | Phase 5 corrective patch (round 2): oversized-u, ref validation, integer bus_position, doc consistency |
+| `f1d372d` | Published Phase 5 handoff with round-2 evidence |
 
 ### Files
 
-- `+ibr/gfl_model.m` (new) — production GFL device factory.
-- `tests/test_ibr_gfl_model.m` (new) — 16 structural tests.
+- `+ibr/gfl_model.m` (new) — structural-only GFL device factory.
+- `tests/test_ibr_gfl_model.m` (new) — 21 structural tests.
 - `docs/project/IEEE14_IBR_GFL_PHASE5_PROVENANCE.md` (new) — equation→source map.
 - `docs/project/IEEE14_IBR_FROZEN_CONTRACT.md` (revised) — GFL item closed at 6 states.
 - `docs/project/IEEE14_IBR_DECISION_LEDGER.md` (revised) — Item 1 updated.
 
 No `+stability/**` edits. No `+cases/case_ieee14_1sg_4ibr_auto_vsg.m` edits.
-No synthetic-fixture edits. No PDF commit (URL+SHA-256 in provenance).
+No synthetic-fixture edits. No primary-source PDF commit (URL+SHA-256 in
+provenance).
 
 ## Model summary
 
@@ -185,6 +189,36 @@ round-2 patch is additive on top of the round-1 corrective patch (`321d98c`).
 
 ## Next phase
 
+## 2026-07-14 machine-migration checkpoint after Phase 5
+
+Phase 5 itself remains frozen at the published and previously verified
+`f1d372d` checkpoint. Two follow-on checkpoint commits were placed on
+`main` for machine migration:
+
+- `99ab4fe` — user-authorized display policy: default TS/result plots show
+  stored absolute rotor angle `delta_i(t)`, without initial-angle,
+  reference-machine, or COI subtraction. Explicitly labeled diagnostic
+  transforms remain allowed; stability decisions remain COI-relative and
+  pairwise.
+- `681a3c3` — **WIP/CHECKPOINT** of the user's current Padiyar/IEEE14 report,
+  report generator, validation-only PSAT driver, report contract test, TeX/PDF,
+  tables, and PNG artifacts.
+
+The report artifacts in `681a3c3` are current-working-copy/user-generated
+artifacts captured for migration. They were **not regenerated or freshly
+revalidated by Agent A in this checkpoint**. No MATLAB tests, report generator,
+PSAT run, LaTeX compilation, or full regression was run for this migration
+checkpoint, by explicit user direction. Therefore those artifacts and their
+embedded values are WIP evidence only and do not establish a new numerical,
+equivalence, or readiness claim.
+
+The previously recorded Phase 5 evidence (21/0/0 targeted, 579/0/4 full, and
+12/0 external-solver guard) belongs to the verified `f1d372d` Phase 5
+checkpoint and must not be represented as fresh evidence for `681a3c3`.
+`IEEE14_IBR_GFL_MODEL_READY=STRUCTURAL_ONLY` and
+`IBR_PRODUCTION_INTEGRATION_READY=NOT_READY` remain unchanged. Phase 6 is
+parked and no Phase 6 implementation has started.
+
 **Phase 6 — REGFM_B1-derived GFM/VSG model.** Build the GFM device
 (`+ibr/regfm_b1_vsg_model.m`) from REGFM_B1 90260 (voltage-source-behind-
 impedance Eq.13, VSM swing block Fig.2, measurement filters Eqs.1-5, Q-V droop
@@ -194,6 +228,7 @@ established in Phase 5. Phase 7 will construct the fixed dual-mode superset
 layout (GFL+GFM in one device) separately — it must not force unsourced GFL
 dynamics into the Phase 5 GFL.
 
-Before Phase 6: inspect current `main` (`d811c30`), trace the REGFM_B1 source
-equations from `docs/text/90260.pdf`, freeze the GFM state vector + parameter
+Before Phase 6: inspect the latest pushed `main` and treat `f1d372d` as the
+verified scientific Phase 5 checkpoint; trace the REGFM_B1 source equations
+from the local `docs/text/90260.pdf`, freeze the GFM state vector + parameter
 table, declare acceptance criteria before results, and obtain user approval.

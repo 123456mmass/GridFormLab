@@ -1,4 +1,9 @@
-function test_generate_system_methods_report_audit
+function tests = test_generate_system_methods_report_audit
+%TEST_GENERATE_SYSTEM_METHODS_REPORT_AUDIT MATLAB unit-test entry point.
+tests = functiontests(localfunctions);
+end
+
+function test_equation_provenance_audit(~)
 %TEST_GENERATE_SYSTEM_METHODS_REPORT_AUDIT  Fail-closed equation provenance audit.
 %   Verifies that equation_register() + equation_audit() satisfy the mission
 %   §N fail-closed rules: every equation has a register row, every symbol is

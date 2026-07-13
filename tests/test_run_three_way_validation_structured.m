@@ -1,4 +1,9 @@
-function test_run_three_way_validation_structured
+function tests = test_run_three_way_validation_structured
+%TEST_RUN_THREE_WAY_VALIDATION_STRUCTURED MATLAB unit-test entry point.
+tests = functiontests(localfunctions);
+end
+
+function test_structured_validation_contract(~)
 %TEST_RUN_THREE_WAY_VALIDATION_STRUCTURED  Structured-output + fail-soft audit.
 %   Verifies the narrowly scoped mechanical edit to run_three_way_validation:
 %   (a) return_raw=true returns raw trajectories + common grid + mappings;
@@ -30,9 +35,9 @@ assert(n_in >= 4, 'run_three_way_validation must accept 4 inputs (return_raw).')
 % These are the internal helpers that prevent .t dereference after a catch.
 % We test them indirectly: an empty PSAT result must not throw when the
 % validator's downstream code accesses fields through the safe accessors.
-assert(isempty(safe_accessor_test([])), 'safe accessor on [] must return empty.');
-assert(isempty(safe_accessor_test(struct())), 'safe accessor on empty struct must return empty.');
-assert(~isempty(safe_accessor_test(struct('t',[0;1]))), 'safe accessor on populated struct must return value.');
+assert(isempty(local_safe_accessor([])), 'safe accessor on [] must return empty.');
+assert(isempty(local_safe_accessor(struct())), 'safe accessor on empty struct must return empty.');
+assert(~isempty(local_safe_accessor(struct('t',[0;1]))), 'safe accessor on populated struct must return value.');
 
 % --- (d) temp file cleanup registration ---
 % register_temp_files appends pc.temp_files when present; remove_temp_files
@@ -40,7 +45,7 @@ assert(~isempty(safe_accessor_test(struct('t',[0;1]))), 'safe accessor on popula
 tmp = tempname;
 fid = fopen(tmp,'w'); fprintf(fid,'test'); fclose(fid);
 assert(exist(tmp,'file')==2, 'temp file not created.');
-remove_temp_files_test({tmp});
+local_remove_temp_files({tmp});
 assert(exist(tmp,'file')==0, 'temp file not removed by remove_temp_files.');
 
 % --- (e) regression: the existing success-path logic is unchanged ---
@@ -72,12 +77,12 @@ assert(contains(src,'out.raw = struct()'), 'raw block not added.');
 fprintf('test_run_three_way_validation_structured: PASS\n');
 end
 
-function v = safe_accessor_test(s)
+function v = local_safe_accessor(s)
 % Mirror of the safe_t accessor logic: return field 't' if present, else [].
 if isempty(s) || ~isstruct(s) || ~isfield(s,'t'), v = []; else, v = s.t; end
 end
 
-function remove_temp_files_test(files)
+function local_remove_temp_files(files)
 % Mirror of remove_temp_files for testing.
 for i = 1:numel(files)
     if exist(files{i}, 'file')

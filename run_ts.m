@@ -2,6 +2,8 @@
 % Select a case first. solve_case then opens the case-aware TS settings
 % dialog, including the valid external fault-bus IDs for that case.
 % The selected-case result is saved as ts_result in the workspace.
+% Production default contract: ts_options.stepper = 'fixed'; the selected
+% case supplies this default before the case-aware dialog is displayed.
 
 launcher_root = fileparts(mfilename('fullpath'));
 if isempty(launcher_root), launcher_root = pwd; end

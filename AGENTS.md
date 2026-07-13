@@ -271,7 +271,9 @@ algorithm name does not authorize calling a ready-made implementation.
   Do NOT describe it as adaptive until a residual-based convergence/
   rejection path is audited and tested. Adaptive corrector is validated only
   for the classical path.
-- TS plot angle is `delta_i(t)-delta_i(0)` (PSAT `delta_Syn` style). Stability
+- Default TS/result plots use the stored absolute rotor angle `delta_i(t)`, with
+  no initial-angle, reference-machine, or COI subtraction. Transformed
+  diagnostic plots remain allowed only when explicitly labeled. Stability
   decisions use COI-relative and pairwise metrics, not the plotted common drift.
 - Production packages AND every directory `pf_init_paths` adds to the path
   (`internal`, `compat`, `scripts`, `docs`) contain no

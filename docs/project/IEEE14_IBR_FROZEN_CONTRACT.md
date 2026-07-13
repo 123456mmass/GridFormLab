@@ -104,8 +104,18 @@ selection used the predeclared hierarchy where alternatives existed.
     REGFM_B1 Table 1; CASE_DEFINED/PROJECT_MAPPED application to the GFL);
   - `Kps = 1.0`, `Kis = 10.0 s^-1` (ASSUMED_DIAGNOSTIC — Ding Table I lacks;
     a-priori critically-damped rationale; excluded from production acceptance).
-- **Constructor inputs:** `gfl_model(device_id, bus_id, bus_position, V0_pu, params)`,
-  `nu=2`, `u=[Pref;Qref]`. V0 = |V_bus| from PF (used for initialization + pole oracle).
+- **Constructor inputs (corrective patch):**
+  `gfl_model(device_id, bus_id, bus_position, bus_ids, V0, params, P_ref_pu, Q_ref_pu)`,
+  `nu=2`, `u=[Pref;Qref]`. `V0` is the **complex** PF-solved bus voltage
+  (`delta_pll0 = angle(V0)`, `|V0|` for PI init). `bus_ids` is the network's
+  external bus-ID vector; `bus_ids(bus_position) == bus_id` is validated
+  (else `:busMappingMismatch`). A real `V0` is accepted (angle 0).
+- **Fail-closed input contract (corrective patch):** `u_dev` MUST be a
+  2-element finite vector; empty → `:missingInput`, non-finite/wrong-size →
+  `:badInput`. No silent fallback.
+- **Parameter override (corrective patch):** any overridden parameter is
+  validated (finite, positive) and reclassified `DIAGNOSTIC_ONLY` in the
+  provenance; frozen defaults keep their original classification.
 - **Status:** `IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime
   registration, no production-readiness claim. Mixed-equilibrium /
   pure-GFL-island-via-solver / SSSA-sharing gates deferred to Phase 9

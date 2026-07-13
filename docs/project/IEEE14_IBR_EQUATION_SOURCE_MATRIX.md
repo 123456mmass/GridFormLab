@@ -170,7 +170,7 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | GFL positive-sequence model | PARTIAL (EMT sourced; RMS reduction DECISION_REQUIRED) |
+| 1 | GFL positive-sequence model | STRUCTURAL_ONLY (Phase 5 done; RMS reduction PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC) |
 | 2 | VSG/VSM from REGFM_B1 | PARTIAL-TO-CLOSEABLE (core sourced; state/init derived) |
 | 3 | GFL↔VSG transfer maps | ⛔ UNSOURCED — STOP |
 | 4 | Current limiter + anti-windup | PARTIAL (limiter sourced; anti-windup UNSOURCED) |
@@ -215,8 +215,9 @@ blocked by items 1/2/3; Phases 10-13 are blocked by items 3/5/6.
 ## What is blocked (genuine stop)
 
 - **Phase 4** (mixed equilibrium) — needs dispatch/energy contract (item 8).
-- **Phase 5** (GFL model) — needs positive-sequence RMS reduction decision
-  (item 1).
+- **Phase 5** (GFL model) — STRUCTURAL_ONLY (done; RMS reduction PROJECT_DERIVED,
+  Kps/Kis ASSUMED_DIAGNOSTIC; production readiness pending source-closing the
+  ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-equilibrium integration).
 - **Phase 6** (dual-mode transfer) — needs transfer maps (item 3).
 - **Phases 7-17** — depend on 5/6.
 - **Phases 10-13** — need synchronism (item 5), delays (item 6).

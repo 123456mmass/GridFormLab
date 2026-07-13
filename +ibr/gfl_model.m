@@ -1,10 +1,18 @@
-function dev = gfl_model(device_id, bus_id, bus_position, V0_pu, params, P_ref_pu, Q_ref_pu)
+function dev = gfl_model(device_id, bus_id, bus_position, bus_ids, V0, params, P_ref_pu, Q_ref_pu)
 %GFL_MODEL  Production GFL (grid-following) inverter device, Phase 5 STRUCTURAL_ONLY.
 %
-%   dev = gfl_model(DEVICE_ID, BUS_ID, BUS_POSITION, V0_PU, PARAMS, P_REF_PU, Q_REF_PU)
+%   dev = gfl_model(DEVICE_ID, BUS_ID, BUS_POSITION, BUS_IDS, V0, PARAMS, P_REF_PU, Q_REF_PU)
 %   returns a device struct conforming to the stability.composite_dae ABI
 %   (R3 Revision 2: f, current_injection, electrical_power, x0, u0,
 %   state_names, reconstruct; all taking (t, x_dev, y, u_dev, event_context)).
+%
+%   BUS_IDS  - the network's external bus-ID vector (1 x nb). BUS_POSITION
+%              indexes y for voltage measurement; BUS_ID is the external ID
+%              used for injection mapping. They must refer to the same bus:
+%              bus_ids(bus_position) == bus_id (else :busMappingMismatch).
+%   V0       - complex PF-solved bus voltage at this device's bus. The PLL
+%              initializes locked to angle(V0); |V0| is used for the PI init.
+%              A real V0 is accepted (treated as magnitude with angle 0).
 %
 %   Model: reduced positive-sequence RMS GFL (PROJECT_DERIVED reduction from
 %   Ding et al. NREL/CP-6A40-83340 Sec II-B Eqs.7-10). The 14-state EMT/LCL
@@ -66,16 +74,42 @@ arguments
     device_id (1,1) string
     bus_id (1,1) double
     bus_position (1,1) double
-    V0_pu (1,1) double
+    bus_ids (1,:) double
+    V0 (1,1) {mustBeFinite}
     params struct
     P_ref_pu (1,1) double
     Q_ref_pu (1,1) double
 end
 
+% --- F3: Validate bus_id <-> bus_position consistency -----------------------
+% bus_position indexes the shared y vector (voltage measurement); bus_id is
+% the external ID used for injection mapping in composite_dae. They MUST
+% refer to the same physical bus: bus_ids(bus_position) == bus_id.
+if bus_position < 1 || bus_position > numel(bus_ids)
+    error('ibr:gfl_model:busMappingMismatch', ...
+        'bus_position %d out of range [1, %d] for bus_ids.', bus_position, numel(bus_ids));
+end
+if bus_ids(bus_position) ~= bus_id
+    error('ibr:gfl_model:busMappingMismatch', ...
+        'bus_ids(%d)=%d != bus_id=%d; bus_position and bus_id must refer to the same bus.', ...
+        bus_position, bus_ids(bus_position), bus_id);
+end
+
+% --- F1: Complex V0 (PF-solved bus voltage) -> magnitude + angle ------------
+% V0 may be real (legacy: magnitude, angle 0) or complex (full PF voltage).
+% delta_pll0 = angle(V0) so the PLL initializes locked to the bus angle.
+if ~isfinite(V0) || abs(V0) <= 0
+    error('ibr:gfl_model:badV0', ...
+        'V0 must be finite with |V0|>0 (got %.6g); PF warm-start required.', V0);
+end
+V0_mag = abs(V0);
+theta0 = angle(V0);
+
 % --- Parameters (frozen BEFORE results; see provenance doc) -----------------
 % Defaults reflect the Phase 5 freeze; params may override ONLY for diagnostic
 % sensitivity studies (never to force a pass). Production acceptance uses the
-% frozen defaults.
+% frozen defaults. F4: any override reclassifies that parameter to
+% DIAGNOSTIC_ONLY in the provenance; non-finite/non-physical overrides error.
 omega0 = 376.9911184307752;   % 2*pi*60 rad/s, SOURCE_VERBATIM (REGFM_B1 Table 1 omega0)
 omega_c = 10.0;               % rad/s, SOURCE_VERBATIM (Ding Table I)
 kpPLL = 0.265;                % pu, SOURCE_VERBATIM value (REGFM_B1 Table 1)
@@ -83,32 +117,33 @@ kiPLL = 2.65;                 % pu/s, SOURCE_VERBATIM value (REGFM_B1 Table 1)
 Kps = 1.0;                    % ASSUMED_DIAGNOSTIC (Ding Table I lacks)
 Kis = 10.0;                   % 1/s, ASSUMED_DIAGNOSTIC (Ding Table I lacks)
 Sbase = 100.0;                % MVA, SOURCE_VERBATIM (system base; no Mbase factor)
-% Allow param override for diagnostic studies only (does NOT enter production).
-if isfield(params,'omega0')  && ~isempty(params.omega0),  omega0  = params.omega0;  end
-if isfield(params,'omega_c') && ~isempty(params.omega_c), omega_c = params.omega_c; end
-if isfield(params,'kpPLL')   && ~isempty(params.kpPLL),   kpPLL   = params.kpPLL;   end
-if isfield(params,'kiPLL')   && ~isempty(params.kiPLL),   kiPLL   = params.kiPLL;   end
-if isfield(params,'Kps')     && ~isempty(params.Kps),     Kps     = params.Kps;     end
-if isfield(params,'Kis')     && ~isempty(params.Kis),     Kis     = params.Kis;     end
 
-% --- Validate V0 (finite, positive; needed for initialization) --------------
-if ~isfinite(V0_pu) || V0_pu <= 0
-    error('ibr:gfl_model:badV0', ...
-        'V0_pu must be finite positive (got %.6g); PF warm-start required.', V0_pu);
-end
+% Track which parameters were overridden (F4 provenance reclassification).
+overridden = struct('omega0',false,'omega_c',false,'kpPLL',false, ...
+    'kiPLL',false,'Kps',false,'Kis',false);
+if isfield(params,'omega0')  && ~isempty(params.omega0),  omega0  = params.omega0;  overridden.omega0  = true; end
+if isfield(params,'omega_c') && ~isempty(params.omega_c), omega_c = params.omega_c; overridden.omega_c = true; end
+if isfield(params,'kpPLL')   && ~isempty(params.kpPLL),   kpPLL   = params.kpPLL;   overridden.kpPLL   = true; end
+if isfield(params,'kiPLL')   && ~isempty(params.kiPLL),   kiPLL   = params.kiPLL;   overridden.kiPLL   = true; end
+if isfield(params,'Kps')     && ~isempty(params.Kps),     Kps     = params.Kps;     overridden.Kps     = true; end
+if isfield(params,'Kis')     && ~isempty(params.Kis),     Kis     = params.Kis;     overridden.Kis     = true; end
 
-% --- Initial state (from PF warm-start; V_bus assumed = V0_pu*exp(j*theta0))
-% The caller passes V0_pu = |V_bus|; the initial PLL angle is taken as the bus
-% angle, which is set externally via x0 override when the full PF angle is
-% known. For the structural default, theta0 = 0 (bus at angle 0). The mixed
-% equilibrium solver / TS driver supplies the actual bus angle through y.
-theta0 = 0.0;
+% F4: validate every parameter (finite; positive for physical ones).
+validate_param('omega0', omega0, true);
+validate_param('omega_c', omega_c, true);
+validate_param('kpPLL', kpPLL, true);
+validate_param('kiPLL', kiPLL, true);
+validate_param('Kps', Kps, true);
+validate_param('Kis', Kis, true);
+
+% --- Initial state (from PF warm-start; V_bus = V0 = V0_mag*exp(j*theta0)) --
+% F1: delta_pll0 = angle(V_bus) = theta0 (PLL locked to the bus angle).
 delta_pll0 = theta0;
 eps_pll0 = 0.0;
 P_f0 = P_ref_pu;
 Q_f0 = Q_ref_pu;
-phi_P0 = P_ref_pu / (V0_pu * Kis);
-phi_Q0 = Q_ref_pu / (V0_pu * Kis);
+phi_P0 = P_ref_pu / (V0_mag * Kis);
+phi_Q0 = Q_ref_pu / (V0_mag * Kis);
 x0 = [delta_pll0; eps_pll0; P_f0; Q_f0; phi_P0; phi_Q0];
 u0 = [P_ref_pu; Q_ref_pu];
 
@@ -147,6 +182,8 @@ dev = struct();
 dev.name = char(device_id);
 dev.device_id = char(device_id);
 dev.bus_id = bus_id;
+dev.bus_position = bus_position;          % F3: stored explicitly
+dev.bus_ids = bus_ids(:).';               % F3: network external bus IDs
 dev.device_type = 'ibr_gfl';
 dev.mode = 'gfl';
 dev.nx = 6;
@@ -159,22 +196,38 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+% F4: parameter classifications — frozen defaults keep their original label;
+% any overridden parameter is reclassified DIAGNOSTIC_ONLY.
+cls_omega0  = ternary(overridden.omega0,  'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM');
+cls_omega_c = ternary(overridden.omega_c, 'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM');
+cls_kpPLL   = ternary(overridden.kpPLL,   'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM_value_CASE_DEFINED_PROJECT_MAPPED_application');
+cls_kiPLL   = ternary(overridden.kiPLL,   'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM_value_CASE_DEFINED_PROJECT_MAPPED_application');
+cls_Kps     = ternary(overridden.Kps,     'DIAGNOSTIC_ONLY', 'ASSUMED_DIAGNOSTIC');
+cls_Kis     = ternary(overridden.Kis,     'DIAGNOSTIC_ONLY', 'ASSUMED_DIAGNOSTIC');
 % Provenance metadata (serializable; NO function handles).
 dev.provenance = struct( ...
     'model','gfl_phase5_structural_only', ...
     'source','Ding NREL/CP-6A40-83340 Sec II-B Eqs.7-10 (RMS-reduced) + REGFM_B1 NREL/TP-5D00-90260 Table 1', ...
     'provenance_doc','docs/project/IEEE14_IBR_GFL_PHASE5_PROVENANCE.md', ...
-    'V0_pu', V0_pu, ...
+    'V0', V0, 'V0_mag', V0_mag, 'theta0', theta0, ...
+    'bus_id', bus_id, 'bus_position', bus_position, ...
     'params', struct('omega0',omega0,'omega_c',omega_c,'kpPLL',kpPLL, ...
                      'kiPLL',kiPLL,'Kps',Kps,'Kis',Kis,'Sbase',Sbase), ...
     'param_classifications', struct( ...
-        'omega0','SOURCE_VERBATIM', ...
-        'omega_c','SOURCE_VERBATIM', ...
-        'kpPLL','SOURCE_VERBATIM_value_CASE_DEFINED_PROJECT_MAPPED_application', ...
-        'kiPLL','SOURCE_VERBATIM_value_CASE_DEFINED_PROJECT_MAPPED_application', ...
-        'Kps','ASSUMED_DIAGNOSTIC', ...
-        'Kis','ASSUMED_DIAGNOSTIC'), ...
+        'omega0',cls_omega0, ...
+        'omega_c',cls_omega_c, ...
+        'kpPLL',cls_kpPLL, ...
+        'kiPLL',cls_kiPLL, ...
+        'Kps',cls_Kps, ...
+        'Kis',cls_Kis), ...
+    'param_overridden', overridden, ...
     'readiness','STRUCTURAL_ONLY');
+end
+
+% =========================================================================
+function out = ternary(cond, val_true, val_false)
+%TERNARY  Inline conditional (MATLAB has no ternary operator).
+if cond, out = val_true; else, out = val_false; end
 end
 
 % =========================================================================
@@ -265,16 +318,36 @@ out = struct( ...
 end
 
 % =========================================================================
-function [P_ref, Q_ref] = refs_from_u(u_dev, P_f, Q_f)
-%REFS_FROM_U  Extract P_ref/Q_ref from u_dev; degenerate fallback for probes
-%   that do not carry u (FD/Jacobian probes on x only). The fallback uses the
-%   current filtered values as the references (equilibrium probe); it is NOT
-%   a production path. The TS driver and equilibrium solver MUST supply u_dev.
+function [P_ref, Q_ref] = refs_from_u(u_dev, ~, ~)
+%REFS_FROM_U  Extract P_ref/Q_ref from u_dev (FAIL-CLOSED, F2).
+%   The composite_dae ABI passes u_dev for nu>0 devices; an empty or
+%   non-finite u_dev is a caller bug, not a degenerate probe. The GFL device
+%   refuses to evaluate f / current_injection without a valid 2-element input.
 if isempty(u_dev)
-    P_ref = P_f;
-    Q_ref = Q_f;
-else
-    P_ref = u_dev(1);
-    Q_ref = u_dev(2);
+    error('ibr:gfl_model:missingInput', ...
+        'u_dev is empty; the GFL requires u=[P_ref;Q_ref] (nu=2).');
+end
+if numel(u_dev) < 2
+    error('ibr:gfl_model:badInput', ...
+        'u_dev has %d element(s); expected 2 ([P_ref;Q_ref]).', numel(u_dev));
+end
+if ~isfinite(u_dev(1)) || ~isfinite(u_dev(2))
+    error('ibr:gfl_model:badInput', ...
+        'u_dev has non-finite entries (P_ref=%.6g, Q_ref=%.6g).', u_dev(1), u_dev(2));
+end
+P_ref = u_dev(1);
+Q_ref = u_dev(2);
+end
+
+% =========================================================================
+function validate_param(name, val, must_be_positive)
+%VALIDATE_PARAM  F4: validate a parameter is finite (and positive if physical).
+if ~isfinite(val)
+    error('ibr:gfl_model:badParam', ...
+        'parameter %s is non-finite (%.6g).', name, val);
+end
+if must_be_positive && val <= 0
+    error('ibr:gfl_model:badParam', ...
+        'parameter %s must be positive (got %.6g).', name, val);
 end
 end

@@ -21,10 +21,13 @@ end
 % =========================================================================
 % Shared fixture: minimal 2-bus infinite-bus mpc + a GFL device at bus 2.
 % =========================================================================
-function [mpc, dev, y0, u0, V0, theta0, Y] = local_gfl_fixture(P_ref, Q_ref)
-%LOCAL_GFL_FIXTURE  2-bus infinite-bus: bus1 REF (V=1.06, angle 0), bus2 PQ (GFL).
+function [mpc, dev, y0, u0, V0, theta0, Y] = local_gfl_fixture(P_ref, Q_ref, theta0)
+%LOCAL_GFL_FIXTURE  2-bus infinite-bus: bus1 REF (V=1.06), bus2 PQ (GFL).
 %   Branch r=0, x=0.1 pu. The GFL connects at bus 2 (bus_position=2).
+%   theta0 (optional, default 0) sets the bus-2 angle for the nonzero-angle
+%   equilibrium test (T17). V0 is complex: V0 = 1.0*exp(j*theta0).
 %   Returns the mpc, the GFL device struct, the initial y, u0, V0, theta0, Y.
+if nargin < 3 || isempty(theta0), theta0 = 0.0; end
 mpc = struct();
 mpc.baseMVA = 100;
 mpc.bus = [ ...
@@ -35,22 +38,19 @@ mpc.branch = [1, 2, 0.0, 0.1, 0.0, 0, 0, 0, 1.0, 0, 1];   % r=0, x=0.1
 mpc.gencost = [];
 mpc.case_name = 'gfl_infinite_bus_2bus';
 
-% PF warm-start: bus 2 voltage. For the structural test, take V2 = 1.0 /theta 0
-% (the infinite bus fixes bus 1 at 1.06/0; bus 2 is approximately 1.0/0 for a
-% lightly-loaded GFL at P_ref small). Use V0 = 1.0 (the GFL's local bus
-% magnitude) and theta0 = 0 for initialization.
-V0 = 1.0;
-theta0 = 0.0;
+% PF warm-start: bus 2 voltage = 1.0 at angle theta0 (complex V0, F1).
+V0 = 1.0 * exp(1i * theta0);
 
-% Build the GFL device. bus_position = 2 (bus 2 in the 2-bus system).
+% Build the GFL device (new signature: bus_ids + complex V0).
+bus_ids = [1; 2];
 params = struct();
-dev = ibr.gfl_model('IBR_test', 2, 2, V0, params, P_ref, Q_ref);
+dev = ibr.gfl_model('IBR_test', 2, 2, bus_ids, V0, params, P_ref, Q_ref);
 u0 = dev.u0;
 
-% Initial y (interleaved): bus1 = 1.06+0j, bus2 = V0*exp(j*theta0).
+% Initial y (interleaved): bus1 = 1.06+0j, bus2 = V0 (complex).
 y0 = zeros(4,1);
 y0(1:2) = [1.06; 0.0];
-y0(3:4) = [V0*cos(theta0); V0*sin(theta0)];
+y0(3:4) = [real(V0); imag(V0)];
 
 % 2-bus Ybus (system base). Build locally for the standalone residual test.
 Y = local_ybus(mpc);
@@ -194,15 +194,16 @@ testCase.verifyLessThan(rel, 1e-4, 'FD Jacobian h-vs-h/2 stable (rel<1e-4).');
 end
 
 % =========================================================================
-% 6. PLL pole oracle at V0=1: {-11.27, -88.63} s^-1
+% 6. PLL pole oracle at V0=1: {-11.27, -88.63} s^-1 (reads params from device)
 % =========================================================================
 function test_gfl_pll_poles_v0_1(testCase)
+[~, dev, ~, ~, ~, ~, ~] = local_gfl_fixture(0.4, 0.0);
+p = dev.provenance.params;
 % Linearized PLL about V0=1: s^2 + omega0*V0*kpPLL*s + omega0*V0*kiPLL = 0.
-omega0 = 376.9911184307752; kpPLL = 0.265; kiPLL = 2.65; V0 = 1.0;
-a = 1;
-b = omega0 * V0 * kpPLL;
-c = omega0 * V0 * kiPLL;
-poles = roots([a, b, c]);
+V0 = 1.0;
+b = p.omega0 * V0 * p.kpPLL;
+c = p.omega0 * V0 * p.kiPLL;
+poles = roots([1, b, c]);
 % Expected: {-11.27, -88.63} (predeclared).
 expected = sort([-11.27; -88.63]);
 got = sort(real(poles));
@@ -210,27 +211,30 @@ testCase.verifyEqual(got, expected, 'RelTol', 1e-3, 'PLL poles {-11.27,-88.63}@V
 end
 
 % =========================================================================
-% 7. Power-loop poles critical damping V0=1: {-10,-10}
+% 7. Power-loop poles critical damping V0=1: {-10,-10} (reads params from device)
 % =========================================================================
 function test_gfl_powerloop_poles_critical(testCase)
-% chi(s) = s^2 + omega_c*(1+V0*Kps)*s + omega_c*V0*Kis; V0=1, omega_c=10, Kps=1, Kis=10.
-omega_c = 10; Kps = 1.0; Kis = 10.0; V0 = 1.0;
-a = 1;
-b = omega_c * (1 + V0*Kps);
-c = omega_c * V0 * Kis;
-poles = roots([a, b, c]);
+[~, dev, ~, ~, ~, ~, ~] = local_gfl_fixture(0.4, 0.0);
+p = dev.provenance.params;
+% chi(s) = s^2 + omega_c*(1+V0*Kps)*s + omega_c*V0*Kis; V0=1.
+V0 = 1.0;
+b = p.omega_c * (1 + V0*p.Kps);
+c = p.omega_c * V0 * p.Kis;
+poles = roots([1, b, c]);
 % Expected: {-10, -10} (critically damped).
 testCase.verifyEqual(sort(real(poles)), [-10; -10], 'RelTol', 1e-6, ...
     'Power-loop poles {-10,-10}@V0=1 (critically damped).');
 end
 
 % =========================================================================
-% 8. Power-loop poles V0=0.8: {-8,-10}
+% 8. Power-loop poles V0=0.8: {-8,-10} (reads params from device)
 % =========================================================================
 function test_gfl_powerloop_poles_v0_08(testCase)
-omega_c = 10; Kps = 1.0; Kis = 10.0; V0 = 0.8;
-b = omega_c * (1 + V0*Kps);
-c = omega_c * V0 * Kis;
+[~, dev, ~, ~, ~, ~, ~] = local_gfl_fixture(0.4, 0.0);
+p = dev.provenance.params;
+V0 = 0.8;
+b = p.omega_c * (1 + V0*p.Kps);
+c = p.omega_c * V0 * p.Kis;
 poles = roots([1, b, c]);
 % Expected (predeclared): {-8, -10}.
 testCase.verifyEqual(sort(real(poles)), [-10; -8], 'RelTol', 1e-6, ...
@@ -238,12 +242,14 @@ testCase.verifyEqual(sort(real(poles)), [-10; -8], 'RelTol', 1e-6, ...
 end
 
 % =========================================================================
-% 9. Power-loop poles V0=1.2: {-10,-12}
+% 9. Power-loop poles V0=1.2: {-10,-12} (reads params from device)
 % =========================================================================
 function test_gfl_powerloop_poles_v0_12(testCase)
-omega_c = 10; Kps = 1.0; Kis = 10.0; V0 = 1.2;
-b = omega_c * (1 + V0*Kps);
-c = omega_c * V0 * Kis;
+[~, dev, ~, ~, ~, ~, ~] = local_gfl_fixture(0.4, 0.0);
+p = dev.provenance.params;
+V0 = 1.2;
+b = p.omega_c * (1 + V0*p.Kps);
+c = p.omega_c * V0 * p.Kis;
 poles = roots([1, b, c]);
 % Expected (predeclared): {-10, -12}.
 testCase.verifyEqual(sort(real(poles)), [-12; -10], 'RelTol', 1e-6, ...
@@ -386,9 +392,174 @@ testCase.verifyTrue(contains(src, 'i_q_star = -Kps*(Q_ref - Q_f) - Kis*phi_Q'), 
 [~, dev, y0, u0, V0, ~, ~] = local_gfl_fixture(0.4, 0.2);
 x = dev.x0;
 I = dev.current_injection(0, x, y0, u0, struct());
-% delta_pll0 = 0 => I = i_d*0 + j*i_q*0.
-testCase.verifyEqual(real(I), 0.4/V0, 'AbsTol', 1e-12, 'i_d*0 = +Pref/V0.');
-testCase.verifyEqual(imag(I), -0.2/V0, 'AbsTol', 1e-12, 'i_q*0 = -Qref/V0 (negative).');
+% delta_pll0 = 0 => I = i_d*0 + j*i_q*0. V0 is complex (1.0*exp(j*0) here).
+V0mag = abs(V0);
+testCase.verifyEqual(real(I), 0.4/V0mag, 'AbsTol', 1e-12, 'i_d*0 = +Pref/V0.');
+testCase.verifyEqual(imag(I), -0.2/V0mag, 'AbsTol', 1e-12, 'i_q*0 = -Qref/V0 (negative).');
+end
+
+% =========================================================================
+% 17. Nonzero-angle equilibrium + common-angle rotation invariance (F1)
+% =========================================================================
+function test_gfl_nonzero_angle_equilibrium(testCase)
+% Build a GFL at a bus with nonzero angle (0.2 rad). The v3 initialization
+% (delta_pll0 = angle(V0)) must give f=0 at the initialized equilibrium.
+[~, dev, y0, u0, ~, theta0, ~] = local_gfl_fixture(0.4, 0.1, 0.2);
+testCase.verifyEqual(dev.x0(1), theta0, 'AbsTol', 1e-12, 'delta_pll0 = angle(V0).');
+f = dev.f(0, dev.x0, y0, u0, struct());
+testCase.verifyLessThan(norm(f, inf), 1e-9, 'f=0 at nonzero-angle equilibrium.');
+
+% Common-angle rotation invariance: rotating the whole network by a common
+% angle leaves f invariant (the PLL tracks). Rotate both bus voltages and
+% delta_pll0 by the same angle.
+phi = 0.15;
+y_rot = y0;
+V1 = complex(y0(1), y0(2)); V2 = complex(y0(3), y0(4));
+V1r = V1 * exp(1i*phi); V2r = V2 * exp(1i*phi);
+y_rot(1:2) = [real(V1r); imag(V1r)];
+y_rot(3:4) = [real(V2r); imag(V2r)];
+x_rot = dev.x0; x_rot(1) = x_rot(1) + phi;   % delta_pll rotates with the network
+f_rot = dev.f(0, x_rot, y_rot, u0, struct());
+testCase.verifyLessThan(norm(f_rot, inf), 1e-9, 'f invariant under common-angle rotation.');
+end
+
+% =========================================================================
+% 18. Empty / wrong / nonfinite u must fail (F2)
+% =========================================================================
+function test_gfl_fail_closed_u(testCase)
+[~, dev, y0, u0, ~, ~, ~] = local_gfl_fixture(0.4, 0.1);
+x = dev.x0;
+% Empty u -> :missingInput.
+try
+    dev.f(0, x, y0, [], struct());
+    testCase.verifyTrue(false, 'empty u must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:missingInput', 'empty u -> missingInput.');
+end
+% Non-finite u -> :badInput.
+try
+    dev.f(0, x, y0, [NaN; 0], struct());
+    testCase.verifyTrue(false, 'NaN u must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', 'NaN u -> badInput.');
+end
+try
+    dev.current_injection(0, x, y0, [0.4; Inf], struct());
+    testCase.verifyTrue(false, 'Inf u must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', 'Inf u -> badInput.');
+end
+% Wrong-size u -> :badInput.
+try
+    dev.f(0, x, y0, [0.4], struct());
+    testCase.verifyTrue(false, '1-element u must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badInput', '1-element u -> badInput.');
+end
+% Valid u still works.
+f_ok = dev.f(0, x, y0, u0, struct());
+testCase.verifyTrue(all(isfinite(f_ok)), 'valid u evaluates finite f.');
+end
+
+% =========================================================================
+% 19. Noncontiguous bus IDs + deliberate mapping mismatch (F3)
+% =========================================================================
+function test_gfl_bus_mapping(testCase)
+% 3-bus mpc with noncontiguous bus IDs [1, 5, 9]. Place the GFL at bus 5
+% (bus_position = 2). bus_ids(bus_position) == bus_id must hold.
+bus_ids = [1; 5; 9];
+V0 = 1.0 * exp(1i*0.1);
+dev = ibr.gfl_model('IBR_test', 5, 2, bus_ids, V0, struct(), 0.4, 0.1);
+testCase.verifyEqual(dev.bus_id, 5, 'bus_id stored.');
+testCase.verifyEqual(dev.bus_position, 2, 'bus_position stored.');
+testCase.verifyEqual(dev.bus_ids(dev.bus_position), 5, 'mapping consistent.');
+
+% Deliberate mismatch: bus_position=3 (bus 9) with bus_id=5 -> error.
+try
+    ibr.gfl_model('IBR_test', 5, 3, bus_ids, V0, struct(), 0.4, 0.1);
+    testCase.verifyTrue(false, 'mismatch must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:busMappingMismatch', ...
+        'mismatch -> busMappingMismatch.');
+end
+% Out-of-range bus_position -> error.
+try
+    ibr.gfl_model('IBR_test', 5, 4, bus_ids, V0, struct(), 0.4, 0.1);
+    testCase.verifyTrue(false, 'out-of-range must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:busMappingMismatch', ...
+        'out-of-range -> busMappingMismatch.');
+end
+end
+
+% =========================================================================
+% 20. Invalid / nonfinite parameters must fail (F4)
+% =========================================================================
+function test_gfl_fail_closed_params(testCase)
+bus_ids = [1; 2];
+V0 = 1.0;
+% NaN omega0 -> :badParam.
+try
+    ibr.gfl_model('t', 2, 2, bus_ids, V0, struct('omega0', NaN), 0.4, 0.1);
+    testCase.verifyTrue(false, 'NaN omega0 must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badParam', 'NaN omega0 -> badParam.');
+end
+% Negative Kis -> :badParam.
+try
+    ibr.gfl_model('t', 2, 2, bus_ids, V0, struct('Kis', -1.0), 0.4, 0.1);
+    testCase.verifyTrue(false, 'negative Kis must error.');
+catch e
+    testCase.verifyEqual(e.identifier, 'ibr:gfl_model:badParam', 'negative Kis -> badParam.');
+end
+% Valid override still works and reclassifies the param DIAGNOSTIC_ONLY.
+dev = ibr.gfl_model('t', 2, 2, bus_ids, V0, struct('Kis', 20.0), 0.4, 0.1);
+testCase.verifyEqual(dev.provenance.params.Kis, 20.0, 'AbsTol', 0, 'override applied.');
+testCase.verifyEqual(dev.provenance.param_classifications.Kis, 'DIAGNOSTIC_ONLY', ...
+    'overridden Kis reclassified DIAGNOSTIC_ONLY.');
+testCase.verifyTrue(dev.provenance.param_overridden.Kis, 'Kis overridden flag set.');
+% Non-overridden params keep their frozen classification.
+testCase.verifyEqual(dev.provenance.param_classifications.omega0, 'SOURCE_VERBATIM', ...
+    'non-overridden omega0 stays SOURCE_VERBATIM.');
+end
+
+% =========================================================================
+% 21. Pole tests linearize/evaluate dev.f (numerical, not hard-coded) (F4)
+% =========================================================================
+function test_gfl_pll_poles_numerical_linearization(testCase)
+% Numerically linearize dev.f about the equilibrium and check the PLL
+% eigenvalues match the analytic oracle. This catches an implementation bug
+% that hard-coded pole tests would miss.
+[~, dev, y0, u0, ~, ~, ~] = local_gfl_fixture(0.4, 0.0);
+x = dev.x0;
+p = dev.provenance.params;
+% The PLL subsystem is states [delta_pll, eps_pll] = x(1:2). Linearize f(1:2)
+% w.r.t. x(1:2) numerically (central FD). At equilibrium Vq_pll=0, so the
+% cross-coupling to P_f/Q_f/phi_P/phi_Q is via I_gfl (which depends on delta_pll
+% through exp(j*delta_pll)); for the PLL eigenvalue oracle we isolate the
+% 2x2 PLL block by holding the other states fixed at equilibrium.
+fd_eps = 1e-6;
+J2 = zeros(2,2);
+f0 = dev.f(0, x, y0, u0, struct());
+for j = 1:2
+    xp = x; xp(j) = xp(j) + fd_eps;
+    xm = x; xm(j) = xm(j) - fd_eps;
+    fp = dev.f(0, xp, y0, u0, struct());
+    fm = dev.f(0, xm, y0, u0, struct());
+    J2(:,j) = (fp(1:2) - fm(1:2)) / (2*fd_eps);
+end
+eig_num = sort(real(eig(J2)));
+% Analytic oracle: s^2 + omega0*V0*kpPLL*s + omega0*V0*kiPLL = 0 at V0=1.
+V0 = 1.0;
+b = p.omega0 * V0 * p.kpPLL;
+c = p.omega0 * V0 * p.kiPLL;
+eig_analytic = sort(real(roots([1, b, c])));
+% The numerical 2x2 block includes the exp(j*delta_pll) coupling through I_gfl
+% -> P_meas -> (no, P_f is a state held fixed). At equilibrium the PLL block
+% eigenvalues should match the analytic oracle within the FD noise + the
+% coupling residual. Use a loose tolerance (the coupling is small but nonzero).
+testCase.verifyEqual(eig_num, eig_analytic, 'AbsTol', 5e-2, ...
+    'numerical PLL eigenvalues match analytic oracle.');
 end
 
 % =========================================================================

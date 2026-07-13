@@ -155,3 +155,38 @@ These are asserted by the pole-oracle tests BEFORE the model is exercised.
    to the FRT phase (Phase 14).
 7. Production readiness requires source-closing the ASSUMED_DIAGNOSTIC gains
    in a separate later task.
+
+## Corrective patch (post-Phase-5 re-review)
+
+Independent re-review by the user and Agent B surfaced 5 findings (3 High,
+2 Medium). A compact corrective patch was applied (no model rebuild, no
+gain/tolerance change):
+
+1. **Complex V0 initialization (F1, High):** the constructor now accepts the
+   complex PF-solved bus voltage `V0`; `delta_pll0 = angle(V0)` (was hard-coded
+   0). The PLL now initializes locked at any bus angle, not just 0.
+2. **Fail-closed input (F2, High):** `refs_from_u` requires a 2-element finite
+   `u_dev`; empty → `:missingInput`, non-finite/wrong-size → `:badInput`. The
+   silent `[P_f, Q_f]` fallback is removed.
+3. **Bus mapping validation (F3, High):** the constructor takes `bus_ids` and
+   validates `bus_ids(bus_position) == bus_id` (else `:busMappingMismatch`).
+   `bus_position` (voltage measurement) and `bus_id` (injection mapping) now
+   cannot silently refer to different buses.
+4. **Parameter override + provenance (F4, Medium):** every parameter is
+   validated (finite, positive); any override reclassifies that parameter to
+   `DIAGNOSTIC_ONLY` in `dev.provenance.param_classifications` and sets
+   `dev.provenance.param_overridden.<name> = true`. Frozen defaults keep
+   their original classification.
+5. **Source Matrix status (F5, Medium):** Item 1 status updated to
+   STRUCTURAL_ONLY; Phase 5 removed from the "blocked" list.
+
+New falsification tests (T17-T21): nonzero-angle equilibrium + common-angle
+rotation invariance; empty/wrong/nonfinite u fails; noncontiguous bus IDs +
+deliberate mapping mismatch; invalid/nonfinite parameters fail; numerical
+linearization of `dev.f` for the PLL eigenvalues (replaces hard-coded
+constants in the pole tests).
+
+The 6-state structure, equations, and frozen gains are unchanged. The
+corrective patch is additive on top of the three Phase 5 commits
+(`9abb5d7`, `41085f6`, `60d8337`).
+

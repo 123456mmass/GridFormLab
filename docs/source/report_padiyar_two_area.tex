@@ -493,8 +493,10 @@ meaningful. All 18 non-reference modes are stable.}
 
 \begin{figure}[H]\centering
 \includegraphics[width=.92\textwidth]{figures/padiyar_two_area/eigenvalue_comparison.png}
-\caption{Graphical counterpart of Table~9: the full computed manual/AVR
-eigenvalue spectrum and the independently transcribed Table~9.5 values.}
+\caption{Graphical counterpart of Table~9 using only the AVR comparison on
+one complex-plane axis. Independently transcribed Padiyar Table~9.5 values
+are circles and computed AVR eigenvalues are crosses; coincident markers show
+direct graphical agreement.}
 \end{figure}
 
 \begin{table}[H]\centering
@@ -801,75 +803,244 @@ $Z_f=j10^{-4}$~pu.}
 \label{fig:ts-comparison-voltage}
 \end{figure}
 
-\section{Validation context}
+\section{IEEE 14-bus cross-validation against PSAT}
 
-The Padiyar implementation is validated primarily by source transcription,
-power-flow reproduction, DAE residuals, invariance/structure tests, no-fault
-equilibrium and Table~9.5 as a secondary cross-check. A Padiyar-specific PSAT
-converter is not claimed in this report.
+This section cross-validates the common classical PF, SSSA and TDS substrate
+against PSAT~2.1.11. It is an independent infrastructure check and is not a
+claim that PSAT implements the five-state Padiyar model used in the preceding
+sections. Every IEEE14 table and figure below is generated in the same
+invocation as a fresh in-house run and a fresh PSAT run; no saved trajectory,
+prior numeric table, or prior plot is read. The generating entry point is
+\path{generate_padiyar_ieee14_psat_tables}.
 
-Independently, the common in-house classical PF/TS infrastructure has been
-freshly cross-validated against PSAT (v2.1.11) on two network cases. These
-establish that the shared Newton--Raphson power flow, the classical
-second-order machine model, the implicit-trapezoidal TS integrator and the
-network/machine conversion are correct \emph{before} the Padiyar model is
-introduced. They are not a direct validation of the five-state Padiyar machine
-model, but they validate the substrate on which it is built.
+\subsection{System description}
 
-\subsection{IEEE 14-bus (classical) vs PSAT}
+The network is the MATPOWER~6 IEEE 14-bus case converted into the project
+schema. It has 14 bus rows, five in-service generator rows at buses
+1, 2, 3, 6 and 8, and 20 in-service branch rows. The complete input inventory
+used in this study is given before the computed PF, SSSA and TDS results.
 
-\textbf{Scenario.} MATPOWER case14, 5 generators at buses $[1,2,3,6,8]$
-(classical model, $H=5$, $D=0$, $X'_d=0.3$). Balanced three-phase fault at
-bus~4, $Z_f=j0.1$~pu, applied at $t=1.0$~s and cleared at $t=1.1$~s,
-$\Delta t=0.01$~s, horizon 15~s. Identical network input is built for PSAT
-from the in-house case via the project converter; the Ybus of the two solvers
-matches to $3.97\times10^{-15}$ (machine precision).
+\begin{figure}[H]
+\centering
+\includegraphics[width=.92\textwidth]{figures/padiyar_two_area/ieee14_network.png}
+\caption{IEEE 14-bus network generated from the same MATPOWER branch, bus and
+generator rows used by Our and PSAT. Generator buses, nonzero-load buses,
+transformer branches and the bus-4 fault location are marked explicitly.}
+\label{fig:ieee14-network}
+\end{figure}
 
-\textbf{Power flow.} Both solvers converge (in-house: 5 Newton iterations;
-PSAT: converged). Maximum voltage-magnitude difference $6.66\times10^{-16}$~pu;
-maximum angle difference $3.55\times10^{-14}$~deg (machine precision).
+\subsection{Source data (MATPOWER IEEE 14-bus)}
 
-\textbf{Time-domain simulation.} Rotor angles and speeds compared in the
-inertia-weighted COI frame (generators mapped by bus ID, not column position).
-The in-house adaptive implicit-trapezoidal corrector records 0 non-converged
-steps of 1500. PSAT produces 1509 TD points (extra internal event samples);
-the raw grids are therefore \emph{not} equal, but the common comparison grid
-is valid and no extrapolation is used. Maximum COI-relative angle difference
-$0.0096^\circ$; speed $3.82\times10^{-6}$~pu; electrical power $0.042$~MW;
-fault-bus voltage $3.18\times10^{-5}$~pu.
+\begin{table}[H]\centering\small
+\caption{MATPOWER IEEE14 case summary: 14 buses, five online generators and
+20 line/transformer rows, with the shared base quantities.}
+\label{tab:ieee14-case-summary}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_case_summary.tex}}
+\end{table}
 
-\subsection{IEEE RTS-24 (classical) vs PSAT}
+\subsubsection{Bus data and bus types}
 
-\textbf{Scenario.} IEEE RTS-1996 24-bus, 11 generators (classical, machine
-$H/D/X'_d$ from the case). Balanced three-phase fault at bus~15, $Z_f=j0.1$~pu,
-$t=1.0$--$1.1$~s, $\Delta t=0.01$~s, horizon 15~s. Ybus match to
-$2.84\times10^{-14}$ (machine precision).
+Table~\ref{tab:ieee14-bus-data} records the source bus operating entries and
+aggregated source generation. Table~\ref{tab:ieee14-bus-parameters} preserves
+the remaining MATPOWER bus-matrix fields, including the bus type, shunt,
+area, voltage limits and initial voltage. The source $P_G/Q_G$ entries are
+case data; their input/output interpretation follows the effective REF, PV
+and PQ bus types.
 
-\textbf{Power flow.} Both converge. Maximum voltage difference
-$4.44\times10^{-16}$~pu; maximum angle difference $6.75\times10^{-14}$~deg
-(machine precision). Pre-fault speed RMSE $6.9\times10^{-15}$~pu.
+\begin{table}[H]\centering\small
+\caption{IEEE14 bus-type assignment, including the MATPOWER type codes and
+the buses in each REF, PV and PQ group.}
+\label{tab:ieee14-bus-types}
+\resizebox{.78\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_bus_types.tex}}
+\end{table}
 
-\textbf{Time-domain simulation.} 0 non-converged steps of 1500. Maximum
-COI-relative angle difference $0.0068^\circ$; speed $4.62\times10^{-6}$~pu;
-electrical power $0.083$~MW; fault-bus voltage $5.35\times10^{-6}$~pu.
+\begin{table}[H]\centering\small
+\caption{IEEE 14-bus data and bus types shared by the in-house and PSAT runs.}
+\label{tab:ieee14-bus-data}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_bus_data.tex}}
+\end{table}
 
-\subsection{Cross-validation gate status}
+\begin{table}[H]\centering\scriptsize
+\caption{MATPOWER IEEE14 bus data: complete bus-matrix parameters supplied to
+the case converter.}
+\label{tab:ieee14-bus-parameters}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_bus_parameters.tex}}
+\end{table}
 
-For both cases the PSAT comparison gate passes (tight tolerance $0.05^\circ$
-COI, justified a priori by the converged-trapezoidal baseline). The full
-provenance, raw/common grid details, inertia-weighted COI formula, and all
-pairwise metrics are recorded in
-\path{output/validation/artifacts/psat_pgaz_validation_2026-07-11_160014.md}.
+\subsubsection{Line data}
 
-PGAz is retained as a secondary classical diagnostic only. A corrector-iteration
-and timestep convergence study (ci=1\ldots12, $\Delta t=0.02/0.01/0.005$) shows
-that PGAz's plateau solution still differs from the agreeing PSAT/in-house pair
-by $\sim0.6^\circ$ (case14) and $\sim0.3^\circ$ (RTS-24); the fixed-iteration
-count is refuted as the cause (ci=3, 8, 12 are identical), and the difference is
-traced to PGAz's integration formulation. PGAz equivalence is therefore
-\emph{not} a passing gate and no tolerance is relaxed to hide that discrepancy.
-This is reported honestly as a limitation of the PGAz reference, not of the
-in-house solver.
+All 20 in-service MATPOWER line/transformer rows are transcribed in
+Table~\ref{tab:ieee14-branch-data}. A zero source tap ratio denotes the
+MATPOWER unity-ratio default; the three nonzero ratios identify the
+transformer branches.
+
+\begin{table}[H]\centering\scriptsize
+\caption{MATPOWER IEEE14 line and transformer data (branch matrix); all
+20 rows are in service.}
+\label{tab:ieee14-branch-data}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_branch_data.tex}}
+\end{table}
+
+\subsubsection{Generator data and dynamic parameters}
+
+The five online generator rows are transcribed in
+Table~\ref{tab:ieee14-generator-data}. Generator-cost rows are retained for
+case completeness in Table~\ref{tab:ieee14-gencost}, although no
+optimal-power-flow calculation is performed here.
+
+\begin{table}[H]\centering\scriptsize
+\caption{MATPOWER IEEE14 online generator data.}
+\label{tab:ieee14-generator-data}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_generator_data.tex}}
+\end{table}
+
+\begin{table}[H]\centering\small
+\caption{MATPOWER IEEE14 polynomial generator-cost data retained from the
+source case.}
+\label{tab:ieee14-gencost}
+\resizebox{.86\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_gencost_data.tex}}
+\end{table}
+
+The static MATPOWER case does not supply a complete dynamic data set.
+Therefore the five classical-machine rows in
+Table~\ref{tab:ieee14-machine-data} are explicitly labelled
+\texttt{ASSUMED\_DIAGNOSTIC}; the identical rows are passed to Our and PSAT.
+
+\begin{table}[H]\centering\small
+\caption{Classical-machine parameters used identically by Our and PSAT.}
+\label{tab:ieee14-machine-data}
+\resizebox{.86\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_machine_data.tex}}
+\end{table}
+
+\subsubsection{Fault and simulation inputs}
+
+The identical event contract in Table~\ref{tab:ieee14-scenario} uses a
+balanced three-phase fault at bus~4 with $Z_f=j10^{-4}$~pu, applied at
+1.0~s and cleared at 1.1~s. Both simulations run to 15~s with a nominal
+0.01~s step.
+
+\begin{table}[H]\centering\small
+\caption{Identical IEEE14 model and event inputs supplied to Our and PSAT.}
+\label{tab:ieee14-scenario}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_scenario_ours_psat.tex}}
+\end{table}
+
+\subsection{Power-flow results}
+
+Table~\ref{tab:ieee14-pf} reports both solved bus-voltage columns directly,
+with bus IDs mapped before subtraction. PSAT receives the network through the
+project converter rather than through an unrelated built-in case.
+
+\begin{table}[H]\centering\small
+\caption{Fresh IEEE14 power-flow comparison: Our versus PSAT.}
+\label{tab:ieee14-pf}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_pf_ours_psat.tex}}
+\end{table}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.94\textwidth]{figures/padiyar_two_area/ieee14_pf_ours_psat.png}
+\caption{Fresh IEEE14 solved bus-voltage magnitudes and angles. Our is solid
+and PSAT is dashed; both traces use the bus-ID mapping reported in
+Table~\ref{tab:ieee14-pf}.}
+\label{fig:ieee14-pf-solution}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.94\textwidth]{figures/padiyar_two_area/ieee14_pf_error_ours_psat.png}
+\caption{Per-bus absolute PF differences from the same fresh Our and PSAT
+solutions. Zero differences are shown at the numerical display floor on the
+logarithmic axes.}
+\label{fig:ieee14-pf-error}
+\end{figure}
+
+\subsection{Small-signal stability results}
+
+Table~\ref{tab:ieee14-sssa} compares the positive-imaginary physical relative
+modes from the identical five-machine classical model. The common-angle zero
+mode is omitted by the declared $10^{-3}$~rad/s frequency threshold. PSAT
+values are reported exactly as returned by its state-matrix analysis; its
+\path{fm_eigen} implementation applies a documented $-10^{-6}$ diagonal
+shift. No equation is repeated here because the model and linearisation have
+already been described above.
+
+\begin{table}[H]\centering\small
+\caption{Fresh IEEE14 SSSA modal comparison: Our versus raw PSAT output.}
+\label{tab:ieee14-sssa}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_sssa_ours_psat.tex}}
+\end{table}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.91\textwidth]{figures/padiyar_two_area/ieee14_sssa_complex_ours_psat.png}
+\caption{Fresh IEEE14 positive-imaginary modes plotted directly from
+Table~\ref{tab:ieee14-sssa}. The complex-plane panel uses the unscaled
+eigenvalues in physical units; the difference panel reports the corresponding
+$|\Delta\lambda|$ for each table row.}
+\label{fig:ieee14-sssa-complex}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.94\textwidth]{figures/padiyar_two_area/ieee14_sssa_modes_ours_psat.png}
+\caption{Fresh IEEE14 modal frequencies and damping ratios corresponding
+directly to Table~\ref{tab:ieee14-sssa}.}
+\label{fig:ieee14-sssa-modes}
+\end{figure}
+
+\subsection{Time-domain-simulation results}
+
+Generator columns are mapped by bus ID and direct trajectory differences are
+evaluated on the in-house event grid. The in-house run follows the same
+\path{solve_case('analysis','ts')} execution path and MATPOWER14 defaults used
+by \path{run_ts.m}. PSAT's additional internal event samples are retained in
+its raw count; interpolation to the comparison grid refuses extrapolation.
+Table~\ref{tab:ieee14-ts} reports each tool's response summary and the direct
+PSAT--Our differences. All four figures plot the stored solver outputs:
+$\delta_i(t)$, $\omega_i(t)$, $P_{e,i}(t)$ and bus-voltage magnitude. No COI,
+reference-machine, initial-angle or speed-deviation transform is applied.
+In every figure the upper panel overlays Our as continuous lines and PSAT as
+cross markers sampled from the same comparison grid, making coincident
+trajectories visible. The lower panel plots the direct PSAT--Our difference.
+
+\begin{table}[H]\centering\small
+\caption{Fresh IEEE14 TDS comparison for the bus-4, $Z_f=j10^{-4}$~pu fault.}
+\label{tab:ieee14-ts}
+\resizebox{\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_ts_ours_psat.tex}}
+\end{table}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.92\textwidth]{figures/padiyar_two_area/ieee14_ts_angle_ours_psat.png}
+\caption{Fresh IEEE14 stored absolute rotor angles $\delta_i(t)$ for the five
+generator buses, using the \texttt{run\_ts.m} plotting convention. No COI,
+reference-machine or initial-angle subtraction is applied. Colours identify
+buses. Upper panel: Our lines and PSAT cross markers. Lower panel: direct
+PSAT--Our angle differences.}
+\label{fig:ieee14-ts-angle}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.92\textwidth]{figures/padiyar_two_area/ieee14_ts_omega_ours_psat.png}
+\caption{Fresh IEEE14 stored absolute rotor speeds $\omega_i(t)$ in per unit,
+using the \texttt{run\_ts.m} plotting convention. No COI subtraction and no
+$\omega_i-1$ transform is applied. Upper panel: Our lines and PSAT cross
+markers. Lower panel: direct PSAT--Our speed differences.}
+\label{fig:ieee14-ts-omega}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.92\textwidth]{figures/padiyar_two_area/ieee14_ts_pe_ours_psat.png}
+\caption{Fresh IEEE14 stored generator electrical powers $P_{e,i}(t)$, using
+the \texttt{run\_ts.m} plotting convention. Upper panel: Our lines and PSAT
+cross markers. Lower panel: direct PSAT--Our electrical-power differences.}
+\label{fig:ieee14-ts-pe}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=.92\textwidth]{figures/padiyar_two_area/ieee14_ts_voltage_ours_psat.png}
+\caption{Fresh IEEE14 bus-4 and minimum-network voltage magnitudes for the
+declared fault, using the \texttt{run\_ts.m} plotting convention. Upper panel:
+Our lines and PSAT cross markers. Lower panel: direct PSAT--Our voltage
+differences.}
+\label{fig:ieee14-ts-voltage}
+\end{figure}
 
 \section{Conclusions}
 

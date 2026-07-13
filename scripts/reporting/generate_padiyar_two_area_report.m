@@ -1,5 +1,5 @@
 function out = generate_padiyar_two_area_report()
-%GENERATE_PADIYAR_TWO_AREA_REPORT Generate Padiyar PF/SSSA/TS report assets.
+%GENERATE_PADIYAR_TWO_AREA_REPORT Generate Padiyar and IEEE14 report assets.
 pf_init_paths;
 root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
 outdir=fullfile(root,'docs','source','figures','padiyar_two_area');
@@ -18,7 +18,7 @@ save(fullfile(outdir,'padiyar_two_area_results.mat'), ...
     'c','pf','avr','manual','ts_avr','ts_manual','scenario');
 plot_pf(pf,fullfile(outdir,'powerflow_summary.png'));
 plot_pf_precision(c,pf,fullfile(outdir,'pf_precision.png'));
-plot_eigs(c,avr,manual,fullfile(outdir,'eigenvalue_comparison.png'));
+plot_eigs(c,avr,fullfile(outdir,'eigenvalue_comparison.png'));
 plot_swing_modes(c,avr,manual,fullfile(outdir,'swing_mode_comparison.png'));
 plot_ts_result(ts_avr,scenario_plot_label('Padiyar two-area',ts_avr),root,'padiyar_two_area', ...
     fullfile(outdir,'fault_comparison.png'));
@@ -29,9 +29,11 @@ write_pf_results(c,pf,fullfile(outdir,'table_pf_results.tex'));
 write_eigs(c,avr,fullfile(outdir,'table_eigenvalues.tex'));
 write_modes(c,avr,manual,fullfile(outdir,'table_swing_modes.tex'));
 write_ts(ts_avr,ts_manual,fullfile(outdir,'table_ts_summary.tex'));
+ieee14_psat=generate_padiyar_ieee14_psat_tables(outdir);
 
 out=struct('case_data',c,'pf',pf,'ssa_avr',avr,'ssa_manual',manual, ...
-    'ts_avr',ts_avr,'ts_manual',ts_manual,'output_dir',outdir);
+    'ts_avr',ts_avr,'ts_manual',ts_manual, ...
+    'ieee14_psat',ieee14_psat,'output_dir',outdir);
 fprintf('Padiyar report assets: %s\n',outdir);
 fprintf('PF: converged=%d iter=%d; AVR DAE residual=%.3e; TS nonconv AVR/manual=%d/%d\n', ...
     pf.converged,pf.iterations,avr.initial_residual, ...
@@ -56,14 +58,19 @@ xlabel('Iteration'); ylabel('Max mismatch (pu)'); title('Newton--Raphson converg
 sgtitle('Padiyar two-area power flow'); exportgraphics(f,path,'Resolution',200); close(f);
 end
 
-function plot_eigs(c,avr,manual,path)
-f=figure('Visible','off','Color','w','Position',[100 100 1050 650]); hold on; grid on;
-la=avr.eigenvalues; lm=manual.eigenvalues; lr=c.reference.table95_eigenvalues;
-scatter(real(lr),imag(lr),70,'o','MarkerEdgeColor',[.1 .1 .1],'LineWidth',1.4);
-scatter(real(la),imag(la),46,'filled','MarkerFaceColor',[.08 .42 .68]);
-scatter(real(lm),imag(lm),52,'^','MarkerEdgeColor',[.80 .33 .08],'LineWidth',1.3);
-xline(0,'k--'); xlabel('Real part (1/s)'); ylabel('Imaginary part (rad/s)');
-title('Small-signal eigenvalues'); legend('Padiyar Table 9.5','Computed AVR','Computed manual excitation','Location','best');
+function plot_eigs(c,avr,path)
+f=figure('Visible','off','Color','w','Position',[100 100 1050 650]);
+ax=axes(f); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+la=avr.eigenvalues; lr=c.reference.table95_eigenvalues;
+scatter(ax,real(lr),imag(lr),76,'o','MarkerEdgeColor',[.1 .1 .1], ...
+    'LineWidth',1.5,'DisplayName','Padiyar Table 9.5');
+scatter(ax,real(la),imag(la),72,'x','MarkerEdgeColor',[.08 .42 .68], ...
+    'LineWidth',1.7,'DisplayName','Computed AVR');
+xline(ax,0,'k--','HandleVisibility','off');
+xlabel(ax,'Real part (1/s)'); ylabel(ax,'Imaginary part (rad/s)');
+title(ax,'Small-Signal Eigenvalue Comparison: Book vs Our AVR', ...
+    'FontWeight','bold');
+legend(ax,'Location','best');
 exportgraphics(f,path,'Resolution',200); close(f);
 end
 

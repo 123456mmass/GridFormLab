@@ -34,8 +34,9 @@ old = pwd; cleanup = onCleanup(@() cd(old)); %#ok<NASGU>
 tests_dir = fullfile(psat_root,'tests');
 casefile = fullfile(tests_dir,'case14_ours_psat.m');
 write_complete_case(casefile, pc);
+case_cleanup = onCleanup(@() delete_if_present(casefile)); %#ok<NASGU>
 cd(psat_root);
-global Settings Bus Varout Varname DAE clpsat Syn Fault Line PQ Shunt SW PV %#ok<NASGU>
+global Settings Bus Varout Varname DAE clpsat Syn Fault Line PQ Shunt SW PV SSSA %#ok<NASGU>
 command_line_psat = 1; %#ok<NASGU>
 psat;
 clpsat.mesg = 0; clpsat.readfile = 1; clpsat.pq2z = 1;
@@ -49,8 +50,29 @@ ps.pf_vmag = DAE.y(nb+(1:nb));
 ps.pf_conv = Settings.conv;
 ps.bus_ids = Bus.con(:,1);
 ps.syn_bus = Syn.con(:,1);
-if ~ps.pf_conv, delete(casefile); error('run_psat_case14:pf','PSAT PF did not converge'); end
-Settings.freq = pc.freq; Settings.tstep = sc.dt; Settings.tf = sc.t_end;
+if ~ps.pf_conv, error('run_psat_case14:pf','PSAT PF did not converge'); end
+
+% Fresh PSAT small-signal result from the same loaded case and solved PF.
+% Matrix 4 is PSAT's dynamic state matrix. The returned values are the raw
+% PSAT eigenvalues; fm_eigen applies its documented -1e-6 diagonal shift.
+SSSA.matrix = 4;
+SSSA.method = 1;
+SSSA.map = 1;
+% The converted case is a 60 Hz case. Set the system frequency before both
+% SSSA and TD; PSAT's startup default is 50 Hz and would otherwise change
+% the SSSA swing frequencies while TD later receives the correct 60 Hz.
+Settings.freq = pc.freq;
+% Match the in-house classical SSSA/TS contract: dynamic PQ loads are
+% constant impedances at the solved operating point. PSAT otherwise leaves
+% Settings.pq2z at its post-PF default (0) for SSSA, even though its TD path
+% converts the same loads later through clpsat.pq2z.
+Settings.pq2z = 1;
+runpsat('sssa');
+ps.sssa_eigenvalues = SSSA.eigs(:);
+ps.sssa_dynamic_order = DAE.n;
+ps.sssa_diagonal_shift = -1e-6;
+
+Settings.tstep = sc.dt; Settings.tf = sc.t_end;
 Settings.t0 = 0; Settings.method = 2; Settings.dynmit = 30; Settings.dyntol = 1e-6; Settings.fixt = 1;
 runpsat('td');
 uvars = Varname.uvars; if ~iscell(uvars), uvars = cellstr(uvars); end
@@ -68,8 +90,8 @@ for k=1:numel(vc)
 end
 ps.td_points = numel(Varout.t); ps.td_tend = Varout.t(end); ps.td_error = Settings.error;
 ps.Zf = pc.Zf; ps.fault_bus = pc.fault_bus; ps.t_fault = pc.t_fault; ps.t_clear = pc.t_clear;
-delete(casefile);
-fprintf('PSAT case14: PF conv=%d, TD pts=%d t_end=%.2f\n',ps.pf_conv,ps.td_points,ps.td_tend);
+fprintf('PSAT case14: PF conv=%d, SSSA states=%d, TD pts=%d t_end=%.2f\n', ...
+    ps.pf_conv,ps.sssa_dynamic_order,ps.td_points,ps.td_tend);
 end
 
 function write_complete_case(filepath, pc)
@@ -93,4 +115,14 @@ for r=1:numel(names)
   if r<numel(names), fprintf(fid,'  ''%s'';\n',names{r}); else, fprintf(fid,'  ''%s''\n',names{r}); end
 end
 fprintf(fid,'};\n\n');
+end
+
+function delete_if_present(path)
+if exist(path,'file') == 2
+    try
+        delete(path);
+    catch
+        % Best-effort cleanup only; preserve any primary PSAT error.
+    end
+end
 end

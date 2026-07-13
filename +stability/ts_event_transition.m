@@ -1,5 +1,5 @@
-function [y_right, Y_right, event_context_right, event_diag] = ...
-    ts_event_transition(t_next, event_id, events, x, y, strat, kopt, has_provider, event_tol)
+function [y_right, Y_right, event_context_right, event_diag, hybrid_state_new] = ...
+    ts_event_transition(t_next, event_id, events, x, y, strat, kopt, has_provider, event_tol, hybrid_state)
 %TS_EVENT_TRANSITION  Shared event-transition helper (B3).
 %   Called at the END of a step that arrives at t_next (a declared event
 %   time) to switch ONCE to the right-topology/context and re-solve the
@@ -43,6 +43,24 @@ arguments
     kopt struct
     has_provider (1,1) logical
     event_tol (1,1) double
+    hybrid_state struct = struct()
+end
+
+% Phase 2: 10-arg overload (hybrid_state present) delegates to the generic
+% ts_apply_transition. The legacy 9-arg path (hybrid_state absent/empty)
+% runs the existing B3 code UNCHANGED (bit-identical).
+% A struct() default with no fields is treated as "absent" (legacy path).
+has_hybrid = ~isempty(fieldnames(hybrid_state));
+has_transitions = isfield(events, 'transitions') && ~isempty(events.transitions);
+if has_hybrid || has_transitions
+    transition = find_transition_by_id(events, event_id);
+    [y_right, Y_right, hybrid_state_new, event_context_right, event_diag] = ...
+        stability.ts_apply_transition(t_next, transition, events, x, y, ...
+        hybrid_state, strat, kopt, has_provider, event_tol);
+    if nargout >= 5
+        hybrid_state_new = hybrid_state_new; %#ok<NASGU> return as 5th output
+    end
+    return;
 end
 
 % Select RIGHT topology by event_id DIRECTLY from the named set.
@@ -98,4 +116,24 @@ case 'fault_on',  topo = 'fault';
 case 'fault_off', topo = 'post';
 otherwise,        topo = 'unknown';
 end
+end
+
+% =========================================================================
+function transition = find_transition_by_id(events, event_id)
+% Phase 2: locate the transition with the given event_id in events.transitions.
+if ~isfield(events, 'transitions') || isempty(events.transitions)
+    error('ts_event_transition:missingTransitions', ...
+        ['Generic path requested (hybrid_state or events.transitions present) ' ...
+         'but events.transitions is empty. Provide events.transitions or use ' ...
+         'the legacy 9-arg call without hybrid_state.']);
+end
+T = events.transitions;
+for k = 1:numel(T)
+    if string(T(k).event_id) == string(event_id)
+        transition = T(k);
+        return;
+    end
+end
+error('ts_event_transition:unknownEventId', ...
+    'event_id "%s" not found in events.transitions.', event_id);
 end

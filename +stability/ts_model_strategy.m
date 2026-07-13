@@ -41,7 +41,20 @@ case 'emf6'
 case 'classical'
     strategy = classical_strategy(dae, opt);
 otherwise
-    error('ts_model_strategy:badModel','Unknown model "%s".', model);
+    if isstruct(model)
+        % R2: prebuilt strategy struct (validated upstream by validate_ts_strategy).
+        % Bypass factory construction but NOT schema validation.
+        strategy = model;
+    else
+        error('ts_model_strategy:badModel','Unknown model "%s".', model);
+    end
+end
+% R1: optional input provider (default absent = exact legacy behavior).
+% When absent, the kernel calls the original dae_f/dae_g closures with NO u
+% argument (FP-identical to the pre-R1 path). When present, the kernel uses
+% the separate provider-aware path (strategy.dae_f_u / dae_g_u).
+if ~isfield(strategy,'provider')
+    strategy.provider = [];   % absent => legacy path
 end
 end
 
@@ -83,12 +96,15 @@ function s = classical_strategy(dae, ~)
 % g. The algebraic state is solved exactly inside dae_f (via solve_network),
 % so needs_algebraic_solve=false and the kernel uses classical_step (which
 % skips ts_algebraic_solve). Jyy is [] (the "Jacobian" is -Y, exact and constant
-% per topology). needs_jyy=false.
+% per topology). needs_jyy=false. dae_g and jac_y are [] (empty, NOT function
+% handles) to satisfy validate_ts_strategy's linear-model contract; the kernel
+% never calls jac_y/dae_g on the classical path (it returns via classical_step
+% at ts_step_kernel.m:49 before reaching the jac_y call at L52).
 ng = dae.ng; nb = dae.nb;
 s.model = 'classical';
 s.dae_f = @(x,y,Y) dae.dae_f(x,y,Y);
 s.dae_g = [];
-s.jac_y = @(~,~,~) [];
+s.jac_y = [];
 s.needs_jyy = false;
 s.needs_algebraic_solve = false;
 s.electrical_power = @(x,y,Y) dae.electrical_power(x,y,Y);

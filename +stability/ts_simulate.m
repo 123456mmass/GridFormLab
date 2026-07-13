@@ -47,6 +47,41 @@ end
 % with SSSA (stability.emf6_dae / stability.synchronous_emf6_ssa). The
 % legacy calibrated GENTPJ names (flux6/genpj6/kundur6) also route through
 % the unified EMF6 path so SSSA and TS never diverge onto a second model.
+%
+% R2 dispatch precedence (model_bundle > model_fn > built-in string):
+%   - opt.model_bundle: already-built bundle (bundle.ts = strategy+x0+y0+
+%     topology+mapping+metadata; bundle.sssa.model). Validated by
+%     validate_ts_bundle. Bypasses factory construction but NOT validation.
+%   - opt.model_fn: explicit factory @(case_data,opt) bundle. Called once.
+%   - opt.model: built-in SG string (existing switch below, unchanged).
+% model_bundle and model_fn are MUTUALLY EXCLUSIVE; if both supplied, FAIL
+% CLOSED. Provenance is recorded in result.metadata.dispatch = 'explicit_
+% model_bundle' | 'explicit_model_fn' | 'built_in_string'. Function handles
+% are NEVER serialized.
+has_bundle = isfield(opt,'model_bundle') && ~isempty(opt.model_bundle);
+has_mfn    = isfield(opt,'model_fn') && ~isempty(opt.model_fn);
+if has_bundle && has_mfn
+    error('ts_simulate:exclusiveDispatch', ...
+        'opt.model_bundle and opt.model_fn are mutually exclusive.');
+end
+if has_bundle
+    % R2/B1: validate the explicit bundle BEFORE execution. Malformed
+    % bundles fail closed with validate_ts_bundle:* / validate_ts_strategy:*
+    % / validate_sssa_model:* error IDs, BEFORE run_model_bundle touches
+    % any solver. (Previously validate_ts_bundle was dead code — only tests
+    % called it; production never validated.)
+    bundle = stability.validate_ts_bundle(opt.model_bundle);
+    res = run_model_bundle(bundle, case_data, opt);
+    return;
+end
+if has_mfn
+    bundle = opt.model_fn(case_data, opt);
+    % B1: validate the factory-produced bundle BEFORE execution, same as
+    % the explicit model_bundle path.
+    bundle = stability.validate_ts_bundle(bundle);
+    res = run_model_bundle(bundle, case_data, opt);
+    return;
+end
 if any(strcmpi(opt.model,{'padiyar_1_1_avr','padiyar_1_1_manual'}))
     if strcmpi(opt.model,'padiyar_1_1_manual'), opt.excitation='manual'; else, opt.excitation='avr'; end
     if opt.verbose, fprintf('[ts_simulate] Dispatching to Padiyar model 1.1 (%s).\n',opt.excitation); end
@@ -273,6 +308,7 @@ res=struct('t',t,'delta',delta,'omega',omega,'Pe_pu',Pe,'Pe_MW',Pe*base, ...
     'max_corrector_residual',max(corr_residual), ...
     'nonconverged_step_count',nonconv_count, ...
     'event_idx',event_idx, 'event_side',event_side);
+res.metadata = struct('dispatch','built_in_string');
 end
 
 % =========================================================================
@@ -335,6 +371,7 @@ res = struct('t',ares.t,'delta',ares.delta,'omega',ares.omega, ...
     'rejection_history',ares.rejection_history,'event_diagnostics',ares.event_diagnostics, ...
     'p',ares.p,'q',ares.q,'denominator',ares.denominator, ...
     'controller_exponent',ares.controller_exponent);
+res.metadata = struct('dispatch','built_in_string');
 end
 
 % =========================================================================
@@ -512,4 +549,215 @@ for k=1:size(br,1)
     Y(j,i)=Y(j,i)-y/a;
 end
 Y = Y + diag((bus(:,5)+1i*bus(:,6))/mpc.baseMVA);
+end
+
+% =========================================================================
+function res = run_model_bundle(bundle, case_data, opt)
+%RUN_MODEL_BUNDLE  Generic bundle-driven TS execution (R2).
+%   Executes a fixed-step trapezoidal TS simulation from a pre-built model
+%   bundle (bundle.ts = strategy+x0+y0+topology+mapping+metadata). This is the
+%   R2 dispatch target for opt.model_bundle and opt.model_fn. The bundle is
+%   validated by stability.validate_ts_bundle (Phase 5); here we execute it.
+%
+%   The loop mirrors the classical fixed-step loop: event-aware grid, topology
+%   selection via ts_topology_at, and the canonical ts_step_kernel. When
+%   bundle.ts.strategy.provider is present, the provider-aware kernel path is
+%   taken (R1); otherwise the legacy kernel path is taken.
+ts = bundle.ts;
+strat = ts.strategy;
+x0 = ts.x0(:); y0 = ts.y0(:);
+topo = ts.topology;
+mapping = ts.mapping;
+t_end = opt.t_end; dt = opt.dt;
+t_fault = opt.t_fault; t_clear = opt.t_clear;
+fault_enabled = opt.fault_enabled;
+if ~fault_enabled
+    t_fault = inf; t_clear = inf;
+end
+% Build the events struct (shared convention with ts_topology_at and
+% ts_event_transition). B3: prevalidate coincident events BEFORE stepping.
+events_b = struct('fault_enabled',fault_enabled,'t_fault',t_fault, ...
+    't_clear',t_clear,'Ypre',topo.Ypre,'Yfault',topo.Yfault,'Ypost',topo.Ypost);
+event_tol = 1e-10;
+event_times = stability.ts_prevalidate_events(events_b, [0, t_end], event_tol);
+% Event-aware grid (snap fault/clear to grid).
+t = (0:dt:t_end).';
+for et = event_times.'
+    [~, idx] = min(abs(t - et));
+    if abs(t(idx) - et) > dt * 1e-10
+        t = sort([t; et]);
+    end
+end
+nt = numel(t);
+x = x0; y = y0;
+delta_hist = zeros(nt, numel(strat.state_split.delta_idx));
+omega_hist = zeros(nt, numel(strat.state_split.omega_idx));
+Pe_hist = zeros(nt, numel(strat.state_split.delta_idx));
+Vbus_hist = zeros(nt, numel(y0)/2);
+has_provider = isfield(strat,'provider') && ~isempty(strat.provider);
+alg_tol = 1e-12;
+if isfield(opt,'algebraic_tolerance') && ~isempty(opt.algebraic_tolerance)
+    alg_tol = opt.algebraic_tolerance;
+end
+kopt = struct('max_corrector_iter', opt.max_corrector_iter, ...
+    'corrector_abs_tol', opt.corrector_abs_tol, ...
+    'corrector_rel_tol', opt.corrector_rel_tol, ...
+    'corrector_mode', opt.corrector_mode, ...
+    'algebraic_tolerance', alg_tol);
+if has_provider
+    kopt.t = 0;
+    kopt.event_context = [];
+    if isfield(opt,'event_context') && ~isempty(opt.event_context)
+        kopt.event_context = opt.event_context;
+    end
+end
+% B9: bundle adaptive routing via canonical ts_adaptive_driver. When
+% opt.stepper == 'adaptive', delegate to ts_adaptive_driver (which already
+% shares ts_step_kernel and, after B3, ts_event_transition). DO NOT
+% duplicate step-doubling/acceptance/rollback/event logic. Default stays
+% FIXED (absent or 'fixed' => fixed-step loop below).
+stepper = 'fixed';
+if isfield(opt,'stepper') && ~isempty(opt.stepper)
+    stepper = lower(opt.stepper);
+end
+if strcmp(stepper, 'adaptive')
+    res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
+        events_b, opt, kopt, has_provider);
+    return;
+end
+for k = 2:nt
+    tk_prev = t(k-1); tk = t(k); hk = tk - tk_prev;
+    % B3: arrival step uses LEFT topology (selected by time via
+    % ts_topology_at, the single source for normal step selection).
+    Y_now = stability.ts_topology_at(tk_prev, events_b, ...
+        topo.Ypre, topo.Yfault, topo.Ypost);
+    if has_provider, kopt.t = tk_prev; end
+    step = stability.ts_step_kernel(strat, x, y, hk, Y_now, kopt);
+    x = step.x_full; y = step.y_full;
+    % B3: if this step landed on a declared event, switch ONCE to the right
+    % topology via ts_event_transition (event_id explicit, no t+eps). Then
+    % reconstruct using t(k) and the right-limit Y. Otherwise reconstruct
+    % with the step's own Y_now.
+    [next_event_id, on_event] = event_id_at(tk, event_times, events_b, event_tol);
+    if on_event
+        [y_right, Y_rec, ~, ~] = stability.ts_event_transition( ...
+            tk, next_event_id, events_b, x, y, strat, kopt, has_provider, event_tol);
+        y = y_right;
+    else
+        Y_rec = Y_now;
+    end
+    rec = reconstruct_at(strat, x, y, Y_rec, has_provider, tk, kopt);
+    delta_hist(k,:) = rec.delta; omega_hist(k,:) = rec.omega;
+    Pe_hist(k,:) = rec.Pe; Vbus_hist(k,:) = rec.Vbus;
+end
+% Initial sample.
+rec0 = reconstruct_at(strat, x0, y0, topo.Ypre, has_provider, 0, kopt);
+delta_hist(1,:) = rec0.delta; omega_hist(1,:) = rec0.omega;
+Pe_hist(1,:) = rec0.Pe; Vbus_hist(1,:) = rec0.Vbus;
+res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
+    'Pe_pu',Pe_hist,'Vbus',Vbus_hist,'model',strat.model, ...
+    'gen_buses',mapping.gen_buses,'bus_ids',mapping.bus_ids, ...
+    'method',opt.method,'dt',dt,'t_end',t_end, ...
+    'fault_bus',opt.fault_bus,'t_fault',t_fault,'t_clear',t_clear,'Zf',opt.Zf);
+% R2 provenance metadata (no function handles serialized).
+if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
+    res.metadata = bundle.metadata;
+else
+    res.metadata = struct();
+end
+if has_bundle_field(opt,'model_bundle')
+    res.metadata.dispatch = 'explicit_model_bundle';
+elseif has_bundle_field(opt,'model_fn')
+    res.metadata.dispatch = 'explicit_model_fn';
+else
+    res.metadata.dispatch = 'built_in_string';
+end
+end
+
+function res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
+    events_b, opt, kopt, has_provider) %#ok<INUSD>
+%RUN_MODEL_BUNDLE_ADAPTIVE  B9: delegate bundle adaptive to ts_adaptive_driver.
+%   Builds the adaptive opt struct from the bundle opt and calls
+%   stability.ts_adaptive_driver, which already shares ts_step_kernel and
+%   ts_event_transition (B3). NO duplicated step-doubling/acceptance/rollback/
+%   event logic. Result schema aligned with the fixed-step bundle result.
+aopt = struct();
+aopt.dt_nominal = opt.dt;
+aopt.dt_init = opt.dt;
+if isfield(opt,'dt_min'), aopt.dt_min = opt.dt_min; else, aopt.dt_min = opt.dt/100; end
+if isfield(opt,'dt_max'), aopt.dt_max = opt.dt_max; else, aopt.dt_max = opt.dt*10; end
+aopt.atol_x = 1e-6; aopt.rtol_x = 1e-4;
+aopt.atol_y = 1e-5; aopt.rtol_y = 1e-4;
+if isfield(opt,'atol_x'), aopt.atol_x = opt.atol_x; end
+if isfield(opt,'rtol_x'), aopt.rtol_x = opt.rtol_x; end
+if isfield(opt,'atol_y'), aopt.atol_y = opt.atol_y; end
+if isfield(opt,'rtol_y'), aopt.rtol_y = opt.rtol_y; end
+aopt.algebraic_tolerance = kopt.algebraic_tolerance;
+aopt.max_corrector_iter = kopt.max_corrector_iter;
+aopt.corrector_abs_tol = kopt.corrector_abs_tol;
+aopt.corrector_rel_tol = kopt.corrector_rel_tol;
+aopt.corrector_mode = kopt.corrector_mode;
+aopt.controller_fac = 0.9;
+aopt.controller_fac_min = 0.2;
+aopt.controller_fac_max = 5.0;
+aopt.reject_limit = 10;
+ares = stability.ts_adaptive_driver(strat, x0, y0, [0, opt.t_end], events_b, aopt);
+% Assemble the result schema to match the fixed-step bundle result.
+res = struct('t',ares.t,'delta',ares.delta,'omega',ares.omega, ...
+    'Pe_pu',ares.Pe_pu,'Vbus',ares.Vbus,'model',strat.model, ...
+    'gen_buses',mapping.gen_buses,'bus_ids',mapping.bus_ids, ...
+    'method',opt.method,'dt',opt.dt,'t_end',opt.t_end, ...
+    'fault_bus',opt.fault_bus,'t_fault',events_b.t_fault, ...
+    't_clear',events_b.t_clear,'Zf',opt.Zf);
+res.stepper = 'adaptive';
+res.dt_history = ares.dt_history;
+res.lte_history = ares.lte_history;
+res.accepted_steps = ares.accepted_steps;
+res.rejected_steps = ares.rejected_steps;
+res.rejection_history = ares.rejection_history;
+res.event_diagnostics = ares.event_diagnostics;
+% Provenance.
+if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
+    res.metadata = bundle.metadata;
+else
+    res.metadata = struct();
+end
+if has_bundle_field(opt,'model_bundle')
+    res.metadata.dispatch = 'explicit_model_bundle';
+elseif has_bundle_field(opt,'model_fn')
+    res.metadata.dispatch = 'explicit_model_fn';
+else
+    res.metadata.dispatch = 'built_in_string';
+end
+end
+
+function tf = has_bundle_field(opt, name)
+tf = isfield(opt, name) && ~isempty(opt.(name));
+end
+
+function [id, on_event] = event_id_at(tk, event_times, events, event_tol)
+%EVENT_ID_AT  Look up the named event_id at time tk, if tk is a declared event.
+%   B3: returns the explicit event_id ('fault_on'|'fault_off') if tk matches a
+%   declared event time within event_tol; otherwise on_event=false (non-event
+%   step). No t+eps discovery — exact match by event_tol.
+id = "";
+on_event = false;
+for et = event_times.'
+    if abs(tk - et) <= event_tol
+        if events.fault_enabled && isfinite(events.t_fault) && abs(et - events.t_fault) <= event_tol
+            id = "fault_on"; on_event = true; return;
+        elseif events.fault_enabled && isfinite(events.t_clear) && abs(et - events.t_clear) <= event_tol
+            id = "fault_off"; on_event = true; return;
+        end
+    end
+end
+end
+
+function rec = reconstruct_at(strat, x, y, Y, has_provider, t, kopt)
+if has_provider && isfield(strat,'reconstruct_u') && ~isempty(strat.reconstruct_u)
+    u = stability.eval_input_provider(strat.provider, t, kopt.event_context);
+    rec = strat.reconstruct_u(x, y, Y, u);
+else
+    rec = strat.reconstruct(x, y, Y);
+end
 end

@@ -1,11 +1,50 @@
 function result = multicase_sssa(case_data, options)
 %MULTICASE_SSSA Dispatch a case to its parameter-driven SSSA model plugin.
+%   B2: explicit dispatch via opt.model_bundle / opt.model_fn / opt.sssa_model
+%   (all three MUTUALLY EXCLUSIVE; any pair fails closed). If exactly one is
+%   supplied, the SSSA model is taken from bundle.sssa.model / factory
+%   result / prebuilt sssa_model, validated via validate_sssa_model, and
+%   executed via stability.multimachine_ssa. If NONE is supplied, fall
+%   through to the built-in string chain (existing behavior, bit-identical).
 
 if nargin < 1 || isempty(case_data)
     error('multicase_sssa:caseRequired', 'case_data is required.');
 end
 if nargin < 2 || isempty(options), options=struct(); end
 
+% --- B2 explicit SSSA dispatch (mutually exclusive) ----------------------
+has_bundle = isfield(options,'model_bundle') && ~isempty(options.model_bundle);
+has_mfn    = isfield(options,'model_fn') && ~isempty(options.model_fn);
+has_sssa_model = isfield(options,'sssa_model') && ~isempty(options.sssa_model);
+explicit_count = has_bundle + has_mfn + has_sssa_model;
+if explicit_count > 1
+    error('multicase_sssa:exclusiveDispatch', ...
+        ['opt.model_bundle, opt.model_fn, and opt.sssa_model are mutually ' ...
+         'exclusive; supply at most one.']);
+end
+if has_bundle
+    model = options.model_bundle.sssa.model;
+    model = stability.validate_sssa_model(model);
+    result = stability.multimachine_ssa(model);
+    result.metadata = set_dispatch(result.metadata, 'explicit_model_bundle');
+    return;
+end
+if has_mfn
+    bundle = options.model_fn(case_data, options);
+    model = bundle.sssa.model;
+    model = stability.validate_sssa_model(model);
+    result = stability.multimachine_ssa(model);
+    result.metadata = set_dispatch(result.metadata, 'explicit_model_fn');
+    return;
+end
+if has_sssa_model
+    model = stability.validate_sssa_model(options.sssa_model);
+    result = stability.multimachine_ssa(model);
+    result.metadata = set_dispatch(result.metadata, 'explicit_sssa_model');
+    return;
+end
+
+% --- Built-in string chain (existing behavior, bit-identical) -------------
 requested_model='';
 if isfield(options,'model'), requested_model=lower(char(options.model)); end
 
@@ -50,4 +89,10 @@ else
     error('multicase_sssa:unsupportedCase', ...
         'No SSSA model plugin recognizes this case schema.');
 end
+end
+
+function md = set_dispatch(md, dispatch)
+%SET_DISPATCH  Set the dispatch provenance on metadata (B2).
+if ~isstruct(md), md = struct(); end
+md.dispatch = dispatch;
 end

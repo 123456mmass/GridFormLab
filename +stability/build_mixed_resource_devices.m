@@ -15,6 +15,9 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %       name, device_id, bus_id, bus_position, bus_ids, nx, nu,
 %       state_names, input_names, x0, u0, f, current_injection,
 %       electrical_power, reconstruct
+%     OPTIONAL (normalized on every device; [] means unsupported):
+%       equilibrium_initialize(V_bus,P_terminal_pu,Q_terminal_pu,event_context)
+%       active_state_indices_for_context(event_context)
 %     ENGINE (capability + identity):
 %       device_type, mode, initial_mode, initial_online, capabilities,
 %       provenance (uniform: model, source, classification, details)
@@ -133,9 +136,9 @@ for k = 1:nr
     if ~isfield(dev,'initial_mode') || isempty(dev.initial_mode)
         dev.initial_mode = mode;
     end
-    if ~isfield(dev,'initial_online')
-        dev.initial_online = r.initial_online;
-    end
+    % Resource-table online status is authoritative. Factory defaults must not
+    % silently override an explicitly offline resource.
+    dev.initial_online = logical(r.initial_online);
     % Uniform capabilities struct (serializable, engine-facing).
     dev.capabilities = struct( ...
         'resource_type', r.resource_type, ...
@@ -153,6 +156,20 @@ for k = 1:nr
         dev.frozen_state_source  = '';
         dev.active_state_indices = 1:dev.nx;
         dev.frozen_state_classification = '';
+    end
+    % Uniform optional exact-equilibrium API. IBR factories implement it;
+    % SG currently has no stationary breaker-open/device-local initializer, so
+    % the empty value is an explicit unsupported marker rather than a fallback.
+    if ~isfield(dev, 'equilibrium_initialize')
+        dev.equilibrium_initialize = [];
+    end
+    % Runtime mode-dependent partition is device-owned. Dual-mode IBRs expose
+    % a resolver; fixed-layout SG advertises explicit unsupported ([]).
+    if ~isfield(dev, 'active_state_indices_for_context')
+        dev.active_state_indices_for_context = [];
+    end
+    if ~isfield(dev, 'dynamic_state_indices_for_context')
+        dev.dynamic_state_indices_for_context = [];
     end
     % Uniform provenance: {model, source, classification, details}.
     p = r.provenance;

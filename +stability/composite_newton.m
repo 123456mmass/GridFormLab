@@ -33,11 +33,14 @@ for niter = 1:max_iter
     r = residual_fn(z);
     residual_norm = norm(r, inf);
     if residual_norm < tol
+        J_final = jacobian_fn(z);
+        rcond_val = rcond(J_final);
         converged = true;
         z_sol = z;
         return;
     end
     J = jacobian_fn(z);
+    J_final = J;
     rcond_val = rcond(J);
     if rcond_val < eps
         z_sol = z;
@@ -49,15 +52,24 @@ for niter = 1:max_iter
         return;
     end
     alpha = 1.0;
+    accepted = false;
     for ls = 1:20
         z_new = z + alpha * dz;
         r_new = residual_fn(z_new);
         if all(isfinite(r_new)) && norm(r_new, inf) < residual_norm
+            accepted = true;
             break;
         end
         alpha = alpha * 0.5;
     end
-    z = z + alpha * dz;
+    if ~accepted
+        % Fail closed at the last accepted point.  The alpha value after
+        % the final rejection has never satisfied the decrease contract
+        % and therefore must not be applied.
+        z_sol = z;
+        return;
+    end
+    z = z_new;
     if verbose
         fprintf('  composite_newton iter %d: residual=%.3e alpha=%.3f rcond=%.3e\n', ...
             niter, residual_norm, alpha, rcond_val);
@@ -65,5 +77,6 @@ for niter = 1:max_iter
 end
 z_sol = z;
 J_final = jacobian_fn(z);
+rcond_val = rcond(J_final);
 residual_norm = norm(residual_fn(z), inf);
 end

@@ -51,8 +51,15 @@ resources = scenario.resources;
 
 % --- Build devices from the resource table (uniform schema) ---------------
 try
+    % The scenario owns dispatch and t0 mode/online commitments. Runtime TS
+    % options (dt/t_end) must not silently replace those construction inputs.
+    device_build_opt = struct();
+    if isfield(scenario,'scenario_opt') && isstruct(scenario.scenario_opt) && ...
+            isscalar(scenario.scenario_opt)
+        device_build_opt = scenario.scenario_opt;
+    end
     [devices, dev_meta] = stability.build_mixed_resource_devices( ...
-        case_data, resources, opt);
+        case_data, resources, device_build_opt);
 catch me
     result.metadata.failure = 'run_hybrid_case:deviceBuild';
     result.metadata.error = me.message;
@@ -61,6 +68,19 @@ end
 
 % --- Equilibrium -----------------------------------------------------------
 config = struct('devices', devices);
+% Preserve an explicitly committed selector/reference decision. For SG-off
+% GFM operation the three selection fields are required atomically and an
+% empty commitment fails closed; no device-order or first-GFM fallback exists.
+if isfield(scenario,'config') && isstruct(scenario.config)
+    selection_fields = {'resource_ids','selected_gfm_indices','n_gfm_required', ...
+        'reference_resource_index'};
+    for k = 1:numel(selection_fields)
+        name = selection_fields{k};
+        if isfield(scenario.config,name) && ~isempty(scenario.config.(name))
+            config.(name) = scenario.config.(name);
+        end
+    end
+end
 eq_opt = struct('verbose', verbose, 'tolerance', 1e-8, 'max_iter', 300, ...
     'load_model', load_model);
 eq = stability.mixed_equilibrium_solve(case_data, config, eq_opt);
@@ -74,7 +94,17 @@ result.equilibrium = eq;
 % --- Composite TS (fixed-step, no events for Phase B2) --------------------
 ts_opt = struct('t_end', t_end, 'dt', dt, 'verbose', verbose, ...
     'load_model', load_model);
-[ts_res, ts_meta] = stability.ts_simulate_composite(case_data, devices, ...
+ts_devices = devices;
+if isfield(eq,'reference') && isstruct(eq.reference) && ...
+        isfield(eq.reference,'physical_kcl_enforced') && ...
+        isequal(eq.reference.physical_kcl_enforced,true)
+    ts_devices = eq.devices;
+    ts_opt.u_eq = eq.u_eq;
+    ts_opt.event_context = eq.equilibrium_context;
+    ts_opt.dynamic_state_indices = eq.dynamic_state_indices;
+    ts_opt.full_kcl = true;
+end
+[ts_res, ts_meta] = stability.ts_simulate_composite(case_data, ts_devices, ...
     eq.x0, eq.y0, ts_opt);
 
 result.x_traj = ts_res.x_traj;

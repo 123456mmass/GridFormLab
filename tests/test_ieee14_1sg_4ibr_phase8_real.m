@@ -23,6 +23,8 @@ r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(r.converged, ['SG_ON real equilibrium must converge: ' r.failure_reason]);
 testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual < 1e-6.');
 testCase.verifyGreaterThan(r.rcond, 1e-10, 'well-conditioned.');
+testCase.verifyLessThan(r.physical_kcl_norm,1e-6,'all SG_ON KCL rows pass.');
+testCase.verifyEqual(r.reference.slack_input_names,{'Tm','Efd'});
 end
 
 % =========================================================================
@@ -30,7 +32,7 @@ function test_sg_off_gfm_real_equilibrium(testCase)
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
                'mode',{'GFM','gfl','gfl','gfl'});
-disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
+disp_s = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
 devices = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
 % Set SG1 offline
 for k = 1:numel(devices)
@@ -40,16 +42,14 @@ for k = 1:numel(devices)
         break;
     end
 end
-config = struct('devices', devices);
+config = struct('devices', devices,'selected_gfm_indices',2, ...
+    'n_gfm_required',1,'reference_resource_index',2);
 r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
-% G1 limiter may challenge Newton at high GFM dispatch
-if r.converged
-    testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual < 1e-6.');
-else
-    testCase.verifyTrue(contains(r.failure_id, 'converge') || ...
-        contains(r.failure_id, 'noConverge'), ...
-        'Failure is convergence-related (Phase-G-1 known limitation).');
-end
+testCase.verifyTrue(r.converged, ['SG_OFF+GFM real equilibrium must converge: ' r.failure_reason]);
+testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual < 1e-6.');
+testCase.verifyGreaterThan(r.rcond, 1e-10, 'well-conditioned.');
+testCase.verifyLessThan(r.physical_kcl_norm,1e-6,'Every physical KCL row passes.');
+testCase.verifyTrue(r.reference.balances_active_power,'Selected GFM balances active power.');
 end
 
 % =========================================================================

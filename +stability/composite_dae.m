@@ -389,6 +389,10 @@ for k = 1:size(br,1)
     Y(i,j) = Y(i,j) - yser/conj(a);
     Y(j,i) = Y(j,i) - yser/a;
 end
+% MATPOWER bus shunts: GS+jBS are specified in MW/MVAr at V=1 pu and enter
+% Ybus directly on the system base. This is the same sourced network contract
+% used by the in-house PF/classical PF-TS-SSSA builders.
+Y = Y + diag((bus(:,5) + 1i*bus(:,6))/mpc.baseMVA);
 V0 = pf.bus_voltage(:).*exp(1i*deg2rad(pf.bus_angle_deg(:)));
 Sload = (bus(:,3) + 1i*bus(:,4))/mpc.baseMVA;
 Yload = conj(Sload)./(abs(V0).^2 + eps);

@@ -117,18 +117,61 @@ end
 
 % =========================================================================
 function test_rhs_filters_use_limited_current(testCase)
-% At high current where clamp active, verify P_meas and Id use I_out (not I_unc).
+% At high current where clamp active, verify every current-dependent filter
+% uses I_out (not I_unc).  The earlier oracle used a collinear real voltage
+% and internal voltage, so the current was purely reactive and both active
+% powers were exactly zero even though the clamp was active.  A non-collinear
+% phasor makes P, Id and Iq independently observable without changing the
+% sourced Eq.13 model or its thresholds.
 dev = build_gfm(100, 0.0, 1.5);
-V_bus = 0.9 + 0i;  nb = 14;  y = make_y(V_bus, nb);
+V_bus = 0.9*exp(1i*0.15);  nb = 14;  y = make_y(V_bus, nb);
 u0 = [0.0; 1.5];
-% RHS
+% Independent Eq.13 oracle at kappa=1: EVSM=Vref=1.5, delta_VSM=0,
+% Zsys=j0.1 and ImaxF_sys=1.5 (REGFM_B1 Table 1).
+I_unc = (1.5*exp(1i*dev.x0(2)) - V_bus)/(1i*0.1);
+I_out_oracle = 1.5*I_unc/abs(I_unc);
+I_out = dev.current_injection(0, dev.x0, y, u0, struct());
+rec = dev.reconstruct(0, dev.x0, y, u0, struct());
+I_limited = rec.I_limited;
+testCase.verifyTrue(I_limited, 'Clamp active for filter test.');
+testCase.verifyEqual(rec.I_unc_sys, I_unc, 'AbsTol', 1e-12, ...
+    'Reconstructed uncontrolled current matches independent Eq.13 oracle.');
+testCase.verifyEqual(I_out, I_out_oracle, 'AbsTol', 1e-12, ...
+    'Output current matches independent circular-clamp oracle.');
+testCase.verifyGreaterThan(abs(I_out-I_unc), 1, ...
+    'Limited complex current must differ materially from I_unc.');
+
+% Independent limited and uncontrolled measurement oracles.
+P_out = real(V_bus * conj(I_out));
+P_unc = real(V_bus * conj(I_unc));
+Id_out = real(I_out * exp(-1i*dev.x0(5)));
+Id_unc = real(I_unc * exp(-1i*dev.x0(5)));
+Iq_out = imag(I_out * exp(-1i*dev.x0(5)));
+Iq_unc = imag(I_unc * exp(-1i*dev.x0(5)));
+testCase.verifyGreaterThan(abs(P_out-P_unc), 1e-3, ...
+    'Non-collinear oracle distinguishes limited from uncontrolled active power.');
+testCase.verifyGreaterThan(abs(Id_out-Id_unc), 1e-3, ...
+    'Non-collinear oracle distinguishes limited from uncontrolled Id.');
+testCase.verifyGreaterThan(abs(Iq_out-Iq_unc), 1e-3, ...
+    'Non-collinear oracle distinguishes limited from uncontrolled Iq.');
+
+% RHS filter constants are SOURCE_DEFINED Tpf=TIf=0.02 s (Table 1).
 dx = dev.f(0, dev.x0, y, u0, struct());
-% All finite — no NaN from division
-testCase.verifyTrue(all(isfinite(dx)), 'RHS all finite at clamped current.');
-% Filters: d_Pinv_f uses kappa*P_meas. P_meas from limited I_out, not I_unc.
-% d_Idinv_f uses kappa*Id. Verify Id filter derivative is finite.
-testCase.verifyTrue(isfinite(dx(8)), 'd_Idinv_f finite (Id from I_out).');
-testCase.verifyTrue(isfinite(dx(11)), 'd_Iqinv_f finite (Iq from I_out).');
+d_Pinv_expected = (P_out - dev.x0(7)) / 0.02;
+testCase.verifyEqual(dx(7), d_Pinv_expected, 'AbsTol', 1e-12, ...
+    'd_Pinv_f = (kappa*P_out - Pinv_f)/Tpf with I_out.');
+d_Idinv_expected = (Id_out - dev.x0(8)) / 0.02;
+testCase.verifyEqual(dx(8), d_Idinv_expected, 'AbsTol', 1e-12, ...
+    'd_Idinv_f = (kappa*Id_out - Idinv_f)/TIf with I_out.');
+Q_out = imag(V_bus * conj(I_out));
+d_Qinv_expected = (Q_out - dev.x0(9)) / 0.02;
+testCase.verifyEqual(dx(9), d_Qinv_expected, 'AbsTol', 1e-12, ...
+    'd_Qinv_f = (kappa*Q_out - Qinv_f)/TQf with I_out.');
+d_Iqinv_expected = (Iq_out - dev.x0(11)) / 0.02;
+testCase.verifyEqual(dx(11), d_Iqinv_expected, 'AbsTol', 1e-12, ...
+    'd_Iqinv_f = (kappa*Iq_out - Iqinv_f)/TIf with I_out.');
+% All finite
+testCase.verifyTrue(all(isfinite(dx)), 'RHS all finite.');
 end
 
 % =========================================================================
@@ -195,25 +238,30 @@ end
 
 % =========================================================================
 function test_invalid_y_fails_closed(testCase)
-% Non-finite V_bus must produce error.
+% Non-finite V_bus must produce error with deterministic error ID.
+nb = 14;
 dev = build_gfm(100, 0.4, 1.0);
 u0 = [0.4; 1.0];
-% NaN y
-errored = false;
+% NaN y: limited_current validation catches before MATLAB complex().
+err_id = '';
 try
     dev.current_injection(0, dev.x0, make_y(NaN+0i, nb), u0, struct());
-catch
-    errored = true;
+catch me
+    err_id = me.identifier;
 end
-testCase.verifyTrue(errored, 'NaN V_bus fails closed.');
-% Inf y
-errored = false;
+testCase.verifyNotEmpty(err_id, 'NaN V_bus fails closed with error ID.');
+testCase.verifyTrue(contains(err_id, 'regfm_b1') || contains(err_id, 'nonfinite'), ...
+    ['Error ID references model: ' err_id]);
+% Inf y: same validation path.
+err_id = '';
 try
     dev.current_injection(0, dev.x0, make_y(Inf+0i, nb), u0, struct());
-catch
-    errored = true;
+catch me
+    err_id = me.identifier;
 end
-testCase.verifyTrue(errored, 'Inf V_bus fails closed.');
+testCase.verifyNotEmpty(err_id, 'Inf V_bus fails closed with error ID.');
+testCase.verifyTrue(contains(err_id, 'regfm_b1') || contains(err_id, 'nonfinite'), ...
+    ['Error ID references model: ' err_id]);
 end
 
 % =========================================================================

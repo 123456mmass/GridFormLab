@@ -1,8 +1,8 @@
 function tests = test_ieee14_1sg_4ibr_phaseEF()
-%TEST_IEEE14_1SG_4IBR_PHASEEF  Phase E+F combined tests (SG trip + synchronism).
-%   Verifies: sg_event_handler trip + GFM auto-commit, synchronism_guard
-%   passes/fails correctly, reclose only after guard passes, no global
-%   SG_ON/SG_OFF rule, per-SG state, deterministic event log.
+%TEST_IEEE14_1SG_4IBR_PHASEEF  Structural SG trip/GFM/synchronism primitives.
+%   Verifies the event transaction and synchronism guard independently. The
+%   integrated driver that must enforce guard/right-limit rollback before
+%   reclose remains deferred; this suite makes no integrated-reclose claim.
 %
 %   Source: execution plan §E-F; corrections 4-5.
 tests = functiontests(localfunctions);
@@ -38,7 +38,7 @@ end
 
 % =========================================================================
 function test_sg_trip_and_gfm_commit(testCase)
-% Trip SG1, verify GFM auto-committed to an IBR.
+% Trip SG1 using the explicitly committed resource-table selection.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
                'mode',{'gfl','gfl','gfl','gfl'});
@@ -46,13 +46,20 @@ disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
 devices = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
 hs = stability.ts_hybrid_state_init(devices);
 
-event = struct('type','sg_trip_request','t',1.0,'sg_ids',{{'SG1'}});
+committed = struct('selected_gfm_indices',2, ...
+    'n_gfm_required',1,'reference_resource_index',2);
+event = struct('type','sg_trip_request','t',1.0,'sg_ids',{{'SG1'}}, ...
+    'committed_selection',committed);
 [hs2, log] = stability.sg_event_handler(hs, event, devices);
 testCase.verifyTrue(log.applied, 'SG trip event applied.');
 
 % SG1 must now be offline
 testCase.verifyFalse(hs2.device_online.SG1, 'SG1 offline after trip.');
 testCase.verifyEqual(hs2.device_modes.SG1, 'breaker_open', 'SG1 mode breaker_open.');
+testCase.verifyEqual(hs2.device_modes.IBR2, 'GFM', ...
+    'Explicitly selected resource index 2 committed to GFM.');
+testCase.verifyEqual(hs2.reference_resource_index, 2, 'AbsTol', 0, ...
+    'Reference index is the committed selected GFM.');
 end
 
 % =========================================================================

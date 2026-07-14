@@ -28,6 +28,16 @@ function dev = dual_mode_ibr_model(device_id, bus_id, bus_position, bus_ids, V0,
 %
 %   Inputs (nu=3, fixed): u = [P_ref; Q_ref; V_ref] (pu, system base).
 %     gfl mode uses [P_ref; Q_ref]; GFM mode uses [P_ref; V_ref]; tripped uses none.
+%   Optional exact initializer (same signature on every participating device):
+%     x_eq = equilibrium_initialize(V_bus, P_terminal_pu, ...
+%                                  Q_terminal_pu, event_context)
+%   It resolves the active runtime mode from event_context.hybrid_state by
+%   device_id, maps the standalone branch equilibrium into this 15-state
+%   superset, and leaves inactive unique states at their warm-start anchor.
+%   Optional runtime partition resolver:
+%     idx = active_state_indices_for_context(event_context)
+%   returns the device-owned active state set for the same resolved mode. This
+%   prevents equilibrium consumers from hard-coding the 15-state layout.
 %
 %   Mode dispatch:
 %     'gfl'     -> active = shared(2) + GFL-unique(4) = 6; GFM-unique(9) frozen.
@@ -130,33 +140,37 @@ gfm_idx = [3, 4, 5, 6, 1, 2, 7, 8, 9, 10, 11];
 
 bp = bus_position;
 
-% --- Differential RHS: dispatch by mode, inactive branches decay to warm-start
-%   Inactive states use dx = -lambda*(x - x_warmstart) instead of a hard
-%   freeze (dx=0). A hard freeze creates zero Jacobian columns for inactive
-%   states, making the coupled Newton Jacobian singular (rcond=0) at the
-%   warm-start — the Newton step becomes NaN. The decay-to-warmstart keeps
-%   the Jacobian full-rank (column = -lambda) while preserving the
-%   frozen-policy intent: inactive states are held AT their warm-start values
-%   (equilibrium of inactive branch = warm-start value). lambda=1e-3 is a
-%   NUMERICAL_METHOD choice (declared before results): small enough that
-%   inactive states are held, large enough that the Jacobian column is
-%   non-zero. Does NOT change active-state equations or their equilibrium.
+% --- Differential RHS: dispatch by mode; inactive branches are exact holds --
+%   Inactive unique states have dx=0 exactly (PROJECT_DERIVED). The explicit
+%   active-state partition removes their rows/columns from equilibrium, SSSA,
+%   and TS Newton systems, so no artificial decay pole is needed.
 f = @(t, x_dev, y, u_dev, event_context) dual_f( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx, x0, u0);
+    x_dev, y, u_dev, event_context, device_id, true, mode, gfl_dev, gfm_dev, ...
+    gfl_idx, gfm_idx, nx, u0);
 
 % --- current_injection: dispatch by mode -----------------------------------
 %   Tolerates u_dev=[] (diagnostic calls from mixed_equilibrium_solve.check_limits
 %   use u_dev=[] at the equilibrium where u=u0). Falls back to u0 when empty.
 current_injection = @(t, x_dev, y, u_dev, event_context) dual_current( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0);
+    x_dev, y, u_dev, event_context, device_id, true, mode, gfl_dev, gfm_dev, ...
+    gfl_idx, gfm_idx, u0);
 
 % --- electrical_power: dispatch by mode -----------------------------------
 electrical_power = @(t, x_dev, y, u_dev, event_context) dual_pe( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0);
+    x_dev, y, u_dev, event_context, device_id, true, mode, gfl_dev, gfm_dev, ...
+    gfl_idx, gfm_idx, u0);
 
 % --- reconstruct -----------------------------------------------------------
 reconstruct = @(t, x_dev, y, u_dev, event_context) dual_reconstruct( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp, u0);
+    x_dev, y, u_dev, event_context, device_id, true, mode, gfl_dev, gfm_dev, ...
+    gfl_idx, gfm_idx, bp, u0);
+
+% --- Optional exact active-branch equilibrium initializer ------------------
+equilibrium_initialize = @(V_bus, P_terminal_pu, Q_terminal_pu, event_context) ...
+    dual_equilibrium_initialize(V_bus, P_terminal_pu, Q_terminal_pu, ...
+        event_context, device_id, true, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, x0);
+active_state_indices_for_context = @(event_context) ...
+    dual_active_state_indices(event_context, device_id, true, mode, gfl_idx, gfm_idx);
 
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) -------------
 dev = struct();
@@ -179,10 +193,27 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+dev.equilibrium_initialize = equilibrium_initialize;
+dev.active_state_indices_for_context = active_state_indices_for_context;
+dev.dynamic_state_indices_for_context = active_state_indices_for_context;
+% --- Active-state metadata (equilibrium-local partition, not global freeze) ---
+% Dual-mode superset has 15 states.  The active subset depends on the initial
+% mode.  TS/SSSA consume frozen_state_indices for physical singular limits;
+% inactive-mode unique states are NOT globally frozen here.  Instead, the
+% equilibrium solver uses active_state_indices as a local mask, and the
+% complement is held locally at the warm-start anchor dev.x0.
+% Classification: PROJECT_DERIVED (equilibrium-local algebraic holding).
+switch mode
+case 'gfl'
+    dev.active_state_indices = [1, 2, 12, 13, 14, 15];  % shared PLL + GFL-unique
+case 'GFM'
+    dev.active_state_indices = 1:11;  % shared PLL + GFM-unique
+case 'tripped'
+    dev.active_state_indices = [];  % all held at anchor
+end
 dev.frozen_state_indices = [];
 dev.frozen_state_values  = [];
 dev.frozen_state_source  = '';
-dev.active_state_indices = 1:dev.nx;
 dev.frozen_state_classification = '';
 dev.provenance = struct( ...
     'model','dual_mode_ibr_phase7_structural_only', ...
@@ -198,31 +229,104 @@ dev.provenance = struct( ...
 end
 
 % =========================================================================
-function dx = dual_f(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx, x_warm, u0)
+function dx = dual_f(x_dev, y, u_dev, event_context, device_id, default_online, default_mode, ...
+    gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx, u0)
 %DUAL_F  Differential RHS (15 states).
-%   Inactive branches decay to warm-start: dx = -lambda*(x - x_warm). This
-%   keeps the Jacobian full-rank (column = -lambda) while holding inactive
-%   states AT their warm-start values (equilibrium of inactive branch =
-%   warm-start value). See header comment for rationale.
-lambda = 1e-3;   % NUMERICAL_METHOD: inactive-state decay-to-warmstart rate
-dx = -lambda * (x_dev - x_warm);
+%   Inactive branches are exact holds. Active-state reduction, rather than an
+%   unsourced decay equation, keeps Newton/SSSA systems nonsingular.
+dx = zeros(nx,1);
 u = resolve_u(u_dev, u0);
-switch mode
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+if ~is_online
+    dx = zeros(nx,1);
+    return;
+end
+switch active_mode
 case 'gfl'
-    % Active: shared(2) + GFL-unique(4). GFM-unique(9) decay to warm-start.
+    % Active: shared(2) + GFL-unique(4). GFM-unique(9) held exactly.
     x_gfl = x_dev(gfl_idx);
     u_gfl = u(1:2);   % [P_ref; Q_ref]
     dx_gfl = gfl_dev.f(0, x_gfl, y, u_gfl, struct());
     dx(gfl_idx) = dx_gfl;
 case 'GFM'
-    % Active: shared(2) + GFM-unique(9). GFL-unique(4) decay to warm-start.
+    % Active: shared(2) + GFM-unique(9). GFL-unique(4) held exactly.
     x_gfm = x_dev(gfm_idx);
     u_gfm = [u(1); u(3)];   % [P_ref; V_ref]
     dx_gfm = gfm_dev.f(0, x_gfm, y, u_gfm, struct());
     dx(gfm_idx) = dx_gfm;
 case 'tripped'
-    % All decay to warm-start (no active injection). current_injection=0.
-    % dx already = -lambda*(x - x_warm).
+    % All states held (no active injection). current_injection=0.
+end
+end
+
+% =========================================================================
+function idx = dual_active_state_indices(event_context, device_id, ...
+    default_online, default_mode, gfl_idx, gfm_idx)
+%DUAL_ACTIVE_STATE_INDICES  Device-owned runtime equilibrium partition.
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+if ~is_online
+    idx = [];
+    return;
+end
+switch active_mode
+case 'gfl'
+    idx = sort(gfl_idx);
+case 'GFM'
+    idx = sort(gfm_idx);
+case 'tripped'
+    idx = [];
+end
+end
+
+% =========================================================================
+function [is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode)
+%RESOLVE_STATUS  Resolve one canonical online/mode status for every closure.
+%   Runtime hybrid state, when present for this device_id, takes precedence
+%   over constructor metadata. An offline device has zero current/power and no
+%   active differential states regardless of its retained mode label.
+is_online = logical(default_online);
+raw_mode = default_mode;
+if ~isempty(event_context) && isstruct(event_context) && ...
+        isfield(event_context, 'hybrid_state') && ...
+        isstruct(event_context.hybrid_state) && ...
+        isfield(event_context.hybrid_state, 'device_modes') && ...
+        isstruct(event_context.hybrid_state.device_modes)
+    key = matlab.lang.makeValidName(char(device_id), ...
+        'ReplacementStyle', 'underscore');
+    hs = event_context.hybrid_state;
+    if isfield(hs, 'device_online') && isstruct(hs.device_online) && ...
+            isfield(hs.device_online, key)
+        raw_online = hs.device_online.(key);
+        if ~(islogical(raw_online) && isscalar(raw_online))
+            error('ibr:dual_mode_ibr_model:badRuntimeOnline', ...
+                'Runtime online flag for device %s must be one logical scalar.', ...
+                char(device_id));
+        end
+        is_online = raw_online;
+    end
+    if isfield(hs.device_modes, key)
+        raw_mode = hs.device_modes.(key);
+    end
+end
+if ~(ischar(raw_mode) || (isstring(raw_mode) && isscalar(raw_mode)))
+    error('ibr:dual_mode_ibr_model:badRuntimeMode', ...
+        'Runtime mode for device %s must be a character vector or scalar string.', ...
+        char(device_id));
+end
+switch lower(strtrim(char(raw_mode)))
+case 'gfl'
+    active_mode = 'gfl';
+case 'gfm'
+    active_mode = 'GFM';
+case 'tripped'
+    active_mode = 'tripped';
+otherwise
+    error('ibr:dual_mode_ibr_model:badRuntimeMode', ...
+        'Unsupported runtime mode %s for device %s.', ...
+        char(raw_mode), char(device_id));
 end
 end
 
@@ -239,9 +343,16 @@ end
 end
 
 % =========================================================================
-function I = dual_current(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
+function I = dual_current(x_dev, y, u_dev, event_context, device_id, ...
+    default_online, default_mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
 u = resolve_u(u_dev, u0);
-switch mode
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+if ~is_online
+    I = 0.0 + 0.0i;
+    return;
+end
+switch active_mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
     u_gfl = u(1:2);
@@ -256,9 +367,16 @@ end
 end
 
 % =========================================================================
-function Pe = dual_pe(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
+function Pe = dual_pe(x_dev, y, u_dev, event_context, device_id, ...
+    default_online, default_mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
 u = resolve_u(u_dev, u0);
-switch mode
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+if ~is_online
+    Pe = 0.0;
+    return;
+end
+switch active_mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
     u_gfl = u(1:2);
@@ -273,10 +391,20 @@ end
 end
 
 % =========================================================================
-function out = dual_reconstruct(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp, u0)
+function out = dual_reconstruct(x_dev, y, u_dev, event_context, device_id, ...
+    default_online, default_mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp, u0)
 u = resolve_u(u_dev, u0);
-out = struct('mode', char(mode), 'bus_position', bp);
-switch mode
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+out = struct('mode', char(active_mode), 'bus_position', bp, ...
+    'online', is_online);
+if ~is_online
+    out.current = 0.0 + 0.0i;
+    out.electrical_power = 0.0;
+    out.breaker_open = true;
+    return;
+end
+switch active_mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
     u_gfl = u(1:2);
@@ -287,5 +415,47 @@ case 'GFM'
     out.gfm = gfm_dev.reconstruct(0, x_gfm, y, u_gfm, struct());
 case 'tripped'
     out.tripped = true;
+end
+end
+
+% =========================================================================
+function x_eq = dual_equilibrium_initialize(V_bus, P_terminal_pu, ...
+    Q_terminal_pu, event_context, device_id, default_online, default_mode, gfl_dev, gfm_dev, ...
+    gfl_idx, gfm_idx, x_warm)
+%DUAL_EQUILIBRIUM_INITIALIZE  Map exact active-branch state into superset.
+[is_online, active_mode] = resolve_status( ...
+    event_context, device_id, default_online, default_mode);
+x_eq = x_warm;
+if ~is_online
+    if ~isscalar(P_terminal_pu) || ~isscalar(Q_terminal_pu) || ...
+            ~isreal(P_terminal_pu) || ~isreal(Q_terminal_pu) || ...
+            ~isfinite(P_terminal_pu) || ~isfinite(Q_terminal_pu) || ...
+            abs(P_terminal_pu) > 64*eps(max(1,abs(P_terminal_pu))) || ...
+            abs(Q_terminal_pu) > 64*eps(max(1,abs(Q_terminal_pu)))
+        error('ibr:dual_mode_ibr_model:offlineEquilibriumPower', ...
+            'An offline IBR equilibrium initializer requires zero terminal P/Q.');
+    end
+    return;
+end
+switch active_mode
+case 'gfl'
+    x_eq(gfl_idx) = gfl_dev.equilibrium_initialize( ...
+        V_bus, P_terminal_pu, Q_terminal_pu, event_context);
+case 'GFM'
+    x_eq(gfm_idx) = gfm_dev.equilibrium_initialize( ...
+        V_bus, P_terminal_pu, Q_terminal_pu, event_context);
+case 'tripped'
+    if ~isscalar(P_terminal_pu) || ~isscalar(Q_terminal_pu) || ...
+            ~isreal(P_terminal_pu) || ~isreal(Q_terminal_pu) || ...
+            ~isfinite(P_terminal_pu) || ~isfinite(Q_terminal_pu)
+        error('ibr:dual_mode_ibr_model:trippedEquilibriumPower', ...
+            'A tripped IBR equilibrium initializer requires zero terminal P/Q.');
+    end
+    pscale = max([1.0, abs(P_terminal_pu), abs(Q_terminal_pu)]);
+    ptol = 64*eps(pscale);
+    if abs(P_terminal_pu) > ptol || abs(Q_terminal_pu) > ptol
+        error('ibr:dual_mode_ibr_model:trippedEquilibriumPower', ...
+            'A tripped IBR equilibrium initializer requires zero terminal P/Q.');
+    end
 end
 end

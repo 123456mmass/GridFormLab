@@ -12,8 +12,10 @@ function dev = sg_composite_device(case_data, device_id, bus_id, bus_position, b
 %   (NOT reverse-derived from Pe/V — correction 2).
 %
 %   State (6, EMF6): x = [delta; omega; Eqp; Edp; Eqpp; Edpp].
-%   Inputs: nu=0 (SG has no exogenous input in this mission; AVR/constant-Efd
-%   modeled as constant Efd at the equilibrium value — CASE_DEFINED frozen).
+%   Inputs: u=[Tm;Efd]. At a physical REF-bus equilibrium,
+%   mixed_equilibrium_solve determines these two constant control inputs while
+%   enforcing the specified |V|/angle and every KCL row. TS holds the solved
+%   inputs constant; they are not re-solved each step.
 %
 %   Breaker-open physics (clarification 4), read from event_context.hybrid_state:
 %     - online  -> connected stator: full EMF6 stator current into network, Te from
@@ -26,7 +28,8 @@ function dev = sg_composite_device(case_data, device_id, bus_id, bus_position, b
 %   The online/offline flag is read from event_context.hybrid_state.device_online.(id);
 %   if event_context is empty (equilibrium path), defaults to online=true.
 %
-%   STATUS: STRUCTURAL_ONLY until Phase B tests pass. No production-readiness claim.
+%   STATUS: equilibrium/TS/SSSA structural contracts verified. Mission-level
+%   IBR production readiness remains NOT_READY until all deferred phases close.
 %
 %   Source: synchronous_emf6_ssa (Kundur/GENTPJ 6th-order, in repo); IEEE 1110-2002
 %   Model 2.2 structure. Kodsi 60Hz SG data (CASE_DEFINED, decision ledger item 7).
@@ -71,14 +74,14 @@ if units.bus_idx(1) ~= bus_position
 end
 
 nx = 6;
-nu = 0;
+nu = 2;
 state_names = {'delta','omega','Eqp','Edp','Eqpp','Edpp'};
 x0 = init.x0(1:6);     % single-machine state slice
-u0 = zeros(0,1);       % no inputs (constant Efd, CASE_DEFINED)
-
-% Capture equilibrium Tm (pre-trip mechanical power, frozen for offline coast).
+% PF-derived defaults are the a-priori warm start. The physical mixed REF
+% equilibrium may solve different constant Tm/Efd values.
 Tm_eq = init.Tm(1);
 Efd_eq = init.Efd(1);
+u0 = [Tm_eq; Efd_eq];
 
 % --- Tpq0=0 singular-limit frozen-state detection ---------------------------
 % When Tpq0==0 exactly (Kodsi round-rotor, no q-axis transient), Edp is
@@ -106,7 +109,7 @@ bp = bus_position;
 %   online: full EMF6 differential_residual (single-machine slice).
 %   offline: open-circuit flux decay (I=0) + coast swing (Te=0, Tm frozen).
 f = @(t, x_dev, y, u_dev, event_context) sg_f( ...
-    x_dev, y, bp, machine, units, Tm_eq, Efd_eq, event_context, device_id);
+    x_dev, y, u_dev, bp, machine, units, event_context, device_id);
 
 % --- current_injection (5-arg): stator Id/Iq -> network frame (correction 2) ---
 current_injection = @(t, x_dev, y, u_dev, event_context) sg_current( ...
@@ -118,7 +121,7 @@ electrical_power = @(t, x_dev, y, u_dev, event_context) sg_pe( ...
 
 % --- reconstruct (5-arg) -------------------------------------------------------
 reconstruct = @(t, x_dev, y, u_dev, event_context) sg_reconstruct( ...
-    x_dev, y, bp, machine, units, event_context, device_id, Tm_eq, Efd_eq);
+    x_dev, y, u_dev, bp, machine, units, event_context, device_id);
 
 dev = struct();
 dev.name = char(device_id);
@@ -133,7 +136,7 @@ dev.initial_online = true;
 dev.nx = nx;
 dev.nu = nu;
 dev.state_names = state_names;
-dev.input_names = {};
+dev.input_names = {'Tm','Efd'};
 dev.x0 = x0;
 dev.u0 = u0;
 dev.f = f;
@@ -147,11 +150,16 @@ dev.provenance = struct( ...
     'sg_data','Kodsi 60Hz Table A.2 (CASE_DEFINED, decision ledger item 7)', ...
     'stator_current','sg_stator_current (EMF6 stator Id/Iq -> network frame; correction 2)', ...
     'breaker_open_physics','offline: Id=Iq=0, Te=0, open-circuit flux decay, Tm frozen (clarification 4)', ...
+    'equilibrium_controls','u=[Tm;Efd] solved only for selected online SG REF, then held constant', ...
     'readiness','STRUCTURAL_ONLY');
 dev.frozen_state_indices = frozen_state_indices;
 dev.frozen_state_values  = frozen_state_values;
 dev.frozen_state_source  = frozen_state_source;
 dev.active_state_indices = active_state_indices;
+% Equilibrium excludes a breaker-open SG because retained Tm generally has no
+% stationary root, but TS integrates these states through the open-circuit
+% flux/coast equations implemented by dev.f.
+dev.dynamic_state_indices_for_context = @(~) active_state_indices;
 dev.frozen_state_classification = 'SOURCE_DEFINED singular limit';
 end
 
@@ -176,8 +184,9 @@ end
 end
 
 % =========================================================================
-function dx = sg_f(x_dev, y, bp, machine, units, Tm_eq, Efd_eq, event_context, device_id)
+function dx = sg_f(x_dev, y, u_dev, bp, machine, units, event_context, device_id)
 online = resolve_online(event_context, device_id);
+[Tm, Efd] = resolve_controls(u_dev);
 k = 1;
 delta = x_dev(1); w = x_dev(2);
 Eqp = x_dev(3); Edp = x_dev(4); Eqpp = x_dev(5); Edpp = x_dev(6);
@@ -186,8 +195,8 @@ if online
     [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, k);
     Te = Vd*Id + Vq*Iq + machine.Ra(k)*(Id^2 + Iq^2);
     dx1 = machine.w0 * w;
-    dx2 = (Tm_eq - Te - units.D_system(k)*w) / (2*units.H_system(k));
-    dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
+    dx2 = (Tm - Te - units.D_system(k)*w) / (2*units.H_system(k));
+    dx3 = (Efd + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
     if machine.Tpq0(k) == 0
         dx4 = 0;   % Tpq0=0 singular limit: Edp algebraically eliminated (frozen at 0)
     else
@@ -203,8 +212,8 @@ else
     %   dEdpp/dt = (Edp - Edpp)/Tppq0   (no (Xqp-Xqpp)*Iq term)
     % Swing coasts: 2H*dw/dt = Tm_frozen - 0 - D*w  (Tm held at pre-trip value).
     dx1 = machine.w0 * w;
-    dx2 = (Tm_eq - units.D_system(k)*w) / (2*units.H_system(k));
-    dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
+    dx2 = (Tm - units.D_system(k)*w) / (2*units.H_system(k));
+    dx3 = (Efd + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
     if machine.Tpq0(k) == 0
         dx4 = 0;   % Tpq0=0 singular limit: Edp frozen at 0
     else
@@ -239,17 +248,31 @@ end
 end
 
 % =========================================================================
-function out = sg_reconstruct(x_dev, y, bp, machine, units, event_context, device_id, Tm_eq, Efd_eq)
+function out = sg_reconstruct(x_dev, y, u_dev, bp, machine, units, event_context, device_id)
 online = resolve_online(event_context, device_id);
+[Tm, Efd] = resolve_controls(u_dev);
 out = struct('mode','sg','online',online,'bus_position',bp, ...
     'delta',x_dev(1),'omega',x_dev(2),'Eqp',x_dev(3),'Edp',x_dev(4), ...
-    'Eqpp',x_dev(5),'Edpp',x_dev(6),'Tm',Tm_eq,'Efd',Efd_eq);
+    'Eqpp',x_dev(5),'Edpp',x_dev(6),'Tm',Tm,'Efd',Efd);
 if online
     [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, 1);
     out.Id = Id; out.Iq = Iq; out.Vd = Vd; out.Vq = Vq;
 else
     out.Id = 0; out.Iq = 0; out.Vd = NaN; out.Vq = NaN;   % open breaker
 end
+end
+
+
+% =========================================================================
+function [Tm,Efd] = resolve_controls(u_dev)
+%RESOLVE_CONTROLS  Fail-closed constant SG control-input contract.
+if ~isnumeric(u_dev) || ~isreal(u_dev) || numel(u_dev) ~= 2 || ...
+        any(~isfinite(u_dev(:)))
+    error('stability:sg_composite_device:badInput', ...
+        'SG input must be exactly two finite real values [Tm;Efd].');
+end
+Tm = u_dev(1);
+Efd = u_dev(2);
 end
 
 % =========================================================================

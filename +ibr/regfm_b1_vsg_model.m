@@ -23,6 +23,11 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %   Phase-G-1 implements Eq.13 ImaxF transient clamp (Fig.7) and VPLLfrz PLL
 %   freeze (Fig.4). Anti-windup, PQ priority, Fig.6 active-current limiter,
 %   Eqs.10-11 Emin/Emax are deferred to Phase-G-2.
+%   The optional equilibrium initializer has the uniform device signature
+%     x_eq = equilibrium_initialize(V_bus, P_terminal_pu, ...
+%                                  Q_terminal_pu, event_context)
+%   and algebraically inverts the sourced equations for an exact device
+%   equilibrium. It does not solve network KCL or prescribe the GFM's final Q.
 %
 %   Per-unit base contract (user-confirmed, FROZEN before results):
 %     External ABI: u(1)=P_ref on SYSTEM base (Sbase=100 MVA).
@@ -59,8 +64,9 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       Iq = -Ix*sin(dPLL) + Iy*cos(dPLL)
 %       Vd =  Vx*cos(dPLL) + Vy*sin(dPLL)
 %       Vq = -Vx*sin(dPLL) + Vy*cos(dPLL)
-%     Output stage (Eq.13, LINEAR branch only; ImaxF clamp deferred):
-%       I = (EVSM*exp(1i*delta_VSM) - V_bus)/(Re + 1i*XL)   % positive INTO net
+%     Output stage (Eq.13 + Phase-G-1 ImaxF clamp):
+%       Iunc = (EVSM*exp(1i*delta_VSM) - V_bus)/(kappa*(Re + 1i*XL))
+%       I = Iunc when |Iunc|<ImaxF/kappa; otherwise circularly limited
 %     Measured power (generator convention S = V*conj(I), SYSTEM base):
 %       P_meas = Re(V_bus*conj(I));  Q_meas = Im(V_bus*conj(I))
 %     Filters (Eqs.1-5, kappa = Sbase/Mbase):
@@ -69,7 +75,7 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       TQf*dQinv_f/dt  = kappa*Q_meas - Qinv_f    (Eq.3)
 %       TVf*dVinv_f/dt  = |V_bus|      - Vinv_f    (Eq.4)
 %       TIf*dIqinv_f/dt = kappa*Iq     - Iqinv_f   (Eq.5)
-%     PLL (Fig.4; Delta-omegaPLL limits + freeze deferred):
+%     PLL (Fig.4; Delta-omegaPLL limits deferred; VPLLfrz implemented):
 %       dx_PLL_int/dt = Vq
 %       d(delta_PLL)/dt = omega0*(kpPLL*Vq + kiPLL*x_PLL_int)
 %     VSM swing (Fig.2, SOURCE_TRANSFORMED, FROZEN under flag profile
@@ -175,7 +181,7 @@ ImaxF    = 1.5;                % pu, SOURCE_VERBATIM (Table 1) [deferred limiter
 kf       = 0.9;                % NA, SOURCE_VERBATIM (Table 1) [deferred limiter]
 kI       = 2.0;                % pu/s, SOURCE_VERBATIM (Table 1) [deferred limiter]
 Ke       = 1.0;                % NA, SOURCE_VERBATIM (Table 1) [deferred limiter]
-VPLLfrz  = 0.05;               % pu, SOURCE_VERBATIM (Table 1) [deferred freeze]
+VPLLfrz  = 0.05;               % pu, SOURCE_VERBATIM (Table 1) [G1 implemented]
 % Frozen flag profile (Phase 6, before results)
 omegaFlag = 0;  VdrpFlag = 0;  QVFlag = 1;  PQFlag = 1;  FFlag = 1;  ESFlag = 1;
 omega_ref = 1.0; % pu (frozen)
@@ -221,17 +227,21 @@ kappa = Sbase / Mbase;
 P_ref_inv = kappa * P_ref_pu;   % inverter base (REGFM_B1 Eq.1 semantics)
 
 % --- Initial state (from PF warm-start; V_bus = V0 = V0_mag*exp(j*theta0)) --
+% Constructor warm-start: active-power filter starts at the scheduled dispatch;
+% Q/current filters start at zero and are replaced by equilibrium_initialize
+% when the reduced network initializer supplies terminal P/Q. With the
+% corrected Z_sys = kappa*(Re+jXL), no old-Z base mismatch is retained.
 omega_m0   = 0.0;
 delta_VSM0 = theta0;            % VSM angle initialized to bus angle
 x_washout0 = 0.0;
 x_Eint0    = 0.0;
 delta_PLL0 = theta0;            % PLL locked to bus angle
 x_PLL_int0 = 0.0;
-Pinv_f0    = P_ref_inv;         % inv base (Eq.1 steady state)
-Idinv_f0   = 0.0;               % refined by Newton
-Qinv_f0    = 0.0;              % Qref=0 init (VdrpFlag=0, QVFlag=1)
-Vinv_f0    = V0_mag;
-Iqinv_f0   = 0.0;
+Pinv_f0    = P_ref_inv;          % inverter-base active-power setpoint
+Idinv_f0   = 0.0;               % refined by Newton from measured current
+Qinv_f0    = 0.0;               % Qref=0 dispatch
+Vinv_f0    = V0_mag;            % warm-start |V_bus|
+Iqinv_f0   = 0.0;               % refined by Newton from measured current
 x0 = [omega_m0; delta_VSM0; x_washout0; x_Eint0; delta_PLL0; x_PLL_int0; ...
       Pinv_f0; Idinv_f0; Qinv_f0; Vinv_f0; Iqinv_f0];
 u0 = [P_ref_pu; V_ref_pu];
@@ -258,6 +268,14 @@ reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct_g1( ...
     x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, Re, XL, ...
     kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxF, VPLLfrz);
 
+% --- Optional exact device-equilibrium initializer -------------------------
+% PROJECT_DERIVED inversion of REGFM_B1 Eqs.1-9, 13 and Figs.2-4. Q_terminal
+% is an initialization estimate for the network-solved GFM reactive output;
+% it is not a new Q-reference input. Network KCL remains composite-owned.
+equilibrium_initialize = @(V_bus, P_terminal_pu, Q_terminal_pu, event_context) ...
+    gfm_equilibrium_initialize(V_bus, P_terminal_pu, Q_terminal_pu, ...
+        event_context, V_ref_pu, kappa, Re, XL, mq, kpv, kiv, ImaxF, VPLLfrz);
+
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) --------------
 dev = struct();
 dev.name = char(device_id);
@@ -278,6 +296,7 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+dev.equilibrium_initialize = equilibrium_initialize;
 % F4: parameter classifications — frozen defaults keep their original label;
 % any overridden parameter is reclassified DIAGNOSTIC_ONLY. Mbase is a
 % CASE_DEFINED nameplate proxy (not a REGFM_B1 Table 1 value), so it keeps
@@ -313,11 +332,102 @@ dev.provenance = struct( ...
 end
 
 % =========================================================================
+function x_eq = gfm_equilibrium_initialize(V_bus, P_terminal_pu, ...
+    Q_terminal_pu, event_context, V_ref, kappa, Re, XL, mq, kpv, kiv, ...
+    ImaxF, VPLLfrz) %#ok<INUSD>
+%GFM_EQUILIBRIUM_INITIALIZE  Exact regular REGFM_B1 device equilibrium.
+%   Terminal P/Q are system-base injections under S=V*conj(I), positive INTO
+%   the network. The returned state is device-consistent only; the caller must
+%   still solve/check the composite network KCL.
+if ~isscalar(V_bus) || ~isfinite(V_bus) || abs(V_bus) <= 0
+    error('ibr:regfm_b1_vsg_model:equilibriumBadVoltage', ...
+        'Equilibrium V_bus must be a finite nonzero scalar phasor.');
+end
+if ~isscalar(P_terminal_pu) || ~isscalar(Q_terminal_pu) || ...
+        ~isreal(P_terminal_pu) || ~isreal(Q_terminal_pu) || ...
+        ~isfinite(P_terminal_pu) || ~isfinite(Q_terminal_pu)
+    error('ibr:regfm_b1_vsg_model:equilibriumBadPower', ...
+        'Equilibrium terminal P/Q must be finite real scalars on system base.');
+end
+
+Vmag = abs(V_bus);
+if Vmag < VPLLfrz
+    error('ibr:regfm_b1_vsg_model:equilibriumPLLFreezeNonunique', ...
+        ['|V_bus|=%.15g is below VPLLfrz=%.15g; the sourced PLL freeze ' ...
+         'makes delta_PLL/x_PLL_int non-unique in a regular equilibrium.'], ...
+        Vmag, VPLLfrz);
+end
+vscale = max([1.0, Vmag, abs(V_ref)]);
+% The reduced network initializer is solved by finite-difference Newton and
+% then handed to the full coupled Newton.  sqrt(eps) is the standard
+% perturbation-scale consistency gate; a machine-epsilon-only gate rejects a
+% mathematically converged warm start before the full residual can refine it.
+vtol = sqrt(eps)*vscale;   % NUMERICAL_METHOD, not an acceptance relaxation
+if abs(Vmag - V_ref) > vtol
+    error('ibr:regfm_b1_vsg_model:equilibriumVoltageReferenceMismatch', ...
+        ['Exact equilibrium at the supplied V_bus requires |V_bus|=V_ref; ' ...
+         '|V_bus|=%.15g, V_ref=%.15g.'], Vmag, V_ref);
+end
+
+S_terminal = complex(P_terminal_pu, Q_terminal_pu);
+I_terminal_sys = conj(S_terminal / V_bus);
+ImaxF_sys = ImaxF / kappa;
+Iabs = abs(I_terminal_sys);
+itol = 64*eps(max(1.0, ImaxF_sys));
+if Iabs > ImaxF_sys + itol
+    error('ibr:regfm_b1_vsg_model:equilibriumCurrentLimit', ...
+        ['Requested |I|=%.15g exceeds ImaxF_sys=%.15g; algebraic clamping ' ...
+         'would change the requested terminal P/Q.'], Iabs, ImaxF_sys);
+end
+if abs(Iabs - ImaxF_sys) <= itol
+    error('ibr:regfm_b1_vsg_model:equilibriumClampBoundary', ...
+        ['Requested |I|=%.15g lies on the nondifferentiable Eq.13 clamp ' ...
+         'boundary ImaxF_sys=%.15g.'], Iabs, ImaxF_sys);
+end
+
+Z_sys = kappa * complex(Re, XL);
+E_terminal = V_bus + Z_sys*I_terminal_sys;
+if ~isfinite(E_terminal) || abs(E_terminal) <= 64*eps(max(1.0, Vmag))
+    error('ibr:regfm_b1_vsg_model:equilibriumInternalVoltage', ...
+        'The reconstructed internal-voltage phasor is non-finite or angle-degenerate.');
+end
+
+delta_PLL = angle(V_bus);              % positive-d-axis PLL lock
+I_dq_sys = I_terminal_sys*exp(-1i*delta_PLL);
+P_f = kappa*P_terminal_pu;
+Q_f = kappa*Q_terminal_pu;
+V_f = Vmag;
+EVSM = abs(E_terminal);
+if kiv <= 0
+    error('ibr:regfm_b1_vsg_model:equilibriumVoltageIntegrator', ...
+        'Exact GFM equilibrium inversion requires finite kiv>0.');
+end
+x_Eint = (EVSM - V_ref + mq*Q_f - kpv*(V_ref - V_f)) / kiv;
+if ~isfinite(x_Eint)
+    error('ibr:regfm_b1_vsg_model:equilibriumNonfinite', ...
+        'The reconstructed voltage-PI integrator state is non-finite.');
+end
+
+x_eq = [0.0; angle(E_terminal); 0.0; x_Eint; delta_PLL; 0.0; ...
+        P_f; kappa*real(I_dq_sys); Q_f; V_f; kappa*imag(I_dq_sys)];
+if any(~isfinite(x_eq))
+    error('ibr:regfm_b1_vsg_model:equilibriumNonfinite', ...
+        'The reconstructed GFM equilibrium state contains non-finite values.');
+end
+end
+
+% =========================================================================
 function [I_out_sys, I_unc_sys, I_limited] = limited_current( ...
     EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF)
 %LIMITED_CURRENT  Shared Eq.13 clamp (Phase-G-1). Called by gfm_f, current_injection, pe, reconstruct.
 %   REGFM_B1 Eq.13, Fig.7. ImaxF on inverter base, converted to system base.
 %   Source: REGFM_B1 NREL/TP-5D00-90260 Eq.13, Fig.7, Table 1.
+%   Fails closed on non-finite inputs (Phase-G-1 contract: no silent NaN).
+if ~isfinite(EVSM) || ~isfinite(delta_VSM) || ~isfinite(V_bus)
+    error('ibr:regfm_b1_vsg_model:nonfiniteBus', ...
+        'Non-finite input to limited_current: EVSM=%.6g, delta_VSM=%.6g, V_bus=%.6g%+.6gj.', ...
+        EVSM, delta_VSM, real(V_bus), imag(V_bus));
+end
 Z_sys = kappa * (Re + 1i*XL);           % PROJECT_DERIVED: convert impedance to system base
 ImaxF_sys = ImaxF / kappa;              % PROJECT_DERIVED: convert threshold to system base
 I_unc_sys = (EVSM * exp(1i*delta_VSM) - V_bus) / Z_sys;

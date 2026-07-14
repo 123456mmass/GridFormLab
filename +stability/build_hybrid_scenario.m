@@ -72,22 +72,44 @@ if isfield(scenario_opt,'dispatch') && ~isempty(scenario_opt.dispatch)
     config.dispatch = scenario_opt.dispatch;
 end
 
-% --- Reference policy (one numerical angle gauge per connected island) -----
-% IEEE14 is single-island; the gauge is at the first online voltage-forming
-% resource's bus. Generalized form: a function that, given the topology +
-% voltage-forming index, returns the gauge bus + vcon (vars/rows/ref).
-% For Phase B0 we record the policy; the actual gauge assignment happens in
-% mixed_equilibrium_solve (Phase B1) using per-island voltage-forming detection.
+% Explicit selector commitment. Empty means no GFM subset has been committed;
+% downstream event code must not infer a resource from struct-field order.
+committed_selection = struct('selected_gfm_indices', [], ...
+    'n_gfm_required', [], 'reference_resource_index', []);
+if isfield(scenario_opt, 'committed_selection') && ...
+        ~isempty(scenario_opt.committed_selection)
+    committed_selection = validate_committed_selection( ...
+        scenario_opt.committed_selection, resources, config.online);
+end
+config.selected_gfm_indices = committed_selection.selected_gfm_indices;
+config.n_gfm_required = committed_selection.n_gfm_required;
+config.reference_resource_index = committed_selection.reference_resource_index;
+
+% --- Reference policy (one numerical reference per connected island) -------
+% IEEE14 is single-island. For SG-off operation the gauge is anchored at the
+% explicitly committed reference_resource_index, which must be one member of
+% the exact selected GFM subset. For an online SG REF, the case REF bus fixes
+% both rectangular voltage coordinates while [Tm;Efd] provide the two solved
+% balancing controls. mixed_equilibrium_solve owns the final assignment and
+% keeps every physical KCL row in either formulation.
 if isfield(case_data,'reference') && isstruct(case_data.reference) && ...
         isfield(case_data.reference,'angle_gauge_policy')
     ref_policy = case_data.reference.angle_gauge_policy;
 else
     ref_policy = struct( ...
         'policy', 'one_gauge_per_island_with_voltage_forming_source', ...
-        'constraint', 'Im(V_island_ref) = 0 (angle reference)', ...
-        'free', 'Re(V) solved by KCL/power balance', ...
+        'constraint', 'GFM: Im(Vref)=0; SG REF: Re/Im(Vref)=case target', ...
+        'free', 'GFM solves reference P; SG REF solves Tm/Efd; all KCL retained', ...
         'fail_closed', 'no online voltage-forming source on an island => noVoltageFormingSource');
 end
+if ~isstruct(ref_policy) || ~isscalar(ref_policy)
+    error('stability:build_hybrid_scenario:badReferencePolicy', ...
+        'case_data.reference.angle_gauge_policy must be a scalar struct.');
+end
+ref_policy.reference_resource_index = ...
+    committed_selection.reference_resource_index;
+ref_policy.reference_selection_contract = ...
+    'exactly one selected GFM member; empty until explicitly committed';
 
 % --- Load model ------------------------------------------------------------
 if isfield(scenario_opt,'load_model') && ~isempty(scenario_opt.load_model)
@@ -105,6 +127,9 @@ delays = struct();
 if isfield(case_data,'delays'), delays = case_data.delays; end
 selector = struct();
 if isfield(case_data,'selector'), selector = case_data.selector; end
+if ~isempty(committed_selection.n_gfm_required)
+    selector.n_gfm_required = committed_selection.n_gfm_required;
+end
 
 % --- Scenario metadata fingerprint -----------------------------------------
 meta = struct();
@@ -120,6 +145,7 @@ scenario = struct();
 scenario.case_data = case_data;
 scenario.resources = resources;
 scenario.config = config;
+scenario.committed_selection = committed_selection;
 scenario.scenario_opt = scenario_opt;
 scenario.reference_policy = ref_policy;
 scenario.load_model = load_model;
@@ -142,4 +168,73 @@ if ~isempty(config.dispatch)
         h = [h 'd:' dk{k} '=' num2str(config.dispatch.(dk{k})) ';']; %#ok<AGROW>
     end
 end
+if ~isempty(config.n_gfm_required)
+    h = [h 'n_gfm=' num2str(config.n_gfm_required) ';'];
+    h = [h 'selected=' sprintf('%d,', config.selected_gfm_indices) ';'];
+    h = [h 'reference=' num2str(config.reference_resource_index) ';'];
+else
+    h = [h 'n_gfm=uncommitted;'];
+end
+end
+
+% =========================================================================
+function committed = validate_committed_selection(value, resources, online)
+if ~isstruct(value) || ~isscalar(value)
+    error('stability:build_hybrid_scenario:badCommittedSelection', ...
+        'scenario_opt.committed_selection must be one scalar struct.');
+end
+required = {'selected_gfm_indices','n_gfm_required','reference_resource_index'};
+for k = 1:numel(required)
+    if ~isfield(value, required{k})
+        error('stability:build_hybrid_scenario:incompleteCommittedSelection', ...
+            'committed_selection lacks %s.', required{k});
+    end
+end
+
+nr = numel(resources);
+selected = value.selected_gfm_indices;
+n_required = value.n_gfm_required;
+reference_index = value.reference_resource_index;
+if ~isnumeric(selected) || isempty(selected) || any(~isfinite(selected(:))) || ...
+        any(selected(:) ~= fix(selected(:))) || ...
+        any(selected(:) < 1 | selected(:) > nr)
+    error('stability:build_hybrid_scenario:badSelectedIndices', ...
+        'selected_gfm_indices must be finite in-range resource indices.');
+end
+selected = reshape(selected, 1, []);
+if numel(unique(selected)) ~= numel(selected)
+    error('stability:build_hybrid_scenario:duplicateSelectedIndices', ...
+        'selected_gfm_indices must be unique.');
+end
+if ~is_scalar_integer(n_required) || n_required < 1 || ...
+        numel(selected) ~= n_required
+    error('stability:build_hybrid_scenario:selectionCountMismatch', ...
+        'n_gfm_required must equal the positive selected index count.');
+end
+if ~is_scalar_integer(reference_index) || ...
+        ~ismember(reference_index, selected)
+    error('stability:build_hybrid_scenario:referenceNotSelected', ...
+        'reference_resource_index must be one selected GFM member.');
+end
+
+for k = selected
+    r = resources(k);
+    eligible = online(k) && strcmpi(char(r.resource_type), 'ibr') && ...
+        logical(r.can_switch_mode) && ...
+        any(strcmpi(string(r.supported_modes), 'gfl')) && ...
+        any(strcmpi(string(r.supported_modes), 'gfm')) && ...
+        any(strcmpi(string(r.voltage_forming_modes), 'gfm'));
+    if ~eligible
+        error('stability:build_hybrid_scenario:selectedResourceIneligible', ...
+            'Selected resource index %d is not an online dual-mode GFM-capable IBR.', k);
+    end
+end
+
+committed = struct('selected_gfm_indices', selected, ...
+    'n_gfm_required', n_required, ...
+    'reference_resource_index', reference_index);
+end
+
+function tf = is_scalar_integer(value)
+tf = isnumeric(value) && isscalar(value) && isfinite(value) && value == fix(value);
 end

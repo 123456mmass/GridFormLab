@@ -5,6 +5,11 @@ function dev = gfl_model(device_id, bus_id, bus_position, bus_ids, V0, params, P
 %   returns a device struct conforming to the stability.composite_dae ABI
 %   (R3 Revision 2: f, current_injection, electrical_power, x0, u0,
 %   state_names, reconstruct; all taking (t, x_dev, y, u_dev, event_context)).
+%   The optional equilibrium initializer has the uniform device signature
+%     x_eq = equilibrium_initialize(V_bus, P_terminal_pu, ...
+%                                  Q_terminal_pu, event_context)
+%   and returns the exact six-state equilibrium for the supplied terminal
+%   voltage and system-base terminal power. It does not solve network KCL.
 %
 %   BUS_IDS  - the network's external bus-ID vector (1 x nb). BUS_POSITION
 %              indexes y for voltage measurement; BUS_ID is the external ID
@@ -197,6 +202,14 @@ electrical_power = @(t, x_dev, y, u_dev, event_context) gfl_pe(x_dev, y, u_dev, 
 reconstruct = @(t, x_dev, y, u_dev, event_context) gfl_reconstruct( ...
     x_dev, y, u_dev, bp, omega0, omega_c, kpPLL, kiPLL, Kps, Kis);
 
+% --- Optional exact device-equilibrium initializer -------------------------
+% PROJECT_DERIVED inversion of the sourced reduced GFL equations. The caller
+% must use matching u=[P_terminal;Q_terminal] when evaluating the returned
+% state. Network KCL remains owned by composite_dae/mixed_equilibrium_solve.
+equilibrium_initialize = @(V_bus, P_terminal_pu, Q_terminal_pu, event_context) ...
+    gfl_equilibrium_initialize(V_bus, P_terminal_pu, Q_terminal_pu, ...
+        event_context, Kis);
+
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) --------------
 dev = struct();
 dev.name = char(device_id);
@@ -216,6 +229,7 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+dev.equilibrium_initialize = equilibrium_initialize;
 % F4: parameter classifications — frozen defaults keep their original label;
 % any overridden parameter is reclassified DIAGNOSTIC_ONLY.
 cls_omega0  = ternary(overridden.omega0,  'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM');
@@ -242,6 +256,35 @@ dev.provenance = struct( ...
         'Kis',cls_Kis), ...
     'param_overridden', overridden, ...
     'readiness','STRUCTURAL_ONLY');
+end
+
+% =========================================================================
+function x_eq = gfl_equilibrium_initialize( ...
+    V_bus, P_terminal_pu, Q_terminal_pu, event_context, Kis) %#ok<INUSD>
+%GFL_EQUILIBRIUM_INITIALIZE  Exact reduced-GFL device equilibrium.
+%   P_terminal_pu and Q_terminal_pu use the generator convention
+%   S=V*conj(I), positive INTO the network, on the system base.
+if ~isscalar(V_bus) || ~isfinite(V_bus) || abs(V_bus) <= 0
+    error('ibr:gfl_model:equilibriumBadVoltage', ...
+        'Equilibrium V_bus must be a finite nonzero scalar phasor.');
+end
+if ~isscalar(P_terminal_pu) || ~isscalar(Q_terminal_pu) || ...
+        ~isreal(P_terminal_pu) || ~isreal(Q_terminal_pu) || ...
+        ~isfinite(P_terminal_pu) || ~isfinite(Q_terminal_pu)
+    error('ibr:gfl_model:equilibriumBadPower', ...
+        'Equilibrium terminal P/Q must be finite real scalars on system base.');
+end
+
+Vmag = abs(V_bus);
+delta_pll = angle(V_bus);     % positive-d-axis PLL lock
+eps_pll = 0.0;
+P_f = P_terminal_pu;
+Q_f = Q_terminal_pu;
+% With zero power error, Ding Eq.10 gives id*=Kis*phi_P and
+% iq*=-Kis*phi_Q. At PLL lock S=Vmag*(id-j*iq).
+phi_P = P_terminal_pu / (Vmag*Kis);
+phi_Q = Q_terminal_pu / (Vmag*Kis);
+x_eq = [delta_pll; eps_pll; P_f; Q_f; phi_P; phi_Q];
 end
 
 % =========================================================================

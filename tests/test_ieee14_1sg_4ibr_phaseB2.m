@@ -28,8 +28,8 @@ eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
 % Run short TS (0.1 s, small dt) — expect zero drift
-[ts_res, ~] = stability.ts_simulate_composite(c, devices, ...
-    eq.x0, eq.y0, struct('t_end',0.1,'dt',1e-3,'verbose',false));
+[ts_res, ~] = stability.ts_simulate_composite(c, eq.devices, ...
+    eq.x0, eq.y0, physical_ts_opt(eq,0.1,1e-3));
 testCase.verifyTrue(ts_res.converged, 'TS must converge.');
 
 % Check drift: max |x(t) - x0| should be near zero over 0.1s
@@ -52,8 +52,8 @@ config = struct('devices', devices);
 eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
-[ts_res, ~] = stability.ts_simulate_composite(c, devices, ...
-    eq.x0, eq.y0, struct('t_end',1.0,'dt',0.01,'verbose',false));
+[ts_res, ~] = stability.ts_simulate_composite(c, eq.devices, ...
+    eq.x0, eq.y0, physical_ts_opt(eq,1.0,0.01));
 testCase.verifyTrue(ts_res.converged, 'TS must converge.');
 testCase.verifyTrue(all(isfinite(ts_res.x_traj(:))), 'x_traj has no NaN/Inf.');
 testCase.verifyTrue(all(isfinite(ts_res.y_traj(:))), 'y_traj has no NaN/Inf.');
@@ -72,8 +72,8 @@ config = struct('devices', devices);
 eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
-[ts_res, ~] = stability.ts_simulate_composite(c, devices, ...
-    eq.x0, eq.y0, struct('t_end',0.5,'dt',0.005,'verbose',false));
+[ts_res, ~] = stability.ts_simulate_composite(c, eq.devices, ...
+    eq.x0, eq.y0, physical_ts_opt(eq,0.5,0.005));
 testCase.verifyTrue(ts_res.converged, 'TS must converge.');
 
 % SG1 Edp is global state index 4 (first device, state 4)
@@ -95,9 +95,9 @@ config = struct('devices', devices);
 eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
-opt_ts = struct('t_end',0.5,'dt',0.01,'verbose',false);
-[res1, ~] = stability.ts_simulate_composite(c, devices, eq.x0, eq.y0, opt_ts);
-[res2, ~] = stability.ts_simulate_composite(c, devices, eq.x0, eq.y0, opt_ts);
+opt_ts = physical_ts_opt(eq,0.5,0.01);
+[res1, ~] = stability.ts_simulate_composite(c, eq.devices, eq.x0, eq.y0, opt_ts);
+[res2, ~] = stability.ts_simulate_composite(c, eq.devices, eq.x0, eq.y0, opt_ts);
 
 testCase.verifyEqual(res1.x_traj, res2.x_traj, 'AbsTol', 0, ...
     'Deterministic: identical x_traj.');
@@ -175,4 +175,11 @@ for k = 1:4
         'provenance',struct('model','regfm_b1_dual','source','REGFM_B1','classification','CASE_DEFINED','details',''));
     spec(end+1) = r; %#ok<AGROW>
 end
+end
+
+function opt = physical_ts_opt(eq,t_end,dt)
+% Same solved inputs/context/state partition and all physical KCL equations.
+opt = struct('t_end',t_end,'dt',dt,'verbose',false, ...
+    'u_eq',eq.u_eq,'event_context',eq.equilibrium_context, ...
+    'dynamic_state_indices',eq.dynamic_state_indices,'full_kcl',true);
 end

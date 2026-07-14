@@ -69,6 +69,11 @@ testCase.verifyEqual(f_dual(gfl_idx), f_gfl, 'AbsTol', 1e-12, 'gfl mode f(active
 % GFM-unique rows frozen (dx=0).
 gfm_unique = [3,4,5,6,7,8,9,10,11];
 testCase.verifyTrue(all(f_dual(gfm_unique) == 0), 'gfl mode: GFM-unique states frozen.');
+xp = dual.x0;
+xp(gfm_unique) = xp(gfm_unique) + (1:numel(gfm_unique))';
+fp = dual.f(0, xp, y, dual.u0, struct());
+testCase.verifyEqual(fp(gfm_unique),zeros(numel(gfm_unique),1),'AbsTol',0, ...
+    'Inactive GFM states are exact holds away from the warm-start anchor.');
 end
 
 % =========================================================================
@@ -91,6 +96,11 @@ testCase.verifyEqual(f_dual(gfm_idx), f_gfm, 'AbsTol', 1e-12, 'GFM mode f(active
 % GFL-unique rows frozen (dx=0).
 gfl_unique = [12,13,14,15];
 testCase.verifyTrue(all(f_dual(gfl_unique) == 0), 'GFM mode: GFL-unique states frozen.');
+xp = dual.x0;
+xp(gfl_unique) = xp(gfl_unique) + (1:numel(gfl_unique))';
+fp = dual.f(0, xp, y, dual.u0, struct());
+testCase.verifyEqual(fp(gfl_unique),zeros(numel(gfl_unique),1),'AbsTol',0, ...
+    'Inactive GFL states are exact holds away from the warm-start anchor.');
 end
 
 % =========================================================================
@@ -104,6 +114,10 @@ Pe = dev.electrical_power(0, dev.x0, y0, u0, struct());
 testCase.verifyEqual(Pe, 0, 'AbsTol', 0, 'tripped: zero power.');
 f = dev.f(0, dev.x0, y0, u0, struct());
 testCase.verifyTrue(all(f == 0), 'tripped: all states frozen (dx=0).');
+xp = dev.x0 + (1:dev.nx)';
+fp = dev.f(0, xp, y0, u0, struct());
+testCase.verifyEqual(fp,zeros(dev.nx,1),'AbsTol',0, ...
+    'Tripped states are exact holds away from the warm-start anchor.');
 end
 
 % =========================================================================

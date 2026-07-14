@@ -83,17 +83,22 @@ r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(r.converged, ['SG online equilibrium must converge: ' r.failure_reason]);
 testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
 testCase.verifyGreaterThan(r.rcond, 1e-10, 'reduced Jacobian well-conditioned.');
+testCase.verifyLessThan(r.physical_kcl_norm,1e-6,'Every SG_ON KCL row passes.');
+testCase.verifyEqual(r.vcon_vars,[1 2],'AbsTol',0, ...
+    'REF bus fixes both Vm and angle in rectangular coordinates.');
+testCase.verifyEqual(r.vcon_ref,[1.06;0],'AbsTol',0);
+testCase.verifyEqual(r.reference.slack_input_names,{'Tm','Efd'});
 end
 
 % =========================================================================
 function test_mixed_equilibrium_sg_off_gfm(testCase)
 % SG offline: IBR2=GFM, IBR3/6/8=gfl. Production devices, index-based config.
-% NOTE: Phase-G-1 transient limiter may challenge Newton convergence at high
-% dispatch. Reduced dispatch test verifies SG_OFF+GFM path still functional.
+% The reduced all-KCL initializer reconstructs exact per-device states from
+% its solved terminal P/Q; the constructor warm-start is not treated as a root.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
                'mode',{'GFM','gfl','gfl','gfl'});
-disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
+disp_s = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
 devs = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
 % Set SG1 offline (breaker open)
 for k = 1:numel(devs)
@@ -103,17 +108,14 @@ for k = 1:numel(devs)
         break;
     end
 end
-config = struct('devices', devs);
+config = struct('devices', devs,'selected_gfm_indices',2, ...
+    'n_gfm_required',1,'reference_resource_index',2);
 r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
-% G1 limiter may affect convergence at high current; accept at reduced dispatch
-if r.converged
-    testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
-else
-    % Phase-G-1 known limitation: Newton kink at ImaxF boundary
-    testCase.verifyTrue(contains(r.failure_id, 'converge') || ...
-        contains(r.failure_id, 'noConverge'), ...
-        'Failure is convergence-related (Phase-G-1 known limitation).');
-end
+testCase.verifyTrue(r.converged, ['SG offline+GFM equilibrium must converge: ' r.failure_reason]);
+testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
+testCase.verifyGreaterThan(r.rcond, 1e-10, 'reduced Jacobian well-conditioned.');
+testCase.verifyLessThan(r.physical_kcl_norm,1e-6,'Every physical KCL row passes.');
+testCase.verifyTrue(r.reference.balances_active_power,'Selected GFM is explicit P-balancing reference.');
 end
 
 % =========================================================================
@@ -157,14 +159,9 @@ end
 
 % =========================================================================
 function test_reference_gauge_fixed(testCase)
-% Grep guard: the solver uses the ANGLE-ONLY gauge (Im(V1)=0 fixed, Re(V1) free).
-solver_path = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
-    '+stability', 'mixed_equilibrium_solve.m');
-src = fileread(solver_path);
-testCase.verifyTrue(contains(src, 'vcon.vars = 2'), 'vcon.vars fixed at 2 (Im(V1), angle-only).');
-testCase.verifyTrue(contains(src, 'vcon.rows = 2'), 'vcon.rows fixed at 2 (Im(V1) row).');
-testCase.verifyFalse(contains(src, 'vcon.vars = [1, 2]'), 'old 2-variable vcon removed.');
-% Structural check: both SG online and SG offline+GFM use the same angle-only gauge.
+% The gauge follows the selected voltage-forming resource index. For an
+% SG-off GFM reference it eliminates only Im(Vref); every physical KCL row is
+% retained and the reference P input supplies the balancing degree of freedom.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 modes_on = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
                   'mode',{'gfl','gfl','gfl','gfl'});
@@ -182,12 +179,21 @@ for k = 1:numel(devs_off)
         break;
     end
 end
-cfg_off = struct('devices', devs_off);
+cfg_off = struct('devices', devs_off, ...
+    'selected_gfm_indices',2,'n_gfm_required',1, ...
+    'reference_resource_index',2);
 r_on = stability.mixed_equilibrium_solve(c, cfg_on, struct('verbose',false));
 r_off = stability.mixed_equilibrium_solve(c, cfg_off, struct('verbose',false));
-testCase.verifyEqual(r_on.vcon_vars, 2, 'AbsTol', 0, 'SG_ON angle-only gauge var=2.');
-testCase.verifyEqual(r_off.vcon_vars, 2, 'AbsTol', 0, 'SG_OFF angle-only gauge var=2.');
-testCase.verifyEqual(r_on.vcon_ref, r_off.vcon_ref, 'AbsTol', 0, 'same gauge ref (0).');
+testCase.verifyEqual(r_on.vcon_vars,[1 2],'AbsTol',0, ...
+    'SG REF fixes Re(V1)=Vm and Im(V1)=0 while Tm/Efd are solved.');
+testCase.verifyEqual(r_on.vcon_ref,[1.06;0],'AbsTol',0);
+testCase.verifyLessThan(r_on.physical_kcl_norm,1e-6);
+testCase.verifyEqual(r_off.vcon_vars,4,'AbsTol',0,'IBR2 bus-2 gauge.');
+testCase.verifyEqual(r_off.reference.device_index,2,'AbsTol',0);
+testCase.verifyTrue(r_off.reference.balances_active_power);
+testCase.verifyEqual(r_off.vcon_type,'coordinate_elimination_all_kcl');
+testCase.verifyLessThan(r_off.physical_kcl_norm,1e-6, ...
+    'No physical KCL row may be replaced by the angle coordinate.');
 end
 
 % =========================================================================

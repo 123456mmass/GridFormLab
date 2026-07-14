@@ -1,0 +1,177 @@
+function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources, scenario_opt)
+%BUILD_MIXED_RESOURCE_DEVICES  Generic device builder from an indexed resource table.
+%   [DEVICES, DEV_META] = build_mixed_resource_devices(CASE_DATA, RESOURCES,
+%       SCENARIO_OPT) iterates the validated RESOURCES table (from
+%   stability.resource_table) and dispatches a device factory by each
+%   resource's model_id, emitting a UNIFORM device-struct schema so SG and IBR
+%   devices stack cleanly into a single struct array.
+%
+%   This is the single generic entry point that replaces IEEE14-hard-coded
+%   builders. IEEE14 IDs and buses live ONLY inside the IEEE14 scenario profile
+%   that builds the RESOURCES table; the engine never sees them as literals.
+%
+%   Uniform device schema (every factory emits these fields):
+%     REQUIRED (consumed by composite_dae):
+%       name, device_id, bus_id, bus_position, bus_ids, nx, nu,
+%       state_names, input_names, x0, u0, f, current_injection,
+%       electrical_power, reconstruct
+%     ENGINE (capability + identity):
+%       device_type, mode, initial_mode, initial_online, capabilities,
+%       provenance (uniform: model, source, classification, details)
+%
+%   The uniform provenance (model, source, classification, details) is what
+%   FIXES the Phase B singular-Jacobian root cause: previously SG devices had
+%   8 provenance fields and IBR devices had 10 different fields, so struct-array
+%   stacking [sg_dev, ibr_devices] corrupted fields or errored, propagating NaN
+%   into the FD Jacobian. Now both emit the same 4-field provenance.
+%
+%   Factory dispatch (model_id -> factory):
+%     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
+%     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (15-state GFL/GFM/tripped)
+%   Future single-mode IBR factories are added here ONLY (no engine change).
+%
+%   SCENARIO_OPT may carry:
+%     .initial_modes  - struct array (.device_id, .mode) overriding initial mode
+%     .initial_online - struct array (.device_id, .online) overriding online
+%     .dispatch       - struct with per-resource_id dispatch (MW, system base)
+%                       required for IBR resources (P_ref)
+%
+%   Output:
+%     devices  - 1xN struct array conforming to composite_dae ABI + uniform schema
+%     dev_meta - struct with bus_ids, V0_per_bus, Sbase, resource_ids, device_order
+%
+%   No IEEE14 bus IDs or device names appear in this function. Order is the
+%   resource-table order (caller-controlled; deterministic).
+%
+%   Source: plan agent-a-atomic-lagoon.md (Layer 1 generic builder).
+
+arguments
+    case_data struct
+    resources struct
+    scenario_opt struct = struct()
+end
+
+Sbase = 100.0;   % MVA, system base (frozen across the engine)
+
+nr = numel(resources);
+if nr == 0
+    error('stability:build_mixed_resource_devices:noResources', ...
+        'Resource table is empty — cannot build devices.');
+end
+
+% --- Shared PF warm-start (complex V0 per bus) -----------------------------
+% Run the in-house Newton PF once; every factory receives its bus's complex V0.
+% This mirrors composite_dae's internal PF so device constructors initialize
+% from the SAME warm-start the composite will use.
+pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false, ...
+    'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
+if ~pf.converged
+    error('stability:build_mixed_resource_devices:powerFlow', ...
+        'In-house Newton PF did not converge for the warm-start.');
+end
+bus_ids = pf.external_bus_ids(:);
+V0_complex = pf.bus_voltage(:) .* exp(1i * deg2rad(pf.bus_angle_deg(:)));
+
+% --- Dispatch factories by model_id, emit uniform schema -------------------
+device_cells = cell(nr, 1);
+device_order = cell(nr, 1);
+for k = 1:nr
+    r = resources(k);
+    rid = char(r.resource_id);
+    bus = r.bus_id;
+    bp = find(bus_ids == bus, 1);
+    if isempty(bp)
+        error('stability:build_mixed_resource_devices:badBus', ...
+            'Resource "%s" bus_id %d not found in network bus_ids.', rid, bus);
+    end
+    V0 = V0_complex(bp);
+    mode = r.initial_mode;
+    mid = r.model_id;
+    switch mid
+        case 'sg_emf6'
+            dev = stability.sg_composite_device(case_data, string(rid), ...
+                bus, bp, bus_ids(:)', V0, r.dynamic_params);
+            % SG mode is "synchronous" in the resource vocabulary; map the
+            % device.mode from the factory's 'sg' to the resource vocabulary
+            % only for the engine field (factory keeps its internal mode).
+            dev.mode = 'synchronous';
+            dev.initial_mode = 'synchronous';
+        case 'regfm_b1_dual'
+            % Dispatch + P_ref from scenario_opt.dispatch (system-base MW -> pu).
+            P_ref_MW = 0.0;
+            if isfield(scenario_opt,'dispatch') && isfield(scenario_opt.dispatch, rid)
+                P_ref_MW = scenario_opt.dispatch.(rid);
+            elseif isfield(r,'ratings') && isfield(r.ratings,'default_P_MW')
+                P_ref_MW = r.ratings.default_P_MW;
+            end
+            P_ref_pu = P_ref_MW / Sbase;
+            Q_ref_pu = 0.0;   % unity-PF default (CASE_DEFINED per resource)
+            V_ref_pu = abs(V0);
+            params = r.dynamic_params;
+            if ~isfield(params,'Mbase') && isfield(r,'ratings') && isfield(r.ratings,'Mbase')
+                params.Mbase = r.ratings.Mbase;
+            end
+            % dual_mode_ibr_model expects mode in {"gfl","GFM","tripped"}.
+            ibr_mode = mode;
+            if strcmp(ibr_mode, "gfm"), ibr_mode = "GFM"; end
+            dev = ibr.dual_mode_ibr_model(string(rid), bus, bp, bus_ids(:)', ...
+                V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            dev.mode = lower(ibr_mode);
+            dev.initial_mode = lower(ibr_mode);
+        otherwise
+            error('stability:build_mixed_resource_devices:unknownModelId', ...
+                'Resource "%s" model_id "%s" has no registered factory.', rid, mid);
+    end
+
+    % --- Normalize to uniform schema (add engine fields if absent) ---------
+    if ~isfield(dev,'device_type') || isempty(dev.device_type)
+        dev.device_type = r.resource_type;
+    end
+    if ~isfield(dev,'mode') || isempty(dev.mode)
+        dev.mode = mode;
+    end
+    if ~isfield(dev,'initial_mode') || isempty(dev.initial_mode)
+        dev.initial_mode = mode;
+    end
+    if ~isfield(dev,'initial_online')
+        dev.initial_online = r.initial_online;
+    end
+    % Uniform capabilities struct (serializable, engine-facing).
+    dev.capabilities = struct( ...
+        'resource_type', r.resource_type, ...
+        'supported_modes', r.supported_modes, ...
+        'voltage_forming_modes', r.voltage_forming_modes, ...
+        'can_switch_mode', r.can_switch_mode, ...
+        'can_switch_online', r.can_switch_online, ...
+        'has_current_limiter', r.has_current_limiter, ...
+        'has_frt', r.has_frt, ...
+        'can_black_start', r.can_black_start);
+    % Uniform provenance: {model, source, classification, details}.
+    p = r.provenance;
+    dev.provenance = struct( ...
+        'model', p.model, ...
+        'source', p.source, ...
+        'classification', p.classification, ...
+        'details', p.details);
+
+    device_cells{k} = dev;
+    device_order{k} = rid;
+end
+
+% --- Stack into a struct array (uniform schema => clean concatenation) -----
+% All devices now share identical field names (required + engine + uniform
+% provenance), so vertcat/direct concatenation cannot corrupt fields.
+devices = vertcat(device_cells{:});
+
+% --- Provenance metadata ---------------------------------------------------
+dev_meta = struct();
+dev_meta.bus_ids = bus_ids(:)';
+dev_meta.V0_per_bus = V0_complex;
+dev_meta.Sbase = Sbase;
+dev_meta.resource_ids = device_order;
+dev_meta.device_order = device_order;
+dev_meta.model_ids = arrayfun(@(k) resources(k).model_id, (1:nr).', ...
+    'UniformOutput', false).';
+dev_meta.source = 'Generic build_mixed_resource_devices from indexed resource table';
+dev_meta.no_synthetic = true;
+end

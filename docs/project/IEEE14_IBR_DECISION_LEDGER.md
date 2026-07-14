@@ -1,10 +1,12 @@
 # IEEE14 1-SG + 4-IBR Mission — Decision Ledger (Phase 1B)
 
-**Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY` = `PASS` (design contracts
-closed with rationale + falsification tests; no ASSUMED_DIAGNOSTIC production
-values — all values are SOURCE_VERBATIM, SOURCE_TRANSFORMED, CASE_DEFINED,
-or PROJECT_DERIVED with documented derivation).
-**Branch:** `feature/ieee14-auto-vsg-switching`. **Date:** 2026-07-13.
+**Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY = PASS` for the implemented
+structural contracts. GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC` and excluded
+from production acceptance; `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.
+Legacy `SOURCE_VERBATIM` and `SOURCE_TRANSFORMED` labels are documentary
+sublabels of `SOURCE_DEFINED`.
+
+**Branch:** `main`. **Last corrective update:** 2026-07-15.
 
 Per the user directive: the six remaining items are now engineering-design
 contracts, NOT ASSUMED_DIAGNOSTIC values. Each is resolved below with:
@@ -179,13 +181,13 @@ None — selection (a) is autonomous per hierarchy (a) "IEEE14-specific
 published profile with complete dynamic data." Kodsi qualifies. Documented
 in this ledger.
 
-### Falsification test (must be written before Phase 9)
+### Falsification evidence
 
-`test_ieee14_sg1_dynamics_sourced`: assert SG1's `emf6_dae` uses Kodsi
-Table A.2 values (after base conversion), not the classical defaults. Verify
-the no-fault equilibrium residual is finite and the eigenvalues are
-source-consistent (no manual zero-eigenvalue deletion; COI reduction handles
-the reference mode).
+The Kodsi profile, `Tpq0=0` frozen-state reduction, all-KCL SG reference,
+solved `Tm/Efd`, MATPOWER bus-shunt contribution, and equation-shared SSSA are
+covered by the Phase-B1 and `test_ieee14_sg_reference_equilibrium` suites.
+No manual reference-mode eigenvalue deletion or artificial epsilon time
+constant is used.
 
 ---
 
@@ -277,25 +279,20 @@ before the model code.
 - `test_gfl_no_disturbance_ts_holds`: ts_step_kernel direct, max|x(t)-x0|<1e-6.
 - Guards: no external solver; nx==6; omega0 multiplier present; Q-sign correct.
 
-**Deferred to Phase 9** (require `mixed_equilibrium_solve` u-passing changes;
-no `+stability/**` edits in Phase 5): mixed-equilibrium convergence gate,
-pure-GFL-island rejection via the solver, SSSA/TS equation-sharing gate.
-
-### Status
-
-`IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime
-registration, no production-readiness claim.
+**Current integration status:** mixed equilibrium, pure-GFL SG_OFF rejection,
+exact equilibrium initialization, and fixed-step SSSA/TS equation sharing are
+implemented. The GFL model remains `STRUCTURAL_ONLY` because its RMS reduction
+is `PROJECT_DERIVED` and `Kps/Kis` remain `ASSUMED_DIAGNOSTIC`; these results
+do not support production readiness.
 
 ---
 
 ## Item 3 — GFL↔GFM transfer maps + inactive-state rule → PROJECT_DERIVED from continuity + algebraic-residual minimization
 
-> **Scope note (round-2 doc fix):** This item is the GFL↔GFM transfer /
-> mode-switching mission (Phases 10-11), NOT Phase 6. Phase 6 is the
-> GFM/VSG model (item 2, REGFM_B1-derived). The transfer design below is
-> PROJECT_DERIVED but its implementation is gated on the GFM model (Phase 6)
-> and remains a genuine stop for the mode-switching missions until sourced
-> or approved.
+> **Current scope:** the fixed-layout transfer/active-state contract below is
+> implemented as `PROJECT_DERIVED`, including exact inactive-state holds and
+> explicit active-state reduction. A source-verbatim bumpless-transfer proof
+> and complete event-driving trip/switch/reclose path remain readiness work.
 
 ### 1. Exact equations/values required
 
@@ -368,7 +365,7 @@ tests enforce current continuity.
 
 ---
 
-## Item 4 — Current limiter + anti-windup → SOURCE_VERBATIM (REGFM_B1) + PROJECT_DERIVED (anti-windup)
+## Item 4 — Current limiter + anti-windup → G1 IMPLEMENTED / G2 DEFERRED
 
 ### 1. Exact equations/values required
 
@@ -389,11 +386,11 @@ tests enforce current continuity.
 
 ### 3. Compatibility + derivation
 
-Limiter: SOURCE_VERBATIM from REGFM_B1. Anti-windup: PROJECT_DERIVED
-(conditional integration — freeze the integrator when the output is saturated).
-This is the simplest anti-windup that requires no additional parameter
-(no back-calculation gain). The freeze is applied to `x_Eint` when `EVSM`
-hits `[Emin, Emax]`, and to `x_Idlim` when `δIT` hits `[δITmin, δITmax]`.
+The G1 transient clamp is SOURCE_DEFINED from REGFM_B1. The proposed G2
+anti-windup is PROJECT_DERIVED conditional integration, selected because it
+requires no unsourced back-calculation gain. It is not implemented in G1 and
+cannot support a current-limit or production-readiness claim until G2 supplies
+the missing steady-state limiter state and falsification tests.
 
 ### 4. Mutually exclusive choices
 
@@ -551,81 +548,70 @@ standard verification deferred.
 
 ---
 
-## Item 8 — 219 MW post-trip dispatch/energy contract → CASE_DEFINED from IEEE14 case facts + feasibility
+## Item 8 — Post-trip schedule and balancing-reference contract → CASE_DEFINED / PROJECT_DERIVED
 
-### 1. Exact equations/values required
+### 1. Case facts and scheduled dispatch
 
-A dispatch contract that resolves the 219 MW post-trip deficit (load 259 MW
-− remaining Pg 40 MW), proven feasible BEFORE TS:
-- Pre-fault IBR schedules (P, Q) per IBR
-- Post-trip reserve + participation policy (which IBRs pick up the deficit)
-- P/Q/current/energy/ramp limits per IBR
-- Load-shed policy (if required for feasibility)
+IEEE14 has 259 MW load, pre-trip MATPOWER REF `Pg=232.4 MW`, and 40 MW at
+bus 2. The approved Pmax-proportional post-trip schedule is:
 
-### 2. Verified source candidates
+- IBR2: 109.7 MW;
+- IBR3: 49.8 MW;
+- IBR6: 49.8 MW;
+- IBR8: 49.8 MW.
 
-- **IEEE14 case facts (recomputed):** load 259 MW, bus-1 Pg 232.4 MW, buses
-  2-8 Pg 40 MW, buses 2-8 Pmax 440 MW. The 440 MW aggregate Pmax CAN cover
-  the 259 MW load (219 MW deficit is within the 440-40=400 MW available
-  headroom).
-- No inspected source provides a post-trip IBR dispatch policy.
+These values are `CASE_DEFINED` schedules. Aggregate Pmax headroom establishes
+only arithmetic active-power capacity; it does not prove network, voltage,
+reactive-power, current, ramp, or energy feasibility.
 
-### 3. Compatibility + derivation
+### 2. Exact selected-GFM and reference contract
 
-**CASE_DEFINED from the IEEE14 case facts + a deterministic feasibility
-equation.** The contract:
-- Pre-fault: SG1 (bus 1) Pg=232.4 MW; IBR2 (bus 2) Pg=40 MW; IBR3/IBR6/IBR8
-  Pg=0 (as in the case). Load 259 MW; SG1 supplies 232.4 + losses.
-- Post-trip: SG1 trips. The 219 MW deficit is distributed across the 4 IBRs
-  by participation factor proportional to their Pmax:
-  - IBR2 (Pmax 140 MW): `219 * 140/440 = 69.7 MW` → total Pg = 40+69.7 = 109.7 MW
-  - IBR3 (Pmax 100 MW): `219 * 100/440 = 49.8 MW` → Pg = 49.8 MW
-  - IBR6 (Pmax 100 MW): `219 * 100/440 = 49.8 MW` → Pg = 49.8 MW
-  - IBR8 (Pmax 100 MW): `219 * 100/440 = 49.8 MW` → Pg = 49.8 MW
-  - Total post-trip Pg = 109.7 + 49.8*3 = 259.1 MW ≈ load (losses covered by
-    the Pmax headroom; if PF losses make this infeasible, the GFM IBRs
-    provide voltage support and the slack is absorbed within headroom).
-- Participation: Pmax-proportional (deterministic, CASE_DEFINED).
-- Current limits: REGFM_B1 `ImaxSS = 1.0 pu` (on each IBR's machine base),
-  `ImaxF = 1.5 pu` (transient). Each IBR's post-trip Pg is within its Pmax
-  (109.7 < 140, 49.8 < 100), so steady-state current is within ImaxSS.
-- Ramp: IBRs are power-electronic (ramp ~ instantaneous relative to
-  electromechanical timescale); modeled as immediate Pg setpoint change at
-  the GFM activation event (after `T_up`).
-- Energy: no energy-source constraint (IBRs assumed grid-connected with
-  sufficient DC-link energy; standard for transmission-connected IBRs).
-- Load-shed: NONE required (aggregate headroom 400 MW > 219 MW deficit).
+- `n_gfm_required` is explicit and may be 1, 2, 3, or larger.
+- `selected_gfm_indices` must equal the complete online runtime GFM set.
+- Exactly one selected GFM is `reference_resource_index`; every other selected
+  member remains a physical GFM.
+- Non-reference resources retain their committed modes and scheduled
+  active-power inputs.
+- Every GFM reactive output is solved by the network and voltage-regulation
+  equations.
+- The reference GFM `P_ref` is an equilibrium unknown that balances load and
+  losses. The result reports scheduled P, solved P, deviation, and Pmax.
+- With an online SG, SG `Tm/Efd` are the solved REF controls instead; the
+  committed GFM reference becomes active only on the SG_OFF right limit.
 
-**Feasibility proof (before TS):** PF must converge for the post-trip
-dispatch with the 4 IBRs at their participation Pg and voltage-forming
-(GFM) where selected. This is verified in Phase 4 (mixed equilibrium
-solver) BEFORE TS. If PF does not converge, the contract is infeasible →
-STOP (physical infeasibility, genuine stop).
+Classification: schedules and selected-count mission requirement
+`CASE_DEFINED`; coordinate removal, reference-input solution, and atomic
+selection validation `PROJECT_DERIVED`.
 
-### 4. Mutually exclusive choices
+### 3. Feasibility and failure semantics
 
-- (a) Pmax-proportional participation (SELECTED) — deterministic, CASE_DEFINED.
-- (b) Equal participation (each IBR 219/4=54.75 MW) — REJECTED (ignores
-  Pmax; IBR2 would be at 94.75/140=68%, IBR3/6/8 at 54.75/100=55%, uneven
-  but feasible; Pmax-proportional is more principled).
-- (c) Load-shed — REJECTED (not needed; headroom suffices).
+Feasibility requires:
 
-### 5. Smallest user decision required
+- converged project-owned Newton solve;
+- every rectangular KCL row retained with residual `<1e-6`;
+- reduced Jacobian `rcond>1e-10`;
+- exact selected/count/reference validation;
+- all currently implemented P/Q/voltage/transient-current checks.
 
-None — (a) is CASE_DEFINED from case facts + a deterministic feasibility
-equation. Phase 4 verifies PF convergence (physical infeasibility = stop).
+Pmax compliance does not prove `ImaxSS` compliance. Phase-G1 implements only
+the sourced transient `ImaxF` clamp; no steady-state-current readiness claim
+is allowed before Phase-G2.
 
-### Falsification tests (Phase 4/8)
+Malformed, duplicate, offline, incapable, count-mismatched, order-mismatched,
+or out-of-set reference selections fail closed without mutating the original
+hybrid state. A nonconvergent or limit-violating physical root is reported as
+infeasible; dispatch, gains, tolerances, and solver settings are not adjusted
+to force convergence.
 
-- `test_dispatch_pmax_proportional`: participation factors sum to 1, each
-  proportional to Pmax.
-- `test_dispatch_post_trip_feasible`: post-trip PF converges within device
-  limits (P, Q, current, voltage).
-- `test_dispatch_no_load_shed`: no load shed required.
-- `test_dispatch_current_within_imaxss`: each IBR's steady-state current ≤
-  ImaxSS.
-- `test_dispatch_pf_infeasible_rejected`: a deliberately-infeasible
-  dispatch (e.g. all IBRs at 0) fails closed.
+### 4. Falsification evidence
+
+- `test_ieee14_multi_gfm_equilibrium`: physical one/two/three-GFM roots,
+  noncontiguous selection, non-first reference, all-KCL and Pmax reporting.
+- `test_ibr_index_selected_gfm_commit`: exact-size enumeration and atomic
+  event commitment/rollback.
+- Phase 4/8 gates: SG_ON and SG_OFF physical equilibria, pure-GFL rejection.
+- SG_OFF TS/SSSA contract suites: exact `u_eq`, immutable context, active maps,
+  all KCL, and no per-step re-slack.
 
 ---
 
@@ -650,20 +636,22 @@ only if `Ω_z(m) ≤ -gamma_req` (Ω = non-reference spectral abscissa).
 - A damping ratio ζ ≥ 5% is a standard control-systems stability target.
 - For a real eigenvalue σ (Ω), the modal envelope decays as `exp(σ·t)`. For
   ζ=5% on a 1 Hz mode, σ ≈ -2π·1·0.05 ≈ -0.31 rad/s.
-- Conservatively, `gamma_req = 0.1 rad/s` (more conservative than -0.31;
-  requires a 0.1/s decay rate, i.e. envelope halves in ~7 s). This ensures
-  visible damping without being so strict that no configuration qualifies.
+- The frozen project minimum is `gamma_req = 0.1 rad/s`. It requires a 0.1/s
+  decay rate (envelope half-life about 7 s) but is less stringent than the
+  illustrative 0.31/s value; it is not presented as a sourced normative
+  margin.
 
-**Engineering rationale:** gamma_req = 0.1 rad/s is derived from a standard
-5% damping-ratio target on the 1 Hz electromechanical mode, then made
-conservative. It is CASE_DEFINED (project-design from an a-priori study,
-frozen before viewing candidate results per directive 6).
+**Engineering rationale:** gamma_req = 0.1 rad/s is a `CASE_DEFINED`, a-priori
+project minimum informed by the modal-decay calculation and frozen before
+candidate results. The current selector does not claim production evidence
+until a real topology/equilibrium/SSSA evaluator supplies it.
 
 ### 4. Mutually exclusive choices
 
-- (a) gamma_req = 0.1 rad/s (SELECTED) — CASE_DEFINED, a-priori, conservative.
-- (b) gamma_req = 0.31 rad/s (exact 5% damping at 1 Hz) — REJECTED (less
-  conservative; 0.1 gives margin).
+- (a) gamma_req = 0.1 rad/s (SELECTED) — CASE_DEFINED and frozen a-priori.
+- (b) gamma_req = 0.31 rad/s (illustrative 5% damping at 1 Hz) — not selected;
+  it is a different, more stringent project criterion rather than a source
+  requirement.
 - (c) gamma_req = 0 (just stable) — REJECTED (no margin; fails directive
   "production-required margin").
 
@@ -686,18 +674,18 @@ None — (a) is CASE_DEFINED from the a-priori study. Documented derivation.
 
 ---
 
-## Summary: all 6 blockers resolved as engineering-design contracts
+## Summary: classifications resolved; readiness work remains
 
 | # | Item | Classification | Value/Source |
 |---|------|---------------|--------------|
 | 7 | IEEE14 SG dynamics | CASE_DEFINED | Kodsi 60Hz Table A.2 (base-converted) |
 | 1 | GFL model | PROJECT_DERIVED | Reduction from Ding EMT (phasor-compatible) |
 | 3 | GFL↔VSG transfer | PROJECT_DERIVED | Continuity + algebraic-residual minimization |
-| 4 | Current limiter + anti-windup | SOURCE_VERBATIM + PROJECT_DERIVED | REGFM_B1 Eqs 10-13 + conditional-integration freeze |
-| 5 | SG synchronism | CASE_DEFINED | Conservative standard ranges (ΔV 5%, Δf 0.06Hz, Δθ 10deg) |
-| 6 | Delays | CASE_DEFINED | Conservative standard ranges (T_up 0.12s, etc.) |
-| 8 | 219 MW dispatch | CASE_DEFINED | Pmax-proportional participation, feasibility-proven in Phase 4 |
-| 9 | gamma_req | CASE_DEFINED | 0.1 rad/s (a-priori 5% damping at 1 Hz, conservative) |
+| 4 | Current limiter + anti-windup | G1 SOURCE_DEFINED + PROJECT_DERIVED implemented; G2 deferred | Eq.13 clamp + VPLL freeze implemented; PQ priority/Fig.6/Eqs.10-11/anti-windup not ready |
+| 5 | SG synchronism | CASE_DEFINED | Frozen project thresholds; not SOURCE_DEFINED IEEE-TR-121 values |
+| 6 | Delays | CASE_DEFINED + PROJECT_DERIVED | Frozen project delays and modal-settling relation; integrated timing deferred |
+| 8 | Post-trip dispatch/reference | CASE_DEFINED + PROJECT_DERIVED | Pmax-proportional schedules; one reference P solved; all-KCL structural feasibility verified |
+| 9 | gamma_req | CASE_DEFINED | 0.1 s^-1 frozen a-priori; real candidate evidence deferred |
 
 The GFM slice uses SOURCE_DEFINED/CASE_DEFINED/PROJECT_DERIVED values, but the
 GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC` and are excluded from production

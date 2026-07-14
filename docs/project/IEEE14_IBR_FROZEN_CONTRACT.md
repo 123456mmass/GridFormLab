@@ -4,10 +4,10 @@
 structural slice; `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.
 **Branch:** `main`. **Last corrective update:** 2026-07-15.
 
-This document freezes the mathematical profile that CAN be source-closed
-from the primary sources the user provided, and explicitly fences the items
-that remain genuine stop conditions. Per the user directive, autonomous
-selection used the predeclared hierarchy where alternatives existed.
+This document freezes the sourced and explicitly approved project-derived
+mathematical profile and fences the items that remain readiness gaps. Per the
+user directive, autonomous selection used the predeclared hierarchy where
+alternatives existed.
 
 ## 2026-07-15 authoritative corrective addendum
 
@@ -79,7 +79,7 @@ classes.
   internal quantities (REGFM_B1 Eqs. 6-9). The composite holds y in the
   network frame; devices convert internally.
 
-## SG1 dynamic model (item 7 — FROZEN STRUCTURE, VALUES PENDING)
+## SG1 dynamic model (item 7 — CASE_DEFINED, implemented)
 
 - **Model:** IEEE 1110-2002 Model 2.2 (round-rotor, 6th-order subtranscent;
   Clause 5.3.2 p.20; d-axis Eq. 13/20-23, q-axis Eq. 24-26). Equivalent to
@@ -90,12 +90,11 @@ classes.
   The project's existing `classical_dae`/`emf6_dae` already implement this
   form; the swing-equation STRUCTURE is sourced via the existing SG path
   (Padiyar/Kundur provenance already in repo).
-- **VALUES:** ⛔ STOP. IEEE14 case has no `.machines`. Two conflicting typical
-  datasets (Demetriou 50 Hz/448 MVA vs Kodsi 60 Hz/615 MVA, both Anderson &
-  Fouad). IEEE 1110-2002 permits typical data for planning but does NOT
-  endorse Anderson & Fouad. Hierarchy does not identify one unambiguously.
-  → Requires a user-provided sourced IEEE14 dynamic dataset OR explicit
-  approval of one typical dataset as CASE_DEFINED.
+- **VALUES:** the approved `CASE_DEFINED` profile is Kodsi Table A.2 for the
+  60 Hz IEEE14 SG1 (615 MVA machine base), converted at the device boundary.
+  Demetriou's 50 Hz profile and the old generic classical defaults are not
+  mixed into this case. `Tpq0=0` is implemented as the exact singular limit
+  with `Edp=0` frozen before equilibrium and eig reduction.
 
 ## VSG/GFM model (item 2 — CLOSED, Phase 6 implemented)
 
@@ -164,8 +163,9 @@ classes.
   states, no new time constant.
 - **PLL equation form (frozen):** `d(eps_pll)/dt = Vq_pll`,
   `d(delta_pll)/dt = omega0*(kpPLL*Vq_pll + kiPLL*eps_pll)` (omega0 multiplier
-  PRESENT; relative network frame so the omega_n term drops). REGFM_B1 PLL
-  output limits and low-voltage freeze deferred to Phase 14 (FRT).
+  PRESENT; relative network frame so the omega_n term drops). GFL-specific PLL
+  output limits and low-voltage freeze remain deferred; the implemented GFM
+  `VPLLfrz` behavior is a separate REGFM_B1 path.
 - **Q-sign (frozen):** `i_q* = -Kps*(Qref - Q_f) - Kis*phi_Q` (negative,
   because Q = -V0*i_q* at lock). `i_d* = +Kps*(Pref - P_f) + Kis*phi_P`.
 - **Base (frozen):** system base only (S_base = 100 MVA); NO Mbase, NO
@@ -194,15 +194,15 @@ classes.
   equilibrium/SSSA/TS sharing is now implemented, but `Kps/Kis` remain
   `ASSUMED_DIAGNOSTIC`; therefore this cannot support production readiness.
 
-## GFL↔VSG transfer + inactive-state rule (item 3 — ⛔ STOP)
+## GFL↔VSG transfer + inactive-state rule (item 3 — PROJECT_DERIVED structural contract)
 
-- Ding §IV-B gives ONLY the "freeze integrals" concept (no equations, no
-  map, no shadow controller, no synchronism check, no inactive-state
-  evolution). REGFM_B1 has no mode switching.
-- ⛔ A bumpless transfer map and inactive-state rule cannot be sourced
-  without inventing a semantic choice. → Blocks the GFL↔GFM transfer /
-  mode-switching missions (Phases 10-11). This does NOT block Phase 6 (the
-  GFM/VSG model, which proceeds from item 2).
+- Ding §IV-B supplies only the freeze-integrals concept; REGFM_B1 does not
+  specify mode switching. A source-verbatim bumpless map therefore remains
+  unavailable.
+- The approved project contract is a fixed 15-state superset with explicit
+  active-state maps, deterministic reset/continuity handling, and exact holds
+  for inactive online states. This structural contract is implemented and
+  tested; it is not represented as source-verbatim transfer validation.
 
 ## Current limiter + anti-windup (item 4 — G1 PARTIAL IMPLEMENTATION)
 
@@ -211,76 +211,60 @@ classes.
 - G2 defers Eqs.10-11 steady-state PQ priority, Fig.6 active-current
   integrator, Emax/Emin actuator logic, and PROJECT_DERIVED anti-windup.
 
-## SG synchronism (item 5 — ⛔ STOP)
+## SG synchronism (item 5 — CASE_DEFINED structural policy, integration open)
 
-- 2019-5.pdf = IEEE PSRC minutes (not TR-121). No numerical thresholds.
-- ⛔ IEEE TR-121 itself not available. → Blocks Phase 11.
+- The inspected IEEE PSRC minutes are not IEEE TR-121 and provide no numerical
+  thresholds. Any present thresholds are therefore `CASE_DEFINED`, not
+  `SOURCE_DEFINED`.
+- Guard primitives exist, but the production runner is still no-event/static-
+  context. End-to-end synchronism/reclose enforcement remains NOT_READY.
 
-## Delays (item 6 — ⛔ STOP)
+## Delays (item 6 — CASE_DEFINED structural policy, integration open)
 
-- No inspected source. → Blocks Phases 10-11.
+- No inspected source supplies the complete switching-delay set. Current
+  values are `CASE_DEFINED` and frozen before results; integrated event timing,
+  right-limit handling, and rollback remain unvalidated.
 
-## Dispatch/energy contract (item 8 — ⛔ STOP)
+## Dispatch/reference-power contract (item 8 — CASE_DEFINED structural contract)
 
-- 219 MW post-trip deficit. No sourced reserve/participation/ramp/load-shed
-  policy. → Blocks Phase 4 (mixed equilibrium) and Phase 8 (case/dispatch).
+- The Pmax-proportional schedule is a `CASE_DEFINED` non-reference dispatch,
+  not a source-verbatim reserve policy and not a feasibility proof by itself.
+- For SG_OFF operation, the all-KCL equilibrium keeps non-reference GFM
+  schedules fixed and solves exactly one selected reference-GFM `P_ref` for
+  load and losses. It records scheduled/solved P, deviation, and Pmax status.
+- `P<Pmax` does not prove `ImaxSS`; the steady-state limiter remains Phase-G2.
 
-## Selection margin γ_req (item 9 — ⛔ STOP)
+## Selection margin γ_req (item 9 — CASE_DEFINED, evaluator integration open)
 
-- Ding: "sufficiently negative" only. GFL/GFM ratio paper: PM ≥ 30°
-  (impedance-based, different domain). No eigenvalue-based normative value.
-  → Blocks Phase 8 (selector) until resolved.
+- Ding provides no normative eigenvalue margin. The frozen project threshold is
+  therefore `CASE_DEFINED`, not source-verbatim. The selector currently
+  enumerates exact-size candidates but cannot mark one ready without real
+  topology/equilibrium/SSSA evidence from an authorized evaluator.
 
 ## Autonomous selections made (hierarchy applied)
 
 1. **VSG profile = REGFM_B1** (hierarchy b: complete standard profile
    applicable to the GFM device class). Rejected: Ding's droop GFM (not
    VSG), Zhong & Weiss synchronverter (conceptual, no verbatim match).
-2. **SG model structure = IEEE 1110-2002 Model 2.2** (hierarchy b: complete
-   standard profile; the project's existing emf6_dae already implements
-   this). Values PENDING (hierarchy a not satisfiable — conflicting data).
+2. **SG model structure = IEEE 1110-2002 Model 2.2** and **SG1 values = Kodsi
+   60 Hz Table A.2** as the approved `CASE_DEFINED` IEEE14 profile. No dataset
+   mixing.
 3. **KCL/sign/per-unit conventions** = Track A composite canonical (YV-I,
    positive injection, system base) — consistent with all sources.
 
-## What proceeds autonomously (generic, no missing decision)
+## Current readiness boundary
 
-- **Phase 2** — generic scheduled+guard event architecture (synthetic
-  fixtures; does not require GFL/VSG models or dispatch contract).
-- **Phase 3** — persistent hybrid-state/rollback contract (synthetic
-  fixtures).
+The structural equilibrium/SSSA/fixed-step TS path, exact index-selected GFM
+contract, and one-reference all-KCL formulation are implemented. Production
+readiness is still blocked by:
 
-## What is blocked (genuine stop, evidence-backed handoff)
+1. source-closing the GFL `Kps/Kis` values;
+2. Phase-G2 steady-state limiting, PQ priority, Fig.6 state, and anti-windup;
+3. an integrated topology + equilibrium + SSSA configuration evaluator;
+4. event-driven fault/trip/switch/reclose with sourced or explicitly approved
+   synchronism/timing contracts and right-limit rollback;
+5. adaptive hybrid simulation and independent validation.
 
-- **Phase 4** (mixed equilibrium) — item 8.
-- **Phase 5** (GFL model) — STRUCTURAL_ONLY (done; RMS reduction
-  PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC). Production readiness pending
-  source-closing the ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-
-  equilibrium integration.
-- **Phase 6** (GFM/VSG model) — proceeds from item 2 (PARTIAL-TO-CLOSEABLE);
-  NOT blocked by item 3.
-- **GFL↔GFM transfer / mode-switching** (Phases 10-11) — item 3.
-- **Phases 7-17** — depend on 5/6.
-- **Phases 10-13** — items 5, 6.
-
-## Smallest user decisions needed (to unblock)
-
-1. **IEEE14 SG dynamic dataset** (item 7): provide a sourced dataset OR
-   explicitly approve one typical dataset (Demetriou or Kodsi) as
-   CASE_DEFINED with documented limitations.
-2. **GFL positive-sequence RMS reduction** (item 1): approve a specific
-   reduced-order GFL state vector (e.g., PLL angle + frequency + P/Q
-   current references) sourced from the standard utility representation,
-   OR provide a source that states it explicitly.
-3. **GFL↔VSG transfer map + inactive-state rule** (item 3): approve a
-   specific sourced or derived policy (e.g., frozen inactive states with
-   documented zero-eigenvalue handling per correction 6).
-4. **SG synchronism thresholds** (item 5): provide IEEE TR-121 or approve
-   sourced thresholds (ΔV, Δf/slip, Δθ, dwell, timeout).
-5. **Delays** (item 6): provide sourced T_up, T_sg_min_off, ρ, T_minimum_hold,
-   T_guard, T_lockout values OR approve a sourced standard.
-6. **Dispatch/energy contract** (item 8): provide a sourced post-trip
-   reserve/participation/ramp/load-shed policy resolving the 219 MW
-   deficit.
-7. **γ_req** (item 9): provide a sourced eigenvalue-based margin OR approve
-   converting PM ≥ 30° to an equivalent eigenvalue criterion with
-   documented assumptions.
+These open items do not retroactively mark implemented structural phases as
+unstarted or remove their test evidence. They keep
+`IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.

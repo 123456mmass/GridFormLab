@@ -60,8 +60,8 @@ testCase.verifyGreaterThanOrEqual(total_pg, 259.0, 'post-trip Pg covers load 259
 end
 
 % =========================================================================
-function test_dispatch_current_within_imaxss(testCase)
-% Each IBR's post-trip Pg is within its Pmax (steady-state current < ImaxSS).
+function test_dispatch_active_power_within_pmax(testCase)
+% Pmax headroom is an active-power check only; it does not prove ImaxSS.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 pt = c.dispatch_contract.post_trip.post_trip_Pg_MW;
 testCase.verifyLessThan(pt.IBR2, c.dispatch_contract.pmax_MW.IBR2, 'IBR2 < Pmax.');

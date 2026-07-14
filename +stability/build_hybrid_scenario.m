@@ -32,7 +32,7 @@ function scenario = build_hybrid_scenario(case_data, resources, scenario_opt)
 %     scenario.selector       - γ_req + policy
 %     scenario.metadata       - case + config fingerprint
 %
-%   STATUS: STRUCTURAL_ONLY (Phase B0 foundation).
+%   STATUS: STRUCTURAL_ONLY foundation with exact index-selected GFM metadata.
 %
 %   Source: plan agent-a-atomic-lagoon.md (Layer 1/Layer 2 seam).
 

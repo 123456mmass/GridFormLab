@@ -496,39 +496,39 @@ end
 % =========================================================================
 function print_eigenvalue_table(A, state_names, lam)
 %PRINT_EIGENVALUE_TABLE  Eigenvalues with f(Hz)/zeta + dominant state
-%   via right-eigenvector magnitude.
+%   using participation factors (scale-invariant left×right product).
 if nargin<3||isempty(A)||isempty(lam), return; end
 nx=size(A,1); lam=lam(:); nms=state_names(:);
 if nx~=numel(lam)||nx~=numel(nms), return; end
-[V,Dval]=eig(A); d=diag(Dval);
+[V,Dval]=eig(A); W=inv(V); d=diag(Dval);
 perm=zeros(nx,1); tag=false(nx,1);
 for i=1:nx
   for j=1:nx
     if ~tag(j)&&abs(d(j)-lam(i))<1e-6, perm(i)=j; tag(j)=true; break; end
   end, end
 if any(perm==0), perm=(1:nx)'; end
-V=V(:,perm);
-fprintf('\n  No  Dominant state                   Real       Imag (abs)   f_Hz    zeta\n');
+fprintf('\n  No  Dominant state               Real          Imag         f(Hz)    zeta\n');
 done=false(nx,1); row=0;
 for i=1:nx
   if done(i), continue; end; row=row+1;
-  re_i=real(lam(i)); im_i=abs(imag(lam(i)));
+  pc=perm(i); re_i=real(lam(i)); im_i=abs(imag(lam(i)));
+  pf_vals=abs(V(:,pc).*W(pc,:).'); [~,bi]=max(pf_vals); lbl=char(nms{bi});
   if im_i>1e-8
     cj=0; for j=i+1:nx
       if ~done(j)&&abs(real(lam(j))-re_i)<1e-8&&abs(abs(imag(lam(j)))-im_i)<1e-8
         cj=j; break; end; end
-    [~,bi]=max(abs(V(:,i))); lbl=char(nms{bi});
     if cj
-      [~,bj]=max(abs(V(:,cj))); l2=char(nms{bj});
+      pc2=perm(cj);
+      pf2=abs(V(:,pc2).*W(pc2,:).'); [~,bj]=max(pf2); l2=char(nms{bj});
       if ~strcmp(lbl,l2), lbl=[lbl ' / ' l2]; end; done(cj)=true;
     end
     done(i)=true;
     fhz=im_i/(2*pi); zet=-re_i/(abs(lam(i))+eps);
-    fprintf('%4d  %-30s  %+12.6e %12.6e %9.4f %8.4f\n',row,lbl,re_i,im_i,fhz,zet);
+    fprintf('%4d  %-24s  %+10.4e %+10.4e %8.3f %7.4f\n',row,lbl,re_i,im_i,fhz,zet);
   else
-    [~,bi]=max(abs(V(:,i))); lbl=char(nms{bi}); done(i)=true;
+    done(i)=true;
     if re_i<0, z=1.0; else z=0.0; end
-    fprintf('%4d  %-30s  %+12.6e %12s %9.4f %8.4f\n',row,lbl,re_i,'(real)',0.0,z);
+    fprintf('%4d  %-24s  %+10.4e    (real)    %8.3f  %7.4f\n',row,lbl,re_i,0.0,z);
   end
 end
 end

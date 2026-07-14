@@ -20,9 +20,9 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %   Model: REGFM_B1 (NREL/TP-5D00-90260) VSM grid-forming inverter. Voltage-
 %   source-behind-impedance output stage (Eq.13), VSM swing control (Fig.2),
 %   measurement filters (Eqs.1-5), Q-V droop + voltage PI (Fig.3), PLL (Fig.4).
-%   STRUCTURAL_ONLY: all limiters (Delta-omega, Delta-omegaPLL, Emax/Emin,
-%   delta_max, ImaxF piecewise clamp, active-current limiter Fig.6, PLL freeze)
-%   are deferred to Phase 14 (consistent with the GFL Phase 5 precedent).
+%   Phase-G-1 implements Eq.13 ImaxF transient clamp (Fig.7) and VPLLfrz PLL
+%   freeze (Fig.4). Anti-windup, PQ priority, Fig.6 active-current limiter,
+%   Eqs.10-11 Emin/Emax are deferred to Phase-G-2.
 %
 %   Per-unit base contract (user-confirmed, FROZEN before results):
 %     External ABI: u(1)=P_ref on SYSTEM base (Sbase=100 MVA).
@@ -94,8 +94,10 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %     - u=[P_ref;V_ref] mapping: SOURCE_TRANSFORMED/PROJECT_MAPPED.
 %     - Mbase: CASE_DEFINED unity-PF nameplate proxy.
 %
-%   STATUS: IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY. No catalog/runtime
-%   registration, no production-readiness claim. Limiters/FRT deferred (Phase 14).
+%   STATUS: IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY.
+%   Phase-G-1 (Eq.13 clamp + VPLL freeze): IMPLEMENTED_STRUCTURAL_ONLY.
+%   Phase-G-2 (anti-windup, PQ priority, Fig.6, Eqs.10-11): DEFERRED.
+%   IBR_PRODUCTION_INTEGRATION_READY = NOT_READY.
 %
 %   Source: docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md;
 %           docs/project/IEEE14_IBR_DECISION_LEDGER.md (Item 2);
@@ -240,20 +242,21 @@ bp = bus_position;   % 1-based index into y for this device's bus
 % --- Differential RHS f(t, x_dev, y, u_dev, event_context) -----------------
 f = @(t, x_dev, y, u_dev, event_context) gfm_f( ...
     x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, Re, XL, ...
-    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa);
+    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxF, VPLLfrz);
 
 % --- current_injection(t, x_dev, y, u_dev, event_context): complex, INTO net
-current_injection = @(t, x_dev, y, u_dev, event_context) gfm_current_injection( ...
-    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL);
+current_injection = @(t, x_dev, y, u_dev, event_context) ...
+    gfm_current_injection_g1( ...
+    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF);
 
 % --- electrical_power(t, x_dev, y, u_dev, event_context): Pe (pu, system base)
-electrical_power = @(t, x_dev, y, u_dev, event_context) gfm_pe( ...
-    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL);
+electrical_power = @(t, x_dev, y, u_dev, event_context) gfm_pe_g1( ...
+    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF);
 
 % --- reconstruct(t, x_dev, y, u_dev, event_context): struct -----------------
-reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct( ...
+reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct_g1( ...
     x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, Re, XL, ...
-    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase);
+    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxF, VPLLfrz);
 
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) --------------
 dev = struct();
@@ -305,7 +308,27 @@ dev.provenance = struct( ...
     'swing_form','SOURCE_TRANSFORMED (Fig.2 block-diagram collapse, frozen under omegaFlag=0,FFlag=1,omega_ref=1 pu)', ...
     'pu_base_contract','external=system base; internal swing/filters=inverter base (kappa=Sbase/Mbase); no double conversion', ...
     'param_overridden', overridden, ...
-    'readiness','STRUCTURAL_ONLY');
+    'readiness','STRUCTURAL_ONLY', ...
+    'phase_g1_status','IMPLEMENTED_STRUCTURAL_ONLY');
+end
+
+% =========================================================================
+function [I_out_sys, I_unc_sys, I_limited] = limited_current( ...
+    EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF)
+%LIMITED_CURRENT  Shared Eq.13 clamp (Phase-G-1). Called by gfm_f, current_injection, pe, reconstruct.
+%   REGFM_B1 Eq.13, Fig.7. ImaxF on inverter base, converted to system base.
+%   Source: REGFM_B1 NREL/TP-5D00-90260 Eq.13, Fig.7, Table 1.
+Z_sys = kappa * (Re + 1i*XL);           % PROJECT_DERIVED: convert impedance to system base
+ImaxF_sys = ImaxF / kappa;              % PROJECT_DERIVED: convert threshold to system base
+I_unc_sys = (EVSM * exp(1i*delta_VSM) - V_bus) / Z_sys;
+I_mag = abs(I_unc_sys);
+if I_mag < ImaxF_sys
+    I_out_sys = I_unc_sys;
+    I_limited = false;
+else
+    I_out_sys = ImaxF_sys * (I_unc_sys / I_mag);   % circular saturation
+    I_limited = true;
+end
 end
 
 % =========================================================================
@@ -334,8 +357,8 @@ end
 
 % =========================================================================
 function dx = gfm_f(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, ...
-    Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa)
-%GFM_F  Differential RHS (11 states). Inverter-base internal.
+    Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxF, VPLLfrz)
+%GFM_F  Differential RHS (11 states). Phase-G-1: shared limited current + PLL freeze.
 omega_m    = x_dev(1);
 delta_VSM  = x_dev(2);
 x_washout  = x_dev(3);
@@ -350,18 +373,20 @@ Iqinv_f    = x_dev(11);
 [P_ref_sys, V_ref] = refs_from_u(u_dev);
 P_ref_inv = kappa * P_ref_sys;   % boundary mapping (no double conversion)
 
-% Network-frame bus voltage and current (Eq.13 linear branch).
+% Network-frame bus voltage.
 V_bus = complex(y(2*bp-1), y(2*bp));
 EVSM  = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
-I = (EVSM*exp(1i*delta_VSM) - V_bus)/(Re + 1i*XL);
 
-% Measured power (generator convention, SYSTEM base).
-S = V_bus * conj(I);
+% G1: shared limited current (Eq.13, Fig.7).
+[I_out, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
+
+% Measured power (generator convention, SYSTEM base). Uses limited I_out.
+S = V_bus * conj(I_out);
 P_meas = real(S);
 Q_meas = imag(S);
 
-% dq currents via PLL angle (Eqs.6-7): Ix=Re(I), Iy=Im(I).
-Ix = real(I);  Iy = imag(I);
+% dq currents via PLL angle (Eqs.6-7). Uses limited I_out.
+Ix = real(I_out);  Iy = imag(I_out);
 Id =  Ix*cos(delta_PLL) + Iy*sin(delta_PLL);
 Iq = -Ix*sin(delta_PLL) + Iy*cos(delta_PLL);
 % dq voltage (Eqs.8-9).
@@ -376,11 +401,16 @@ d_delta_VSM = omega0*omega_m;
 % Voltage PI (Fig.3).
 d_x_Eint = V_ref - Vinv_f;
 
-% PLL (Fig.4).
-d_x_PLL_int = Vq;
-d_delta_PLL = omega0*(kpPLL*Vq + kiPLL*x_PLL_int);
+% G1: PLL freeze at low voltage (REGFM_B1 Fig.4, Table 1 VPLLfrz=0.05 pu).
+if abs(V_bus) < VPLLfrz
+    d_x_PLL_int = 0;
+    d_delta_PLL = 0;
+else
+    d_x_PLL_int = Vq;
+    d_delta_PLL = omega0*(kpPLL*Vq + kiPLL*x_PLL_int);
+end
 
-% Filters (Eqs.1-5, kappa = Sbase/Mbase).
+% Filters (Eqs.1-5, kappa = Sbase/Mbase). Uses limited Id/Iq/P_meas.
 d_Pinv_f  = (kappa*P_meas  - Pinv_f)  / Tpf;
 d_Idinv_f = (kappa*Id      - Idinv_f) / TIf;
 d_Qinv_f  = (kappa*Q_meas  - Qinv_f)  / TQf;
@@ -392,31 +422,36 @@ dx = [d_omega_m; d_delta_VSM; d_x_washout; d_x_Eint; d_delta_PLL; d_x_PLL_int; .
 end
 
 % =========================================================================
-function I = gfm_current_injection(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL)
-%GFM_CURRENT_INJECTION  Complex current injection (positive INTO network, system base).
-%   Eq.13 LINEAR branch (ImaxF piecewise clamp deferred to Phase 14).
+function I = gfm_current_injection_g1(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF)
+%GFM_CURRENT_INJECTION_G1  Phase-G-1: shared limited current (REGFM_B1 Eq.13, Fig.7).
 delta_VSM = x_dev(2);
 x_Eint    = x_dev(4);
 Qinv_f    = x_dev(9);
 Vinv_f    = x_dev(10);
-[P_ref_sys, V_ref] = refs_from_u(u_dev);
+[~, V_ref] = refs_from_u(u_dev);
 V_bus = complex(y(2*bp-1), y(2*bp));
 EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
-I = (EVSM*exp(1i*delta_VSM) - V_bus)/(Re + 1i*XL);
+[I, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
 end
 
 % =========================================================================
-function Pe = gfm_pe(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL)
-%GFM_PE  Electrical active power (pu, system base). S = V*conj(I).
-I = gfm_current_injection(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL);
+function Pe = gfm_pe_g1(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF)
+%GFM_PE_G1  Phase-G-1: electrical power from shared limited current (system base).
+delta_VSM = x_dev(2);
+x_Eint    = x_dev(4);
+Qinv_f    = x_dev(9);
+Vinv_f    = x_dev(10);
+[~, V_ref] = refs_from_u(u_dev);
 V_bus = complex(y(2*bp-1), y(2*bp));
+EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+[I, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
 Pe = real(V_bus * conj(I));
 end
 
 % =========================================================================
-function out = gfm_reconstruct(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, ...
-    kpv, kiv, Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase)
-%GFM_RECONSTRUCT  Device outputs for diagnostics.
+function out = gfm_reconstruct_g1(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, ...
+    kpv, kiv, Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxF, VPLLfrz)
+%GFM_RECONSTRUCT_G1  Phase-G-1: device outputs with limiter metadata.
 omega_m    = x_dev(1);
 delta_VSM  = x_dev(2);
 x_washout  = x_dev(3);
@@ -431,17 +466,22 @@ Iqinv_f    = x_dev(11);
 [P_ref_sys, V_ref] = refs_from_u(u_dev);
 V_bus = complex(y(2*bp-1), y(2*bp));
 EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
-I = (EVSM*exp(1i*delta_VSM) - V_bus)/(Re + 1i*XL);
-S = V_bus * conj(I);
+[I_out, I_unc, I_limited] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
+ImaxF_sys = ImaxF / kappa;
+S = V_bus * conj(I_out);
+PLL_frozen = abs(V_bus) < VPLLfrz;
 out = struct( ...
     'omega_m', omega_m, 'delta_VSM', delta_VSM, 'x_washout', x_washout, ...
     'x_Eint', x_Eint, 'delta_PLL', delta_PLL, 'x_PLL_int', x_PLL_int, ...
     'Pinv_f', Pinv_f, 'Idinv_f', Idinv_f, 'Qinv_f', Qinv_f, ...
     'Vinv_f', Vinv_f, 'Iqinv_f', Iqinv_f, ...
-    'EVSM', EVSM, 'I_gfm', I, 'Vbus', abs(V_bus), ...
+    'EVSM', EVSM, 'I_gfm', I_out, 'Vbus', abs(V_bus), ...
     'Pe', real(S), 'Qe', imag(S), ...
     'kappa', kappa, 'Mbase', Mbase, 'Sbase', Sbase, ...
-    'P_ref_inv', kappa*P_ref_sys);
+    'P_ref_inv', kappa*P_ref_sys, ...
+    'ImaxF_inv', ImaxF, 'ImaxF_sys', ImaxF_sys, ...
+    'I_unc_sys', I_unc, 'I_abs_unc', abs(I_unc), 'I_abs_out', abs(I_out), ...
+    'I_limited', I_limited, 'VPLLfrz', VPLLfrz, 'PLL_frozen', PLL_frozen);
 end
 
 % =========================================================================

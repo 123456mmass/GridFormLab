@@ -130,21 +130,33 @@ gfm_idx = [3, 4, 5, 6, 1, 2, 7, 8, 9, 10, 11];
 
 bp = bus_position;
 
-% --- Differential RHS: dispatch by mode, inactive branches held (dx=0) -----
+% --- Differential RHS: dispatch by mode, inactive branches decay to warm-start
+%   Inactive states use dx = -lambda*(x - x_warmstart) instead of a hard
+%   freeze (dx=0). A hard freeze creates zero Jacobian columns for inactive
+%   states, making the coupled Newton Jacobian singular (rcond=0) at the
+%   warm-start — the Newton step becomes NaN. The decay-to-warmstart keeps
+%   the Jacobian full-rank (column = -lambda) while preserving the
+%   frozen-policy intent: inactive states are held AT their warm-start values
+%   (equilibrium of inactive branch = warm-start value). lambda=1e-3 is a
+%   NUMERICAL_METHOD choice (declared before results): small enough that
+%   inactive states are held, large enough that the Jacobian column is
+%   non-zero. Does NOT change active-state equations or their equilibrium.
 f = @(t, x_dev, y, u_dev, event_context) dual_f( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx);
+    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx, x0, u0);
 
 % --- current_injection: dispatch by mode -----------------------------------
+%   Tolerates u_dev=[] (diagnostic calls from mixed_equilibrium_solve.check_limits
+%   use u_dev=[] at the equilibrium where u=u0). Falls back to u0 when empty.
 current_injection = @(t, x_dev, y, u_dev, event_context) dual_current( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx);
+    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0);
 
 % --- electrical_power: dispatch by mode -----------------------------------
 electrical_power = @(t, x_dev, y, u_dev, event_context) dual_pe( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx);
+    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0);
 
 % --- reconstruct -----------------------------------------------------------
 reconstruct = @(t, x_dev, y, u_dev, event_context) dual_reconstruct( ...
-    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp);
+    x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp, u0);
 
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) -------------
 dev = struct();
@@ -179,38 +191,57 @@ dev.provenance = struct( ...
 end
 
 % =========================================================================
-function dx = dual_f(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx)
-%DUAL_F  Differential RHS (15 states). Inactive branches held (dx=0).
-dx = zeros(nx, 1);
+function dx = dual_f(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, nx, x_warm, u0)
+%DUAL_F  Differential RHS (15 states).
+%   Inactive branches decay to warm-start: dx = -lambda*(x - x_warm). This
+%   keeps the Jacobian full-rank (column = -lambda) while holding inactive
+%   states AT their warm-start values (equilibrium of inactive branch =
+%   warm-start value). See header comment for rationale.
+lambda = 1e-3;   % NUMERICAL_METHOD: inactive-state decay-to-warmstart rate
+dx = -lambda * (x_dev - x_warm);
+u = resolve_u(u_dev, u0);
 switch mode
 case 'gfl'
-    % Active: shared(2) + GFL-unique(4). GFM-unique(9) frozen.
+    % Active: shared(2) + GFL-unique(4). GFM-unique(9) decay to warm-start.
     x_gfl = x_dev(gfl_idx);
-    u_gfl = u_dev(1:2);   % [P_ref; Q_ref]
+    u_gfl = u(1:2);   % [P_ref; Q_ref]
     dx_gfl = gfl_dev.f(0, x_gfl, y, u_gfl, struct());
     dx(gfl_idx) = dx_gfl;
 case 'GFM'
-    % Active: shared(2) + GFM-unique(9). GFL-unique(4) frozen.
+    % Active: shared(2) + GFM-unique(9). GFL-unique(4) decay to warm-start.
     x_gfm = x_dev(gfm_idx);
-    u_gfm = [u_dev(1); u_dev(3)];   % [P_ref; V_ref]
+    u_gfm = [u(1); u(3)];   % [P_ref; V_ref]
     dx_gfm = gfm_dev.f(0, x_gfm, y, u_gfm, struct());
     dx(gfm_idx) = dx_gfm;
 case 'tripped'
-    % All frozen.
-    % dx stays zero.
+    % All decay to warm-start (no active injection). current_injection=0.
+    % dx already = -lambda*(x - x_warm).
 end
 end
 
 % =========================================================================
-function I = dual_current(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx)
+function u = resolve_u(u_dev, u0)
+%RESOLVE_U  Fall back to u0 when u_dev is empty (diagnostic calls from
+%   mixed_equilibrium_solve.check_limits pass u_dev=[] at the equilibrium,
+%   where u=u0). Non-empty u_dev is validated by the standalone models.
+if isempty(u_dev)
+    u = u0;
+else
+    u = u_dev;
+end
+end
+
+% =========================================================================
+function I = dual_current(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
+u = resolve_u(u_dev, u0);
 switch mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
-    u_gfl = u_dev(1:2);
+    u_gfl = u(1:2);
     I = gfl_dev.current_injection(0, x_gfl, y, u_gfl, struct());
 case 'GFM'
     x_gfm = x_dev(gfm_idx);
-    u_gfm = [u_dev(1); u_dev(3)];
+    u_gfm = [u(1); u(3)];
     I = gfm_dev.current_injection(0, x_gfm, y, u_gfm, struct());
 case 'tripped'
     I = 0;
@@ -218,15 +249,16 @@ end
 end
 
 % =========================================================================
-function Pe = dual_pe(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx)
+function Pe = dual_pe(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, u0)
+u = resolve_u(u_dev, u0);
 switch mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
-    u_gfl = u_dev(1:2);
+    u_gfl = u(1:2);
     Pe = gfl_dev.electrical_power(0, x_gfl, y, u_gfl, struct());
 case 'GFM'
     x_gfm = x_dev(gfm_idx);
-    u_gfm = [u_dev(1); u_dev(3)];
+    u_gfm = [u(1); u(3)];
     Pe = gfm_dev.electrical_power(0, x_gfm, y, u_gfm, struct());
 case 'tripped'
     Pe = 0;
@@ -234,16 +266,17 @@ end
 end
 
 % =========================================================================
-function out = dual_reconstruct(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp)
+function out = dual_reconstruct(x_dev, y, u_dev, mode, gfl_dev, gfm_dev, gfl_idx, gfm_idx, bp, u0)
+u = resolve_u(u_dev, u0);
 out = struct('mode', char(mode), 'bus_position', bp);
 switch mode
 case 'gfl'
     x_gfl = x_dev(gfl_idx);
-    u_gfl = u_dev(1:2);
+    u_gfl = u(1:2);
     out.gfl = gfl_dev.reconstruct(0, x_gfl, y, u_gfl, struct());
 case 'GFM'
     x_gfm = x_dev(gfm_idx);
-    u_gfm = [u_dev(1); u_dev(3)];
+    u_gfm = [u(1); u(3)];
     out.gfm = gfm_dev.reconstruct(0, x_gfm, y, u_gfm, struct());
 case 'tripped'
     out.tripped = true;

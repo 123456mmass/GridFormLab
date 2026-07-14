@@ -18,7 +18,7 @@ case_selection_interactive=isempty(case_id);
 
 analyses=struct( ...
     'id',{'pf','sssa','ts','ibr'}, ...
-    'label',{'Power Flow - in-house project solver', ...
+    'label',{'Power Flow - in-house project solver (method via pf_method)', ...
              'Small-Signal Stability Analysis (SSSA)', ...
              'Transient Stability (TS)', ...
              'IBR Simulation - mixed-resource transient stability'});
@@ -89,7 +89,49 @@ print_case_manifest(case_data);
 switch analysis
     case 'pf'
         opt=pf_opt; print_run_options(opt);
-        result=pfsolver.powerflow_newton_raphson(case_data,opt);
+        % Phase-2: resolve the PF method through the project-owned strategy.
+        % pf_resolve_method returns [canonical_name, selection_source];
+        % pf_method_strategy returns .solve (wraps the canonical NR verbatim
+        % for 'newton_raphson' -> bit-identical) and .method_source (impl
+        % provenance string). No silent fallback: unknown names error before
+        % any solve.
+        [pf_method_name, pf_selection_source] = pfsolver.pf_resolve_method(opt);
+        pf_strat = pfsolver.pf_method_strategy(pf_method_name);
+        result = pf_strat.solve(case_data, opt);
+        % Additive metadata enrichment (fill-if-missing). FDPF/BFS already set
+        % metadata.method_executed ('XB'/'BX'/'bfs'), method_source, capability,
+        % fallback_used, full_ac_mismatch -> never clobber. NR lacks all of
+        % these -> fill here. method_source (impl provenance) is distinct from
+        % selection_source (default/explicit selector provenance).
+        if ~isfield(result, 'metadata')
+            result.metadata = struct();
+        end
+        if ~isfield(result.metadata, 'method_executed')
+            result.metadata.method_requested = pf_method_name;
+            result.metadata.method_executed  = pf_method_name;
+            result.metadata.dispatch_requested = pf_method_name;
+            result.metadata.method_source    = pf_strat.method_source;
+            result.metadata.selection_source = pf_selection_source;
+            result.metadata.capability       = pf_strat.capability;
+            result.metadata.fallback_used    = false;
+            % NR full_ac_mismatch sourced from the existing max_mismatch
+            % (powerflow_newton_raphson.m attach_failure_fields); not recomputed.
+            if isfield(result, 'max_mismatch')
+                result.metadata.full_ac_mismatch = result.max_mismatch;
+            end
+        else
+            % FDPF/BFS path: they already record method_executed/method_source/
+            % capability/fallback_used/full_ac_mismatch. Only add the canonical
+            % dispatch_requested and selection_source (selector provenance),
+            % which they do not set. Preserve their method_requested as-is
+            % (NOT uniform across NR/XB/BX/bfs).
+            if ~isfield(result.metadata, 'dispatch_requested')
+                result.metadata.dispatch_requested = pf_method_name;
+            end
+            if ~isfield(result.metadata, 'selection_source')
+                result.metadata.selection_source = pf_selection_source;
+            end
+        end
         print_pf_checks(result,opt);
     case 'sssa'
         opt=sssa_opt; print_run_options(opt);
@@ -572,6 +614,15 @@ fprintf('\n---------------- PF VERIFICATION ----------------\n');
 fprintf('Converged       : %d\n',r.converged);
 if isfield(r,'iterations'), fprintf('Iterations      : %d\n',r.iterations); end
 if isfield(r,'max_mismatch'), fprintf('Max mismatch    : %.3e pu\n',r.max_mismatch); end
+% Phase-2: report the executed method (additive, optional fields).
+if isfield(r,'metadata')
+    if isfield(r.metadata,'method_executed')
+        fprintf('Method executed : %s\n',r.metadata.method_executed);
+    end
+    if isfield(r.metadata,'dispatch_requested')
+        fprintf('Dispatch req    : %s\n',r.metadata.dispatch_requested);
+    end
+end
 fprintf('Voltage range   : %.6f .. %.6f pu\n',min(r.bus_voltage),max(r.bus_voltage));
 fprintf('Angle range     : %.6f .. %.6f deg\n',min(r.bus_angle_deg),max(r.bus_angle_deg));
 fprintf('Tolerance       : %.3e\n',opt.tolerance);
@@ -630,6 +681,10 @@ fprintf('Time range      : %.4f .. %.4f s\n',r.t(1),r.t(end));
 fprintf('Minimum voltage : %.6f pu\n',min(r.Vbus,[],'all'));
 if isfield(r,'omega_is_deviation')&&r.omega_is_deviation, wd=r.omega; else, wd=r.omega-1; end
 fprintf('Max |Delta w|   : %.6e pu\n',max(abs(wd),[],'all'));
+% Phase-2: report the executed integrator (additive, optional field).
+if isfield(r,'integrator')
+    fprintf('Integrator      : %s\n',r.integrator);
+end
 end
 
 

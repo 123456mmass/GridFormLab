@@ -80,6 +80,26 @@ u0 = zeros(0,1);       % no inputs (constant Efd, CASE_DEFINED)
 Tm_eq = init.Tm(1);
 Efd_eq = init.Efd(1);
 
+% --- Tpq0=0 singular-limit frozen-state detection ---------------------------
+% When Tpq0==0 exactly (Kodsi round-rotor, no q-axis transient), Edp is
+% algebraically eliminated: 0 = c_q*Edpp - d_q*Edp.
+% For Kodsi: c_q=0, d_q=1 => Edp=0.
+% Ref: IEEE14_GENERIC_IBR_MACHINE_TRANSFER.md §9; execution plan §Tpq0=0.
+Tpq0_val = machine.Tpq0(1);
+has_frozen_edp = (Tpq0_val == 0);
+frozen_state_indices = [];
+frozen_state_values  = [];
+frozen_state_source  = '';
+active_state_indices = 1:nx;   % default: all active
+if has_frozen_edp
+    frozen_state_indices = 4;   % Edp is state index 4
+    frozen_state_values  = 0;   % algebraic value Edp=0
+    frozen_state_source  = 'Tpq0=0 singular limit: Edp=c_q*Edpp/d_q; Kodsi round-rotor c_q=0,d_q=1 => Edp=0';
+    active_state_indices = [1 2 3 5 6];  % exclude Edp
+    % Enforce Edp=0 in initial state
+    x0(4) = 0;
+end
+
 bp = bus_position;
 
 % --- Differential RHS (5-arg ABI) ---------------------------------------------
@@ -128,6 +148,11 @@ dev.provenance = struct( ...
     'stator_current','sg_stator_current (EMF6 stator Id/Iq -> network frame; correction 2)', ...
     'breaker_open_physics','offline: Id=Iq=0, Te=0, open-circuit flux decay, Tm frozen (clarification 4)', ...
     'readiness','STRUCTURAL_ONLY');
+dev.frozen_state_indices = frozen_state_indices;
+dev.frozen_state_values  = frozen_state_values;
+dev.frozen_state_source  = frozen_state_source;
+dev.active_state_indices = active_state_indices;
+dev.frozen_state_classification = 'SOURCE_DEFINED singular limit';
 end
 
 % =========================================================================
@@ -163,20 +188,28 @@ if online
     dx1 = machine.w0 * w;
     dx2 = (Tm_eq - Te - units.D_system(k)*w) / (2*units.H_system(k));
     dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
-    dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    if machine.Tpq0(k) == 0
+        dx4 = 0;   % Tpq0=0 singular limit: Edp algebraically eliminated (frozen at 0)
+    else
+        dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    end
     dx5 = (Eqp - Eqpp - (machine.Xdp(k) - machine.Xdpp(k))*Id) / machine.Tppd0(k);
     dx6 = (Edp - Edpp + (machine.Xqp(k) - machine.Xqpp(k))*Iq) / machine.Tppq0(k);
 else
     % Breaker OPEN (clarification 4): Id=Iq=0, Te=0. Open-circuit flux decay:
     %   dEqp/dt  = (Efd + c_d*Eqpp - d_d*Eqp)/Tpd0   (I=0 path)
-    %   dEdp/dt  = (c_q*Edpp - d_q*Edp)/Tpq0
+    %   dEdp/dt  = (c_q*Edpp - d_q*Edp)/Tpq0  (or 0 if Tpq0==0 frozen)
     %   dEqpp/dt = (Eqp - Eqpp)/Tppd0   (no (Xdp-Xdpp)*Id term)
     %   dEdpp/dt = (Edp - Edpp)/Tppq0   (no (Xqp-Xqpp)*Iq term)
     % Swing coasts: 2H*dw/dt = Tm_frozen - 0 - D*w  (Tm held at pre-trip value).
     dx1 = machine.w0 * w;
     dx2 = (Tm_eq - units.D_system(k)*w) / (2*units.H_system(k));
     dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
-    dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    if machine.Tpq0(k) == 0
+        dx4 = 0;   % Tpq0=0 singular limit: Edp frozen at 0
+    else
+        dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    end
     dx5 = (Eqp - Eqpp) / machine.Tppd0(k);
     dx6 = (Edp - Edpp) / machine.Tppq0(k);
 end

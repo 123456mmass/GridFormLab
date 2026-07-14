@@ -146,6 +146,14 @@ for k = 1:nr
         'has_current_limiter', r.has_current_limiter, ...
         'has_frt', r.has_frt, ...
         'can_black_start', r.can_black_start);
+    % Uniform frozen-state metadata (SG may have frozen Edp; IBRs default empty).
+    if ~isfield(dev, 'frozen_state_indices')
+        dev.frozen_state_indices = [];
+        dev.frozen_state_values  = [];
+        dev.frozen_state_source  = '';
+        dev.active_state_indices = 1:dev.nx;
+        dev.frozen_state_classification = '';
+    end
     % Uniform provenance: {model, source, classification, details}.
     p = r.provenance;
     dev.provenance = struct( ...

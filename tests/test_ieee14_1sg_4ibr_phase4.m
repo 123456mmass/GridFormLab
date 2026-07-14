@@ -1,11 +1,11 @@
 function tests = test_ieee14_1sg_4ibr_phase4()
 %TEST_IEEE14_1SG_4IBR_PHASE4  Phase 4 mixed-equilibrium + case contract tests.
 %   Verifies: SG1 dynamics sourced (Kodsi); dispatch contract (Pmax-proportional,
-%   no load-shed); mixed equilibrium solver (SG_ON, SG_OFF+GFM, pure-GFL reject);
-%   fixed angle-gauge; deterministic fingerprint.
+%   no load-shed); mixed equilibrium solver (SG online+4gfl, SG offline+GFM,
+%   pure-GFL reject); fixed angle-gauge; deterministic fingerprint.
 %
-%   Source: project Phase 4 design (Plan agent). Synthetic stubs for IBR
-%   devices (ASSUMED_DIAGNOSTIC scaffolding); real GFL/VSG models are Phase 5-6.
+%   Source: project Phase 4 design (Plan agent). Production devices (Phase B1+).
+%   Updated: removed synthetic stubs + config.sg_status; uses index-based config.
 tests = functiontests(localfunctions);
 end
 
@@ -72,52 +72,58 @@ end
 
 % =========================================================================
 function test_mixed_equilibrium_sg_on(testCase)
-% SG_ON config: all IBRs gfl, SG1 online. The equilibrium solver should
-% converge (uses the PF warm-start + fixed gauge + synthetic gfl stubs).
+% SG online + 4 IBR gfl: production devices, index-based config.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
-devs = build_synthetic_devices(c, 'online', struct('IBR2',40,'IBR3',0,'IBR6',0,'IBR8',0));
-config = struct('sg_status','online', ...
-    'device_modes', struct( ...
-        'device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-        'mode',{'gfl','gfl','gfl','gfl'}), ...
-    'dispatch', struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0), ...
-    'devices', devs);
+modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+               'mode',{'gfl','gfl','gfl','gfl'});
+disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
+devs = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
+config = struct('devices', devs);
 r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
-testCase.verifyTrue(r.converged, ['SG_ON equilibrium must converge: ' r.failure_reason]);
+testCase.verifyTrue(r.converged, ['SG online equilibrium must converge: ' r.failure_reason]);
 testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
 testCase.verifyGreaterThan(r.rcond, 1e-10, 'reduced Jacobian well-conditioned.');
 end
 
 % =========================================================================
 function test_mixed_equilibrium_sg_off_gfm(testCase)
-% SG_OFF config: IBR2='GFM', IBR3/6/8='gfl'. The GFM forms voltage through
-% its device equations (Eq.13 output stage). The fixed gauge stays on bus 1.
-% NOTE: uses synthetic GFM stub (f=0 equilibrium); real VSG model is Phase 5-6.
+% SG offline: IBR2=GFM, IBR3/6/8=gfl. Production devices, index-based config.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
-pt = c.dispatch_contract.post_trip.post_trip_Pg_MW;
-disp = struct('IBR2',pt.IBR2,'IBR3',pt.IBR3,'IBR6',pt.IBR6,'IBR8',pt.IBR8);
-devs = build_synthetic_devices(c, 'tripped', disp, 'IBR2');
-config = struct('sg_status','tripped', ...
-    'device_modes', struct( ...
-        'device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-        'mode',{'GFM','gfl','gfl','gfl'}), ...
-    'dispatch', disp, 'devices', devs);
+modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+               'mode',{'GFM','gfl','gfl','gfl'});
+disp_s = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
+devs = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
+% Set SG1 offline (breaker open)
+for k = 1:numel(devs)
+    if strcmp(devs(k).device_type, 'sg_emf6_composite')
+        devs(k).initial_online = false;
+        devs(k).mode = 'breaker_open';
+        break;
+    end
+end
+config = struct('devices', devs);
 r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
-testCase.verifyTrue(r.converged, ['SG_OFF+GFM equilibrium must converge: ' r.failure_reason]);
+testCase.verifyTrue(r.converged, ['SG offline+GFM equilibrium must converge: ' r.failure_reason]);
 testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
 end
 
 % =========================================================================
 function test_pure_gfl_island_rejected(testCase)
-% SG_OFF with ALL IBRs gfl -> no voltage-forming source -> fail closed.
+% All IBRs gfl + SG offline -> no voltage-forming source -> fail closed.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
-disp = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
-devs = build_synthetic_devices(c, 'tripped', disp);
-config = struct('sg_status','tripped', ...
-    'device_modes', struct( ...
-        'device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-        'mode',{'gfl','gfl','gfl','gfl'}), ...
-    'dispatch', disp, 'devices', devs);
+modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+               'mode',{'gfl','gfl','gfl','gfl'});
+disp_s = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
+devs = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
+% Set SG1 offline
+for k = 1:numel(devs)
+    if strcmp(devs(k).device_type, 'sg_emf6_composite')
+        devs(k).initial_online = false;
+        devs(k).mode = 'breaker_open';
+        break;
+    end
+end
+config = struct('devices', devs);
 r = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyFalse(r.converged, 'pure-GFL SG_OFF must not converge.');
 testCase.verifyEqual(r.failure_id, 'mixed_equilibrium_solve:noVoltageFormingSource', ...
@@ -127,14 +133,11 @@ end
 % =========================================================================
 function test_equilibrium_fingerprint_deterministic(testCase)
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
-pt = c.dispatch_contract.post_trip.post_trip_Pg_MW;
-disp = struct('IBR2',pt.IBR2,'IBR3',pt.IBR3,'IBR6',pt.IBR6,'IBR8',pt.IBR8);
-devs = build_synthetic_devices(c, 'tripped', disp, 'IBR2');
-config = struct('sg_status','tripped', ...
-    'device_modes', struct( ...
-        'device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-        'mode',{'GFM','gfl','gfl','gfl'}), ...
-    'dispatch', disp, 'devices', devs);
+modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+               'mode',{'gfl','gfl','gfl','gfl'});
+disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
+devs = ibr.build_ieee14_sg_ibr_devices(c, modes, disp_s);
+config = struct('devices', devs);
 r1 = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 r2 = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyEqual(r1.fingerprint.config_hash, r2.fingerprint.config_hash, ...
@@ -145,30 +148,32 @@ end
 
 % =========================================================================
 function test_reference_gauge_fixed(testCase)
-% Grep guard: the solver uses the ANGLE-ONLY gauge (Im(V1)=0 fixed, Re(V1) free),
-% not a 2-variable complex-voltage vcon. Approved by clarification 1/5
-% (angle-only vcon; Re(V1) is a solved unknown). The gauge must NOT dynamically
-% change by config.
+% Grep guard: the solver uses the ANGLE-ONLY gauge (Im(V1)=0 fixed, Re(V1) free).
 solver_path = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
     '+stability', 'mixed_equilibrium_solve.m');
 src = fileread(solver_path);
 testCase.verifyTrue(contains(src, 'vcon.vars = 2'), 'vcon.vars fixed at 2 (Im(V1), angle-only).');
 testCase.verifyTrue(contains(src, 'vcon.rows = 2'), 'vcon.rows fixed at 2 (Im(V1) row).');
 testCase.verifyFalse(contains(src, 'vcon.vars = [1, 2]'), 'old 2-variable vcon removed.');
-% Structural check: both SG_ON and SG_OFF+GFM use the same angle-only gauge.
+% Structural check: both SG online and SG offline+GFM use the same angle-only gauge.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
-devs_on = build_synthetic_devices(c, 'online', struct('IBR2',40,'IBR3',0,'IBR6',0,'IBR8',0));
-cfg_on = struct('sg_status','online', ...
-    'device_modes', struct('device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-    'mode',{'gfl','gfl','gfl','gfl'}), ...
-    'dispatch', struct('IBR2',40,'IBR3',0,'IBR6',0,'IBR8',0), 'devices', devs_on);
-pt = c.dispatch_contract.post_trip.post_trip_Pg_MW;
-disp_off = struct('IBR2',pt.IBR2,'IBR3',pt.IBR3,'IBR6',pt.IBR6,'IBR8',pt.IBR8);
-devs_off = build_synthetic_devices(c, 'tripped', disp_off, 'IBR2');
-cfg_off = struct('sg_status','tripped', ...
-    'device_modes', struct('device_id',{'IBR2','IBR3','IBR6','IBR8'}, ...
-    'mode',{'GFM','gfl','gfl','gfl'}), ...
-    'dispatch', disp_off, 'devices', devs_off);
+modes_on = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+                  'mode',{'gfl','gfl','gfl','gfl'});
+disp_on = struct('IBR2',40,'IBR3',0,'IBR6',0,'IBR8',0);
+devs_on = ibr.build_ieee14_sg_ibr_devices(c, modes_on, disp_on);
+cfg_on = struct('devices', devs_on);
+modes_off = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
+                   'mode',{'GFM','gfl','gfl','gfl'});
+disp_off = struct('IBR2',109.7,'IBR3',49.8,'IBR6',49.8,'IBR8',49.8);
+devs_off = ibr.build_ieee14_sg_ibr_devices(c, modes_off, disp_off);
+for k = 1:numel(devs_off)
+    if strcmp(devs_off(k).device_type, 'sg_emf6_composite')
+        devs_off(k).initial_online = false;
+        devs_off(k).mode = 'breaker_open';
+        break;
+    end
+end
+cfg_off = struct('devices', devs_off);
 r_on = stability.mixed_equilibrium_solve(c, cfg_on, struct('verbose',false));
 r_off = stability.mixed_equilibrium_solve(c, cfg_off, struct('verbose',false));
 testCase.verifyEqual(r_on.vcon_vars, 2, 'AbsTol', 0, 'SG_ON angle-only gauge var=2.');
@@ -185,27 +190,4 @@ src = fileread(solver_path);
 for fn = {'fsolve','optimoptions','fmincon','fminsearch','lsqnonlin','optimset'}
     testCase.verifyFalse(contains(src, fn{1}), ['no ' fn{1} ' in solver.']);
 end
-end
-
-% =========================================================================
-function devs = build_synthetic_devices(case_data, sg_status, dispatch, gfm_device_id)
-%BUILD_SYNTHETIC_DEVICES  Test helper: build synthetic IBR stubs for a config.
-%   sg_status: 'online' | 'tripped'. gfm_device_id: which IBR is GFM (or '').
-%   SG1 is NOT a device in the list; when online, its slack is the PF. When
-%   tripped, no SG device. The IBRs use the synthetic_ibr_equilibrium fixture.
-ibr_ids = {'IBR2','IBR3','IBR6','IBR8'};
-dev_cells = cell(numel(ibr_ids), 1);
-for k = 1:numel(ibr_ids)
-    did = ibr_ids{k};
-    bus = case_data.devices.(did).bus;
-    if nargin >= 4 && strcmp(did, gfm_device_id)
-        mode = 'GFM';
-    else
-        mode = 'gfl';
-    end
-    disp_MW = dispatch.(did);
-    dev_cells{k} = fixtures.synthetic_ibr_equilibrium( ...
-        string(did), bus, mode, disp_MW);
-end
-devs = vertcat(dev_cells{:});
 end

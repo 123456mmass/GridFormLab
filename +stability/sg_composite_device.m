@@ -1,0 +1,233 @@
+function dev = sg_composite_device(case_data, device_id, bus_id, bus_position, bus_ids, V0, params)
+%SG_COMPOSITE_DEVICE  EMF6 synchronous machine as a composite_dae 5-arg device.
+%   dev = sg_composite_device(CASE_DATA, DEVICE_ID, BUS_ID, BUS_POSITION,
+%       BUS_IDS, V0, PARAMS) builds a single-machine EMF6 synchronous generator
+%   device conforming to the stability.composite_dae ABI (R3 Rev 2, 5-arg
+%   closures f/current_injection/electrical_power/reconstruct @(t,x_dev,y,u_dev,event_context)).
+%
+%   This wraps the EXISTING audited EMF6 equations (synchronous_emf6_ssa:
+%   6th-order Kundur/GENTPJ) as a single-machine composite device, so the mixed
+%   SG1 + 4-IBR network can be simulated through one composite DAE. The stator
+%   current comes from the EMF6 stator Id/Iq equations via sg_stator_current
+%   (NOT reverse-derived from Pe/V — correction 2).
+%
+%   State (6, EMF6): x = [delta; omega; Eqp; Edp; Eqpp; Edpp].
+%   Inputs: nu=0 (SG has no exogenous input in this mission; AVR/constant-Efd
+%   modeled as constant Efd at the equilibrium value — CASE_DEFINED frozen).
+%
+%   Breaker-open physics (clarification 4), read from event_context.hybrid_state:
+%     - online  -> connected stator: full EMF6 stator current into network, Te from
+%                  stator, swing 2H*domega/dt = (Tm - Te - D*omega).
+%     - offline -> ZERO network injection (Id=Iq=0, Te=0); open-circuit flux decay
+%                  (Eqp,Edp,Eqpp,Edpp evolve with I=0); swing coasts on a FROZEN
+%                  CASE_DEFINED mechanical-power policy (Tm held at pre-trip value).
+%                  delta and omega still evolve (swing coasts; synchronism
+%                  compares generator-side open-breaker EMF vs network bus V).
+%   The online/offline flag is read from event_context.hybrid_state.device_online.(id);
+%   if event_context is empty (equilibrium path), defaults to online=true.
+%
+%   STATUS: STRUCTURAL_ONLY until Phase B tests pass. No production-readiness claim.
+%
+%   Source: synchronous_emf6_ssa (Kundur/GENTPJ 6th-order, in repo); IEEE 1110-2002
+%   Model 2.2 structure. Kodsi 60Hz SG data (CASE_DEFINED, decision ledger item 7).
+
+arguments
+    case_data struct
+    device_id (1,1) string
+    bus_id (1,1) double
+    bus_position (1,1) double
+    bus_ids (1,:) double
+    V0 (1,1) double
+    params struct
+end
+
+if ~isfinite(V0) || abs(V0) <= 0
+    error('stability:sg_composite_device:badV0', ...
+        'V0 must be finite with |V0|>0 (PF warm-start required); got %.6g.', V0);
+end
+
+% --- Build the EMF6 machine model (single machine, base-converted) -------------
+% Reuse synchronous_emf6_ssa machine_parameters + initialize_equilibrium by
+% running the full SSSA builder once on a single-machine case and extracting the
+% machine/init structs. This guarantees the SAME audited coefficients as the
+% production EMF6 SSSA path (no equation duplication).
+emf_opt = struct('fd_eps', 3e-6, 'equilibrium_tolerance', 1e-10, ...
+    'newton_max_iterations', 300, 'load_model', 'cz_p_cz_q');
+emf = stability.synchronous_emf6_ssa(case_data, emf_opt);
+machine = emf.machine;
+units = emf.units;
+init = emf.init;
+ng = machine.ng;
+if ng ~= 1
+    error('stability:sg_composite_device:singleMachineOnly', ...
+        'sg_composite_device expects a single-machine case (ng=1); got ng=%d.', ng);
+end
+
+% SG1 must be at the requested bus.
+if units.bus_idx(1) ~= bus_position
+    error('stability:sg_composite_device:busMismatch', ...
+        'EMF6 machine 1 bus_idx=%d but requested bus_position=%d.', ...
+        units.bus_idx(1), bus_position);
+end
+
+nx = 6;
+nu = 0;
+state_names = {'delta','omega','Eqp','Edp','Eqpp','Edpp'};
+x0 = init.x0(1:6);     % single-machine state slice
+u0 = zeros(0,1);       % no inputs (constant Efd, CASE_DEFINED)
+
+% Capture equilibrium Tm (pre-trip mechanical power, frozen for offline coast).
+Tm_eq = init.Tm(1);
+Efd_eq = init.Efd(1);
+
+bp = bus_position;
+
+% --- Differential RHS (5-arg ABI) ---------------------------------------------
+%   online: full EMF6 differential_residual (single-machine slice).
+%   offline: open-circuit flux decay (I=0) + coast swing (Te=0, Tm frozen).
+f = @(t, x_dev, y, u_dev, event_context) sg_f( ...
+    x_dev, y, bp, machine, units, Tm_eq, Efd_eq, event_context, device_id);
+
+% --- current_injection (5-arg): stator Id/Iq -> network frame (correction 2) ---
+current_injection = @(t, x_dev, y, u_dev, event_context) sg_current( ...
+    x_dev, y, bp, machine, units, event_context, device_id);
+
+% --- electrical_power (5-arg): direct air-gap Te (not reverse from Pe/V) ------
+electrical_power = @(t, x_dev, y, u_dev, event_context) sg_pe( ...
+    x_dev, y, bp, machine, units, event_context, device_id);
+
+% --- reconstruct (5-arg) -------------------------------------------------------
+reconstruct = @(t, x_dev, y, u_dev, event_context) sg_reconstruct( ...
+    x_dev, y, bp, machine, units, event_context, device_id, Tm_eq, Efd_eq);
+
+dev = struct();
+dev.name = char(device_id);
+dev.device_id = char(device_id);
+dev.bus_id = bus_id;
+dev.bus_position = bus_position;
+dev.bus_ids = bus_ids(:).';
+dev.device_type = 'sg_emf6_composite';
+dev.mode = 'sg';
+dev.initial_mode = 'sg';
+dev.initial_online = true;
+dev.nx = nx;
+dev.nu = nu;
+dev.state_names = state_names;
+dev.input_names = {};
+dev.x0 = x0;
+dev.u0 = u0;
+dev.f = f;
+dev.current_injection = current_injection;
+dev.electrical_power = electrical_power;
+dev.reconstruct = reconstruct;
+dev.provenance = struct( ...
+    'model','sg_emf6_composite_phaseB_structural_only', ...
+    'source','synchronous_emf6_ssa (Kundur/GENTPJ 6th-order) wrapped to 5-arg ABI', ...
+    'nx', nx, 'nu', nu, ...
+    'sg_data','Kodsi 60Hz Table A.2 (CASE_DEFINED, decision ledger item 7)', ...
+    'stator_current','sg_stator_current (EMF6 stator Id/Iq -> network frame; correction 2)', ...
+    'breaker_open_physics','offline: Id=Iq=0, Te=0, open-circuit flux decay, Tm frozen (clarification 4)', ...
+    'readiness','STRUCTURAL_ONLY');
+end
+
+% =========================================================================
+function online = resolve_online(event_context, device_id)
+% Read online flag from hybrid_state snapshot; default online when ec empty.
+if isempty(event_context) || ~isstruct(event_context) || ...
+        ~isfield(event_context, 'hybrid_state') || isempty(event_context.hybrid_state)
+    online = true; return;
+end
+hs = event_context.hybrid_state;
+if isfield(hs, 'device_online') && isstruct(hs.device_online)
+    key = matlab.lang.makeValidName(char(device_id), 'ReplacementStyle', 'underscore');
+    if isfield(hs.device_online, key)
+        online = logical(hs.device_online.(key));
+    else
+        online = true;
+    end
+else
+    online = true;
+end
+end
+
+% =========================================================================
+function dx = sg_f(x_dev, y, bp, machine, units, Tm_eq, Efd_eq, event_context, device_id)
+online = resolve_online(event_context, device_id);
+k = 1;
+delta = x_dev(1); w = x_dev(2);
+Eqp = x_dev(3); Edp = x_dev(4); Eqpp = x_dev(5); Edpp = x_dev(6);
+if online
+    % Connected stator: full EMF6 stator solve for Id, Iq, Vd, Vq.
+    [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, k);
+    Te = Vd*Id + Vq*Iq + machine.Ra(k)*(Id^2 + Iq^2);
+    dx1 = machine.w0 * w;
+    dx2 = (Tm_eq - Te - units.D_system(k)*w) / (2*units.H_system(k));
+    dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
+    dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    dx5 = (Eqp - Eqpp - (machine.Xdp(k) - machine.Xdpp(k))*Id) / machine.Tppd0(k);
+    dx6 = (Edp - Edpp + (machine.Xqp(k) - machine.Xqpp(k))*Iq) / machine.Tppq0(k);
+else
+    % Breaker OPEN (clarification 4): Id=Iq=0, Te=0. Open-circuit flux decay:
+    %   dEqp/dt  = (Efd + c_d*Eqpp - d_d*Eqp)/Tpd0   (I=0 path)
+    %   dEdp/dt  = (c_q*Edpp - d_q*Edp)/Tpq0
+    %   dEqpp/dt = (Eqp - Eqpp)/Tppd0   (no (Xdp-Xdpp)*Id term)
+    %   dEdpp/dt = (Edp - Edpp)/Tppq0   (no (Xqp-Xqpp)*Iq term)
+    % Swing coasts: 2H*dw/dt = Tm_frozen - 0 - D*w  (Tm held at pre-trip value).
+    dx1 = machine.w0 * w;
+    dx2 = (Tm_eq - units.D_system(k)*w) / (2*units.H_system(k));
+    dx3 = (Efd_eq + machine.c_d(k)*Eqpp - machine.d_d(k)*Eqp) / machine.Tpd0(k);
+    dx4 = (machine.c_q(k)*Edpp - machine.d_q(k)*Edp) / machine.Tpq0(k);
+    dx5 = (Eqp - Eqpp) / machine.Tppd0(k);
+    dx6 = (Edp - Edpp) / machine.Tppq0(k);
+end
+dx = [dx1; dx2; dx3; dx4; dx5; dx6];
+end
+
+% =========================================================================
+function Ig = sg_current(x_dev, y, bp, machine, units, event_context, device_id)
+online = resolve_online(event_context, device_id);
+if online
+    Ig = stability.sg_stator_current(x_dev, y, bp, machine, units, 1);
+else
+    Ig = 0;   % breaker open: zero network injection (clarification 4)
+end
+end
+
+% =========================================================================
+function Pe = sg_pe(x_dev, y, bp, machine, units, event_context, device_id)
+online = resolve_online(event_context, device_id);
+if online
+    [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, 1);
+    Te = Vd*Id + Vq*Iq + machine.Ra(1)*(Id^2 + Iq^2);
+    Pe = Te;   % electrical torque (pu, air-gap); equals electrical power at synchronous speed
+else
+    Pe = 0;    % breaker open: Te=0
+end
+end
+
+% =========================================================================
+function out = sg_reconstruct(x_dev, y, bp, machine, units, event_context, device_id, Tm_eq, Efd_eq)
+online = resolve_online(event_context, device_id);
+out = struct('mode','sg','online',online,'bus_position',bp, ...
+    'delta',x_dev(1),'omega',x_dev(2),'Eqp',x_dev(3),'Edp',x_dev(4), ...
+    'Eqpp',x_dev(5),'Edpp',x_dev(6),'Tm',Tm_eq,'Efd',Efd_eq);
+if online
+    [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, 1);
+    out.Id = Id; out.Iq = Iq; out.Vd = Vd; out.Vq = Vq;
+else
+    out.Id = 0; out.Iq = 0; out.Vd = NaN; out.Vq = NaN;   % open breaker
+end
+end
+
+% =========================================================================
+function [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, k)
+% Single-machine slice of synchronous_emf6_ssa.machine_algebraic (audited, reused).
+delta = x_dev(1); Eqpp = x_dev(5); Edpp = x_dev(6);
+V = complex(y(2*bp-1), y(2*bp));
+[Vd, Vq] = stability.kundur_book_dq(V, delta);
+rhs_d = Vd - Edpp;
+rhs_q = Vq - Eqpp;
+det = machine.Xdpp(k)*machine.Xqpp(k) + machine.Ra(k)^2;
+Id = (-machine.Ra(k)*rhs_d - machine.Xqpp(k)*rhs_q) / det;
+Iq = ( machine.Xdpp(k)*rhs_d - machine.Ra(k)*rhs_q) / det;
+end

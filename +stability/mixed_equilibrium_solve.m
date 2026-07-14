@@ -42,7 +42,7 @@ result = struct('converged', false, 'x0', [], 'y0', [], ...
     'residual_norm', inf, 'iterations', 0, 'rcond', NaN, ...
     'fingerprint', struct(), 'failure_id', '', 'failure_reason', '', ...
     'device_config', config, 'dispatch', struct(), 'limit_checks', struct(), ...
-    'vcon_vars', [1,2], 'vcon_ref', []);
+    'vcon_vars', 2, 'vcon_ref', 0.0);
 
 % --- Defaults -------------------------------------------------------------
 tol        = 1e-8;   if isfield(opt,'tolerance') && ~isempty(opt.tolerance), tol = opt.tolerance; end
@@ -73,18 +73,21 @@ if ~isfield(config, 'devices') || isempty(config.devices)
 end
 devices = config.devices;
 
-% --- FIXED angle-gauge vcon (bus 1, vars=[1,2], rows=[1,2]) ---------------
-% Present in ALL configurations, NEVER moved (correction 4).
+% --- ANGLE-ONLY vcon (clarification 5 / correction 1) ---------------------
+% Fix ONLY Im(V1) = 0 (the numerical angle reference); leave Re(V1) = |V1| as a
+% FREE unknown solved by physical KCL/power balance at bus 1. This removes the
+% hidden ideal voltage source that the old 2-variable vcon (|V1|=1.06 fixed)
+% imposed at bus 1 — when SG1 trips, bus-1 |V1| must be free to fall/rise per
+% physical KCL (GFM(s) elsewhere form voltage). The angle reference is the
+% CONSTANT numerical gauge across all modes; mode switching never moves it.
 mpc = case_data.mpc;
-% Bus 1 slack voltage magnitude from the MATPOWER14 case (Vg=1.06, angle=0).
-V1_mag = mpc.bus(1, 8);   % 1.06
-V1_ref = [V1_mag; 0.0];   % [Re(V1); Im(V1)] = [1.06; 0]
-
+% Angle reference: 0 rad (Im(V1)=0). Re(V1) is FREE.
 vcon = struct();
-vcon.vars = [1, 2];
-vcon.rows = [1, 2];
-vcon.eq = @(y, ref) [y(1) - ref(1); y(2) - ref(2)];
-vcon.ref = V1_ref;
+vcon.vars = 2;          % Im(V1) index in interleaved y
+vcon.rows = 2;          % Im(V1) KCL row replaced by the angle constraint
+vcon.eq = @(y, ref) (y(2) - ref);   % Im(V1) - 0 = 0
+vcon.ref = 0.0;
+V1_imag_ref = 0.0;
 
 dae_opt = struct('load_model', load_model, 'vcon', vcon);
 
@@ -106,13 +109,17 @@ if ~init_ok
 end
 
 % --- Newton layer on the coupled (x, y_free) system ----------------------
-% y_free = y excluding the vcon-constrained entries (vars 1,2).
-% Reconstruct y_full = [y_free(1:...); vcon_ref; ...] at the constrained
-% positions. For vcon vars=[1,2], y_free = y(3:end) and y(1:2)=vcon_ref.
+% Angle-only vcon: y(vcon.vars)=y(2)=Im(V1) is FIXED to vcon.ref=0;
+% ALL other y entries (including y(1)=Re(V1)=|V1|) are FREE unknowns solved by
+% KCL. y_free = y with the vcon.vars positions removed.
 y0 = dae.y0;
+vcon_vars = vcon.vars;
+vcon_ref = vcon.ref;
+ny_full = numel(y0);
+free_vars = setdiff(1:ny_full, vcon_vars, 'stable');   % free y indices
 y_full_init = y0;
-y_full_init(1:2) = V1_ref;   % enforce the gauge on the warm start
-y_free_init = y_full_init(3:end);
+y_full_init(vcon_vars) = vcon_ref;          % enforce the angle gauge
+y_free_init = y_full_init(free_vars);
 nx = numel(x0_init);
 ny_free = numel(y_free_init);
 z0 = [x0_init(:); y_free_init(:)];
@@ -120,12 +127,12 @@ z0 = [x0_init(:); y_free_init(:)];
 Ynet = dae.Ynet;
 u = dae.u0;
 residual_fn = @(z) coupled_residual( ...
-    z, nx, ny_free, dae, Ynet, u, V1_ref);
+    z, nx, free_vars, vcon_vars, vcon_ref, ny_full, dae, Ynet, u);
 
 % Central-FD Jacobian.
 J_fn = @(z) coupled_jacobian_fd(z, nx, ny_free, residual_fn, fd_eps);
 
-[z_sol, niter, converged, residual_norm, rcond_val] = inhouse_newton( ...
+[z_sol, niter, converged, residual_norm, rcond_val] = stability.composite_newton( ...
     z0, residual_fn, J_fn, tol, max_iter, verbose);
 
 result.iterations = niter;
@@ -152,7 +159,9 @@ end
 % --- Extract equilibrium --------------------------------------------------
 x_sol = z_sol(1:nx);
 y_free_sol = z_sol(nx+1:nx+ny_free);
-y_sol = [V1_ref; y_free_sol];
+y_sol = zeros(ny_full, 1);
+y_sol(vcon_vars) = vcon_ref;
+y_sol(free_vars) = y_free_sol;
 result.x0 = x_sol;
 result.y0 = y_sol;
 
@@ -161,8 +170,9 @@ result.limit_checks = check_limits(x_sol, y_sol, config, case_data, dae);
 
 % --- Fingerprint ----------------------------------------------------------
 result.fingerprint = compute_fingerprint(x_sol, y_sol, config);
-result.vcon_vars = vcon.vars;
-result.vcon_ref = vcon.ref;
+result.vcon_vars = vcon.vars;       % = 2 (Im(V1)), angle-only
+result.vcon_ref = vcon.ref;         % = 0.0
+result.vcon_type = 'angle_only';   % Re(V1) free (clarification 5)
 result.dispatch = config.dispatch;
 end
 
@@ -186,10 +196,13 @@ ok = true; msg = '';
 end
 
 % =========================================================================
-function r = coupled_residual(z, nx, ~, dae, Y, u, V1_ref)
+function r = coupled_residual(z, nx, free_vars, vcon_vars, vcon_ref, ny_full, dae, Y, u)
 x = z(1:nx);
 y_free = z(nx+1:end);
-y_full = [V1_ref; y_free];
+% Scatter y_free into free positions; fix vcon positions to vcon_ref.
+y_full = zeros(ny_full, 1);
+y_full(vcon_vars) = vcon_ref;
+y_full(free_vars) = y_free;
 ec = struct();
 f = dae.dae_f(0, x, y_full, u, ec);
 g = dae.dae_g(0, x, y_full, Y, u, ec);
@@ -197,13 +210,13 @@ g = dae.dae_g(0, x, y_full, Y, u, ec);
 % paired vcon residual rows must be removed from the Newton system. This is
 % the nonlinear counterpart of the paired free_rows/free_vars elimination
 % used by multimachine_ssa; retaining the zero constraint rows would make
-% the residual two entries longer than the unknown vector.
+% the residual longer than the unknown vector.
 free_rows = setdiff(1:numel(g), dae.vcon.rows, 'stable');
 r = [f(:); g(free_rows)];
 end
 
 % =========================================================================
-function J = coupled_jacobian_fd(z, nx, ny_free, residual_fn, fd_eps)
+function J = coupled_jacobian_fd(z, ~, ~, residual_fn, fd_eps)
 nz = numel(z);
 r0 = residual_fn(z);
 if numel(r0) ~= nz
@@ -217,47 +230,6 @@ for j = 1:nz
     rp = residual_fn(zp);
     J(:, j) = (rp - r0) / fd_eps;
 end
-end
-
-% =========================================================================
-function [z_sol, niter, converged, residual_norm, rcond_val] = ...
-    inhouse_newton(z0, residual_fn, J_fn, tol, max_iter, verbose)
-z = z0;
-converged = false;
-residual_norm = inf;
-rcond_val = NaN;
-for niter = 1:max_iter
-    r = residual_fn(z);
-    residual_norm = norm(r, inf);
-    if residual_norm < tol
-        converged = true;
-        z_sol = z;
-        return;
-    end
-    J = J_fn(z);
-    rcond_val = rcond(J);
-    if rcond_val < eps
-        z_sol = z;
-        return;
-    end
-    % Damped Newton step (line search with backtracking).
-    dz = -J \ r;
-    alpha = 1.0;
-    for ls = 1:20
-        z_new = z + alpha * dz;
-        r_new = residual_fn(z_new);
-        if norm(r_new, inf) < residual_norm
-            break;
-        end
-        alpha = alpha * 0.5;
-    end
-    z = z + alpha * dz;
-    if verbose
-        fprintf('  iter %d: residual=%.3e alpha=%.3f rcond=%.3e\n', ...
-            niter, residual_norm, alpha, rcond_val);
-    end
-end
-z_sol = z;
 end
 
 % =========================================================================

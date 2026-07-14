@@ -145,13 +145,17 @@ end
 
 % =========================================================================
 function test_reference_gauge_fixed(testCase)
-% Grep guard: the solver must NOT dynamically change vcon.vars/rows by config.
+% Grep guard: the solver uses the ANGLE-ONLY gauge (Im(V1)=0 fixed, Re(V1) free),
+% not a 2-variable complex-voltage vcon. Approved by clarification 1/5
+% (angle-only vcon; Re(V1) is a solved unknown). The gauge must NOT dynamically
+% change by config.
 solver_path = fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
     '+stability', 'mixed_equilibrium_solve.m');
 src = fileread(solver_path);
-testCase.verifyTrue(contains(src, 'vcon.vars = [1, 2]'), 'vcon.vars fixed at [1,2].');
-testCase.verifyTrue(contains(src, 'vcon.rows = [1, 2]'), 'vcon.rows fixed at [1,2].');
-% Structural check: both SG_ON and SG_OFF+GFM use the same gauge.
+testCase.verifyTrue(contains(src, 'vcon.vars = 2'), 'vcon.vars fixed at 2 (Im(V1), angle-only).');
+testCase.verifyTrue(contains(src, 'vcon.rows = 2'), 'vcon.rows fixed at 2 (Im(V1) row).');
+testCase.verifyFalse(contains(src, 'vcon.vars = [1, 2]'), 'old 2-variable vcon removed.');
+% Structural check: both SG_ON and SG_OFF+GFM use the same angle-only gauge.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 devs_on = build_synthetic_devices(c, 'online', struct('IBR2',40,'IBR3',0,'IBR6',0,'IBR8',0));
 cfg_on = struct('sg_status','online', ...
@@ -167,9 +171,9 @@ cfg_off = struct('sg_status','tripped', ...
     'dispatch', disp_off, 'devices', devs_off);
 r_on = stability.mixed_equilibrium_solve(c, cfg_on, struct('verbose',false));
 r_off = stability.mixed_equilibrium_solve(c, cfg_off, struct('verbose',false));
-testCase.verifyEqual(r_on.vcon_vars, [1,2], 'AbsTol', 0, 'SG_ON gauge vars=[1,2].');
-testCase.verifyEqual(r_off.vcon_vars, [1,2], 'AbsTol', 0, 'SG_OFF gauge vars=[1,2].');
-testCase.verifyEqual(r_on.vcon_ref, r_off.vcon_ref, 'AbsTol', 0, 'same gauge ref.');
+testCase.verifyEqual(r_on.vcon_vars, 2, 'AbsTol', 0, 'SG_ON angle-only gauge var=2.');
+testCase.verifyEqual(r_off.vcon_vars, 2, 'AbsTol', 0, 'SG_OFF angle-only gauge var=2.');
+testCase.verifyEqual(r_on.vcon_ref, r_off.vcon_ref, 'AbsTol', 0, 'same gauge ref (0).');
 end
 
 % =========================================================================

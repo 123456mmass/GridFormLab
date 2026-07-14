@@ -45,32 +45,52 @@ selection used the predeclared hierarchy where alternatives existed.
   → Requires a user-provided sourced IEEE14 dynamic dataset OR explicit
   approval of one typical dataset as CASE_DEFINED.
 
-## VSG/GFM model (item 2 — FROZEN, source-closable)
+## VSG/GFM model (item 2 — CLOSED, Phase 6 implemented)
 
 - **Profile:** REGFM_B1 (NREL 90260). VSM swing-equation block (Fig. 2) +
   voltage-source-behind-impedance (Eq. 13) + measurement filters (Eqs. 1-5)
   + Q-V droop + voltage PI (Fig. 3) + PQ priority + transient current
   limiting (Eqs. 10-13, Figs. 5-7). GFM-only.
-- **State vector (reconstructed from REGFM_B1 block diagrams,
-  PROJECT_DERIVED):** x_vsg ≈ [Δωm, δIT, x_Eint (voltage PI integral),
-  x_PLL_int, δPLL, Pinv_f, Idinv_f, Qinv_f, Vinv_f, Iqinv_f, x_washout (D2),
-  x_Idlim (active-current integrator)] — ~12-13 states. Exact dimension
-  finalized in Phase 6 after state-layout design. CONDITIONAL on Tp>0 adds
-  one LPF state.
-- **Output stage (Eq. 13, VERBATIM):** I∠φ = (EVSM∠δVSM − V∠δV)/(Re+jXL)
-  for |I|<ImaxF; I∠φ = ImaxF∠φ (transient limit) otherwise.
-- **Parameters (REGFM_B1 Table 1 example values, CASE_DEFINED if IEEE14
-  IBR converters adopt the REGFM_B1 default profile):** H=0.5, D1=0, D2=100,
-  ωD=50, mp=0.02, mq=0.05, kpv=0, kiv=5, Re=0, XL=0.1, ImaxSS=1.0, ImaxF=1.5,
-  kf=0.9, kI=2, PQFlag=1, plus measurement filter time constants TPf=TQf=
-  TVf=TIf=0.02s. (These are the spec's EXAMPLE values; using them as the
-  IEEE14 IBR converter profile is a CASE_DEFINED engineering choice, not
-  fitting, since they come from the authoritative spec's recommended
-  defaults.)
-- **Initialization:** PROJECT_DERIVED from the model structure (REGFM_B1
-  gives only flag-dependent notes, no equations). To be derived in Phase 5.
-- **GAPS (fenced, not production):** no explicit anti-windup; no mode
-  switching (REGFM_B1 is GFM-only).
+- **State vector (11, PROJECT_DERIVED, FROZEN):** x_gfm = [omega_m, delta_VSM,
+  x_washout, x_Eint, delta_PLL, x_PLL_int, Pinv_f, Idinv_f, Qinv_f, Vinv_f,
+  Iqinv_f]. Implemented in `+ibr/regfm_b1_vsg_model.m`.
+- **Per-unit base contract (user-confirmed, FROZEN before results):** external
+  ABI on SYSTEM base (Sbase=100 MVA); internal swing/filters on INVERTER base
+  (kappa=Sbase/Mbase); P_ref_inv=kappa·P_ref_sys (NO double conversion);
+  current_injection + reconstructed P/Q return on system base. Mbase =
+  CASE_DEFINED unity-PF nameplate proxy (IBR2=140, IBR3/6/8=100 MVA; NOT
+  Pmax-MW proven).
+- **VSM swing (Fig. 2, SOURCE_TRANSFORMED, FROZEN under flag profile
+  ωFlag=0, FFlag=1, ωref=1 pu):** 2H·dωm/dt = P_ref_inv − Pinv_f −
+  (1/mp+D1)·ωm − D2·(ωm − x_washout); dx_washout/dt = ωD·(ωm − x_washout);
+  dδVSM/dt = ω0·ωm. Steady state ωm = mp·(P_ref_inv − Pinv_f) = P-f droop.
+- **Output stage (Eq. 13, structural slice = LINEAR branch only):**
+  I∠φ = (EVSM∠δVSM − V∠δV)/(Re+jXL). ImaxF piecewise clamp deferred to
+  Phase 14 (consistent with GFL Phase 5 precedent).
+- **Parameters (REGFM_B1 Table 1 example values, CASE_DEFINED):** H=0.5, D1=0,
+  D2=100, ωD=50, mp=0.02, mq=0.05, kpv=0, kiv=5, Re=0, XL=0.1, ImaxSS=1.0,
+  ImaxF=1.5, kf=0.9, kI=2, PQFlag=1, TPf=TQf=TVf=TIf=0.02s. All SOURCE_VERBATIM
+  from Table 1; NO ASSUMED_DIAGNOSTIC (unlike GFL Kps/Kis).
+- **Inputs (nu=2):** u=[P_ref; V_ref] (pu, system base), SOURCE_TRANSFORMED/
+  PROJECT_MAPPED (frozen flags VdrpFlag=0, QVFlag=1).
+- **Initialization (PROJECT_DERIVED, warm-start; Newton refines):** ωm0=0,
+  x_washout0=0, δVSM0=angle(V0), x_Eint0=0, δPLL0=angle(V0), x_PLL_int0=0,
+  Pinv_f0=κ·P_ref_sys, Qinv_f0=0, Vinv_f0=|V0|, Idinv_f0/Iqinv_f0=0.
+- **STATUS:** IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY (18/18 tests pass).
+- **GAPS (fenced, not production):** no explicit anti-windup; no mode switching
+  (REGFM_B1 is GFM-only); limiters/FRT deferred to Phase 14.
+
+## Dual-mode fixed-layout device (item 3 interim — Phase 7 implemented)
+
+- **Superset (15, CONSTANT across 'gfl'|'GFM'|'tripped'):** shared PLL (2:
+  delta_PLL, x_PLL_int) + GFM-unique (9) + GFL-unique (4). Implemented in
+  `+ibr/dual_mode_ibr_model.m`. Reuses GFL (Phase 5) + GFM (Phase 6) as
+  single source of truth (no equation duplication).
+- **Inactive-state rule (interim):** inactive branches decay-to-warmstart
+  (dx = −lambda·(x − x_warm), lambda=1e-3 NUMERICAL_METHOD) to keep the
+  coupled Newton Jacobian full-rank while holding inactive states at
+  warm-start. Full bumpless transfer deferred to Phase 10-11 (item 3 STOP).
+- **Inputs (nu=3):** u=[P_ref; Q_ref; V_ref]; mode selects subset.
 
 ## GFL model (item 1 — STRUCTURAL_ONLY, Phase 5 frozen)
 

@@ -66,13 +66,28 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 - **IEEE 1110-2002:** electromagnetic torque Te=ψ_d·i_q−ψ_q·i_d (Eq. 12/C.1,
   VERBATIM) — the physical ancestor the VSM mimics. Does NOT define H, D, or
   the swing equation (delegates to Kundur [B54], NOT locally available).
-- **Gaps:** (a) REGFM_B1 gives no explicit state vector (must reconstruct
-  from integrator blocks — ~13-15 states); (b) no initialization equations;
-  (c) no anti-windup specification; (d) swing equation ODE form not written
-  as a numbered equation (Figure 2 block diagram only).
-- **Status: PARTIAL-TO-CLOSEABLE.** Core structure sourced; state
-  reconstruction + initialization must be derived (PROJECT_DERIVED from the
-  block diagram) and verified.
+- **Gaps (closed in Phase 6):** (a) REGFM_B1 gives no explicit state vector
+  — reconstructed as 11 states (PROJECT_DERIVED, frozen); (b) initialization
+  derived (PROJECT_DERIVED warm-start); (c) anti-windup deferred to Phase 14;
+  (d) swing ODE reconstructed as SOURCE_TRANSFORMED under frozen flag profile
+  ωFlag=0, FFlag=1, ωref=1 pu: 2H·dωm/dt = P_ref_inv − Pinv_f − (1/mp+D1)·ωm
+  − D2·(ωm − x_washout).
+- **Status: CLOSED (Phase 6).** Implemented in `+ibr/regfm_b1_vsg_model.m`
+  (11 states, STRUCTURAL_ONLY). Per-unit base contract (user-confirmed,
+  FROZEN): external ABI on system base; internal swing/filters on inverter
+  base (kappa=Sbase/Mbase); P_ref_inv=kappa·P_ref_sys (no double conversion).
+  All params SOURCE_VERBATIM from Table 1; NO ASSUMED_DIAGNOSTIC. 18/18 tests
+  pass. See `docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md`.
+- **Phase 7 (dual-mode):** superset 15-state fixed-layout device
+  (`+ibr/dual_mode_ibr_model.m`) reuses GFL (Phase 5) + GFM (Phase 6) as
+  single source of truth. Inactive branches decay-to-warmstart (lambda=1e-3,
+  NUMERICAL_METHOD) to keep the coupled Newton Jacobian full-rank while
+  holding inactive states at warm-start. 9/9 tests pass.
+- **Phase 8 (IEEE14 builder):** `+ibr/build_ieee14_ibr_devices.m` builds
+  real devices (IBR2@2, IBR3@3, IBR6@6, IBR8@8) with CASE_DEFINED Mbase
+  nameplate proxy (IBR2=140, IBR3/6/8=100 MVA). mixed_equilibrium_solve
+  works with real devices (SG_ON and SG_OFF+GFM converge; pure-GFL SG_OFF
+  fails closed). 6/6 tests pass.
 
 ### Item 3 — GFL↔VSG transfer maps + inactive-state rule  ⛔ GENUINE STOP
 
@@ -174,14 +189,14 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
   Per user directive: "only a source range exists with no normative/default
   selection" = stop.
 
-## Summary: 0/9 fully source-closed
+## Summary: 1/9 fully source-closed (Phase 6 closed item 2)
 
 | # | Item | Status |
 |---|------|--------|
 | 1 | GFL positive-sequence model | STRUCTURAL_ONLY (Phase 5 done; RMS reduction PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC) |
-| 2 | VSG/VSM from REGFM_B1 | PARTIAL-TO-CLOSEABLE (core sourced; state/init derived) |
-| 3 | GFL↔VSG transfer maps | ⛔ UNSOURCED — STOP |
-| 4 | Current limiter + anti-windup | PARTIAL (limiter sourced; anti-windup UNSOURCED) |
+| 2 | VSG/VSM from REGFM_B1 | CLOSED (Phase 6 done; 11-state model, all params SOURCE_VERBATIM, NO ASSUMED_DIAGNOSTIC) |
+| 3 | GFL↔VSG transfer maps | ⛔ UNSOURCED — STOP (Phase 7 dual-mode uses decay-to-warmstart as interim; full transfer Phase 10-11) |
+| 4 | Current limiter + anti-windup | PARTIAL (limiter sourced; anti-windup UNSOURCED; deferred to Phase 14) |
 | 5 | SG synchronism thresholds | ⛔ UNSOURCED — STOP |
 | 6 | Delays | ⛔ UNSOURCED — STOP |
 | 7 | IEEE14 SG dynamic data | ⛔ UNSOURCED (conflicting typical data) — STOP |

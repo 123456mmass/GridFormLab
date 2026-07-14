@@ -286,6 +286,26 @@ algorithm name does not authorize calling a ready-made implementation.
   acceptance target. Never tune parameters, scales, time constants, saturation,
   load model, finite-difference step or solver tolerance to match it.
 
+## Standing authorization for normal delivery
+
+When an approved implementation plan explicitly includes delivery, the agent
+may commit and fast-forward push the approved branch after all declared gates
+pass. The agent does not need to request a second approval immediately before
+that normal push when all of the following are true:
+
+- the push target and commit scope were included in the approved plan;
+- the working tree and index contain no unrelated user-owned changes;
+- the declared targeted and regression gates passed;
+- the remote branch has not advanced unexpectedly; and
+- the push is a normal fast-forward without rewritten published history.
+
+This standing authorization does not permit force-push, rebase or amend of
+published commits, history rewrite, unresolved conflicts, failed or unexplained
+incomplete gates, scope expansion, pushing unrelated files, or overwriting a
+newly advanced remote branch. Those actions still require explicit user
+approval. After delivery, verify and report that the local and remote commit
+IDs match.
+
 ## Required checks
 
 Before working in parallel branches or worktrees, read

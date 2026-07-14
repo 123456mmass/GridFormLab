@@ -22,6 +22,84 @@ after continuity/reset equations and falsification tests are written.
 
 ---
 
+## 2026-07-15 corrective decisions — authoritative
+
+This section supersedes older implementation-status and dispatch/slack prose
+below where it conflicts. `SOURCE_VERBATIM` and `SOURCE_TRANSFORMED` are
+documentary sublabels of the canonical `SOURCE_DEFINED` class.
+
+### D10 — Reference coordinates do not replace KCL equations
+
+The old angle-vcon formulation could report a small reduced residual while
+omitting a physical KCL mismatch (about 0.581 pu for SG_OFF and 1.586623 pu
+for SG_ON). It is rejected.
+
+- SG REF fixes both rectangular case-REF voltage coordinates and solves
+  constant `[Tm;Efd]` as equilibrium outputs.
+- SG_OFF GFM REF fixes one angle coordinate and solves one selected reference
+  `P_ref` as the balancing output.
+- Both residuals retain every rectangular KCL row.
+- The solved `u_eq` and immutable context are held constant by audited TS and
+  SSSA; no time-step re-slack is allowed.
+
+Classification: network equations `SOURCE_DEFINED`; coordinate/control
+closure `PROJECT_DERIVED`; damped Newton and FD Jacobians `NUMERICAL_METHOD`.
+
+### D11 — Variable-count, index-selected GFMs with one reference
+
+- `n_gfm_required` is explicit; 1, 2, 3, or more selected GFMs are permitted.
+- `selected_gfm_indices` must equal the complete online runtime GFM set.
+- Exactly one selected member is the numerical reference. Other selected
+  resources remain physical GFMs and share through the model equations.
+- A hybrid snapshot owns the atomic selection/count/reference tuple. Duplicate
+  caller metadata must agree or the solve fails closed.
+- With an online SG, the SG at the case REF bus remains the numerical REF; the
+  committed GFM reference applies on the SG_OFF right limit.
+
+Classification: user mission requirement `CASE_DEFINED`; index validation and
+transaction mechanics `PROJECT_DERIVED`.
+
+### D12 — Dispatch and reference active power
+
+The Pmax-proportional schedule remains the CASE_DEFINED non-reference dispatch.
+It is not, by itself, a network-feasibility proof and Pmax compliance does not
+prove `ImaxSS` compliance.
+
+- Non-reference GFM `P_ref` remains scheduled.
+- Every GFM reactive output is solved by the network/voltage equations.
+- The one reference GFM `P_ref` is an equilibrium output that balances load
+  and losses. The result records scheduled P, solved P, deviation, and Pmax.
+- Feasibility requires convergence, all-KCL residual `<1e-6`, reduced Jacobian
+  `rcond>1e-10`, and explicit implemented device-limit checks.
+- No `ImaxSS` readiness claim is permitted before Phase-G2 implements the
+  sourced steady-state limiter.
+
+### D13 — Inactive/offline state semantics
+
+- Inactive online dual-mode states are exact holds (`dx=0`); the old artificial
+  `lambda=1e-3` decay is removed.
+- Offline dual-mode IBR: `f=0`, `I=0`, `Pe=0`, no active states.
+- Offline SG: excluded from stationary equilibrium/SSSA, but TS integrates
+  rotor coast and open-circuit flux dynamics with zero network current.
+- `Tpq0=0` `Edp` remains a frozen SOURCE_DEFINED singular limit.
+
+### D14 — Phase-G split and readiness
+
+G1 implemented REGFM_B1 Eq.13 transient clamp, correct inverter/system-base
+conversion, sourced `VPLLfrz=0.05`, and one shared current helper. G2 still
+owns Emax/Emin handling, anti-windup, PQ priority, Fig.6 `kI/s`, and Eqs.10-11.
+
+GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC`; therefore the blanket historical
+claim “No ASSUMED_DIAGNOSTIC production values” is not a readiness claim.
+
+```text
+IEEE14_IBR_GFL_MODEL_READY       = STRUCTURAL_ONLY
+PHASE_G1_LIMITER_READY           = IMPLEMENTED_STRUCTURAL_ONLY
+IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
+```
+
+---
+
 ## Item 7 — IEEE14 SG1 dynamic data → CASE_DEFINED (designed from IEEE14 case + IEEE 1110-2002 typical-data clause)
 
 ### 1. Exact equations/values required
@@ -327,12 +405,11 @@ hits `[Emin, Emax]`, and to `x_Idlim` when `δIT` hits `[δITmin, δITmax]`.
 
 None.
 
-### Falsification tests (Phase 14)
+### Falsification tests (G1 implemented / G2 deferred)
 
-- `test_limiter_transient_cap`: `|I| ≤ ImaxF` enforced.
-- `test_limiter_pq_priority`: priority flag selects Id/Iq allocation.
-- `test_anti_windup_freeze`: integrator state frozen during saturation.
-- `test_anti_windup_recovery`: integrator resumes on de-saturation.
+- G1: `test_limiter_transient_cap` and `VPLLfrz` freeze are implemented.
+- G2: PQ priority, Fig.6 limiter integration, and anti-windup tests remain
+  deferred and cannot support a readiness claim yet.
 
 ---
 
@@ -622,18 +699,18 @@ None — (a) is CASE_DEFINED from the a-priori study. Documented derivation.
 | 8 | 219 MW dispatch | CASE_DEFINED | Pmax-proportional participation, feasibility-proven in Phase 4 |
 | 9 | gamma_req | CASE_DEFINED | 0.1 rad/s (a-priori 5% damping at 1 Hz, conservative) |
 
-**No ASSUMED_DIAGNOSTIC production values.** Every value is SOURCE_VERBATIM,
-SOURCE_TRANSFORMED, CASE_DEFINED, or PROJECT_DERIVED with documented
-derivation + falsification tests.
+The GFM slice uses SOURCE_DEFINED/CASE_DEFINED/PROJECT_DERIVED values, but the
+GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC` and are excluded from production
+acceptance. No readiness statement may erase that limitation.
 
 **No value may change after viewing outcomes.** All values are frozen in
 this ledger BEFORE Phase 4-17 implementation. The decision ledger is the
 frozen contract; any change requires re-approval.
 
-## What proceeds next (Phase 4-17)
+## What proceeds next after the corrective checkpoint
 
-Per the phase sequence, the next phase is Phase 4 (mixed equilibrium /
-reference-gauge contract), which verifies the dispatch contract (item 8) is
-PF-feasible before TS. Each phase writes its falsification tests before
-model code, runs targeted tests, and commits with fresh regression. No
-push/merge. Readiness milestones stay NOT_READY until each gate passes.
+Mixed equilibrium, fixed-step equation sharing, and structural index-selected
+event primitives are implemented. Next work is Phase-G2, integrated
+topology/equilibrium/SSSA selection evidence, event-driving adaptive TS with
+right-limit rollback, source closure for GFL gains, and independent validation.
+Readiness remains NOT_READY until those gates pass.

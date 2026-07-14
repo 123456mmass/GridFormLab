@@ -1,8 +1,8 @@
 # IEEE14 1-SG + 4-IBR Mission — Equation/Source Matrix (Phase 1)
 
-**Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY` = `PARTIAL` (see gap summary);
-`IBR_PRODUCTION_INTEGRATION_READY` = `NOT_STARTED`.
-**Branch:** `feature/ieee14-auto-vsg-switching`. **Date:** 2026-07-13.
+**Status:** implemented structural contracts are source/classification mapped;
+`IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.
+**Branch:** `main`. **Last corrective update:** 2026-07-15.
 
 This matrix records the per-equation, per-parameter provenance for the IEEE14
 1-SG + 4-IBR automatic GFL/VSG switching mission, traced from primary-source
@@ -12,6 +12,30 @@ verbatim with exact location), `SOURCE_TRANSFORMED` (cited source, notation
 transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 (derived in-repo from a sourced law), `NUMERICAL_METHOD`, `UNSOURCED`,
 `DECISION_REQUIRED`. Only the first five support production claims.
+
+Canonical acceptance classes in the current `AGENTS.md` are
+`SOURCE_DEFINED`, `CASE_DEFINED`, `PROJECT_DERIVED`, `NUMERICAL_METHOD`, and
+`ASSUMED_DIAGNOSTIC`. In this historical matrix, `SOURCE_VERBATIM` and
+`SOURCE_TRANSFORMED` are sublabels of `SOURCE_DEFINED`.
+
+## 2026-07-15 implementation reconciliation
+
+- Correct SG_ON and SG_OFF equilibria retain all physical KCL rows. A voltage
+  gauge removes coordinates, never network equations.
+- SG REF fixes the case voltage and solves `[Tm;Efd]`; SG_OFF solves one
+  selected reference-GFM P input. These are PROJECT_DERIVED closures of the
+  SOURCE_DEFINED network/device equations.
+- Exact index-selected sets with 1, 2, and 3 GFMs pass; exactly one selected
+  member is the numerical reference and other selected members remain GFMs.
+- G1 implements REGFM_B1 Eq.13 transient clamp and sourced PLL freeze. G2
+  steady-state PQ priority, Fig.6 integration, Eqs.10-11, Emax/Emin behavior,
+  and anti-windup remain deferred.
+- Equilibrium returns `u_eq`, context, and authenticated state maps used by the
+  same f/g closures in fixed-step TS and SSSA.
+- The selector currently enumerates structural candidates only; it does not
+  fabricate topology/SSSA evidence and keeps `ready_to_commit=false`.
+- GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC`, so production readiness remains
+  NOT_READY regardless of structural test success.
 
 ## Source PDFs (SHA-256 provenance)
 
@@ -80,14 +104,14 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
   pass. See `docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md`.
 - **Phase 7 (dual-mode):** superset 15-state fixed-layout device
   (`+ibr/dual_mode_ibr_model.m`) reuses GFL (Phase 5) + GFM (Phase 6) as
-  single source of truth. Inactive branches decay-to-warmstart (lambda=1e-3,
-  NUMERICAL_METHOD) to keep the coupled Newton Jacobian full-rank while
-  holding inactive states at warm-start. 9/9 tests pass.
+  single source of truth. Inactive online mode-unique states are exact holds
+  (`dx=0`, PROJECT_DERIVED); explicit active-state reduction handles Newton
+  and eig conditioning without an artificial decay pole.
 - **Phase 8 (IEEE14 builder):** `+ibr/build_ieee14_ibr_devices.m` builds
   real devices (IBR2@2, IBR3@3, IBR6@6, IBR8@8) with CASE_DEFINED Mbase
-  nameplate proxy (IBR2=140, IBR3/6/8=100 MVA). mixed_equilibrium_solve
-  works with real devices (SG_ON and SG_OFF+GFM converge; pure-GFL SG_OFF
-  fails closed). 6/6 tests pass.
+  nameplate proxy (IBR2=140, IBR3/6/8=100 MVA). The corrected solver checks
+  every KCL row, solves explicit SG/GFM reference controls, supports exact
+  one/two/three-GFM sets, and rejects a pure-GFL SG_OFF island.
 
 ### Item 3 — GFL↔VSG transfer maps + inactive-state rule  ⛔ GENUINE STOP
 
@@ -115,7 +139,10 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
 - **Gap:** anti-windup logic for the voltage PI and the active-current
   integrator is NOT specified. Reset-to-zero described; no back-calculation
   or conditional-integration formula.
-- **Status: PARTIAL.** Limiter sourced; anti-windup UNSOURCED.
+- **Status: G1 IMPLEMENTED_STRUCTURAL_ONLY / G2 DEFERRED.** G1 implements
+  Eq.13 circular saturation, correct base conversion, and sourced Fig.4 PLL
+  freeze. G2 owns PQ priority, Eqs.10-11, Fig.6 integrator, Emax/Emin behavior,
+  and PROJECT_DERIVED anti-windup.
 
 ### Item 5 — SG synchronism thresholds/dwell/timeout  ⛔ GENUINE STOP
 
@@ -189,28 +216,26 @@ transformed), `CASE_DEFINED` (determined by IEEE14 case), `PROJECT_DERIVED`
   Per user directive: "only a source range exists with no normative/default
   selection" = stop.
 
-## Summary: 1/9 fully source-closed (Phase 6 closed item 2)
+## Summary: source closure is distinct from approved implementation
 
 | # | Item | Status |
 |---|------|--------|
 | 1 | GFL positive-sequence model | STRUCTURAL_ONLY (Phase 5 done; RMS reduction PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC) |
 | 2 | VSG/VSM from REGFM_B1 | CLOSED (Phase 6 done; 11-state model, all params SOURCE_VERBATIM, NO ASSUMED_DIAGNOSTIC) |
-| 3 | GFL↔VSG transfer maps | ⛔ UNSOURCED — STOP (Phase 7 dual-mode uses decay-to-warmstart as interim; full transfer Phase 10-11) |
-| 4 | Current limiter + anti-windup | PARTIAL (limiter sourced; anti-windup UNSOURCED; deferred to Phase 14) |
+| 3 | GFL↔VSG transfer maps | PROJECT_DERIVED active-state/transfer contract implemented; no artificial decay; source-verbatim bumpless-transfer validation remains open |
+| 4 | Current limiter + anti-windup | G1 IMPLEMENTED_STRUCTURAL_ONLY (Eq.13 clamp + VPLL freeze); G2 steady-state PQ priority, Fig.6 state, Eqs.10-11, and anti-windup deferred |
 | 5 | SG synchronism thresholds | ⛔ UNSOURCED — STOP |
 | 6 | Delays | ⛔ UNSOURCED — STOP |
 | 7 | IEEE14 SG dynamic data | ⛔ UNSOURCED (conflicting typical data) — STOP |
 | 8 | 219 MW dispatch/energy contract | ⛔ UNSOURCED — STOP |
 | 9 | γ_req eigenvalue margin | ⛔ UNSOURCED — STOP |
 
-**Six items (3, 5, 6, 7, 8, 9) are genuine stop conditions.** Per the user's
-retained stop conditions, the mission STOPS at Phase 1 for these items.
-Independent generic work (Phase 2 event architecture, Phase 3 hybrid-state)
-that does NOT assume the missing decisions MAY proceed with synthetic
-fixtures. Phase 4 (mixed equilibrium) is blocked by item 8; Phase 5 (GFL
-model) is STRUCTURAL_ONLY (done); Phase 6 (GFM/VSG model) proceeds from item 2
-(PARTIAL-TO-CLOSEABLE); the GFL↔GFM transfer / mode-switching missions
-(Phases 10-11) are blocked by item 3; Phases 10-13 are blocked by items 3/5/6.
+Historical source gaps were resolved where authorized through explicit
+CASE_DEFINED or PROJECT_DERIVED decisions in the Decision Ledger. This does
+not make them source-verbatim and does not imply production readiness. Mixed
+equilibrium and structural fixed-step TS/SSSA are now implemented; integrated
+automatic event driving, G2 limiting/anti-windup, source-closed GFL gains, and
+independent validation remain open.
 
 ## Conventions that ARE source-closed (reusable)
 
@@ -237,13 +262,11 @@ model) is STRUCTURAL_ONLY (done); Phase 6 (GFM/VSG model) proceeds from item 2
 - **Phase 3** — persistent hybrid-state/rollback contract with synthetic
   fixtures.
 
-## What is blocked (genuine stop)
+## Remaining readiness blockers
 
-- **Phase 4** (mixed equilibrium) — needs dispatch/energy contract (item 8).
-- **Phase 5** (GFL model) — STRUCTURAL_ONLY (done; RMS reduction PROJECT_DERIVED,
-  Kps/Kis ASSUMED_DIAGNOSTIC; production readiness pending source-closing the
-  ASSUMED_DIAGNOSTIC gains and the Phase 9 mixed-equilibrium integration).
-- **Phase 6** (GFM/VSG model) — proceeds from item 2 (PARTIAL-TO-CLOSEABLE);
-  the GFL↔GFM transfer maps (item 3) are NOT required for Phase 6.
-- **Phases 7-17** — depend on 5/6.
-- **Phases 10-13** — need synchronism (item 5), delays (item 6).
+- Source-close or replace GFL `Kps/Kis` before a production GFL claim.
+- Implement and validate G2 steady-state limiting and anti-windup.
+- Couple selector candidates to real topology/equilibrium/SSSA evidence.
+- Implement an event-driving adaptive hybrid TS with right-limit rollback and
+  synchronism-enforced reclose.
+- Complete independent multi-case validation and readiness derivation.

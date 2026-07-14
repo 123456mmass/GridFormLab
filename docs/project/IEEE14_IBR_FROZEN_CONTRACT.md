@@ -1,13 +1,65 @@
 # IEEE14 1-SG + 4-IBR Mission — Frozen Mathematical Contract (Phase 1)
 
-**Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY` = `PARTIAL` (6 genuine stop
-gaps remain; see source matrix).
-**Branch:** `feature/ieee14-auto-vsg-switching`. **Date:** 2026-07-13.
+**Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY` = `PASS` for the implemented
+structural slice; `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.
+**Branch:** `main`. **Last corrective update:** 2026-07-15.
 
 This document freezes the mathematical profile that CAN be source-closed
 from the primary sources the user provided, and explicitly fences the items
 that remain genuine stop conditions. Per the user directive, autonomous
 selection used the predeclared hierarchy where alternatives existed.
+
+## 2026-07-15 authoritative corrective addendum
+
+This section supersedes older phase/deferred statements below where they
+conflict. The canonical acceptance classes are `SOURCE_DEFINED`,
+`CASE_DEFINED`, `PROJECT_DERIVED`, `NUMERICAL_METHOD`, and
+`ASSUMED_DIAGNOSTIC`. Legacy `SOURCE_VERBATIM` and `SOURCE_TRANSFORMED` labels
+are documentary sublabels of `SOURCE_DEFINED`, not additional readiness
+classes.
+
+### Physical reference and KCL contract
+
+- A gauge removes a voltage coordinate; it never removes a physical KCL row.
+- Every equilibrium, audited SSSA, and audited TS point retains all `2*nb`
+  rectangular rows of `g = Y*V - Iinj`.
+- Online SG REF:
+  `z=[x_active; y except Re/Im(Vref); Tm; Efd]`,
+  `R=[f_active; all KCL]`; the case REF magnitude and angle are fixed.
+- SG_OFF GFM REF:
+  `z=[x_active; y except Im(Vref); P_ref_reference]`,
+  `R=[f_active; all KCL]`.
+- `u_eq`, the immutable hybrid context, and authenticated state maps are shared
+  by equilibrium, SSSA, and TS. Solved reference controls are held constant in
+  TS; there is no per-step re-slack.
+
+### Exact selected-GFM contract
+
+- `n_gfm_required` is explicit and may be 1, 2, 3, or larger.
+- `selected_gfm_indices` must equal the complete online runtime GFM set.
+- Exactly one selected member is `reference_resource_index`; the other
+  selected resources remain physical GFMs.
+- The tuple is atomic and owned by the hybrid snapshot. Conflicting duplicate
+  metadata, offline/incapable members, count drift, order drift, or a reference
+  outside the set fails closed.
+- When an SG is online it owns the case REF; the committed GFM reference becomes
+  the numerical reference only on the SG_OFF right limit.
+
+### Current implementation boundary
+
+- SG1 uses the approved Kodsi 60 Hz CASE_DEFINED profile. `Tpq0=0` is treated
+  as the sourced singular limit with `Edp=0` frozen before Newton/eig.
+- SG device input ABI is `u=[Tm;Efd]`. At the REF equilibrium both are solved
+  outputs. The old PF `Pg=232.4 MW` is not frozen as an input.
+- Phase-G1 implements REGFM_B1 Eq.13 transient clamp and Fig.4 PLL freeze:
+  `Z_sys=kappa*(Re+jXL)`, `ImaxF_sys=ImaxF/kappa`, circular current clamp, and
+  `|V|<VPLLfrz=0.05` freezes both PLL derivatives.
+- Phase-G2 still defers Emax/Emin actuator behavior, anti-windup, PQ priority,
+  Fig.6 `kI/s`, and Eqs.10-11.
+- Inactive online dual-mode states are exact holds (`dx=0`). Offline SG states
+  are excluded only from equilibrium/SSSA and evolve through breaker-open
+  coast/open-circuit equations in TS while injecting zero current.
+- Composite Ybus includes `diag((GS+j*BS)/baseMVA)`.
 
 ## Conventions (all SOURCE-backed, frozen)
 
@@ -64,9 +116,11 @@ selection used the predeclared hierarchy where alternatives existed.
   ωFlag=0, FFlag=1, ωref=1 pu):** 2H·dωm/dt = P_ref_inv − Pinv_f −
   (1/mp+D1)·ωm − D2·(ωm − x_washout); dx_washout/dt = ωD·(ωm − x_washout);
   dδVSM/dt = ω0·ωm. Steady state ωm = mp·(P_ref_inv − Pinv_f) = P-f droop.
-- **Output stage (Eq. 13, structural slice = LINEAR branch only):**
-  I∠φ = (EVSM∠δVSM − V∠δV)/(Re+jXL). ImaxF piecewise clamp deferred to
-  Phase 14 (consistent with GFL Phase 5 precedent).
+- **Output stage (Eq. 13, Phase-G1 implemented):** on the system base,
+  `I_unc=(EVSM*exp(j*deltaVSM)-Vbus)/(kappa*(Re+jXL))` and
+  `ImaxF_sys=ImaxF/kappa`. Below the threshold `Iout=I_unc`; at/above it the
+  output is the angle-preserving circular clamp. One shared helper supplies
+  RHS filters, network current, electrical power, and reconstruct.
 - **Parameters (REGFM_B1 Table 1 example values, CASE_DEFINED):** H=0.5, D1=0,
   D2=100, ωD=50, mp=0.02, mq=0.05, kpv=0, kiv=5, Re=0, XL=0.1, ImaxSS=1.0,
   ImaxF=1.5, kf=0.9, kI=2, PQFlag=1, TPf=TQf=TVf=TIf=0.02s. All SOURCE_VERBATIM
@@ -76,9 +130,10 @@ selection used the predeclared hierarchy where alternatives existed.
 - **Initialization (PROJECT_DERIVED, warm-start; Newton refines):** ωm0=0,
   x_washout0=0, δVSM0=angle(V0), x_Eint0=0, δPLL0=angle(V0), x_PLL_int0=0,
   Pinv_f0=κ·P_ref_sys, Qinv_f0=0, Vinv_f0=|V0|, Idinv_f0/Iqinv_f0=0.
-- **STATUS:** IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY (18/18 tests pass).
-- **GAPS (fenced, not production):** no explicit anti-windup; no mode switching
-  (REGFM_B1 is GFM-only); limiters/FRT deferred to Phase 14.
+- **STATUS:** `PHASE_G1_LIMITER_READY = IMPLEMENTED_STRUCTURAL_ONLY`.
+- **GAPS (fenced, not production):** no Emax/Emin actuator handling,
+  anti-windup, steady-state PQ-priority limiter, Fig.6 integrator, or complete
+  event-driven FRT. These remain Phase-G2 work.
 
 ## Dual-mode fixed-layout device (item 3 interim — Phase 7 implemented)
 
@@ -86,10 +141,9 @@ selection used the predeclared hierarchy where alternatives existed.
   delta_PLL, x_PLL_int) + GFM-unique (9) + GFL-unique (4). Implemented in
   `+ibr/dual_mode_ibr_model.m`. Reuses GFL (Phase 5) + GFM (Phase 6) as
   single source of truth (no equation duplication).
-- **Inactive-state rule (interim):** inactive branches decay-to-warmstart
-  (dx = −lambda·(x − x_warm), lambda=1e-3 NUMERICAL_METHOD) to keep the
-  coupled Newton Jacobian full-rank while holding inactive states at
-  warm-start. Full bumpless transfer deferred to Phase 10-11 (item 3 STOP).
+- **Inactive-state rule:** inactive online mode-unique states are exact holds
+  (`dx=0`, PROJECT_DERIVED). Explicit active-state reduction removes their
+  rows/columns before Newton and eig; no artificial decay pole remains.
 - **Inputs (nu=3):** u=[P_ref; Q_ref; V_ref]; mode selects subset.
 
 ## GFL model (item 1 — STRUCTURAL_ONLY, Phase 5 frozen)
@@ -136,11 +190,9 @@ selection used the predeclared hierarchy where alternatives existed.
 - **Parameter override (corrective patch):** any overridden parameter is
   validated (finite, positive) and reclassified `DIAGNOSTIC_ONLY` in the
   provenance; frozen defaults keep their original classification.
-- **Status:** `IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime
-  registration, no production-readiness claim. Mixed-equilibrium /
-  pure-GFL-island-via-solver / SSSA-sharing gates deferred to Phase 9
-  (require `mixed_equilibrium_solve` u-passing changes; no `+stability/**`
-  edits in Phase 5).
+- **Status:** `IEEE14_IBR_GFL_MODEL_READY = STRUCTURAL_ONLY`. Runtime
+  equilibrium/SSSA/TS sharing is now implemented, but `Kps/Kis` remain
+  `ASSUMED_DIAGNOSTIC`; therefore this cannot support production readiness.
 
 ## GFL↔VSG transfer + inactive-state rule (item 3 — ⛔ STOP)
 
@@ -152,12 +204,12 @@ selection used the predeclared hierarchy where alternatives existed.
   mode-switching missions (Phases 10-11). This does NOT block Phase 6 (the
   GFM/VSG model, which proceeds from item 2).
 
-## Current limiter + anti-windup (item 4 — PARTIAL)
+## Current limiter + anti-windup (item 4 — G1 PARTIAL IMPLEMENTATION)
 
-- REGFM_B1 Eqs. 10-13 + Figs. 5-7: steady-state PQ priority + transient
-  circular saturation. SOURCE_VERBATIM.
-- ⛔ Anti-windup logic NOT specified. → Blocks Phase 12 (physical FRT)
-  until sourced or derived.
+- G1 implemented the SOURCE_DEFINED Eq.13 transient circular saturation and
+  sourced Fig.4 `VPLLfrz` behavior with PROJECT_DERIVED base conversion.
+- G2 defers Eqs.10-11 steady-state PQ priority, Fig.6 active-current
+  integrator, Emax/Emin actuator logic, and PROJECT_DERIVED anti-windup.
 
 ## SG synchronism (item 5 — ⛔ STOP)
 

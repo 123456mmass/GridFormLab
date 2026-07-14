@@ -91,6 +91,15 @@ IBR_DIAGNOSTIC_PROTOTYPE_READY = PASS or FAIL
 IBR_PRODUCTION_INTEGRATION_READY = NOT_STARTED
 ```
 
+> **2026-07-15 integration addendum:** integration has begun and the historical
+> pre-integration ownership split above is no longer a current readiness flag.
+> The approved corrective work is consolidated on `main` under one
+> implementation owner, with independent read-only review. Current status is
+> `PHASE_G1_LIMITER_READY = IMPLEMENTED_STRUCTURAL_ONLY` and
+> `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`. Shared-core edits require the
+> all-KCL/SG-reference/TS-SSSA gates recorded in `AGENT_HANDOFF.md`; parallel
+> writers must still avoid overlapping files.
+
 ### Track C — equations, sources, and validation design
 
 Purpose: prepare evidence for the production IBR implementation without

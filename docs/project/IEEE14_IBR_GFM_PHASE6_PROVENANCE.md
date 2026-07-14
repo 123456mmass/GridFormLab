@@ -4,10 +4,14 @@
 
 | Document | Path | SHA-256 |
 |----------|------|---------|
-| REGFM_B1 spec (NREL/TP-5D00-90260, UNIFI-2024-6-1, June 2024) | `docs/paper/90260.pdf` | `de52a0b7c8beec6d16d8e10b53a565d902ab1a79ef093ba3d6d80260a9287d50` |
+| REGFM_B1 spec (NREL/TP-5D00-90260, UNIFI-2024-6-1, June 2024) | local validation copy `docs/text/90260.pdf` (untracked) | `de52a0b7c8beec6d16d8e10b53a565d902ab1a79ef093ba3d6d80260a9287d50` |
 
-**Path note:** Phase 5 handoff/provenance cited `docs/text/90260.pdf` (absent). The
-canonical committed file is `docs/paper/90260.pdf`. This doc corrects the path.
+**Path note:** no source PDF is committed at the current HEAD. The report
+number, figure/equation identifiers, and verified hash are permanent
+bibliographic provenance; the local `docs/text` copy is validation material
+and not a production dependency. The local IEEE-1110 PDF has a different hash
+from the historical matrix and must not be claimed identical without a
+separate provenance update.
 
 ## State vector (11, fixed order)
 
@@ -47,9 +51,10 @@ Filters (Eqs.1-5), `kappa=Sbase/Mbase`:
 
 dq (Eqs.6-9, via δPLL); `P_meas=Re(V·conj(I))`, `Q_meas=Im(V·conj(I))` (system base).
 
-PLL (Fig.4; ΔωPLL limits + freeze deferred):
+PLL (Fig.4; ΔωPLL limits deferred; sourced low-voltage freeze implemented):
 - `dx_PLL_int/dt = Vq`
 - `dδPLL/dt = ω0·(kpPLL·Vq + kiPLL·x_PLL_int)`
+- if `|Vbus| < VPLLfrz=0.05 pu`, both derivatives are zero.
 
 VSM swing (Fig.2, SOURCE_TRANSFORMED, FROZEN under flag profile ωFlag=0, FFlag=1, ωref=1 pu; inverter base):
 - `2H·dωm/dt = P_ref_inv - Pinv_f - (1/mp + D1)·ωm - D2·(ωm - x_washout)`
@@ -62,8 +67,14 @@ Voltage PI (Fig.3; Emax/Emin deferred):
 - `dx_Eint/dt = V_ref - Vinv_f`
 - `EVSM = V_ref - mq·Qinv_f + kpv·(V_ref - Vinv_f) + kiv·x_Eint`
 
-Output (Eq.13 linear branch; ImaxF piecewise clamp deferred):
-- `I = (EVSM·exp(j·δVSM) - V_bus)/(Re + j·XL)` (positive INTO network, system base)
+Output (Eq.13 with Phase-G1 transient clamp):
+- `Zsys = kappa·(Re + j·XL)` (PROJECT_DERIVED base conversion)
+- `Iunc_sys = (EVSM·exp(j·δVSM) - V_bus)/Zsys`
+- `ImaxF_sys = ImaxF/kappa`
+- below the threshold `Iout=Iunc`; otherwise
+  `Iout=ImaxF_sys·Iunc/|Iunc|` (SOURCE_DEFINED Eq.13 circular branch)
+- one shared helper supplies RHS filters, network current, electrical power,
+  and reconstruct.
 
 `electrical_power`: `Pe = Re(V_bus·conj(I))` (S=V·conj(I), generator convention).
 
@@ -76,13 +87,22 @@ Mbase=CASE_DEFINED nameplate proxy. **NO ASSUMED_DIAGNOSTIC** (unlike GFL Kps/Ki
 ## Frozen flag profile (before results)
 ωFlag=0, FFlag=1, ωref=1 pu, VdrpFlag=0, QVFlag=1, PQFlag=1, ESFlag=1.
 
-## Limiter-disabled structural slice (deferred to Phase 14)
-Δω limits, ΔωPLL limits, Emax/Emin, δmax (Eq.12), ImaxF piecewise clamp (Eq.13 branch 2),
-active-current limiter (Fig.6, delta_IT), PLL freeze (VPLLfrz).
+## Phase-G split
 
-## Initialization (PROJECT_DERIVED, warm-start; Newton refines)
+Implemented in G1: Eq.13 `ImaxF` transient clamp, system/inverter-base
+conversion, `VPLLfrz` PLL freeze, and shared limiter metadata.
+
+Deferred to G2: Δω/ΔωPLL limits, Emax/Emin actuator behavior, Eqs.10-11 PQ
+priority, Fig.6 active-current limiter state, and anti-windup.
+
+## Initialization (PROJECT_DERIVED)
 ωm0=0, x_washout0=0, δVSM0=angle(V0), x_Eint0=0, δPLL0=angle(V0), x_PLL_int0=0,
 Pinv_f0=κ·P_ref_sys (inv base), Qinv_f0=0, Vinv_f0=|V0|, Idinv_f0/Iqinv_f0=0.
+
+That constructor state is only a warm start. The mixed-resource reduced
+initializer solves terminal voltage/P/Q, then `equilibrium_initialize`
+algebraically reconstructs an exact 11-state device root from REGFM_B1
+Eqs.1-9, Eq.13, and Figs.2-4. GFM Q is network-solved, not a new input.
 
 ## Tests (`tests/test_ibr_regfm_b1_vsg_model.m`, 18 tests, oracles declared before results)
 - state_count, pq_sign, current_into_network, equilibrium_residual (<1e-6)
@@ -102,9 +122,11 @@ Predeclared tolerances: residual 1e-6, FD Richardson 1e-4, poles RelTol 1e-3,
 linearization AbsTol 5e-2, rcond 1e-10.
 
 ## STATUS
-`IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY`. No catalog/runtime registration, no
-production-readiness claim. Limiters/FRT deferred (Phase 14). TS integration deferred.
-`IBR_PRODUCTION_INTEGRATION_READY` stays NOT_READY.
+`PHASE_G1_LIMITER_READY = IMPLEMENTED_STRUCTURAL_ONLY`. Corrected equilibrium,
+fixed-step TS, and SSSA share the same f/g closures, solved `u_eq`, immutable
+context, and authenticated state maps. The top-level runner is still
+no-event/static-context; G2 and integrated hybrid rollback are deferred.
+`IBR_PRODUCTION_INTEGRATION_READY` stays `NOT_READY`.
 
 ## Equation → source → code → test mapping
 | Equation | Source | Code (`+ibr/regfm_b1_vsg_model.m`) | Test |
@@ -117,6 +139,6 @@ production-readiness claim. Limiters/FRT deferred (Phase 14). TS integration def
 | Eq.6-9 (dq) | 90260 p.2 | `gfm_f` Id/Iq/Vq | numerical_linearization |
 | Fig.2 (VSM swing) | 90260 p.1 | `gfm_f` dωm/dx_washout/dδVSM | vsm_poles, source_guards |
 | Fig.3 (voltage PI) | 90260 p.2 | `gfm_f` dx_Eint, EVSM | equilibrium_residual |
-| Fig.4 (PLL) | 90260 p.2 | `gfm_f` dx_PLL_int/dδPLL | pll_poles |
-| Eq.13 (output) | 90260 p.4 | `gfm_current_injection` | current_into_network, source_guards |
+| Fig.4 (PLL) | 90260 p.2 | `gfm_f` dx_PLL_int/dδPLL + VPLLfrz branch | pll_poles, Phase-G low-voltage freeze |
+| Eq.13 (output) | 90260 p.4 | shared `limited_current` helper | current_into_network, Phase-G clamp/base/helper consistency |
 | Table 1 (params) | 90260 p.5 | parameter block | provenance_complete |

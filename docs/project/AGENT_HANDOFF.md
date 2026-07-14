@@ -1,111 +1,128 @@
-# Agent handoff — 2026-07-14
+# Agent handoff — IEEE14 mixed-resource IBR corrective checkpoint
 
-## IBR Generic Mixed-Resource Engine — Phase B1-J Complete
+Date: 2026-07-15
+Branch: `main`
+Implementation commit: `6f48eff`
+Immediate parent work: `dff89dc` (eigenvalue dominant-state table)
 
-**Current commit:** `a003520` on `main` (HEAD == origin/main). All 4 checkpoint
-commits (823d4e6, 61aa433, df4190a, 6126425) preserved without rebase/amend.
+This is the current canonical handoff. Older phase handoffs remain historical
+evidence and do not override this file or
+`handoffs/IEEE14_IBR_PHASEG1_CORRECTIVE_HANDOFF.md`.
 
-### Completed phases (B0-J)
+## Outcome
 
-| Phase | Description | Commit | Tests |
-|---|---|---|---|
-| B0 | Generic foundation (resource table, uniform schema) | 6126425 | structural |
-| B1 | Tpq0=0 frozen-state + equilibrium gate | 733b433 | 13/13 |
-| B2 | No-event composite TS vertical slice | 3ab81e8 | 6/6 |
-| C | Transfer maps + frozen anchor | ddfba19 | 6/6 |
-| D | Composite SSSA + index-based selector | 38dc4d9 | 6/6 |
-| E+F | SG trip + GFM commit + synchronism + reclose | 63492de | 6/6 |
-| I | solve_case IBR Simulation route | a003520 | functional |
-| J | Final regression + handoff (this) | TBD | 649/653 |
+The false SG_ON and SG_OFF equilibria caused by replacing a physical KCL row
+with an angle constraint are removed. A reference constraint now removes a
+coordinate only; every rectangular network KCL equation remains in the solved
+residual.
 
-Phases G (limiter/FRT) and H (adaptive rollback): structural foundations exist;
-full sourced implementation deferred per frozen contract stop-gaps.
+Two physical reference formulations are implemented:
 
-### Key architectural decisions implemented
+```text
+SG online REF:
+  unknowns = [x_active; y except Re/Im(Vref); Tm_ref; Efd_ref]
+  residual = [f_active; all 2*nb KCL rows]
+  Vref is fixed to the case REF magnitude and angle
 
-1. **Tpq0=0 frozen-state (singular limit):** Kodsi SG1 has Tpq0=0 (round-rotor).
-   Edp is algebraically eliminated: dEdp=0, Edp=0 frozen. Generic: derived from
-   device metadata (frozen_state_indices/values), never hard-coding state index 4.
-   Active-state Newton + SSSA reduction before eig.
-
-2. **Index-based resource configuration:** No hard-coded SG_ON/SG_OFF, no
-   one-SG/four-IBR assumptions. All decisions derive from validated resource
-   indices, capabilities, committed configuration, topology, equilibrium
-   feasibility, and SSSA evidence.
-
-3. **Coupled trapezoidal residual (correction 7):** TS solves R_x and R_g
-   simultaneously via composite_newton (NOT Picard iteration). Active-state
-   only (frozen Edp excluded from Newton unknown vector).
-
-4. **solve_case IBR route:** 4th analysis type. Non-interactive:
-   `solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',opt)`.
-   Thin dispatcher — no equations, no device construction in solve_case.
-
-### New production files (10)
-
-- `+stability/resource_table.m` — validated indexed resource table
-- `+stability/build_mixed_resource_devices.m` — generic factory dispatch
-- `+stability/build_hybrid_scenario.m` — case_data + resources binding
-- `+stability/sg_composite_device.m` — EMF6 5-arg ABI + frozen-state metadata
-- `+stability/sg_stator_current.m` — EMF6 stator Id/Iq (correction 2)
-- `+stability/composite_newton.m` — one damped-Newton owner
-- `+stability/run_hybrid_case.m` — top-level mixed-SG+IBR orchestrator
-- `+stability/ts_simulate_composite.m` — coupled trapezoidal composite TS
-- `+stability/composite_sssa_model.m` — active-state Galerkin before eig
-- `+stability/ibr_config_selector.m` — index-based resource-config selector
-- `+stability/transfer_maps.m` — GFL↔GFM algebraic continuity maps
-- `+stability/synchronism_guard.m` — signed-margin SG reclose predicate
-- `+stability/sg_event_handler.m` — per-SG trip+GFM commit+reclose
-
-### Edited files (5)
-
-- `+stability/mixed_equilibrium_solve.m` — frozen-state exclusion, per-island VF
-- `+stability/ts_hybrid_state_init.m` — device_frozen_anchor field
-- `+ibr/dual_mode_ibr_model.m` — frozen_state metadata, uniform schema
-- `+stability/build_mixed_resource_devices.m` — normalize frozen fields
-- `solve_case.m` — add 'ibr' analysis type
-
-### Test files (7 new, 2 updated)
-
-- `tests/test_ieee14_1sg_4ibr_phaseB1.m` — 13 tests
-- `tests/test_ieee14_1sg_4ibr_phaseB2.m` — 6 tests
-- `tests/test_ieee14_1sg_4ibr_phaseC.m` — 6 tests
-- `tests/test_ieee14_1sg_4ibr_phaseD.m` — 6 tests
-- `tests/test_ieee14_1sg_4ibr_phaseEF.m` — 6 tests
-- `tests/test_ieee14_1sg_4ibr_phase4.m` — updated (10 tests)
-- `tests/test_ieee14_1sg_4ibr_phase8_real.m` — updated (6 tests)
-
-### Latest regression
-
-**649/653 passed, 0 failed, 4 incomplete** (PSAT/PGAz filtered — expected).
-
-### Unfinished (deferred)
-
-- Phase G: REGFM_B1 Eqs.10-13 limiter/FRT sourced edit (pending source)
-- Phase H: Adaptive hybrid TS rollback (structural engine present)
-- Phase J final: this handoff replaces the old
-
-### Status flags
-
-```
-IBR_DIAGNOSTIC_PROTOTYPE_READY  = PASS (NaN root cause diagnosed + fixed)
-IBR_PRODUCTION_INTEGRATION_READY = STRUCTURAL_COMPLETE (pending G+H for READY)
+SG offline, selected GFM REF:
+  unknowns = [x_active; y except Im(Vref); P_ref_reference]
+  residual = [f_active; all 2*nb KCL rows]
+  one selected GFM P reference balances load and losses
 ```
 
-### Safe continuation
+The solved controls are returned in `u_eq` and held constant by the audited
+fixed-step TS and SSSA paths. They are not re-solved at each time step.
 
-1. Phase G: implement REGFM_B1 Eqs.10-13 current limiter + anti-windup in
-   `regfm_b1_vsg_model.m`.
-2. Phase H: adaptive-step TS variant in `ts_simulate_composite.m`.
-3. Then flip `IBR_PRODUCTION_INTEGRATION_READY = READY`.
-4. Multi-case validation (IEEE9/RTS-24/Padiyar) is a separate future mission.
+## Exact index-selected GFM contract
 
-### Reproduction
+- `n_gfm_required` is explicit; the engine does not assume one GFM.
+- `selected_gfm_indices` may contain 1, 2, 3, or more eligible resources.
+- The selected set must equal the complete online runtime GFM set.
+- Exactly one selected GFM is `reference_resource_index`.
+- Other selected resources remain physical GFMs and share through their
+  sourced equations; they are not relabeled as GFL or as additional slacks.
+- The selection/count/reference tuple is atomic. A hybrid-state snapshot owns
+  the tuple; conflicting caller metadata fails closed.
+- Resource IDs, device ordering, online status, GFM capability, cardinality,
+  and reference membership are validated before Newton.
 
-```matlab
-restoredefaultpath; cd('C:\Users\User\Desktop\Power-flow');
-pf_init_paths;
-r = runtests('tests','IncludeSubfolders',true);
-result = solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',...
-    struct('t_end',5.0,'dt',0.01));
+## Corrected runtime path
+
+```text
+scenario / solve_case
+  -> build_mixed_resource_devices
+  -> mixed_equilibrium_solve
+       -> mixed_ibr_reduced_initialize (SG_OFF warm start)
+       -> composite_dae f/g and all-KCL residual
+       -> composite_newton (damped Newton/backtracking)
+  -> composite_sssa_model (same f/g, full-KCL Schur reduction)
+  -> ts_simulate_composite (same f/g, constant u_eq/context)
+  -> result/output
 ```
+
+Equilibrium and TS state maps are intentionally distinct. An offline SG has no
+stationary root with retained mechanical torque, so its states are excluded
+from equilibrium/SSSA. During TS its non-singular states still follow the
+breaker-open rotor-coast and open-circuit flux equations while its network
+current is exactly zero. Inactive dual-mode IBR states use exact `dx=0`; the
+old artificial `lambda=1e-3` decay is removed.
+
+## Network and model corrections
+
+- Composite Ybus now includes MATPOWER bus shunts:
+  `diag((GS + j*BS)/baseMVA)`. IEEE14 bus 9 therefore contributes `+j0.19 pu`.
+- GFL and GFM devices expose exact, equation-derived equilibrium initializers.
+- The GFM Eq.13 current clamp uses
+  `Z_sys=kappa*(Re+jXL)` and `ImaxF_sys=ImaxF/kappa`.
+- The same limited-current helper feeds RHS filters, current injection,
+  electrical power, and reconstruction.
+- REGFM_B1 PLL freeze at `|V| < VPLLfrz=0.05 pu` is active.
+- `composite_newton` retains project-owned damped Newton/backtracking; rejected
+  line-search steps are never applied. No LM, pseudo-inverse, or external
+  solver fallback is present.
+
+## Evidence
+
+Focused corrective gates: `105/105 passed`, including Phase 4/8/B2/EF/G,
+one-to-three GFM selection, atomic event commitment, SG reference, SG_OFF
+TS/SSSA, Newton contracts, and the external-solver guard.
+
+SG REF independent evidence at the corrected root:
+
+```text
+physical KCL / residual = 8.35060909e-11
+rcond                   = 1.58080885e-5
+V1                      = 1.06 angle 0
+Tm solved               = 2.01708058 pu
+Efd solved              = 1.18881580 pu
+```
+
+The original MATPOWER REF `Pg=232.4 MW` is not treated as a fixed input. Under
+the mixed-resource `Qref=0` operating point, REF-bus P/Q are solved outputs.
+
+Fresh post-implementation full regression on MATLAB R2025a: `718 total / 714
+passed / 0 failed / 4 incomplete`. The four incomplete results are the
+PGAz-conversion contract assumptions filtered because PGAz is not installed;
+they are not new Phase-G1 failures.
+
+## Honest readiness
+
+```text
+IEEE14_IBR_GFL_MODEL_READY       = STRUCTURAL_ONLY
+PHASE_G1_LIMITER_READY           = IMPLEMENTED_STRUCTURAL_ONLY
+IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
+```
+
+Remaining blockers include source-closing GFL `Kps/Kis`, Phase-G2 steady-state
+PQ priority/current limiting and anti-windup, an integrated topology +
+equilibrium + SSSA selector, an event-driving adaptive hybrid simulation with
+right-limit rollback, and independent validation. The current production
+runner is still no-event/static-context; do not claim end-to-end automatic
+trip/switch/reclose readiness.
+
+## Preserved local material
+
+`docs/text/` and `docs/probes/ieee14_ibr_phaseG/` are intentionally untracked.
+They include local source transcriptions and validation-only probes, including
+external-solver experiments. They are not production dependencies and were not
+staged by this corrective delivery.

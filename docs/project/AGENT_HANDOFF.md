@@ -1,235 +1,111 @@
 # Agent handoff — 2026-07-14
 
-## Latest progression and machine-migration checkpoint
+## IBR Generic Mixed-Resource Engine — Phase B1-J Complete
 
-The verified IEEE14 IBR Phase 5 checkpoint is `f1d372d`, published on
-`origin/main` on 2026-07-14. Successor mission progression is:
+**Current commit:** `a003520` on `main` (HEAD == origin/main). All 4 checkpoint
+commits (823d4e6, 61aa433, df4190a, 6126425) preserved without rebase/amend.
 
-- Phases 0–4: merged and complete.
-- Phase 5: GFL structural model complete at `f1d372d`;
-  `IEEE14_IBR_GFL_MODEL_READY=STRUCTURAL_ONLY`.
-- Phase 6: REGFM_B1-derived GFM/VSG model is parked; planning/implementation
-  has not started.
-- Phases 7–17: not started.
-- `IBR_PRODUCTION_INTEGRATION_READY=NOT_READY`.
+### Completed phases (B0-J)
 
-Two follow-on commits checkpoint the current workstation for migration:
+| Phase | Description | Commit | Tests |
+|---|---|---|---|
+| B0 | Generic foundation (resource table, uniform schema) | 6126425 | structural |
+| B1 | Tpq0=0 frozen-state + equilibrium gate | 733b433 | 13/13 |
+| B2 | No-event composite TS vertical slice | 3ab81e8 | 6/6 |
+| C | Transfer maps + frozen anchor | ddfba19 | 6/6 |
+| D | Composite SSSA + index-based selector | 38dc4d9 | 6/6 |
+| E+F | SG trip + GFM commit + synchronism + reclose | 63492de | 6/6 |
+| I | solve_case IBR Simulation route | a003520 | functional |
+| J | Final regression + handoff (this) | TBD | 649/653 |
 
-- `99ab4fe` — user-authorized absolute rotor-angle display policy.
-- `681a3c3` — **WIP/CHECKPOINT** of current Padiyar/IEEE14 report code,
-  report artifacts, validation-only PSAT driver, and report contract test.
+Phases G (limiter/FRT) and H (adaptive rollback): structural foundations exist;
+full sourced implementation deferred per frozen contract stop-gaps.
 
-### User-authorized rotor-angle display policy
+### Key architectural decisions implemented
 
-Default TS/result plots use the stored absolute rotor angle `delta_i(t)` with
-no initial-angle, reference-machine, or COI subtraction. Any transformed
-diagnostic plot must be explicitly labeled. Stability decisions continue to
-use COI-relative and pairwise metrics. No solver, state, or default plotter
-implementation was changed for this policy; `scripts/plot_ts_result.m`
-already displayed stored absolute angles.
+1. **Tpq0=0 frozen-state (singular limit):** Kodsi SG1 has Tpq0=0 (round-rotor).
+   Edp is algebraically eliminated: dEdp=0, Edp=0 frozen. Generic: derived from
+   device metadata (frozen_state_indices/values), never hard-coding state index 4.
+   Active-state Newton + SSSA reduction before eig.
 
-### WIP report producer → artifact → test mapping
+2. **Index-based resource configuration:** No hard-coded SG_ON/SG_OFF, no
+   one-SG/four-IBR assumptions. All decisions derive from validated resource
+   indices, capabilities, committed configuration, topology, equilibrium
+   feasibility, and SSSA evidence.
 
-- `scripts/reporting/generate_padiyar_two_area_report.m` orchestrates the
-  two-area report and invokes
-  `scripts/reporting/generate_padiyar_ieee14_psat_tables.m`.
-- `scripts/reporting/generate_padiyar_ieee14_psat_tables.m` computes the
-  report-only IEEE14 Our/PSAT material and invokes the validation-only
-  `scripts/validation/case14/run_psat_case14.m`.
-- Generated/current artifacts are
-  `docs/source/report_padiyar_two_area.{tex,pdf}` and the IEEE14/two-area
-  TeX tables and PNG figures under
-  `docs/source/figures/padiyar_two_area/`.
-- `tests/test_padiyar_ieee14_report_section.m` is the intended structural
-  report contract test.
+3. **Coupled trapezoidal residual (correction 7):** TS solves R_x and R_g
+   simultaneously via composite_newton (NOT Picard iteration). Active-state
+   only (frozen Edp excluded from Newton unknown vector).
 
-These report files were captured exactly from the user's current working copy
-for machine migration. They were **not regenerated or freshly revalidated in
-this checkpoint**. By explicit user direction, Agent A ran no MATLAB tests,
-PSAT/report generation, LaTeX compilation, or full regression for commits
-`99ab4fe`/`681a3c3`. Their contents are WIP artifacts, not fresh acceptance
-evidence and not an IBR readiness claim. Generated TeX tables retain
-pre-existing trailing whitespace reported by `git diff --check`; it was not
-rewritten because migration required preserving current contents exactly.
+4. **solve_case IBR route:** 4th analysis type. Non-interactive:
+   `solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',opt)`.
+   Thin dispatcher — no equations, no device construction in solve_case.
 
-The last verified Phase 5 evidence remains the separate `f1d372d` record:
-21/0/0 Phase 5 tests, 579/0/4 full regression (four PSAT-environment
-incompletes), and 12/0 external-solver guard. Do not attribute those counts to
-the WIP report checkpoint.
+### New production files (10)
 
-Local primary-source material under `docs/text/` was deliberately excluded
-from Git: ignored PDFs plus untracked extracted `ding.txt` and `regfm.txt`.
-The IEEE 1110 PDF version/hash mismatch documented in the Phase 5 handoff
-remains unresolved. Preserve these local files; do not force-add them.
+- `+stability/resource_table.m` — validated indexed resource table
+- `+stability/build_mixed_resource_devices.m` — generic factory dispatch
+- `+stability/build_hybrid_scenario.m` — case_data + resources binding
+- `+stability/sg_composite_device.m` — EMF6 5-arg ABI + frozen-state metadata
+- `+stability/sg_stator_current.m` — EMF6 stator Id/Iq (correction 2)
+- `+stability/composite_newton.m` — one damped-Newton owner
+- `+stability/run_hybrid_case.m` — top-level mixed-SG+IBR orchestrator
+- `+stability/ts_simulate_composite.m` — coupled trapezoidal composite TS
+- `+stability/composite_sssa_model.m` — active-state Galerkin before eig
+- `+stability/ibr_config_selector.m` — index-based resource-config selector
+- `+stability/transfer_maps.m` — GFL↔GFM algebraic continuity maps
+- `+stability/synchronism_guard.m` — signed-margin SG reclose predicate
+- `+stability/sg_event_handler.m` — per-SG trip+GFM commit+reclose
 
-## Current baseline
+### Edited files (5)
 
-The branch was returned to `47b1cd6` (adaptive classical TS integrator) after a
-later reset/rewrite changed solver behavior. Missing uncommitted files were
-recovered from Git dangling blobs or the known follow-up commit, then the root
-was reorganized without changing the validated classical PF/TS equations.
+- `+stability/mixed_equilibrium_solve.m` — frozen-state exclusion, per-island VF
+- `+stability/ts_hybrid_state_init.m` — device_frozen_anchor field
+- `+ibr/dual_mode_ibr_model.m` — frozen_state metadata, uniform schema
+- `+stability/build_mixed_resource_devices.m` — normalize frozen fields
+- `solve_case.m` — add 'ibr' analysis type
 
-A local safety stash named `safety-before-rollback-to-47b1cd6-2026-07-11`
-contains the discarded post-reset rewrite. Do not pop it into `main`; inspect
-individual files first.
+### Test files (7 new, 2 updated)
 
-## 2026-07-11 EMF6 unification + fsolve removal (this session)
+- `tests/test_ieee14_1sg_4ibr_phaseB1.m` — 13 tests
+- `tests/test_ieee14_1sg_4ibr_phaseB2.m` — 6 tests
+- `tests/test_ieee14_1sg_4ibr_phaseC.m` — 6 tests
+- `tests/test_ieee14_1sg_4ibr_phaseD.m` — 6 tests
+- `tests/test_ieee14_1sg_4ibr_phaseEF.m` — 6 tests
+- `tests/test_ieee14_1sg_4ibr_phase4.m` — updated (10 tests)
+- `tests/test_ieee14_1sg_4ibr_phase8_real.m` — updated (6 tests)
 
-The operational EMF6 model is now the SINGLE sixth-order equation set shared
-by SSSA and higher-order TS:
-- SSSA: `stability.multicase_sssa` dispatches every sixth-order case to
-  `stability.synchronous_emf6_ssa` (in-house Newton, no fsolve).
-- TS: `stability.ts_simulate` routes `model='emf6'` (and the legacy aliases
-  `flux6`/`genpj6`/`kundur6`) to the new `stability.ts_simulate_emf6`, which
-  consumes `stability.emf6_dae` directly (`dae_f(x,y)`, `dae_g(x,y,Y)`,
-  `electrical_power(x,y)`). Fixed corrector (default `corrector_iter=3`);
-  adaptive mode is present but NOT advertised as validated.
-- Event grid snaps fault/clear times to exact grid points (the classical
-  engine's `t_now >= t_fault` comparison is otherwise one step late under
-  floating-point accumulation).
+### Latest regression
 
-fsolve/optimoptions removed from all production packages. Moved to `legacy/`:
-`synchronous_flux_ssa`, `kundur_ex126_book_flux_ssa`, `sauer_pai_flux_ssa`,
-the `sauer_pai_ex83_ssa_*_tmp` trio, `genpj6_dae`, `ts_simulate_genpj6`,
-`kundur_fault_simulation_6th_order`, `kundur_e123_{family,primitive}_compare`,
-and their three tests. `powerflow_fsolve` moved to `compat/` (reference tool,
-assume-guarded). The calibrated `kundur_ex126_kundur_ssa`/`book_e123_ssa`
-family remains in `+stability` as fsolve-free reference implementations but is
-NOT in the catalog, launcher, or acceptance tests.
+**649/653 passed, 0 failed, 4 incomplete** (PSAT/PGAz filtered — expected).
 
-Full regression: 141 tests, 140 passed, 0 failed, 1 PSAT-filtered.
-Cross-validation reproduced on this host:
-- Case14 PSAT-vs-Ours: PF 4.49e-6 pu / 8.07e-4 deg; TS 0.0196 deg /
-  7.54e-6 pu / 0.0750 MW / 5.40e-5 pu; 0 non-converged steps (matches the
-  documented baseline exactly -- classical path undisturbed).
-- Kundur 12.6 EMF6-vs-PSAT: 1.89 deg / 3.67e-4 pu (tol 5 / 1e-3), 1 non-conv
-  step of 6000 during the solid fault, init residual 2.13e-14. EMF6 uses only
-  published parameters; no calibration.
-- RTS-24: in-house TS runs clean (0 non-conv, max resid 2.3e-8). PSAT is not
-  installed on this host and no saved RTS-24 PSAT reference exists here, so
-  the PSAT leg is NOT re-verified (the documented baseline is from the
-  original PSAT environment and is not re-fabricated).
+### Unfinished (deferred)
 
-Reproduce with: `pf_init_paths; runtests('tests','IncludeSubfolders',true);`
-and `pf_init_paths; run_cross_validation;`
+- Phase G: REGFM_B1 Eqs.10-13 limiter/FRT sourced edit (pending source)
+- Phase H: Adaptive hybrid TS rollback (structural engine present)
+- Phase J final: this handoff replaces the old
 
-## Stable entry points
+### Status flags
 
-- `run_powerflow.m`
-- `run_sssa.m`
-- `run_ts.m`
-- `solve_case.m`
-- `pf_init_paths.m`
+```
+IBR_DIAGNOSTIC_PROTOTYPE_READY  = PASS (NaN root cause diagnosed + fixed)
+IBR_PRODUCTION_INTEGRATION_READY = STRUCTURAL_COMPLETE (pending G+H for READY)
+```
 
-Root is reserved for those entry points and project documentation. Historical
-wrappers are in `compat/`; runnable support scripts are under `scripts/`; old
-reference submissions are under `legacy/` and are deliberately not on the
-MATLAB path.
+### Safe continuation
 
-## Restored contracts and files
+1. Phase G: implement REGFM_B1 Eqs.10-13 current limiter + anti-windup in
+   `regfm_b1_vsg_model.m`.
+2. Phase H: adaptive-step TS variant in `ts_simulate_composite.m`.
+3. Then flip `IBR_PRODUCTION_INTEGRATION_READY = READY`.
+4. Multi-case validation (IEEE9/RTS-24/Padiyar) is a separate future mission.
 
-- `+cases/standardize_case.m` and `standardize_study_case.m`
-- standard network/study schema calls in case loaders
-- `+stability/classical_sssa.m`
-- `+stability/emf6_dae.m` and `synchronous_emf6_ssa.m`
-- `internal/core/nonlinear_newton.m`
-- catalog-driven `solve_case` with state/status logging
-- PF/SSSA launchers and missing contract/launcher tests
+### Reproduction
 
-## Validated numerical baselines
-
-### IEEE RTS-24 vs PSAT 2.1.11
-
-Same converted network, constant-impedance load, classical machines, bus-15
-fault, `Zf=j0.1`, 1.0–1.1 s, `dt=0.01`:
-
-- PF max voltage and angle differences: numerical zero
-- max incremental COI-angle error: `0.0067 deg`
-- max speed error: `4.67e-6 pu`
-- max fault-bus voltage error: `0.0054 mpu`
-- max electrical-power error: `8.27e-4 pu`
-- non-converged adaptive steps: `0`
-
-### IEEE 14-bus three-way check
-
-The validator maps generators by bus `[1,2,3,6,8]`, compares angles/speeds in
-the COI frame, and reads fault voltage from bus ID 4 (an earlier script
-accidentally read generator-column 4 / bus 6). PSAT PF and TD both converge to
-15 s. With the production adaptive engine, PSAT vs Ours gives:
-
-- PF max voltage difference: `4.49e-6 pu`
-- PF max angle difference: `8.07e-4 deg`
-- TS max COI-angle error: `0.0196 deg`
-- TS max speed error: `7.54e-6 pu`
-- TS max electrical-power error: `0.0750 MW`
-- TS max bus-4 voltage error: `5.40e-5 pu`
-
-Run `compare_case14_ts_three_way` after any TS change.
-
-## Known technical debt — do not hide
-
-1. RESOLVED (2026-07-11): production packages no longer call `fsolve`/
-   `optimoptions`; the historical sixth-order/diagnostic files that did are in
-   `legacy/`. `compat/powerflow_fsolve.m` remains as an assume-guarded
-   reference comparison tool.
-2. RESOLVED (2026-07-11): the operational EMF6 SSSA and higher-order TS now
-   share one equation set (`stability.emf6_dae`). `test_emf6_model` and
-   `test_emf6_contract` cover the no-fault equilibrium, shared-model,
-   initialization-consistency, torque/power-identity, reference-angle
-   invariance and regression contracts.
-3. Higher-order EMF6 TS is pinned to a FIXED corrector. Adaptive residual
-   convergence is validated only for the classical path; an audited adaptive
-   EMF6 path is future work.
-4. RESOLVED (2026-07-11, session 2): the calibrated `kundur_ex126_kundur_ssa`
-   / `kundur_ex126_book_e123_ssa` / `genrou_ssa` / `sixth_order_ssa` /
-   `classical_analysis` family and `kundur_e123_reference` were moved from
-   `+stability` to `legacy/kundur/`, off the MATLAB path. They carried
-   historical tuning knobs and a calibrated Table E12.3 reproduction target;
-   the reporting/validation/diagnostic scripts that depended on them were
-   moved to `legacy/kundur/` as well. They must never be re-introduced as a
-   production acceptance target.
-5. Pre-existing stale data-shape expectations in `test_kundur_book_input_manifest`
-   and `test_matpower6_case14` (10-col/5-col vs the documented 12-col/7-col
-   contract) were corrected to match `AGENTS.md`.
-
-## Safe continuation order
-
-1. DONE (2026-07-11): removed production `fsolve` dependencies without
-   changing the classical PF/TS baselines.
-2. DONE (2026-07-11): unified EMF6 TS and SSSA around `emf6_dae`; added
-   no-fault-equilibrium and equation-derived contract tests.
-3. DONE (2026-07-11): full regression (141/140/0/1 PSAT-filtered) and the
-   Case14 + Kundur6 cross-validations reproduced. RTS-24 PSAT leg could not be
-   re-run on this host (PSAT absent) and is reported as not re-verified.
-4. NEXT: audit/relocate the calibrated `kundur_ex126_kundur_ssa` family to
-   `legacy/` (item 4 above); add a residual-based adaptive EMF6 corrector
-   with tests (item 3 above); re-run RTS-24 vs PSAT where PSAT is available.
-5. Always commit new files before any branch/reset operation.
-
-## 2026-07-13 Report rebuild (report/system-methods-v2 branch)
-
-Canonical PF/SSSA/TS technical report rebuilt (C0-C8) on
-docs/source/report_system_methods_update.tex from the equation-audited
-14-section architecture. All tables/figures emitted fresh by
-generate_system_methods_report against report HEAD 4f78cac.
-
-Verification (all on report branch):
-- Full regression: 351/351 passed, 0 failed, 0 incomplete.
-- test_no_external_solver_dependency: PASS (real MATLAB path scan).
-- Equation provenance audit: READY (101 equations, 0 gaps).
-- LaTeX: 13-page PDF, 0 undefined references (compiled twice).
-- Stale claims grep: 0 hits ("12 of 12", "May 2026", "PSAT not installed",
-  CPF/OPF scope all removed).
-- git diff origin/main..HEAD: report allowlist only; run_ts.m dirty edit and
-  AGENT_HANDOFF.md advisor directive preserved untouched on main's working tree.
-
-PSAT observed installed at ~/Documents/psat-2.1.11-mat/ (contradicts old
-handoff "PSAT not installed"). IEEE14: PSAT fresh, PF dV=6.661e-16,
-TS dCOI=0.0096 deg, psat_comparison=PASS. RTS-24: PSAT fresh, PF dV=4.441e-16,
-TS dCOI=0.0068 deg (matches prior baseline 0.0067). PGAz runs but TS
-discrepancy is diagnostic only (reported honestly, does not fail gate).
-
-ADAPTIVE_DEFAULT_SWITCH_READY=NOT_READY (adaptive timestep is explicit,
-not default). IBR_PRODUCTION_INTEGRATION_READY=NOT_STARTED.
-
-No push, no merge. The dirty run_ts.m edit on main is excluded user work.
+```matlab
+restoredefaultpath; cd('C:\Users\User\Desktop\Power-flow');
+pf_init_paths;
+r = runtests('tests','IncludeSubfolders',true);
+result = solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',...
+    struct('t_end',5.0,'dt',0.01));
+```

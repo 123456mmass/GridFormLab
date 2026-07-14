@@ -9,6 +9,8 @@ These rules apply to the entire repository.
 - Start from cited equations or an in-repo derivation. Document variables/order, units/bases, frames/signs, residuals/Jacobians, initialization, stopping criteria, limits, and fail-closed behavior.
 - Use source/case values exactly. Classify nontrivial choices as `SOURCE_DEFINED`, `CASE_DEFINED`, `PROJECT_DERIVED`, `NUMERICAL_METHOD`, or `ASSUMED_DIAGNOSTIC`; freeze choices before results. Diagnostic assumptions cannot support production/readiness claims.
 - Never tune, fabricate, scale, smooth, round, filter, clip, or alter models, parameters, events, solver settings, plots, or gates merely to improve agreement. Compare identical mapped inputs/IDs numerically; diagnose or report mismatches honestly.
+- Tests are falsification instruments, not targets to optimize. Never change a test, expected value, tolerance, skip condition, or gate merely to obtain PASS; first diagnose the governing sourced equation, physical convention, runtime path, and implementation.
+- Tests may—and must—be corrected when reproducible evidence proves that the test contradicts the cited source, approved derivation, physical/numerical contract, or intended runtime behavior. Document why the test is wrong, provide an independent oracle and before/after evidence, and obtain approval before changing any mathematical contract or acceptance criterion. Fix production code when the implementation is wrong; fix the test when the test is wrong. Never choose whichever side is easier to make pass.
 - Reports must distinguish sourced inputs, assumptions/equations, project results, and external references, with citations and generating commands/scripts.
 
 ## Planning and ownership
@@ -30,6 +32,7 @@ These rules apply to the entire repository.
 ## Verification and delivery
 
 - Run proportional targeted tests and normally: `pf_init_paths; r=runtests('tests','IncludeSubfolders',true);`. Run applicable independent comparisons only with identical input contracts.
+- Every test-file change must identify the proven defect in the previous test and its independent source or oracle. A passing suite alone is not evidence that the equations are correct.
 - Record branch, commit, environment, commands, pass/fail/incomplete counts, metrics, and limitations.
 - After approved scope passes declared gates, commit and fast-forward push without re-asking. Ask before conflicts, remote divergence, failed/unexplained gates, scope expansion, unrelated files, published-history rewrite, rebase, amend, or force-push.
 - Verify local HEAD equals the remote after delivery. Read `docs/project/AGENT_HANDOFF.md` for current status and technical debt.

@@ -29,9 +29,19 @@ if ~spec_ok
 end
 
 % ---- Initial classification ----
-regime_c = classify_one_z(z0, active_x_idx, frozen_x_idx, frozen_x_val, ...
-    free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
-    all_specs, eq_ctx);
+try
+    regime_c = classify_one_z(z0, active_x_idx, frozen_x_idx, frozen_x_val, ...
+        free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
+        all_specs, eq_ctx);
+catch me
+    z_sol = z0(:); niter = 0; converged = false;
+    res_norm = inf; rcond_val = NaN;
+    fail_id = 'mixed_equilibrium_solve:badActiveBoundSpec';
+    fail_reason = sprintf('initial classification failed: %s', me.message);
+    regime_history = {};
+    outer_iters = 0;
+    return;
+end
 
 % ---- Validate regime values ----
 [rg_ok, rg_msg] = validate_regime(regime_c);
@@ -46,9 +56,14 @@ if ~rg_ok
 end
 
 % ---- Validate initial raw_dot outputs are finite ----
-[rd_ok, rd_msg] = check_rawdot_finite(z0, active_x_idx, frozen_x_idx, ...
-    frozen_x_val, free_vars, vcon_vars, vcon_ref, ny_full, u_base, ...
-    slack_u_idx, all_specs, eq_ctx);
+try
+    [rd_ok, rd_msg] = check_rawdot_finite(z0, active_x_idx, frozen_x_idx, ...
+        frozen_x_val, free_vars, vcon_vars, vcon_ref, ny_full, u_base, ...
+        slack_u_idx, all_specs, eq_ctx);
+catch me
+    rd_ok = false;
+    rd_msg = sprintf('initial raw-dot evaluation failed: %s', me.message);
+end
 if ~rd_ok
     z_sol = z0(:); niter = 0; converged = false;
     res_norm = inf; rcond_val = NaN;
@@ -74,8 +89,20 @@ for outer = 1:MAX_OUTER
         all_specs, eq_ctx);
     wjac = @(wz) fd_jac(wz, wres, fd_eps);
 
-    [z_new, ni, cv, rn, rc] = stability.composite_newton( ...
-        z_c, wres, wjac, tol, max_iter, verbose);
+    try
+        [z_new, ni, cv, rn, rc] = stability.composite_newton( ...
+            z_c, wres, wjac, tol, max_iter, verbose);
+    catch me
+        if is_contract_failure(me.identifier)
+            z_sol = z_c; niter = total_iters;
+            converged = false; res_norm = inf; rcond_val = NaN;
+            outer_iters = outer; regime_history = history;
+            fail_id = me.identifier;
+            fail_reason = me.message;
+            return;
+        end
+        rethrow(me);
+    end
     total_iters = total_iters + ni;
 
     if ~cv
@@ -88,9 +115,18 @@ for outer = 1:MAX_OUTER
     end
 
     % ---- reclassify ----
-    regime_new = classify_one_z(z_new, active_x_idx, frozen_x_idx, frozen_x_val, ...
-        free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
-        all_specs, eq_ctx);
+    try
+        regime_new = classify_one_z(z_new, active_x_idx, frozen_x_idx, frozen_x_val, ...
+            free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
+            all_specs, eq_ctx);
+    catch me
+        z_sol = z_new; niter = total_iters;
+        converged = false; res_norm = rn; rcond_val = rc;
+        outer_iters = outer; regime_history = history;
+        fail_id = 'mixed_equilibrium_solve:badActiveBoundSpec';
+        fail_reason = sprintf('reclassification failed: %s', me.message);
+        return;
+    end
 
     % ---- Validate reclassified regime ----
     [r2_ok, r2_msg] = validate_regime(regime_new);
@@ -104,9 +140,14 @@ for outer = 1:MAX_OUTER
     end
 
     % ---- Reclassified raw_dot finite check ----
-    [rd2_ok, rd2_msg] = check_rawdot_finite(z_new, active_x_idx, frozen_x_idx, ...
-        frozen_x_val, free_vars, vcon_vars, vcon_ref, ny_full, u_base, ...
-        slack_u_idx, all_specs, eq_ctx);
+    try
+        [rd2_ok, rd2_msg] = check_rawdot_finite(z_new, active_x_idx, frozen_x_idx, ...
+            frozen_x_val, free_vars, vcon_vars, vcon_ref, ny_full, u_base, ...
+            slack_u_idx, all_specs, eq_ctx);
+    catch me
+        rd2_ok = false;
+        rd2_msg = sprintf('reclassified raw-dot evaluation failed: %s', me.message);
+    end
     if ~rd2_ok
         z_sol = z_new; niter = total_iters;
         converged = false; res_norm = rn; rcond_val = rc;
@@ -117,10 +158,22 @@ for outer = 1:MAX_OUTER
     end
 
     % ---- check admissibility ----
-    adm = all_admissible_inx(z_new, locked, ...
-        active_x_idx, frozen_x_idx, frozen_x_val, ...
-        free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
-        all_specs, eq_ctx);
+    try
+        adm = all_admissible_inx(z_new, locked, ...
+            active_x_idx, frozen_x_idx, frozen_x_val, ...
+            free_vars, vcon_vars, vcon_ref, ny_full, u_base, slack_u_idx, ...
+            all_specs, eq_ctx);
+    catch me
+        if is_contract_failure(me.identifier)
+            z_sol = z_new; niter = total_iters;
+            converged = false; res_norm = rn; rcond_val = rc;
+            outer_iters = outer; regime_history = history;
+            fail_id = me.identifier;
+            fail_reason = me.message;
+            return;
+        end
+        rethrow(me);
+    end
 
     if ~isfinite(adm)
         z_sol = z_new; niter = total_iters;
@@ -213,10 +266,16 @@ for dk = 1:numel(all_specs)
         gidx = e.offset + e.specs(sp).local_idx;
         zp = find(active_x == gidx, 1, 'first');
         if isempty(zp), continue; end
-        row_val = e.specs(sp).residual_fn(x_dev, y_full, u_dev, eq_ctx, reg);
+        try
+            row_val = e.specs(sp).residual_fn(x_dev, y_full, u_dev, eq_ctx, reg);
+        catch me
+            error('mixed_equilibrium_solve:badActiveBoundSpec', ...
+                'residual_fn threw dev=%d local=%d: %s', ...
+                dk, e.specs(sp).local_idx, me.message);
+        end
         if ~isscalar(row_val) || ~isfinite(row_val)
-            error('deflagged_component:bogusSpecResidual', ...
-                'Constraint for_each=%d setting=%d residual non-finite.', ...
+            error('mixed_equilibrium_solve:nonFiniteActiveBound', ...
+                'residual_fn dev=%d local=%d returned non-finite scalar.', ...
                 dk, e.specs(sp).local_idx);
         end
         r(zp) = row_val;
@@ -265,9 +324,15 @@ for dk = 1:numel(all_specs)
             if locked(si).dev_idx == dk && ...
                locked(si).local_idx == e.specs(sp).local_idx
                 reg_val = locked(si).regime;
-                ad = e.specs(sp).admissible_fn(x_dv, y_full, u_dv, eq_ctx, reg_val);
+                try
+                    ad = e.specs(sp).admissible_fn(x_dv, y_full, u_dv, eq_ctx, reg_val);
+                catch me
+                    error('mixed_equilibrium_solve:badActiveBoundSpec', ...
+                        'admissible_fn threw dev=%d local=%d: %s', ...
+                        dk, e.specs(sp).local_idx, me.message);
+                end
                 if ~isscalar(ad) || ~islogical(ad) || ~isfinite(ad)
-                    error('inactive_branch:notScalarAdmissibleDelivery', ...
+                    error('mixed_equilibrium_solve:badActiveBoundSpec', ...
                         'admissible_fn dev=%d local=%d returned non-scalar-logical.', ...
                         dk, e.specs(sp).local_idx);
                 end
@@ -296,7 +361,8 @@ function J = fd_jac(z, fn, h)
     nz = numel(z);
     r0 = fn(z);
     if numel(r0) ~= nz
-        error('bound aria:size', 'residual %d != z %d', numel(r0), nz);
+        error('mixed_equilibrium_solve:badActiveBoundSpec', ...
+            'FD residual length %d != z length %d.', numel(r0), nz);
     end
     J = zeros(nz);
     for j = 1:nz
@@ -308,13 +374,20 @@ end
 
 % ====================================================================
 function reg = find_regime_locked(locked, dev_id, local_id)
-    reg = 'interior';   % fallback when constraint not in locked set
     for i = 1:numel(locked)
         if locked(i).dev_idx == dev_id && locked(i).local_idx == local_id
             reg = locked(i).regime;
             return;
         end
     end
+    error('mixed_equilibrium_solve:badActiveBoundSpec', ...
+        'Locked regime missing for dev=%d local=%d.', dev_id, local_id);
+end
+
+% ====================================================================
+function tf = is_contract_failure(identifier)
+    tf = strcmp(identifier, 'mixed_equilibrium_solve:badActiveBoundSpec') || ...
+         strcmp(identifier, 'mixed_equilibrium_solve:nonFiniteActiveBound');
 end
 
 % ====================================================================
@@ -376,7 +449,7 @@ function [ok, msg] = validate_specs(all_spec_list)
                     d, s, entry.dev_nx);
                 return;
             end
-            required = {'classify_fn','residual_fn','admissible_fn'};
+            required = {'classify_fn','residual_fn','raw_dot_fn','admissible_fn'};
             for n = 1:numel(required)
                 if ~isfield(sp, required{n}) || ~isa(sp.(required{n}), 'function_handle')
                     ok = false;
@@ -468,7 +541,10 @@ function [ok, msg] = check_rawdot_finite(z, ...
         for si = 1:numel(e.specs)
             sp = e.specs(si);
             if ~isfield(sp, 'raw_dot_fn') || ~isa(sp.raw_dot_fn, 'function_handle')
-                continue;
+                ok = false;
+                msg = sprintf('spec dev %d local=%d missing raw_dot_fn.', ...
+                    d, sp.local_idx);
+                return;
             end
 
             try

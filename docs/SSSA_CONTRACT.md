@@ -182,6 +182,31 @@ convention, initialization, or publication-precision differences. No parameter, 
 constant, saturation, load model, finite-difference step, or solver tolerance was adjusted to
 reduce it.
 
+### 6.1 Launcher table presentation
+
+The launcher prints a single `FULL STATE EIGENVALUES` table with one row for
+every eigenvalue of `Afull`; it does not collapse a complex-conjugate pair or
+replace the table with the COI-reduced set. Real part, imaginary part,
+frequency, and damping ratio use two-decimal scientific notation. If stability
+classification uses a COI-relative set, its cardinality is reported only as
+decision-basis metadata above the full table.
+
+The order returned by the base-MATLAB `eig` primitive is an implementation
+order and has no physical or published-row meaning. For the Padiyar case only,
+when the attached Table 9.5 comparison copy has the same cardinality as the
+computed set, `padiyar_model11_ssa` prepares deterministic greedy one-to-one
+display metadata only after `multimachine_ssa` has completed the eigenproblem.
+The shared launcher reads that generic metadata and never reads the published
+target itself. It marks the ordering explicitly as `diagnostic only`. That
+ordering does not alter `Afull`, the computed eigenvalues, root counts, or
+stability status. Swing labels and the near-zero `reference/gauge` label are
+also presentation metadata for this published comparison.
+
+Other cases retain their computed eigensolver order but still print every full
+state-space root.
+No frequency-only heuristic is allowed to claim an `inter-area` label without
+case/reference metadata supporting that classification.
+
 ## 7. No-calibration / no-literature-acceptance
 
 - Kundur Table E12.3 is reference/case-study data only, never a numerical acceptance target

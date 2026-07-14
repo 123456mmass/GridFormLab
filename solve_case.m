@@ -450,24 +450,27 @@ fprintf('\n---------------- SSSA VERIFICATION --------------\n');
 fprintf('Dynamic states  : %d\n',numel(r.state_names));
 fprintf('Stability status: %s\n',r.stability_status);
 fprintf('Decision tol.   : %.3e 1/s\n',r.stability_tolerance);
+if isfield(r,'reduced_eigenvalues') && ...
+        numel(r.reduced_eigenvalues) < numel(r.eigenvalues)
+    fprintf('Decision basis  : COI-relative set (%d roots)\n', ...
+        numel(r.reduced_eigenvalues));
+else
+    fprintf('Decision basis  : full state eigenvalue set (%d roots)\n', ...
+        numel(r.eigenvalues));
+end
 fprintf('Root counts     : stable=%d, marginal=%d, unstable=%d\n',r.root_counts.stable,r.root_counts.marginal,r.root_counts.unstable);
 if isfield(r,'newton_residual'), fprintf('DAE residual    : %.3e\n',r.newton_residual); end
 fprintf('\nSTATE INVENTORY\n');
 for k=1:numel(r.state_names), fprintf('  x(%-3d) %s\n',k,r.state_names{k}); end
-if isfield(r,'reduced_eigenvalues'), lam=r.reduced_eigenvalues(:);
-else, lam=r.eigenvalues(:); end
-fprintf('\nEigenvalue set  : %d modes\n',numel(lam));
+lam=r.eigenvalues(:);
+fprintf('\nFULL STATE EIGENVALUES\n');
+fprintf('Eigenvalue set  : %d roots\n',numel(lam));
 fprintf('Max real(lambda): %+.6e 1/s\n',max(real(lam)));
+[lam_table, mode_labels, display_order] = sssa_table_display_order(r, lam);
+fprintf('Display order   : %s\n',display_order);
 A_tbl = r.Afull;
-if isfield(r,'Ared') && ~isempty(r.Ared) && size(r.Ared,1)==numel(lam)
-    A_tbl = r.Ared;
-end
 snm = r.state_names;
-if isfield(r,'keep') && ~isempty(r.keep)
-    % COI reduction: only show states that survived reduction.
-    snm = snm(r.keep);
-end
-print_eigenvalue_table(A_tbl, snm, lam);
+print_eigenvalue_table(A_tbl, snm, lam_table, mode_labels);
 end
 
 function r=annotate_sssa_result(r,opt)
@@ -494,12 +497,14 @@ end
 
 
 % =========================================================================
-function print_eigenvalue_table(A, state_names, lam)
+function print_eigenvalue_table(A, state_names, lam, mode_labels)
 %PRINT_EIGENVALUE_TABLE  Eigenvalues with f(Hz)/zeta + dominant state
 %   using participation factors (scale-invariant left×right product).
 if nargin<3||isempty(A)||isempty(lam), return; end
+if nargin<4||isempty(mode_labels), mode_labels=cell(numel(lam),1); end
 nx=size(A,1); lam=lam(:); nms=state_names(:);
-if nx~=numel(lam)||nx~=numel(nms), return; end
+mode_labels=mode_labels(:);
+if nx~=numel(lam)||nx~=numel(nms)||nx~=numel(mode_labels), return; end
 [V,Dval]=eig(A); W=inv(V); d=diag(Dval);
 perm=zeros(nx,1); tag=false(nx,1);
 for i=1:nx
@@ -507,41 +512,57 @@ for i=1:nx
     if ~tag(j)&&abs(d(j)-lam(i))<1e-6, perm(i)=j; tag(j)=true; break; end
   end, end
 if any(perm==0), perm=(1:nx)'; end
-fprintf('\n  No  Dominant state               Real          Imag         f(Hz)    zeta      Mode\n');
-done=false(nx,1); row=0;
+fprintf('\n  No  Dominant state              Real (1/s)   Imag (1/s)       f(Hz)       zeta  Mode\n');
 for i=1:nx
-  if done(i), continue; end; row=row+1;
-  pc=perm(i); re_i=real(lam(i)); im_i=abs(imag(lam(i)));
+  pc=perm(i); re_i=real(lam(i)); im_i=imag(lam(i));
   pf_vals=abs(V(:,pc).*W(pc,:).'); [~,bi]=max(pf_vals); lbl=char(nms{bi});
-  if im_i>1e-8
-    cj=0; for j=i+1:nx
-      if ~done(j)&&abs(real(lam(j))-re_i)<1e-8&&abs(abs(imag(lam(j)))-im_i)<1e-8
-        cj=j; break; end; end
-    if cj
-      pc2=perm(cj);
-      pf2=abs(V(:,pc2).*W(pc2,:).'); [~,bj]=max(pf2); l2=char(nms{bj});
-      if ~strcmp(lbl,l2), lbl=[lbl ' / ' l2]; end; done(cj)=true;
-    end
-    done(i)=true;
-    fhz=im_i/(2*pi); zet=-re_i/(abs(lam(i))+eps);
-    fprintf('%4d  %-24s  %+10.4e %+10.4e %8.3f %7.4f  %s\n',row,lbl,re_i,im_i,fhz,zet,mode_comment(lbl,im_i));
-  else
-    done(i)=true;
-    if re_i<0, z=1.0; else z=0.0; end
-    fprintf('%4d  %-24s  %+10.4e    (real)    %8.3f  %7.4f  %s\n',row,lbl,re_i,0.0,z,mode_comment(lbl,0));
-  end
+  fhz=abs(im_i)/(2*pi); zet=-re_i/(abs(lam(i))+eps);
+  cm=mode_labels{i};
+  if isempty(cm), cm=mode_comment(lbl,abs(im_i)); end
+  fprintf('%4d  %-24s %+11.2e %+11.2e %11.2e %10.2e  %s\n', ...
+      i,lbl,re_i,im_i,fhz,zet,cm);
 end
+end
+
+function [lam_table, mode_labels, description] = sssa_table_display_order(r, lam)
+%SSSA_TABLE_DISPLAY_ORDER  Presentation-only ordering for launcher output.
+%   Native eigensolver order has no physical or published-row meaning. A
+%   model wrapper may attach validated diagnostic display metadata after its
+%   eigenproblem is complete. The launcher never reads a reference target.
+lam=lam(:); n=numel(lam);
+lam_table=lam; mode_labels=cell(n,1);
+description='computed eigensolver order';
+if ~isfield(r,'launcher_eigenvalue_display') || ...
+        ~isstruct(r.launcher_eigenvalue_display)
+    return;
+end
+md=r.launcher_eigenvalue_display;
+required={'order','mode_labels','description','diagnostic_only'};
+if ~all(isfield(md,required)) || ~isequal(md.diagnostic_only,true)
+    return;
+end
+order=md.order(:);
+labels=md.mode_labels(:);
+if numel(order)~=n || numel(labels)~=n || ...
+        any(~isfinite(order)) || any(order~=fix(order)) || ...
+        ~isequal(sort(order),(1:n).') || ...
+        ~(ischar(md.description) || (isstring(md.description) && isscalar(md.description)))
+    return;
+end
+lam_table=lam(order);
+mode_labels=labels;
+description=char(md.description);
 end
 
 function cm = mode_comment(lbl, om_b)
 s = lower(lbl);
 if contains(s,'omega')
     if om_b > 1e-8
-        if om_b < 1.5, cm = 'inter-area'; else cm = 'electro-mec'; end
+        cm = 'electro-mec';
     else, cm = 'rotor damp'; end
 elseif contains(s,'delta')
     if om_b > 1e-8
-        if om_b < 1.5, cm = 'inter-area'; else cm = 'electro-mec'; end
+        cm = 'electro-mec';
     else, cm = 'rotor relax'; end
 elseif contains(s,'efd'), cm = 'exciter fld';
 elseif contains(s,'eqp')||contains(s,'edp'), cm = 'transient';
@@ -552,4 +573,3 @@ elseif contains(s,'r_f'), cm = 'exciter stab';
 else, cm = '';
 end
 end
-

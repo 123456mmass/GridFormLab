@@ -146,7 +146,17 @@ ts_opt = struct('t_end',5.0,'dt',0.01,'verbose',false);
 if isfield(opt,'t_end'), ts_opt.t_end = opt.t_end; end
 if isfield(opt,'dt'), ts_opt.dt = opt.dt; end
 if isfield(opt,'verbose'), ts_opt.verbose = opt.verbose; end
-[ts_res, ~] = stability.ts_simulate_composite(case_data, devices, eq.x0, eq.y0, ts_opt);
+ts_devices = devices;
+if isfield(eq,'reference') && isstruct(eq.reference) && ...
+        isfield(eq.reference,'physical_kcl_enforced') && ...
+        isequal(eq.reference.physical_kcl_enforced,true)
+    ts_devices = eq.devices;
+    ts_opt.u_eq = eq.u_eq;
+    ts_opt.event_context = eq.equilibrium_context;
+    ts_opt.dynamic_state_indices = eq.dynamic_state_indices;
+    ts_opt.full_kcl = true;
+end
+[ts_res, ~] = stability.ts_simulate_composite(case_data, ts_devices, eq.x0, eq.y0, ts_opt);
 
 result = struct();
 result.converged = ts_res.converged;
@@ -448,6 +458,16 @@ if isfield(r,'reduced_eigenvalues'), lam=r.reduced_eigenvalues(:);
 else, lam=r.eigenvalues(:); end
 fprintf('\nEigenvalue set  : %d modes\n',numel(lam));
 fprintf('Max real(lambda): %+.6e 1/s\n',max(real(lam)));
+A_tbl = r.Afull;
+if isfield(r,'Ared') && ~isempty(r.Ared) && size(r.Ared,1)==numel(lam)
+    A_tbl = r.Ared;
+end
+snm = r.state_names;
+if isfield(r,'keep') && ~isempty(r.keep)
+    % COI reduction: only show states that survived reduction.
+    snm = snm(r.keep);
+end
+print_eigenvalue_table(A_tbl, snm, lam);
 end
 
 function r=annotate_sssa_result(r,opt)
@@ -470,4 +490,45 @@ fprintf('Time range      : %.4f .. %.4f s\n',r.t(1),r.t(end));
 fprintf('Minimum voltage : %.6f pu\n',min(r.Vbus,[],'all'));
 if isfield(r,'omega_is_deviation')&&r.omega_is_deviation, wd=r.omega; else, wd=r.omega-1; end
 fprintf('Max |Delta w|   : %.6e pu\n',max(abs(wd),[],'all'));
+end
+
+
+% =========================================================================
+function print_eigenvalue_table(A, state_names, lam)
+%PRINT_EIGENVALUE_TABLE  Eigenvalues with f(Hz)/zeta + dominant state
+%   via right-eigenvector magnitude.
+if nargin<3||isempty(A)||isempty(lam), return; end
+nx=size(A,1); lam=lam(:); nms=state_names(:);
+if nx~=numel(lam)||nx~=numel(nms), return; end
+[V,Dval]=eig(A); d=diag(Dval);
+perm=zeros(nx,1); tag=false(nx,1);
+for i=1:nx
+  for j=1:nx
+    if ~tag(j)&&abs(d(j)-lam(i))<1e-6, perm(i)=j; tag(j)=true; break; end
+  end, end
+if any(perm==0), perm=(1:nx)'; end
+V=V(:,perm);
+fprintf('\n  No  Dominant state                   Real       Imag (abs)   f_Hz    zeta\n');
+done=false(nx,1); row=0;
+for i=1:nx
+  if done(i), continue; end; row=row+1;
+  re_i=real(lam(i)); im_i=abs(imag(lam(i)));
+  if im_i>1e-8
+    cj=0; for j=i+1:nx
+      if ~done(j)&&abs(real(lam(j))-re_i)<1e-8&&abs(abs(imag(lam(j)))-im_i)<1e-8
+        cj=j; break; end; end
+    [~,bi]=max(abs(V(:,i))); lbl=char(nms{bi});
+    if cj
+      [~,bj]=max(abs(V(:,cj))); l2=char(nms{bj});
+      if ~strcmp(lbl,l2), lbl=[lbl ' / ' l2]; end; done(cj)=true;
+    end
+    done(i)=true;
+    fhz=im_i/(2*pi); zet=-re_i/(abs(lam(i))+eps);
+    fprintf('%4d  %-30s  %+12.6e %12.6e %9.4f %8.4f\n',row,lbl,re_i,im_i,fhz,zet);
+  else
+    [~,bi]=max(abs(V(:,i))); lbl=char(nms{bi}); done(i)=true;
+    if re_i<0, z=1.0; else z=0.0; end
+    fprintf('%4d  %-30s  %+12.6e %12s %9.4f %8.4f\n',row,lbl,re_i,'(real)',0.0,z);
+  end
+end
 end

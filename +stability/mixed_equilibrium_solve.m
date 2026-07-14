@@ -497,8 +497,22 @@ end
 
 J_fn = @(z) coupled_jacobian_fd(z, residual_fn, fd_eps);
 
-[z_sol, niter, converged, residual_norm, rcond_val] = stability.composite_newton( ...
-    z0, residual_fn, J_fn, tol, max_iter, verbose);
+    % --- Active-bound constraint collection ----------------------------------
+    all_con_specs = stability.active_bound_collect(...
+        dae, x0_init, y_full_init, u_eq_init, eq_context);
+
+    if isempty(all_con_specs)
+        % G1 fast path: direct Newton (no constraints)
+        [z_sol, niter, converged, residual_norm, rcond_val] = ...
+            stability.composite_newton(z0, residual_fn, J_fn, tol, max_iter, verbose);
+    else
+        % G2 path: active-bound outer loop
+        [z_sol, niter, converged, residual_norm, rcond_val] = ...
+            stability.active_bound_run(z0, residual_fn, fd_eps, ...
+            active_x_indices, all_frozen_indices, all_frozen_values, ...
+            free_vars, vcon_vars, vcon_ref, ny_full, u_base, ...
+            all_con_specs, eq_context, tol, max_iter, verbose);
+    end
 
 result.iterations = niter;
 result.rcond = rcond_val;

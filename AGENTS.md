@@ -31,8 +31,11 @@ These rules apply to the entire repository.
 
 ## Verification and delivery
 
-- Run proportional targeted tests and normally: `pf_init_paths; r=runtests('tests','IncludeSubfolders',true);`. Run applicable independent comparisons only with identical input contracts.
+- During implementation, run the smallest proportional targeted tests that cover the changed producer, its consumers, the relevant failure path, and an independent oracle where applicable. Do not run the full repository regression after every edit, repair attempt, or agent turn.
+- Run `pf_init_paths; r=runtests('tests','IncludeSubfolders',true);` once on the final delivery tree when the change affects production numerical equations, shared runtime/dispatch/schema, composite DAE, SSSA/TS kernels or drivers, topology/events, launcher/path integration, or when the approved plan or user explicitly requires it. Also run it when targeted evidence cannot bound the transitive risk. A full PASS is invalidated by subsequent runtime/source changes, but need not be repeated after a commit or documentation-only edit when the tested source tree is unchanged.
+- Documentation-only, presentation-only, isolated fixture/test, and narrowly local changes may omit the full regression when targeted/static gates cover their scope and no production numerical/runtime contract changed. Record that the full suite was not run, why it was unnecessary, and the exact gates that were run. Any unexplained targeted failure escalates to broader testing; never use this policy to avoid investigating a failure.
+- Run applicable independent comparisons only with identical input contracts.
 - Every test-file change must identify the proven defect in the previous test and its independent source or oracle. A passing suite alone is not evidence that the equations are correct.
-- Record branch, commit, environment, commands, pass/fail/incomplete counts, metrics, and limitations.
+- Record branch, tested tree/commit, environment, commands, pass/fail/incomplete counts, metrics, limitations, and whether the full regression was required, reused from an unchanged tree, or intentionally omitted under the risk policy above.
 - After approved scope passes declared gates, commit and fast-forward push without re-asking. Ask before conflicts, remote divergence, failed/unexplained gates, scope expansion, unrelated files, published-history rewrite, rebase, amend, or force-push.
 - Verify local HEAD equals the remote after delivery. Read `docs/project/AGENT_HANDOFF.md` for current status and technical debt.

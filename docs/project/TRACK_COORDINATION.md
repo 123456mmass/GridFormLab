@@ -11,9 +11,12 @@ the same time.
 ## 1. Source of truth
 
 The integration branch is `main`. A result from another branch is valid only
-for the exact commit on which it was produced. If `main` advances, any claim
-that a feature branch is aligned, regression-clean, or merge-ready becomes
-stale until that branch is rebased and verified again.
+for the tested source tree/commit on which it was produced. If `main` advances,
+any claim that a feature branch is aligned or merge-ready becomes stale until
+the merge base and changed scope are rechecked. Rerun proportional targeted
+gates after integration; rerun the full regression only when the risk policy
+in the repository-root `AGENTS.md` requires it. Do not repeat an unchanged-tree
+full PASS merely because a commit was created or an agent turn ended.
 
 Agents must never copy numerical results between worktrees and present them as
 a fresh run. Each final report must record:
@@ -168,7 +171,9 @@ owner:
 Required before merging the diagnostic IBR branch:
 
 - Track B targeted tests pass;
-- full regression passes on the latest `main`;
+- the risk-proportional verification policy in `AGENTS.md` is satisfied on the
+  final merge tree; a full regression is required if the merge changes shared
+  production numerical/runtime behavior;
 - two-dot and three-dot diffs are identical;
 - diff contains Track-B-owned files only;
 - protected production core is unchanged;
@@ -216,7 +221,9 @@ For local parallel work:
 2. The integration owner updates `main`.
 3. A track waits until the current `main` task is fully committed.
 4. The track rebases onto `main` at a synchronization point.
-5. The track reruns targeted tests and the full regression.
+5. The track reruns targeted tests and any additional risk-proportional gates
+   required by `AGENTS.md`; a full regression is not automatic for every
+   rebase or turn.
 6. The track is merged only if its scope and regression gates pass.
 
 For work shared through a remote:
@@ -270,7 +277,8 @@ git diff --name-status main...HEAD
 git merge-base --is-ancestor main HEAD
 ```
 
-Run the track-targeted tests and then:
+Run the track-targeted tests. Run the following full regression once on the
+final tree only when required by the risk policy in `AGENTS.md`:
 
 ```matlab
 restoredefaultpath;
@@ -278,6 +286,9 @@ cd('/home/birds/Documents/Power-flow');
 pf_init_paths;
 r = runtests('tests','IncludeSubfolders',true);
 ```
+
+Do not rerun it after a commit when the tested source tree is unchanged. For a
+permitted omission, report the reason and exact targeted/static gates instead.
 
 The final report must distinguish:
 
@@ -288,8 +299,10 @@ The final report must distinguish:
 - known limitations;
 - overall repository status, including preserved unrelated changes.
 
-If `main` advances after verification, mark merge readiness stale. Rebase and
-rerun; do not reuse the previous PASS or test count.
+If `main` advances after verification, mark merge readiness stale, inspect the
+new diff, and rerun the affected targeted gates. Reuse a previous full PASS
+only when its tested source tree is unchanged; otherwise rerun full only if the
+combined final tree meets the `AGENTS.md` full-regression criteria.
 
 ## 9. Merge order
 
@@ -299,7 +312,8 @@ Unless the user explicitly changes priority, use this order:
 2. checkpoint repository policy/documentation changes separately;
 3. rebase and verify Track B against the new `main`;
 4. merge Track B diagnostic work;
-5. run a post-merge full regression;
+5. run post-merge targeted gates and one full regression if the merged final
+   tree changes shared production numerical/runtime behavior;
 6. freeze the production IBR interface contract;
 7. begin mixed SG/IBR integration under one integration owner;
 8. merge adaptive TS and IBR integration only after their shared-interface

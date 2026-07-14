@@ -507,7 +507,7 @@ for i=1:nx
     if ~tag(j)&&abs(d(j)-lam(i))<1e-6, perm(i)=j; tag(j)=true; break; end
   end, end
 if any(perm==0), perm=(1:nx)'; end
-fprintf('\n  No  Dominant state               Real          Imag         f(Hz)    zeta\n');
+fprintf('\n  No  Dominant state               Real          Imag         f(Hz)    zeta      Mode\n');
 done=false(nx,1); row=0;
 for i=1:nx
   if done(i), continue; end; row=row+1;
@@ -524,11 +524,32 @@ for i=1:nx
     end
     done(i)=true;
     fhz=im_i/(2*pi); zet=-re_i/(abs(lam(i))+eps);
-    fprintf('%4d  %-24s  %+10.4e %+10.4e %8.3f %7.4f\n',row,lbl,re_i,im_i,fhz,zet);
+    fprintf('%4d  %-24s  %+10.4e %+10.4e %8.3f %7.4f  %s\n',row,lbl,re_i,im_i,fhz,zet,mode_comment(lbl,im_i));
   else
     done(i)=true;
     if re_i<0, z=1.0; else z=0.0; end
-    fprintf('%4d  %-24s  %+10.4e    (real)    %8.3f  %7.4f\n',row,lbl,re_i,0.0,z);
+    fprintf('%4d  %-24s  %+10.4e    (real)    %8.3f  %7.4f  %s\n',row,lbl,re_i,0.0,z,mode_comment(lbl,0));
   end
 end
 end
+
+function cm = mode_comment(lbl, om_b)
+s = lower(lbl);
+if contains(s,'omega')
+    if om_b > 1e-8
+        if om_b < 1.5, cm = 'inter-area'; else cm = 'electro-mec'; end
+    else, cm = 'rotor damp'; end
+elseif contains(s,'delta')
+    if om_b > 1e-8
+        if om_b < 1.5, cm = 'inter-area'; else cm = 'electro-mec'; end
+    else, cm = 'rotor relax'; end
+elseif contains(s,'efd'), cm = 'exciter fld';
+elseif contains(s,'eqp')||contains(s,'edp'), cm = 'transient';
+elseif contains(s,'eq')||contains(s,'ed'), cm = 'field-trans';
+elseif contains(s,'_{q')||contains(s,'_{d'), cm = 'field-trans';
+elseif contains(s,'vr')||contains(s,'v_r'), cm = 'exciter reg';
+elseif contains(s,'r_f'), cm = 'exciter stab';
+else, cm = '';
+end
+end
+

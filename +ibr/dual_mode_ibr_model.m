@@ -179,6 +179,11 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+dev.frozen_state_indices = [];
+dev.frozen_state_values  = [];
+dev.frozen_state_source  = '';
+dev.active_state_indices = 1:dev.nx;
+dev.frozen_state_classification = '';
 dev.provenance = struct( ...
     'model','dual_mode_ibr_phase7_structural_only', ...
     'source','Reuses +ibr/gfl_model (Phase 5) + +ibr/regfm_b1_vsg_model (Phase 6) as single source of truth', ...

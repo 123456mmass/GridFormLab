@@ -16,6 +16,28 @@ function hybrid_state = ts_hybrid_state_init(devices)
 %     selector_table_version  selector table version counter
 %     selector_fingerprint    fingerprint of last selection
 %
+%   Multi-island reference-ownership schema (F1/C1, canonical):
+%     reference_owner_indices       owner resource index per island
+%     gfm_reference_resource_indices GFM numerical reference per island
+%                                    (empty entry where an SG owns)
+%     reference_island_ids          island ID per entry, sorted ascending
+%     selected_gfm_indices          complete physical online GFM set
+%                                    (independent of reference ownership)
+%     selector_table_fingerprint    immutable for the run; authenticates
+%                                    topology/resources/models/dispatch/
+%                                    selector policy/gamma_req/cached evidence
+%     committed_config_fingerprint  changes atomically after each accepted
+%                                    mode/online/reference configuration
+%     pre_event_input_fingerprint   immutable; authenticates pre_event_input
+%
+%   Legacy read-only alias:
+%     reference_resource_index      scalar; single-island only. SG_OFF:
+%                                    equals gfm_reference_resource_indices(1).
+%                                    SG_ON: must be [] (must NOT point to SG).
+%                                    multi-island: unsupported/empty.
+%   Normalization/validation is owned by stability.reference_owner_schema;
+%   consumers read the normalized struct and never interpret the alias alone.
+%
 %   devices is a struct array (or struct with .device_id field). Each
 %   device MAY carry:
 %     .device_id      string, unique
@@ -64,5 +86,12 @@ hybrid_state = struct( ...
     'active_configuration_id', '', ...
     'selector_table_version', 0, ...
     'selector_fingerprint', '', ...
-    'device_frozen_anchor', struct());   % per-device frozen state anchor (Phase C)
+    'device_frozen_anchor', struct(), ...   % per-device frozen state anchor (Phase C)
+    'reference_owner_indices', [], ...      % multi-island owner per island (F1/C1)
+    'gfm_reference_resource_indices', [], ...% GFM numerical ref per island (empty if SG owns)
+    'reference_island_ids', [], ...          % island ID per entry, sorted ascending
+    'selected_gfm_indices', [], ...          % complete physical online GFM set
+    'selector_table_fingerprint', '', ...    % immutable for the run (F1)
+    'committed_config_fingerprint', '', ...  % atomic per accepted config (F1)
+    'pre_event_input_fingerprint', '');      % immutable; authenticates pre_event_input
 end

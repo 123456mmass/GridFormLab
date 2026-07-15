@@ -102,6 +102,22 @@ next.selector_fingerprint = sprintf('event_commit|n=%d|selected=%s|ref=%d', ...
     transaction.n_gfm_required, ...
     strjoin(string(transaction.selected_gfm_indices), ','), ...
     transaction.reference_resource_index);
+% --- Multi-island reference-ownership schema (F1/C1, canonical) ---
+% SG_OFF: the selected GFM reference owns the (single, IEEE14) island.
+% Canonical arrays are sorted by island ID; the legacy alias remains a
+% read-only single-island compatibility view (validated by
+% reference_owner_schema, not interpreted ad hoc here).
+next.reference_owner_indices = transaction.reference_resource_index;
+next.gfm_reference_resource_indices = transaction.reference_resource_index;
+next.reference_island_ids = 1;
+% selector_table_fingerprint and pre_event_input_fingerprint are immutable for
+% the run (set at table build / pre-event capture); they are NOT overwritten
+% by a trip commit. Only committed_config_fingerprint changes here.
+next.committed_config_fingerprint = sprintf( ...
+    'sg_off_commit|n=%d|selected=%s|owner=%d|island=%d|version=%d', ...
+    transaction.n_gfm_required, ...
+    strjoin(string(transaction.selected_gfm_indices), ','), ...
+    transaction.reference_resource_index, 1, next.selector_table_version);
 
 hs = next;
 log.applied = true;
@@ -290,6 +306,14 @@ end
 
 % =========================================================================
 function [hs, log] = process_sg_reclose(hs, event, devices, log)
+%PROCESS_SG_RECLOSE  Phase-1 reclose: breaker close + reference handback.
+%   Closes the SG breaker WITHOUT resetting SG rotor angle/speed, returns
+%   reference ownership to the reclosed SG atomically, and updates
+%   committed_config_fingerprint ONLY. It does NOT overwrite
+%   selector_table_fingerprint or pre_event_input_fingerprint (F1). IBR modes
+%   remain unchanged (Phase 2 handles indexed reselection). The full-KCL TS
+%   formulation is unchanged: reference handback is supervisory/physical
+%   ownership, not a KCL-row or per-step slack replacement.
 original = hs;
 if ~isfield(event, 't') || ~isnumeric(event.t) || ~isscalar(event.t) || ...
         ~isfinite(event.t) || ~isfield(event, 'sg_id') || ...
@@ -323,14 +347,100 @@ if transition_blocked(original, key, event.t)
     log.details = sprintf('SG %s is held or locked.', ids{idx});
     return;
 end
+% Generic reference-owner eligibility (F3): the reclosed SG must be online
+% (after close), in a voltage-forming mode ('synchronous'), and capable of
+% owning the reference. Island membership is validated by reference_owner_schema
+% at the consumer boundary; here we commit the SG as owner of island 1
+% (IEEE14 single-island). Multi-island reclose requires the event to carry
+% explicit island routing (future); a scalar sg_id with no island routing
+% defaults to island 1 and is validated downstream.
 next = original;
 next.device_online.(key) = true;
 next.device_modes.(key) = 'synchronous';
+% --- Reference handback (F1/C1, canonical) ---
+% The reclosed SG becomes the reference owner for its island. The GFM
+% numerical reference for that island becomes empty (the SG owns it now).
+% selected_gfm_indices (the physical GFM set) is UNCHANGED — Phase 2
+% reselection may transition some GFMs to GFL, but Phase 1 does not.
+island_id = 1;
+if isfield(event, 'island_id') && ~isempty(event.island_id)
+    island_id = event.island_id;
+end
+next = set_island_owner(next, idx, island_id);
+% Legacy read-only alias: SG_ON alias MUST be empty (must NOT point to SG).
+next.reference_resource_index = [];
+% committed_config_fingerprint changes atomically; selector_table_fingerprint
+% and pre_event_input_fingerprint are immutable and are NOT touched here.
+version = next_version(next);
+next.selector_table_version = version;
+next.committed_config_fingerprint = sprintf( ...
+    'sg_on_reclose|owner=%d|island=%d|version=%d', idx, island_id, version);
+% active_configuration_id reflects the SG_ON reclosed context.
+next.active_configuration_id = sprintf('sg_online_reclosed_island_%d', island_id);
 hs = next;
 log.applied = true;
 log.failure_id = '';
-log.details = sprintf('SG %s reclosed at t=%.3f.', ids{idx}, event.t);
+log.details = sprintf('SG %s reclosed at t=%.3f; reference owner -> SG (island %d).', ...
+    ids{idx}, event.t, island_id);
 log.right_limit_required = true;
+log.reference_owner_indices = next.reference_owner_indices;
+log.gfm_reference_resource_indices = next.gfm_reference_resource_indices;
+log.reference_island_ids = next.reference_island_ids;
+end
+
+% =========================================================================
+function next = set_island_owner(next, owner_idx, island_id)
+%SET_ISLAND_OWNER  Set the owner for one island in the canonical arrays.
+%   Arrays are kept sorted by island ID with equal cardinality. If the island
+%   already has an owner, it is replaced (exactly one owner per island).
+owners = [];
+gfm_refs = [];
+islands = [];
+if isfield(next, 'reference_owner_indices') && ~isempty(next.reference_owner_indices)
+    owners = next.reference_owner_indices;
+end
+if isfield(next, 'gfm_reference_resource_indices') && ~isempty(next.gfm_reference_resource_indices)
+    gfm_refs = next.gfm_reference_resource_indices;
+end
+if isfield(next, 'reference_island_ids') && ~isempty(next.reference_island_ids)
+    islands = next.reference_island_ids;
+end
+% Equalize lengths to the island array.
+ni = numel(islands);
+if numel(owners) ~= ni, owners = owners(1:min(end,ni)); end
+if numel(owners) < ni, owners(end+1:ni) = NaN; end
+if numel(gfm_refs) ~= ni, gfm_refs = gfm_refs(1:min(end,ni)); end
+if numel(gfm_refs) < ni, gfm_refs(end+1:ni) = NaN; end
+% Replace or append the island entry.
+pos = find(islands == island_id, 1);
+if isempty(pos)
+    pos = numel(islands) + 1;
+    owners(end+1) = owner_idx; %#ok<AGROW>
+    gfm_refs(end+1) = NaN; %#ok<AGROW>
+    islands(end+1) = island_id; %#ok<AGROW>
+else
+    owners(pos) = owner_idx;
+    gfm_refs(pos) = NaN;  % SG owns this island -> GFM reference empty
+end
+% Sort by island ID (stable).
+[islands, order] = sort(islands);
+owners = owners(order);
+gfm_refs = gfm_refs(order);
+% NaN entries in gfm_refs represent "empty" (SG owns). Keep them as NaN for
+% array uniformity; reference_owner_schema interprets NaN as empty.
+next.reference_owner_indices = owners;
+next.gfm_reference_resource_indices = gfm_refs;
+next.reference_island_ids = islands;
+end
+
+% =========================================================================
+function version = next_version(hs)
+version = 0;
+if isfield(hs, 'selector_table_version') && isnumeric(hs.selector_table_version) && ...
+        isscalar(hs.selector_table_version) && isfinite(hs.selector_table_version)
+    version = hs.selector_table_version;
+end
+version = version + 1;
 end
 
 % =========================================================================
@@ -339,7 +449,11 @@ log = struct('event_type', event_type, 'timestamp', timestamp, ...
     'applied', false, 'failure_id', '', 'details', '', ...
     'selected_gfm_indices', [], 'n_gfm_required', [], ...
     'reference_resource_index', [], 'right_limit_required', false, ...
-    'topology_deferred_to_right_limit_driver', false);
+    'topology_deferred_to_right_limit_driver', false, ...
+    'reference_owner_indices', [], ...
+    'gfm_reference_resource_indices', [], ...
+    'reference_island_ids', [], ...
+    'committed_config_fingerprint', '');
 end
 
 function [ids, ok] = normalize_ids(value)

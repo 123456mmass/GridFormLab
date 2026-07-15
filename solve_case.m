@@ -47,6 +47,8 @@ switch analysis
             'q_limit_tolerance',1e-6,'max_q_limit_switches',20);
         pf_opt=merge_options(pf_defaults,user_opt);
         if case_selection_interactive
+            [pf_opt,accepted]=prompt_pf_method(case_data,pf_opt,entry.label);
+            if ~accepted, result=[]; return; end
             [pf_opt,accepted]=prompt_pf_options(pf_opt,entry.label);
             if ~accepted, result=[]; return; end
         end
@@ -59,6 +61,8 @@ switch analysis
     case 'ts'
         ts_opt=merge_options(entry.options,user_opt);
         if case_selection_interactive
+            [ts_opt,accepted]=prompt_ts_integrator(ts_opt,entry.label);
+            if ~accepted, result=[]; return; end
             [ts_opt,accepted]=prompt_ts_options(case_data,ts_opt,entry.label);
             if ~accepted, result=[]; return; end
         end
@@ -243,6 +247,81 @@ function id=choose_item(prompt,labels,ids)
 [k,ok]=listdlg('PromptString',prompt,'SelectionMode','single', ...
     'ListString',labels,'ListSize',[430 260]);
 if ok, id=ids{k}; else, id=''; end
+end
+
+function [methods,labels]=pf_method_choices(case_data)
+%PF_METHOD_CHOICES  Capability-aware PF method list (pure helper, no UI).
+%   Returns the canonical method names and human-readable labels offered to a
+%   user. BFS is included ONLY for radial cases (detected via case_is_radial);
+%   it fails closed at run time for meshed networks, so it is hidden from the
+%   picker for meshed cases. NR/FDPF-XB/FDPF-BX are always offered.
+methods = {'newton_raphson','fdpf_xb','fdpf_bx'};
+labels = {'Newton-Raphson (default)', ...
+          'FDPF-XB (Stott-Alsac 1974)', ...
+          'FDPF-BX (van Amerongen 1989)'};
+if case_is_radial(case_data)
+    methods{end+1} = 'bfs';
+    labels{end+1} = 'BFS radial (Shirmohammadi 1988)';
+end
+end
+
+function integrators=ts_integrator_choices()
+%TS_INTEGRATOR_CHOICES  TS integrator list (pure helper, no UI).
+%   Returns the canonical integrator names. trapezoidal is the default and
+%   the only adaptive-capable integrator. RK4 is diagnostic-only.
+integrators = {'trapezoidal','backward_euler','rk4'};
+end
+
+function tf = case_is_radial(case_data)
+%CASE_IS_RADIAL  Minimal BFS Phase-1 capability pre-check (no throw).
+%   Returns true if the case satisfies the defining radial conditions
+%   (num_lines == num_buses-1 AND no PV buses). This is a UI HINT to hide bfs
+%   from the picker; the authoritative fail-closed check remains
+%   pf_validate_radial_topology inside powerflow_bfs.m at run time.
+try
+    model = pf_prepare_case(case_data);
+    tf = (model.num_lines == model.num_buses - 1) && isempty(model.pv_buses);
+catch
+    tf = false;   % if the case cannot even be prepared, do not offer BFS
+end
+end
+
+function [opt,accepted]=prompt_pf_method(case_data,opt,case_label)
+%PROMPT_PF_METHOD  PF method dropdown picker (listdlg) before the settings.
+%   Capability-aware: bfs is hidden when the case is meshed. The chosen
+%   method flows into opt.pf_method, consumed by pf_resolve_method at
+%   dispatch (Phase-2). accepted=false on cancel (caller aborts).
+[methods,labels]=pf_method_choices(case_data);
+cur='newton_raphson';
+if isfield(opt,'pf_method')&&~isempty(opt.pf_method), cur=opt.pf_method; end
+init=find(strcmp(cur,methods),1); if isempty(init), init=1; end
+[sel,ok]=listdlg('PromptString',sprintf('Select PF method - %s',case_label), ...
+    'SelectionMode','single','ListString',labels,'InitialValue',init, ...
+    'ListSize',[360 200]);
+if ~ok, opt=opt; accepted=false; return; end
+opt.pf_method=methods{sel}; accepted=true;
+end
+
+function [opt,accepted]=prompt_ts_integrator(opt,case_label)
+%PROMPT_TS_INTEGRATOR  TS integrator dropdown picker (listdlg) before settings.
+%   trapezoidal is default + the only adaptive-capable integrator. RK4 is
+%   diagnostic (bounded stability). The chosen integrator flows into
+%   opt.integrator/opt.method, consumed by resolve_ts_integrator (Phase-2).
+integrators=ts_integrator_choices();
+labels={'Trapezoidal (default, adaptive-capable)', ...
+        'Backward Euler (L-stable, fixed only)', ...
+        'RK4 (diagnostic, fixed only)'};
+cur='trapezoidal';
+if isfield(opt,'integrator')&&~isempty(opt.integrator), cur=opt.integrator; end
+if isfield(opt,'method')&&~isempty(opt.method)&&~any(strcmp(cur,integrators))
+    cur=opt.method;
+end
+init=find(strcmp(cur,integrators),1); if isempty(init), init=1; end
+[sel,ok]=listdlg('PromptString',sprintf('Select TS integrator - %s',case_label), ...
+    'SelectionMode','single','ListString',labels,'InitialValue',init, ...
+    'ListSize',[380 200]);
+if ~ok, opt=opt; accepted=false; return; end
+opt.integrator=integrators{sel}; opt.method=integrators{sel}; accepted=true;
 end
 
 function out=merge_options(defaults,user)
@@ -534,7 +613,10 @@ elseif opt.t_fault<0||opt.t_clear<=opt.t_fault||opt.t_clear>opt.t_end
     message='Require 0<=t_fault<t_clear<=t_end.';
 elseif opt.fault_bus~=fix(opt.fault_bus)||~ismember(opt.fault_bus,bus_ids)
     message=sprintf('Fault bus must be: %s.',format_bus_ids(bus_ids));
-elseif ~strcmp(opt.method,'trapezoidal'), message='Method must be trapezoidal.';
+elseif ~any(strcmp(opt.method,{'trapezoidal','backward_euler','rk4'}))
+    message='Method must be trapezoidal, backward_euler, or rk4.';
+elseif strcmp(opt.stepper,'adaptive') && any(strcmp(opt.method,{'backward_euler','rk4'}))
+    message='Adaptive stepper requires trapezoidal (BE/RK4 are fixed-step only).';
 elseif ~any(strcmp(opt.stepper,{'fixed','adaptive'})), message='Stepper: fixed/adaptive.';
 elseif ~any(strcmp(opt.corrector_mode,{'fixed','adaptive'})), message='Corrector: fixed/adaptive.';
 elseif opt.corrector_abs_tol<=0||opt.corrector_rel_tol<=0, message='Tolerances positive.';

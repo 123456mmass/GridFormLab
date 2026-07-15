@@ -131,3 +131,25 @@ opt.pf_method = 'newton_raphson';
 log = evalc("run_pf_solve_case('ieee5', struct('verbose',true,'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false,'pf_method','newton_raphson'))");
 testCase.verifyTrue(contains(log, 'Method executed'), 'log reports method_executed');
 end
+
+function test_solve_case_fdpf_xb_on_meshed_ieee14(testCase)
+% C5 dialog-picker integration: the PF method picker hides BFS for meshed
+% cases (case_is_radial=false for ieee14) but offers FDPF-XB. The programmatic
+% equivalent — pf_method='fdpf_xb' via solve_case on meshed ieee14 — must run.
+opt = struct('verbose',false,'plot_results',false,'max_iter',50, ...
+    'tolerance',1e-10,'enforce_q_limits',false,'pf_method','fdpf_xb');
+r = run_pf_solve_case('ieee14', opt);
+testCase.verifyTrue(r.converged, 'FDPF-XB on meshed ieee14 via solve_case');
+testCase.verifyEqual(r.metadata.method_executed, 'XB');
+testCase.verifyEqual(r.metadata.dispatch_requested, 'fdpf_xb');
+end
+
+function test_solve_case_bfs_meshed_fails_closed(testCase)
+% BFS remains fail-closed on meshed ieee14 (the picker hides it, but the
+% authoritative guard is pf_validate_radial_topology at run time).
+opt = struct('verbose',false,'plot_results',false,'max_iter',100, ...
+    'tolerance',1e-10,'enforce_q_limits',false,'pf_method','bfs');
+testCase.verifyError(@() run_pf_solve_case('ieee14', opt), ...
+    'pf_validate_radial_topology:pvUnsupportedDeferred');
+end
+

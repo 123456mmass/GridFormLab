@@ -295,3 +295,43 @@ testCase.verifyTrue(any(r_t.event_side == 1), 'trap marks event side');
 testCase.verifyTrue(any(r_be.event_side == 1), 'BE marks event side');
 end
 
+% =========================================================================
+% C5 dialog-picker integration tests. The pickers (prompt_pf_method /
+% prompt_ts_integrator) are local functions in solve_case.m that use listdlg
+% (requires a display), so they are exercised here through the public
+% solve_case API with the integrator/pf_method option (the programmatic
+% equivalent of the picker selection). The dialog-level stepper-compat gate
+% is complemented by the runtime adaptiveNotFrozen guard (tested below).
+% =========================================================================
+function test_solve_case_ts_rk4_via_catalog(testCase)
+% Programmatic equivalent of picking rk4 in the TS integrator dialog.
+r = solve_case('analysis','ts','case','matpower14', ...
+    'options',struct('t_end',0.3,'dt',0.1,'integrator','rk4', ...
+    'verbose',false,'plot_results',false));
+testCase.verifyEqual(r.integrator, 'rk4');
+testCase.verifyEqual(r.metadata.method_executed, 'rk4');
+testCase.verifyEqual(r.metadata.capability, 'diagnostic');
+testCase.verifyEqual(r.metadata.runtime_diagnostic, true);
+testCase.verifyTrue(all(isfinite(r.delta(:))), 'rk4 via solve_case finite');
+end
+
+function test_solve_case_ts_be_via_catalog(testCase)
+r = solve_case('analysis','ts','case','matpower14', ...
+    'options',struct('t_end',0.3,'dt',0.1,'integrator','backward_euler', ...
+    'verbose',false,'plot_results',false));
+testCase.verifyEqual(r.integrator, 'backward_euler');
+testCase.verifyEqual(r.metadata.capability, 'production');
+testCase.verifyTrue(all(isfinite(r.delta(:))), 'be via solve_case finite');
+end
+
+function test_solve_case_ts_adaptive_be_fails_closed(testCase)
+% The dialog stepper-compat gate (parse_ts_dialog) is a UI convenience; the
+% authoritative runtime guard (ts_simulate:adaptiveNotFrozen) still fires for
+% programmatic calls — the dialog gate complements, not replaces, it.
+testCase.verifyError(@() solve_case('analysis','ts','case','matpower14', ...
+    'options',struct('t_end',0.3,'dt',0.1,'integrator','backward_euler', ...
+    'stepper','adaptive','verbose',false,'plot_results',false)), ...
+    'ts_simulate:adaptiveNotFrozen');
+end
+
+

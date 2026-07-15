@@ -27,13 +27,16 @@ tc.verifyEqual(log.reference_resource_index,5);
 tc.verifyEqual(c.config.selected_gfm_indices,[3 5]);
 end
 
-function test_count_only_uses_full_selector_and_fails_closed_when_unstable(tc)
+function test_count_only_uses_full_selector_and_fails_closed_before_sssa(tc)
 s=cases.scenario_ieee14_1sg_4ibr();
 [~,log]=stability.ibr_configure_scenario(s,struct('initial_gfm_count',1));
 tc.verifyTrue(log.selector_evaluated);
 tc.verifyGreaterThan(log.candidate_count,0);
 tc.verifyGreaterThan(log.equilibrium_evaluations,0);
-tc.verifyGreaterThan(log.sssa_evaluations,0);
+tc.verifyEqual(log.sssa_evaluations,0, ...
+    ['Every one-GFM candidate is rejected by the frozen SCR gate or an ' ...
+     'equilibrium device limit before SSSA; the selector must not bypass ' ...
+     'those earlier fail-closed gates merely to populate an SSSA count.']);
 tc.verifyFalse(log.ready);
 tc.verifyEqual(log.failure_id,'stability:ibr_config_selector:noFeasibleCandidate');
 end
@@ -73,7 +76,11 @@ tc.verifyEqual(q.total_state_count,86);
 end
 
 function test_solve_case_ibr_logs_trip_counts_and_work(tc)
-txt=evalc("r=solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',struct('plot_results',false));");
+ev=struct('enabled',true,'fault_bus',4,'Zf',1i*.1, ...
+    'fault_on',.02,'fault_clear',.03,'sg_trip',.04,'sg_on',.06, ...
+    'selected_gfm_indices',2:5,'reference_resource_index',2);
+run_opt=struct('t_end',.1,'dt',.01,'plot_results',false,'ibr_events',ev);
+txt=evalc("r=solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',run_opt);");
 tc.assertTrue(r.converged);
 tc.verifyEqual(r.status_log(1).n_gfl,4);
 trip=find(strcmp({r.status_log.stage},'sg_trip'),1);

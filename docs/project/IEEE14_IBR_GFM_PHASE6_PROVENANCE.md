@@ -61,7 +61,10 @@ PLL (Fig.4; ΔωPLL limits deferred; sourced low-voltage freeze implemented):
 VSM swing (Fig.2, SOURCE_TRANSFORMED, FROZEN under flag profile ωFlag=0, FFlag=1, ωref=1 pu; inverter base):
 - `2H·dωm/dt = P_ref_inv - Pinv_f - (1/mp + D1)·ωm - D2·(ωm - x_washout)`
 - `dx_washout/dt = ωD·(ωm - x_washout)`
-- `dδIT/dt = ω0·ωm`, subject to the active lower/upper bound contract
+- `dδIT/dt = ω0·ωm - dδPLL/dt`, subject to the active
+  lower/upper bound contract. This preserves the Fig.2 identity
+  `dδVSM/dt=ω0·ωm` for `δVSM=δPLL+δIT`; adding both angle
+  derivatives would count the PLL rotation twice.
 - `δVSM = δPLL + clamp(δIT,used_δITmin,δITmax)`
 
 Steady state: `ωm = (P_ref_inv - Pinv_f)/(1/mp + D1)`; with D1=0 → `ωm = mp·(P_ref_inv - Pinv_f)` = P-f droop.
@@ -148,11 +151,25 @@ Predeclared tolerances: residual 1e-6, FD Richardson 1e-4, poles RelTol 1e-3,
 linearization AbsTol 5e-2, rcond 1e-10.
 
 ## STATUS
-`PHASE_G2_LIMITER_READY = IMPLEMENTED_PENDING_INTEGRATION_GATES`. Corrected
-equilibrium, fixed-step TS, and SSSA share the same f/g closures, solved
-`u_eq`, immutable context, authenticated state maps, and the active-bound
-contract. The top-level event runner, synchronism-enforced SG reclose, and
-end-to-end IEEE14 plotting gates are not yet closed.
+`PHASE_G2_LIMITER_READY = G2_IMPLEMENTED`. Corrected equilibrium, fixed-step
+TS, and SSSA share the same f/g closures, solved `u_eq`, immutable context,
+authenticated state maps, and the active-bound contract. The top-level event
+runner, synchronism-enforced SG reclose request/timeout path, index log, and
+end-to-end IEEE14 plotting gates are implemented and fail closed.
+
+For the four-GFM post-trip equilibrium, the launcher retains all 52 raw
+full-state roots. The selector decision additionally uses a 43-dimensional
+physical tangent spectrum: eight locked active-bound equality directions and
+one common PLL rotational gauge direction are quotiented before `eig`; no
+computed eigenvalue is deleted after eigendecomposition. The measured raw
+spectral abscissa is `+1.2912e-5 1/s` (gauge artifact), while the physical
+decision spectral abscissa is `-1.48281 1/s`, satisfying the frozen
+`gamma_req=0.1 1/s` gate.
+
+The natural IEEE14 breaker-open SG does not reclose in the 15 s evidence run:
+the request is accepted at 3 s and the synchronism guard times out at 8 s.
+That protection outcome is logged separately from numerical convergence and
+is not adjusted to manufacture a successful reclose.
 `IBR_PRODUCTION_INTEGRATION_READY` stays `NOT_READY`.
 
 ## Equation → source → code → test mapping
@@ -164,7 +181,7 @@ end-to-end IEEE14 plotting gates are not yet closed.
 | Eq.4 (Vinv filter) | 90260 p.2 | `gfm_f` dVinv_f | equilibrium_residual |
 | Eq.5 (Iqinv filter) | 90260 p.2 | `gfm_f` dIqinv_f | equilibrium_residual |
 | Eq.6-9 (dq) | 90260 p.2 | `gfm_f` Id/Iq/Vq | numerical_linearization |
-| Fig.2 (VSM swing) | 90260 p.1 | `gfm_f` dωm/dx_washout/dδIT and algebraic δVSM identity | vsm_poles, source_guards, Phase-G2 angle identity |
+| Fig.2 (VSM swing) | 90260 p.1 | `gfm_f` dωm/dx_washout and dδIT=ω0ωm-dδPLL, preserving dδVSM=ω0ωm for δVSM=δPLL+δIT | vsm_poles, source_guards, Phase-G2 differential angle identity |
 | Fig.3 (voltage PI) | 90260 p.2 | `gfm_f` dx_Eint, EVSM_raw | equilibrium_residual, Phase-G2 anti-windup |
 | Fig.4 (PLL) | 90260 p.2 | `gfm_f` dx_PLL_int/dδPLL + VPLLfrz branch | pll_poles, Phase-G low-voltage freeze |
 | Fig.5, Eqs.10-11 | 90260 pp.3-4 | `pq_limits`, `voltage_limits` | Phase-G2 P/Q priority and Emin/Emax hand oracles |

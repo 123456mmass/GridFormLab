@@ -741,9 +741,18 @@ None — (a) is CASE_DEFINED from the a-priori study. Documented derivation.
 The former GFL `Kps/Kis` assumptions are no longer on the runtime path. The
 integrated fixed-step event route, atomic right-limit rollback, synchronism
 guard, index-derived status log, and two audited plots are now implemented.
-They do not establish production readiness: the frozen full-state SSSA margin
-currently rejects every evaluated post-trip IEEE14 subset, the natural short
-run does not reclose, and longer-horizon/independent validation remains.
+The four-GFM post-trip candidate satisfies the frozen physical SSSA margin:
+all 52 raw full-state roots remain reported, while the fixed-active-bound and
+common-PLL-gauge tangent quotient supplies 43 decision roots with
+`Omega=-1.48281 1/s` and margin `1.38281 1/s`. This is a coordinate-aware
+pre-eigenvalue projection, not post-eigenvalue deletion.
+
+The 15 s nonlinear run (`dt=0.01 s`) accepts 1500/1500 steps with maximum
+step residual `8.92e-9`; fault-bus-4 voltage reaches `0.4430 pu`, all IBR
+current-limit ratios remain below one, and the four GFM frequencies settle at
+`59.99083 Hz`. The natural SG reclose still times out under the frozen
+synchronism contract, and independent multi-case validation remains before
+production readiness.
 
 **No value may change after viewing outcomes.** All values are frozen in
 this ledger BEFORE Phase 4-17 implementation. The decision ledger is the
@@ -752,9 +761,9 @@ frozen contract; any change requires re-approval.
 ## What proceeds next after the G2/event checkpoint
 
 WECC GFL, REGFM G2, the 20-state physical transfer map, mixed equilibrium,
-full-state SSSA candidate evaluation, fixed-step event driving, guarded
-reclose transactions, logs, and the two requested plots are implemented.
-Next work is to diagnose/resolve the positive post-trip spectral abscissa from
-the sourced model/case contract, obtain longer-horizon and natural-reclose
-evidence, and perform independent multi-case validation. Readiness remains
-NOT_READY until those gates pass.
+complete raw-root reporting, physical tangent SSSA candidate evaluation,
+fixed-step event driving, guarded reclose transactions, logs, and the two
+requested plots are implemented. A converged 15 s nonlinear event run and a
+separate MATPOWER14 five-generator PF/SSSA/TS run are recorded. Remaining work
+is natural synchronism/reclose evidence and independent validation; readiness
+remains NOT_READY until those gates pass.

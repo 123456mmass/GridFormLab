@@ -244,6 +244,297 @@ sssa.gy_rcond_min = gy_rcond_min;
 sssa.fd_eps = fd_eps;
 sssa.active_f_residual_norm = norm(f0(active),inf);
 sssa.physical_kcl_residual_norm = norm(g0,inf);
+
+% Keep the complete active-state spectrum above for reporting.  A selector
+% may additionally request a fixed-active-set physical decision spectrum.
+% This is a coordinate/constraint reduction BEFORE eig: no root is deleted
+% from sssa.eigenvalues, which remains the FULL STATE table contract.
+sssa = attach_physical_decision_spectrum(sssa,dae,x0,y0,u_eq, ...
+    event_context,opt,active,fd_eps);
+end
+
+% =========================================================================
+function sssa = attach_physical_decision_spectrum(sssa,dae,x0,y0,u_eq, ...
+    event_context,opt,active,fd_eps)
+%ATTACH_PHYSICAL_DECISION_SPECTRUM Fixed-active-set and gauge quotient.
+%   Active saturation equalities are differentiated on the exact KCL
+%   manifold and eliminated before eig.  With every SG breaker open, the
+%   common GFM PLL angle is a rotational coordinate; one reference PLL angle
+%   is quotiented while relative PLL-angle dynamics are retained.
+
+sssa.physical_A = sssa.A;
+sssa.physical_eigenvalues = sssa.eigenvalues;
+sssa.physical_state_dimension = size(sssa.A,1);
+sssa.physical_state_global_indices = active(:).';
+sssa.active_bound_constraint_global_indices = zeros(1,0);
+sssa.active_bound_constraint_names = cell(1,0);
+sssa.active_bound_constraint_count = 0;
+sssa.coordinate_gauge_global_index = [];
+sssa.coordinate_gauge_state_name = '';
+sssa.coordinate_mode_count = 0;
+sssa.physical_reduction_method = 'none_full_state_decision';
+sssa.physical_omega = max(real(sssa.physical_eigenvalues));
+sssa.physical_stable = all(real(sssa.physical_eigenvalues) < 0);
+
+if ~isfield(opt,'active_bound_regimes') || isempty(opt.active_bound_regimes)
+    return;
+end
+locked = opt.active_bound_regimes;
+if ~isstruct(locked)
+    error('composite_sssa_model:badActiveBoundRegimes', ...
+        'opt.active_bound_regimes must be the final locked regime struct array.');
+end
+
+all_specs = stability.active_bound_collect(dae,x0,y0,u_eq,event_context);
+[locked_active,constrained_global,constraint_names] = ...
+    active_constraint_entries(locked,all_specs,dae);
+
+A_work = sssa.A;
+coordinate_global = active(:).';
+method_parts = {};
+if ~isempty(locked_active)
+    [C,h0] = active_constraint_jacobian(locked_active,all_specs,dae, ...
+        x0,y0,u_eq,event_context,active,sssa.gx,sssa.gy,fd_eps);
+    if any(~isfinite(C(:))) || any(~isfinite(h0(:)))
+        error('composite_sssa_model:nonfiniteActiveConstraintJacobian', ...
+            'Active-bound equality Jacobian contains NaN/Inf.');
+    end
+    bound_pos = zeros(1,numel(constrained_global));
+    for k = 1:numel(constrained_global)
+        bound_pos(k) = find(active == constrained_global(k),1,'first');
+    end
+    if any(bound_pos == 0) || numel(unique(bound_pos)) ~= numel(bound_pos)
+        error('composite_sssa_model:activeConstraintStateMismatch', ...
+            'Every active-bound equality must own one unique active state.');
+    end
+    free_pos = setdiff(1:numel(active),bound_pos,'stable');
+    Cb = C(:,bound_pos);
+    Cf = C(:,free_pos);
+    cb_rcond = rcond(Cb);
+    if ~isfinite(cb_rcond) || cb_rcond <= 1e-10
+        error('composite_sssa_model:illConditionedActiveConstraints', ...
+            'Active-bound pivot Jacobian rcond %.3e must exceed 1e-10.',cb_rcond);
+    end
+    Tbound = zeros(numel(active),numel(free_pos));
+    Tbound(free_pos,:) = eye(numel(free_pos));
+    Tbound(bound_pos,:) = -(Cb\Cf);
+    Lbound = zeros(numel(free_pos),numel(active));
+    for k = 1:numel(free_pos), Lbound(k,free_pos(k)) = 1; end
+    A_work = Lbound*A_work*Tbound;
+    coordinate_global = active(free_pos);
+    sssa.active_bound_constraint_global_indices = constrained_global;
+    sssa.active_bound_constraint_names = constraint_names;
+    sssa.active_bound_constraint_count = numel(constrained_global);
+    sssa.active_bound_constraint_jacobian = C;
+    sssa.active_bound_constraint_residual = h0;
+    sssa.active_bound_pivot_rcond = cb_rcond;
+    sssa.active_bound_tangent_map = Tbound;
+    method_parts{end+1} = 'fixed_active_bound_tangent_elimination'; %#ok<AGROW>
+end
+
+[A_work,coordinate_global,gauge_meta] = quotient_common_gfm_pll( ...
+    A_work,coordinate_global,dae,event_context,opt);
+if gauge_meta.applied
+    sssa.coordinate_gauge_global_index = gauge_meta.global_index;
+    sssa.coordinate_gauge_state_name = gauge_meta.state_name;
+    sssa.coordinate_mode_count = 1;
+    sssa.coordinate_quotient_left_map = gauge_meta.L;
+    sssa.coordinate_quotient_right_map = gauge_meta.T;
+    method_parts{end+1} = 'common_gfm_pll_angle_quotient'; %#ok<AGROW>
+end
+
+sssa.physical_A = A_work;
+sssa.physical_eigenvalues = eig(A_work);
+sssa.physical_state_dimension = size(A_work,1);
+sssa.physical_state_global_indices = coordinate_global;
+sssa.physical_omega = max(real(sssa.physical_eigenvalues));
+sssa.physical_stable = all(real(sssa.physical_eigenvalues) < 0);
+if isempty(method_parts)
+    sssa.physical_reduction_method = 'none_full_state_decision';
+else
+    sssa.physical_reduction_method = strjoin(method_parts,'+');
+end
+end
+
+% =========================================================================
+function [entries,global_idx,names] = active_constraint_entries(locked,all_specs,dae)
+entries = repmat(struct('dev_idx',0,'local_idx',0,'regime',''),0,1);
+global_idx = zeros(1,0);
+names = cell(1,0);
+for k = 1:numel(locked)
+    if ~all(isfield(locked(k),{'dev_idx','local_idx','regime'}))
+        error('composite_sssa_model:badActiveBoundRegimes', ...
+            'Each locked regime needs dev_idx, local_idx and regime.');
+    end
+    regime = lower(char(locked(k).regime));
+    if strcmp(regime,'interior'), continue; end
+    if ~ismember(regime,{'upper','lower'})
+        error('composite_sssa_model:badActiveBoundRegimes', ...
+            'Unsupported active-bound regime "%s".',regime);
+    end
+    dk = locked(k).dev_idx;
+    li = locked(k).local_idx;
+    if dk < 1 || dk > numel(all_specs) || isempty(all_specs{dk})
+        error('composite_sssa_model:badActiveBoundRegimes', ...
+            'Locked constraint dev=%d has no collected specification.',dk);
+    end
+    specs = all_specs{dk}.specs;
+    pos = find([specs.local_idx] == li,1,'first');
+    if isempty(pos)
+        error('composite_sssa_model:badActiveBoundRegimes', ...
+            'Locked constraint dev=%d local=%d has no specification.',dk,li);
+    end
+    e = struct('dev_idx',dk,'local_idx',li,'regime',regime);
+    entries(end+1,1) = e; %#ok<AGROW>
+    global_idx(end+1) = dae.device_offsets(dk)+li; %#ok<AGROW>
+    if isfield(specs(pos),'description') && ~isempty(specs(pos).description)
+        names{end+1} = char(specs(pos).description); %#ok<AGROW>
+    else
+        names{end+1} = sprintf('%s/state_%d',dae.devices(dk).device_id,li); %#ok<AGROW>
+    end
+end
+if numel(unique(global_idx)) ~= numel(global_idx)
+    error('composite_sssa_model:duplicateActiveConstraints', ...
+        'Active-bound regimes contain duplicate constrained states.');
+end
+end
+
+% =========================================================================
+function [C,h0] = active_constraint_jacobian(entries,all_specs,dae, ...
+    x0,y0,u_eq,event_context,active,gx,gy,h)
+h0 = evaluate_active_constraints(entries,all_specs,dae,x0,y0,u_eq,event_context);
+hx = zeros(numel(entries),numel(active));
+for j = 1:numel(active)
+    xp = x0; xp(active(j)) = xp(active(j))+h;
+    hp = evaluate_active_constraints(entries,all_specs,dae,xp,y0,u_eq,event_context);
+    hx(:,j) = (hp-h0)/h;
+end
+hy = zeros(numel(entries),numel(y0));
+for j = 1:numel(y0)
+    yp = y0; yp(j) = yp(j)+h;
+    hp = evaluate_active_constraints(entries,all_specs,dae,x0,yp,u_eq,event_context);
+    hy(:,j) = (hp-h0)/h;
+end
+% KCL tangent: dy/dx = -gy\gx.
+C = hx-hy*(gy\gx(:,active));
+end
+
+% =========================================================================
+function value = evaluate_active_constraints(entries,all_specs,dae,x,y,u,event_context)
+value = zeros(numel(entries),1);
+for k = 1:numel(entries)
+    e = entries(k);
+    meta = all_specs{e.dev_idx};
+    specs = meta.specs;
+    sp = find([specs.local_idx] == e.local_idx,1,'first');
+    xdev = x(meta.offset+1:meta.offset+meta.dev_nx);
+    udev = zeros(0,1);
+    if meta.dev_nu > 0
+        udev = u(meta.u_offset+1:meta.u_offset+meta.dev_nu);
+    end
+    value(k) = specs(sp).residual_fn(xdev,y,udev,event_context,e.regime);
+end
+end
+
+% =========================================================================
+function [Aq,global_out,meta] = quotient_common_gfm_pll(A,global_in,dae,event_context,opt)
+meta = struct('applied',false,'global_index',[],'state_name','','L',[],'T',[]);
+Aq = A;
+global_out = global_in;
+if online_sg_present(dae,event_context), return; end
+
+pll_global = zeros(1,0);
+pll_dev = zeros(1,0);
+for dk = 1:numel(dae.devices)
+    dev = dae.devices(dk);
+    if ~device_online(dev,event_context) || ~strcmpi(device_mode(dev,event_context),'gfm')
+        continue;
+    end
+    local = find(strcmpi(dev.state_names,'gfm_delta_PLL') | ...
+        strcmpi(dev.state_names,'delta_PLL'),1,'first');
+    if isempty(local), continue; end
+    gi = dae.device_offsets(dk)+local;
+    if ismember(gi,global_in)
+        pll_global(end+1) = gi; %#ok<AGROW>
+        pll_dev(end+1) = dk; %#ok<AGROW>
+    end
+end
+if isempty(pll_global), return; end
+
+ref_dev = [];
+if isfield(opt,'reference_device_index') && ~isempty(opt.reference_device_index)
+    ref_dev = opt.reference_device_index;
+elseif isfield(event_context,'hybrid_state') && ...
+        isfield(event_context.hybrid_state,'reference_resource_index')
+    ref_dev = event_context.hybrid_state.reference_resource_index;
+end
+ref_pick = find(pll_dev == ref_dev,1,'first');
+if isempty(ref_pick), ref_pick = 1; end
+ref_global = pll_global(ref_pick);
+ref_pos = find(global_in == ref_global,1,'first');
+pll_pos = arrayfun(@(g)find(global_in==g,1,'first'),pll_global);
+
+n = numel(global_in);
+retain = setdiff(1:n,ref_pos,'stable');
+T = eye(n); T = T(:,retain);
+L = zeros(numel(retain),n);
+for r = 1:numel(retain)
+    q = retain(r);
+    L(r,q) = 1;
+    if ismember(q,pll_pos)
+        L(r,ref_pos) = -1;
+    end
+end
+Aq = L*A*T;
+global_out = global_in(retain);
+meta.applied = true;
+meta.global_index = ref_global;
+meta.state_name = sprintf('%s/%s',dae.devices(pll_dev(ref_pick)).device_id, ...
+    dae.devices(pll_dev(ref_pick)).state_names{ref_global-dae.device_offsets(pll_dev(ref_pick))});
+meta.L = L;
+meta.T = T;
+end
+
+% =========================================================================
+function tf = online_sg_present(dae,event_context)
+tf = false;
+for k = 1:numel(dae.devices)
+    d = dae.devices(k);
+    dtype = '';
+    if isfield(d,'device_type'), dtype = lower(char(d.device_type)); end
+    is_sg = contains(dtype,'sg') || strcmp(dtype,'synchronous_generator');
+    if isfield(d,'capabilities') && isfield(d.capabilities,'resource_type')
+        is_sg = is_sg || strcmpi(char(d.capabilities.resource_type),'sg');
+    end
+    if is_sg && device_online(d,event_context)
+        tf = true;
+        return;
+    end
+end
+end
+
+function tf = device_online(dev,event_context)
+tf = true;
+if isfield(dev,'initial_online') && ~isempty(dev.initial_online)
+    tf = logical(dev.initial_online);
+end
+key = matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+if isfield(event_context,'hybrid_state') && ...
+        isfield(event_context.hybrid_state,'device_online') && ...
+        isfield(event_context.hybrid_state.device_online,key)
+    tf = logical(event_context.hybrid_state.device_online.(key));
+end
+end
+
+function mode = device_mode(dev,event_context)
+mode = '';
+if isfield(dev,'mode') && ~isempty(dev.mode), mode = char(dev.mode); end
+key = matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+if isfield(event_context,'hybrid_state') && ...
+        isfield(event_context.hybrid_state,'device_modes') && ...
+        isfield(event_context.hybrid_state.device_modes,key)
+    mode = char(event_context.hybrid_state.device_modes.(key));
+end
 end
 
 % =========================================================================

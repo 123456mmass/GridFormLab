@@ -188,8 +188,14 @@ result.actual_reclose_time = ts_res.actual_reclose_time;
 result.reclose_status = ts_res.reclose_status;
 result.sched = ts_res.sched;
 if isfield(ts_res,'t_sg_trip'), result.t_sg_trip = ts_res.t_sg_trip; end
-if isfield(ts_res,'failure_id'), result.metadata.failure = ts_res.failure_id; end
-if isfield(ts_res,'failure_reason'), result.metadata.error = ts_res.failure_reason; end
+if isfield(ts_res,'failure_id')
+    result.failure_id = ts_res.failure_id;
+    result.metadata.failure = ts_res.failure_id;
+end
+if isfield(ts_res,'failure_reason')
+    result.failure_reason = ts_res.failure_reason;
+    result.metadata.error = ts_res.failure_reason;
+end
 copy_fields = {'sample_side','topology_history','active_state_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
     'device_P_pu','device_Q_pu','device_P_MW','device_Q_MVAr', ...

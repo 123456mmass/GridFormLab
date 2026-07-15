@@ -59,6 +59,16 @@ tc.assertNotEmpty(j);
 tc.verifyEqual(r.device_modes_history(:,j),{'sg';'GFM';'GFM';'GFM';'GFM'});
 tc.verifyFalse(r.device_online_history(1,j));
 tc.verifyEqual(r.device_current_magnitude(1,j),0,'AbsTol',0);
+tc.verifyTrue(isnan(r.device_frequency_Hz(1,j)), ...
+    'An offline SG rotor speed is not reported as connected-grid frequency.');
+post=tc.TestData.scenario.case_data.dispatch_contract.post_trip.post_trip_Pg_MW;
+for d=2:5
+    slot=find(strcmpi(string(tc.TestData.dae.devices(d).input_names),'P_ref'));
+    ug=tc.TestData.dae.u_offsets(d)+slot;
+    tc.verifyEqual(r.u_history(ug,j),post.(tc.TestData.dae.devices(d).device_id)/ ...
+        tc.TestData.scenario.case_data.mpc.baseMVA, ...
+        'AbsTol',0,'The trip must atomically commit the CASE_DEFINED MW dispatch.');
+end
 expected=stability.ts_dynamic_state_indices(tc.TestData.dae,r.event_context_history{j});
 tc.verifyEqual(r.active_state_history{j},expected,'AbsTol',0);
 for d=2:5
@@ -76,6 +86,28 @@ trip=find(strcmp({r.event_log.type},'sg_trip'),1);
 tc.assertNotEmpty(trip); tc.verifyFalse(r.event_log(trip).applied);
 tc.verifyEqual(r.event_log(trip).right_kcl_norm,inf);
 tc.verifyFalse(any(abs(r.t-0.04)<1e-12 & strcmp(r.sample_side,'right')));
+tc.verifySize(r.bus_voltage_magnitude,[14 numel(r.t)], ...
+    'A failed transition must retain diagnostic voltage for accepted samples.');
+tc.verifySize(r.device_P_MW,[5 numel(r.t)], ...
+    'A failed transition must retain diagnostic device power for plotting.');
+end
+
+function test_missing_post_trip_dispatch_rolls_back_atomically(tc)
+c=tc.TestData.scenario.case_data;
+c.dispatch_contract.post_trip.post_trip_Pg_MW=rmfield( ...
+    c.dispatch_contract.post_trip.post_trip_Pg_MW,'IBR8');
+ev=event_spec(2:5,2);
+sched=stability.ibr_event_schedule(c,tc.TestData.eq.devices,ev,0.10,0.01);
+o=base_opt(tc.TestData.eq,0.10,0.01); o.ibr_event_schedule=sched;
+[r,~]=stability.ts_simulate_ibr_hybrid(c,tc.TestData.eq.devices, ...
+    tc.TestData.eq.x0,tc.TestData.eq.y0,o);
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id,'ts_simulate_ibr_hybrid:dispatch');
+trip=find(strcmp({r.event_log.type},'sg_trip'),1);
+tc.assertNotEmpty(trip); tc.verifyFalse(r.event_log(trip).applied);
+tc.verifyFalse(any(abs(r.t-0.04)<1e-12 & strcmp(r.sample_side,'right')));
+tc.verifyEqual(r.u_history(:,end),tc.TestData.eq.u_eq,'AbsTol',0, ...
+    'A rejected dispatch transaction must not publish its candidate input.');
 end
 
 function test_reclose_guard_uses_phasor_angle_and_pu_slip(tc)
@@ -90,8 +122,12 @@ tc.verifyFalse(bad.passes);
 end
 
 function test_reclose_requires_dwell_and_preserves_sg_state(tc)
+% This oracle ends at the first permitted close.  It falsifies the atomic
+% right-limit/state-continuity contract; post-close trajectory stability is a
+% separate physical gate and is never repaired here with looser numerics.
 over=struct('synchronism_overrides',struct('dV_max',10,'df_max',10,'dtheta_max',180), ...
-    'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0.01,'timeout_s',0.04));
+    'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0.01,'timeout_s',0.04), ...
+    't_end',0.07);
 r=event_run(tc.TestData,2:5,2,over);
 tc.assertTrue(r.converged,r.failure_reason);
 tc.verifyEqual(r.reclose_status,'SUCCESS');
@@ -102,6 +138,11 @@ tc.assertNotEmpty(left); tc.assertNotEmpty(right);
 tc.verifyEqual(r.x_traj(1:6,right),r.x_traj(1:6,left),'AbsTol',0, ...
     'Reclose changes the breaker context and algebraic right limit, not SG state.');
 tc.verifyTrue(r.device_online_history(1,right));
+tc.verifyEqual(r.device_modes_history(:,right),{'sg';'GFM';'GFM';'GFM';'GFM'});
+tc.verifyEqual(r.u_history(:,right),tc.TestData.eq.u_eq,'AbsTol',0, ...
+    'Reclose must restore the pre-event input vector atomically.');
+expected=stability.ts_dynamic_state_indices(tc.TestData.dae,r.event_context_history{right});
+tc.verifyEqual(r.active_state_history{right},expected,'AbsTol',0);
 st=find(strcmp({r.status_log.stage},'sg_reclose'),1);
 tc.assertNotEmpty(st);
 tc.verifyEqual(r.status_log(st).n_sg_online,1);
@@ -160,8 +201,9 @@ end
 
 function r=event_run(data,selected,ref,extra)
 ev=event_spec(selected,ref);
-sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,0.10,0.01);
-o=base_opt(data.eq,0.10,0.01); o.ibr_event_schedule=sched;
+tend=0.10; if isfield(extra,'t_end'),tend=extra.t_end;end
+sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,tend,0.01);
+o=base_opt(data.eq,tend,0.01); o.ibr_event_schedule=sched;
 names=fieldnames(extra); for k=1:numel(names),o.(names{k})=extra.(names{k});end
 [r,~]=stability.ts_simulate_ibr_hybrid(data.scenario.case_data,data.eq.devices, ...
     data.eq.x0,data.eq.y0,o);

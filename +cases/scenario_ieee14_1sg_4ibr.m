@@ -30,6 +30,19 @@ end
 % --- Immutable IEEE14 case data (network/base + SG dynamics + contracts) ---
 case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
 
+% Normal operation uses the frozen pre-fault dispatch from the mission case.
+% Previously an omitted scenario_opt.dispatch silently constructed all four
+% IBRs at zero MW and made the SG carry the complete system load, contradicting
+% the case contract and the later post-trip participation schedule.
+if ~isfield(scenario_opt,'dispatch') || ...
+        ~isstruct(scenario_opt.dispatch) || ...
+        isempty(fieldnames(scenario_opt.dispatch))
+    pf = case_data.dispatch_contract.pre_fault;
+    scenario_opt.dispatch = struct( ...
+        'IBR2',pf.IBR2_Pg_MW,'IBR3',pf.IBR3_Pg_MW, ...
+        'IBR6',pf.IBR6_Pg_MW,'IBR8',pf.IBR8_Pg_MW);
+end
+
 % --- Build the resource table (IEEE14 IDs live HERE ONLY) ------------------
 % SG1: Kodsi 60Hz EMF6 (decision ledger item 7). The SG factory reads SG
 % dynamics from case_data.machines; dynamic_params carries no machine data.

@@ -43,8 +43,9 @@ x = x0(:);
 y = y0(:);
 t = 0.0;
 active = stability.ts_dynamic_state_indices(dae,ec);
+pre_event_input = u;
 
-samples = new_samples(x,y,ec,active,topology);
+samples = new_samples(x,y,u,ec,active,topology);
 event_log = repmat(new_event_log('',NaN),0,1);
 status_log = stability.ibr_status_snapshot('initial_configuration',0,dae,ec,active, ...
     kcl_norm(dae,0,x,y,Ycurr,u,ec));
@@ -63,6 +64,8 @@ total_iterations = 0;
 max_residual = 0;
 step_iterations = [];
 step_residuals = [];
+step_attempts = 0;
+accepted_steps = 0;
 
 while t < settings.t_end-settings.event_tol
     target = min(t+settings.dt,settings.t_end);
@@ -84,6 +87,7 @@ while t < settings.t_end-settings.event_tol
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
             'verbose',settings.verbose,'full_kcl',true,'t_now',t);
         step = stability.ts_step_composite(x,y,h,dae,Ycurr,u,ec,active,step_opt);
+        step_attempts=step_attempts+1;
         total_iterations = total_iterations+step.iterations;
         max_residual = max(max_residual,step.residual_norm);
         step_iterations(end+1)=step.iterations; %#ok<AGROW>
@@ -98,10 +102,11 @@ while t < settings.t_end-settings.event_tol
         x = step.x_full;
         y = step.y_full;
         t = target;
+        accepted_steps=accepted_steps+1;
         is_event_left = event_cursor<=numel(events) && ...
             abs(t-events(event_cursor).t)<=settings.event_tol;
         side = ternary(is_event_left,'left','continuous');
-        samples = append_sample(samples,t,x,y,ec,active,topology,side);
+        samples = append_sample(samples,t,x,y,u,ec,active,topology,side);
     end
 
     % Apply every scheduled transition at this timestamp in deterministic order.
@@ -134,14 +139,18 @@ while t < settings.t_end-settings.event_tol
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
             end
         case 'sg_trip'
-            [ok,x_new,y_new,ec_new,active_new,handler_log,reason,right_norm,stage] = ...
-                trip_transaction(t,x,y,Ycurr,u,ec,dae,sched,settings.kcl_tol);
+            [ok,x_new,y_new,u_new,ec_new,active_new,handler_log,reason, ...
+                right_norm,stage,dispatch_after] = trip_transaction( ...
+                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol);
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
+            log.input_before = u;
+            log.input_after = u_new;
+            log.dispatch_after_pu = dispatch_after;
             log.selected_gfm_indices = sched.selected_gfm_indices;
             log.reference_resource_index = sched.reference_resource_index;
             if ok
-                x=x_new; y=y_new; ec=ec_new; active=active_new;
+                x=x_new; y=y_new; u=u_new; ec=ec_new; active=active_new;
                 log.applied=true; log.details=handler_log.details;
                 t_trip=t;
             else
@@ -174,7 +183,7 @@ while t < settings.t_end-settings.event_tol
     if ~converged, break; end
     if event_applied
         active = stability.ts_dynamic_state_indices(dae,ec);
-        samples = append_sample(samples,t,x,y,ec,active,topology,'right');
+        samples = append_sample(samples,t,x,y,u,ec,active,topology,'right');
     end
 
     % sg_on is an earliest request. Check after every accepted sample, enforce
@@ -191,16 +200,20 @@ while t < settings.t_end-settings.event_tol
         off_ok = isfinite(t_trip) && t-t_trip>=settings.min_off-settings.event_tol;
         if eligible && dwell_ok && off_ok
             pre_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
-            [ok,y_new,ec_new,handler_log,reason,right_norm] = ...
-                reclose_transaction(t,x,y,Ycurr,u,ec,dae,sched,settings.kcl_tol);
+            [ok,x_new,y_new,u_new,ec_new,handler_log,reason,right_norm, ...
+                dispatch_after] = reclose_transaction(t,x,y,Ycurr,u,ec, ...
+                pre_event_input,dae,sched,settings.kcl_tol);
             log = new_event_log('sg_reclose',t);
             log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             log.guard=last_guard;
+            log.input_before=u; log.input_after=u_new;
+            log.dispatch_after_pu=dispatch_after;
             if ok
-                y=y_new; ec=ec_new; active=stability.ts_dynamic_state_indices(dae,ec);
+                x=x_new; y=y_new; u=u_new; ec=ec_new;
+                active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 log.applied=true; log.details=handler_log.details;
-                samples=append_sample(samples,t,x,y,ec,active,topology,'right');
+                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right');
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:recloseTransaction',reason,log);
@@ -235,6 +248,7 @@ end
 res.t=samples.t;
 res.x_traj=samples.x;
 res.y_traj=samples.y;
+res.u_history=samples.u;
 res.sample_side=samples.side;
 res.topology_history=samples.topology;
 res.Y_log=samples.topology;
@@ -258,13 +272,21 @@ res.t_sg_trip=t_trip;
 res.last_synchronism_guard=last_guard;
 res.iter_per_step=step_iterations;
 res.residual_per_step=step_residuals;
+res.step_attempts=step_attempts;
+res.accepted_steps=accepted_steps;
 
-if converged
-    try
-        res=add_diagnostics(res,dae,u,case_data);
-    catch me
+try
+    % Publish diagnostics for every accepted sample even when a later step or
+    % right-limit transaction fails closed.  These are partial trajectories,
+    % never a claim that the requested horizon converged.
+    res=add_diagnostics(res,dae,case_data);
+catch me
+    if converged
         [res,meta]=fail(res,meta,'ts_simulate_ibr_hybrid:diagnostic',me);
         return;
+    else
+        meta.partial_diagnostic_failure_id=me.identifier;
+        meta.partial_diagnostic_failure_reason=me.message;
     end
 end
 meta.method='trapezoidal_coupled_newton_shared';
@@ -329,9 +351,10 @@ for k=1:numel(sched.events)
 end
 end
 
-function [ok,xr,yr,ecr,active,handler_log,reason,right_norm,stage] = ...
-    trip_transaction(t,x,y,Y,u,ec,dae,sched,kcl_tol)
-ok=false; xr=x; yr=y; ecr=ec; active=[]; reason=''; right_norm=inf; stage='tripTransaction';
+function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] = ...
+    trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol)
+ok=false; xr=x; yr=y; ur=u; ecr=ec; active=[]; reason='';
+right_norm=inf; stage='tripTransaction'; dispatch=struct();
 event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
     'committed_selection',struct('selected_gfm_indices',sched.selected_gfm_indices, ...
     'n_gfm_required',sched.n_gfm_required, ...
@@ -346,7 +369,12 @@ try
 catch me
     stage='modeTransfer'; reason=sprintf('%s: %s',me.identifier,me.message); return;
 end
-[ok,yr,reason,right_norm]=right_limit(xr,y,Y,dae,u,ecr,t,kcl_tol);
+try
+    [ur,dispatch]=input_for_dispatch_stage(u,dae,case_data,'post_trip');
+catch me
+    stage='dispatch'; reason=sprintf('%s: %s',me.identifier,me.message); return;
+end
+[ok,yr,reason,right_norm]=right_limit(xr,y,Y,dae,ur,ecr,t,kcl_tol);
 if ~ok, stage='rightLimit'; end
 if ok, active=stability.ts_dynamic_state_indices(dae,ecr); end
 end
@@ -391,16 +419,85 @@ end
 y_right=y_candidate; ok=true;
 end
 
-function [ok,y_right,ec_right,handler_log,reason,right_norm]= ...
-    reclose_transaction(t,x,y,Y,u,ec,dae,sched,kcl_tol)
-ok=false; y_right=y; ec_right=ec; reason=''; right_norm=inf;
+function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm,dispatch]= ...
+    reclose_transaction(t,x,y,Y,u,ec,initial_u,dae,sched,kcl_tol)
+ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
+reason=''; right_norm=inf; dispatch=struct();
 event=struct('type','sg_reclose_request','t',t,'sg_id',sched.sg_id);
 [hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
 if ~handler_log.applied
     reason=sprintf('%s: %s',handler_log.failure_id,handler_log.details); return;
 end
+% The SG handler owns only the breaker transition.  IBRs remain in their
+% committed post-trip modes: forcing GFM->GFL at breaker close can violate the
+% target GFL current/power contract and is not part of the sourced SG reclose
+% event.  No SG or IBR differential coordinate is fabricated here.
 ec_right=ec; ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(hs_candidate);
-[ok,y_right,reason,right_norm]=right_limit(x,y,Y,dae,u,ec_right,t,kcl_tol);
+u_right=initial_u;
+dispatch=dispatch_snapshot(u_right,dae);
+[ok,y_right,reason,right_norm]=right_limit(x_right,y,Y,dae,u_right,ec_right,t,kcl_tol);
+end
+
+function [u_new,dispatch]=input_for_dispatch_stage(u,dae,case_data,stage)
+%INPUT_FOR_DISPATCH_STAGE Apply the explicit CASE_DEFINED MW contract.
+% P_ref is an input, not a state jump.  The physical mode transfer is made
+% first at the left-side V/I; only then is the new controller reference
+% committed together with the right-limit algebraic solution.
+if ~strcmp(stage,'post_trip') || ~isfield(case_data,'dispatch_contract') || ...
+        ~isfield(case_data.dispatch_contract,'post_trip') || ...
+        ~isfield(case_data.dispatch_contract.post_trip,'post_trip_Pg_MW')
+    error('ts_simulate_ibr_hybrid:missingDispatchContract', ...
+        'The case lacks dispatch_contract.post_trip.post_trip_Pg_MW.');
+end
+contract=case_data.dispatch_contract.post_trip.post_trip_Pg_MW;
+if ~isstruct(contract) || ~isscalar(contract)
+    error('ts_simulate_ibr_hybrid:badDispatchContract', ...
+        'post_trip_Pg_MW must be one scalar struct keyed by device_id.');
+end
+Sbase=case_data.mpc.baseMVA;
+if ~isscalar(Sbase) || ~isfinite(Sbase) || Sbase<=0
+    error('ts_simulate_ibr_hybrid:badDispatchContract','baseMVA must be finite positive.');
+end
+u_new=u;
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    if ~is_ibr_device(dev), continue; end
+    id=char(dev.device_id);
+    if ~isfield(contract,id)
+        error('ts_simulate_ibr_hybrid:missingDispatchEntry', ...
+            'Post-trip dispatch lacks device %s.',id);
+    end
+    mw=contract.(id);
+    if ~isnumeric(mw) || ~isscalar(mw) || ~isreal(mw) || ~isfinite(mw)
+        error('ts_simulate_ibr_hybrid:badDispatchEntry', ...
+            'Post-trip dispatch for %s must be one finite real MW value.',id);
+    end
+    slot=find(strcmpi(string(dev.input_names),'P_ref'));
+    if numel(slot)~=1
+        error('ts_simulate_ibr_hybrid:badDispatchInput', ...
+            'Device %s must declare exactly one P_ref input.',id);
+    end
+    u_new(dae.u_offsets(k)+slot)=mw/Sbase;
+end
+dispatch=dispatch_snapshot(u_new,dae);
+end
+
+function dispatch=dispatch_snapshot(u,dae)
+dispatch=struct();
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    if ~is_ibr_device(dev), continue; end
+    slot=find(strcmpi(string(dev.input_names),'P_ref'));
+    if numel(slot)==1
+        dispatch.(char(dev.device_id))=u(dae.u_offsets(k)+slot);
+    end
+end
+end
+
+function tf=is_ibr_device(dev)
+tf=isfield(dev,'capabilities') && isstruct(dev.capabilities) && ...
+    isfield(dev.capabilities,'resource_type') && ...
+    strcmpi(char(dev.capabilities.resource_type),'ibr');
 end
 
 function [eligible,guard]=reclose_guard(t,x,y,u,ec,dae,sched,case_data,settings)
@@ -426,13 +523,13 @@ function n=kcl_norm(dae,t,x,y,Y,u,ec)
 g=dae.dae_g(t,x,y,Y,u,ec); n=norm(g,inf);
 end
 
-function s=new_samples(x,y,ec,active,topology)
-s=struct('t',0,'x',x(:),'y',y(:),'side',{{'initial'}}, ...
+function s=new_samples(x,y,u,ec,active,topology)
+s=struct('t',0,'x',x(:),'y',y(:),'u',u(:),'side',{{'initial'}}, ...
     'topology',{{topology}},'context',{{ec}},'active',{{active(:)'}});
 end
 
-function s=append_sample(s,t,x,y,ec,active,topology,side)
-s.t(end+1)=t; s.x(:,end+1)=x(:); s.y(:,end+1)=y(:);
+function s=append_sample(s,t,x,y,u,ec,active,topology,side)
+s.t(end+1)=t; s.x(:,end+1)=x(:); s.y(:,end+1)=y(:); s.u(:,end+1)=u(:);
 s.side{end+1}=side; s.topology{end+1}=topology;
 s.context{end+1}=ec; s.active{end+1}=active(:)';
 end
@@ -441,20 +538,22 @@ function log=new_event_log(type,t)
 log=struct('type',type,'t',t,'applied',false,'failure_id','', ...
     'details','','pre_kcl_norm',NaN,'right_kcl_norm',NaN, ...
     'selected_gfm_indices',[],'reference_resource_index',[], ...
-    'guard',struct(),'status',struct());
+    'guard',struct(),'status',struct(),'input_before',[], ...
+    'input_after',[],'dispatch_after_pu',struct());
 end
 
 function [converged,id,reason,log]=transition_failure(id,reason,log)
 converged=false; log.failure_id=id; log.details=reason;
 end
 
-function res=add_diagnostics(res,dae,u,case_data)
+function res=add_diagnostics(res,dae,case_data)
 nt=numel(res.t); nd=numel(dae.devices); nb=numel(dae.mapping.bus_ids);
 I=complex(zeros(nd,nt)); P=zeros(nd,nt); Q=zeros(nd,nt);
 freq=nan(nd,nt); H=nan(nd,nt); limit=nan(nd,nt);
 modes=cell(nd,nt); online=false(nd,nt);
 for j=1:nt
-    y=res.y_traj(:,j); x=res.x_traj(:,j); ec=res.event_context_history{j};
+    y=res.y_traj(:,j); x=res.x_traj(:,j); u=res.u_history(:,j);
+    ec=res.event_context_history{j};
     for k=1:nd
         dev=dae.devices(k); xi=dae.device_offsets(k)+(1:dev.nx); ui=dae.u_offsets(k)+(1:dev.nu);
         I(k,j)=dev.current_injection(res.t(j),x(xi),y,u(ui),ec);
@@ -471,6 +570,14 @@ for j=1:nt
             H(k,j)=out.gfm.H_system; limit(k,j)=out.gfm.ImaxF_sys;
         elseif isfield(out,'gfl')
             limit(k,j)=out.gfl.Imax/out.gfl.kappa;
+        end
+        % Absolute frequency is an electrical-system trace only while the
+        % resource is online.  An open SG rotor may physically coast, but
+        % plotting that mechanical speed as a connected-grid frequency is
+        % misleading; preserve the state in x_traj and mask the display data.
+        if ~online(k,j)
+            freq(k,j)=NaN;
+            H(k,j)=NaN;
         end
     end
 end
@@ -498,6 +605,7 @@ end
 
 function [res,meta]=empty_result(opt)
 res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
+    'u_history',[], ...
     'topology_history',{{}},'event_context_history',{{}},'active_state_history',{{}}, ...
     'events',[],'event_log',[],'converged',false,'failure_id','', ...
     'failure_reason','','requested_sg_on_time',NaN,'actual_reclose_time',NaN, ...
@@ -505,7 +613,7 @@ res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
     'bus_voltage_magnitude',[],'device_currents',[],'device_current_magnitude',[], ...
     'device_P',[],'device_Q',[],'sg_omega',[],'sg_freq',[],'sg_indices',[], ...
     'device_modes_history',{{}},'Y_log',{{}},'residual_per_step',[], ...
-    'iter_per_step',[],'status_log',[]);
+    'iter_per_step',[],'step_attempts',0,'accepted_steps',0,'status_log',[]);
 meta=struct('method','trapezoidal_coupled_newton_shared','full_kcl',true, ...
     'event_aware',true,'failure_id','','failure_reason','');
 if isfield(opt,'ibr_event_schedule'), res.sched=opt.ibr_event_schedule; end

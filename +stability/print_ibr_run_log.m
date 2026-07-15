@@ -66,6 +66,19 @@ if isfield(result,'reclose_status')
         result.reclose_status,value_text(result.requested_sg_on_time), ...
         value_text(result.actual_reclose_time));
 end
+if isfield(result,'converged') && ~logical(result.converged)
+    fprintf('\n---------------- FAIL-CLOSED DIAGNOSTIC ------------------\n');
+    if isfield(result,'failure_id') && ~isempty(result.failure_id)
+        fprintf('Failure ID                  : %s\n',char(string(result.failure_id)));
+    end
+    if isfield(result,'failure_reason') && ~isempty(result.failure_reason)
+        fprintf('Failure reason              : %s\n',char(string(result.failure_reason)));
+    end
+    if isfield(result,'t') && ~isempty(result.t)
+        fprintf('Last published time         : %.12g s\n',result.t(end));
+        fprintf('Published samples           : %d\n',numel(result.t));
+    end
+end
 end
 
 function text=value_text(value)

@@ -2,7 +2,7 @@
 
 Date: 2026-07-15
 Branch: `main`
-Tested working tree: parent `250fffc` plus the checkpoint described here
+Tested working tree: parent `2ac62d1` plus the checkpoint described here
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
@@ -68,36 +68,47 @@ never changes the computed eigenvalue set.
 
 ## Fresh focused evidence
 
-- GFL/GFM/G2/equilibrium/transfer/selector/SSSA/TS/event/launcher/external
-  closure: `183/183 passed` (combined focused runs).
-- Event/no-event supervisor: `11/11 passed`.
-- Selector + SG-off SSSA + launcher subset: `25/25 passed`.
-- MATPOWER case14 manual launcher gate: PF converged in 5 iterations; SSSA
-  printed all 10 full-state roots; short fault TS produced 6 finite samples/
-  5 accepted steps.
-- Default IEEE14 IBR event demo (`dt=0.01`, `t_end=0.1`, all four IBRs become
-  GFM): 10/10 TS steps accepted, 38 Newton iterations, logged right-limit KCL
-  below `1e-6`, and both PNGs created.
+- REGFM G2 differential-angle and physical-spectrum focused gates: `36/36`
+  passed.
+- Hybrid event, plot, and launcher/UI gates: `22/22` passed; plotting contract
+  subsequently rechecked at `4/4` after timeout-marker clarification.
+- IEEE14 IBR 15 s event run: `1500/1500` accepted steps, 4324 Newton
+  iterations, maximum step residual `8.92e-9`, and `converged=true`.
+- Four-GFM post-trip equilibrium KCL norm: `4.58e-11`; 52 complete raw roots
+  and 43 physical decision roots, `Omega_physical=-1.48281 1/s`.
+- MATPOWER case14 production launcher: PF converged in 5 iterations at
+  `6.34e-15 pu` mismatch; SSSA printed all 10 roots; 15 s TS accepted
+  `1500/1500` steps with zero non-converged steps and maximum corrector
+  residual `5.84e-9`.
 
-Final repository-wide regression on this source tree: `804 total`,
-`800 passed`, `0 failed`, `4 incomplete`. The four incomplete tests are the
-pre-existing PGAz comparisons filtered by their validation-only assumptions;
-production results do not depend on them.
+Fresh targeted delivery gates passed `84/84`; the partial-failure plotting and
+launcher repair gate subsequently passed `26/26`. A repository-wide run on the
+pre-repair tree reported `821 total`, `815 passed`, `2 failed`, and
+`4 incomplete`. Both failures were stale launcher-test assumptions: one
+incorrectly required SSSA evaluation after every selector candidate had
+already failed the independently audited SCR/equilibrium gates, and one used
+the newly approved 15 s launcher default while retaining a 10-step oracle.
+Those tests were corrected against the selector trace and an explicit
+0.1 s/0.01 s fixture, then passed in the targeted repair gate. Per explicit
+user instruction, the full suite was not rerun after those test-only repairs.
+The prior committed full baseline remains `804 total`, `800 passed`,
+`0 failed`, `4 incomplete`.
 
 ## Honest limitations and readiness
 
-The selector evaluates the correct post-trip context (SG breaker open), but
-no current IEEE14 candidate satisfies frozen `gamma_req=0.1 s^-1`. Computed
-spectral abscissae are positive for evaluated one-through-four-GFM candidates,
-so it returns `NO_FEASIBLE_CANDIDATE` and never silently certifies them.
+The selector evaluates the correct post-trip context (SG breaker open) and the
+four-GFM candidate satisfies frozen `gamma_req=0.1 s^-1` on the physical
+tangent spectrum. The complete raw spectrum is still retained for reporting;
+locked active-bound directions and the common PLL rotational gauge are
+removed before the physical eigenproblem, never by deleting roots afterward.
 
-The short explicit all-four-GFM event demonstration converges but is not a
-stability certificate. At `dt=0.01`, explicit two- and three-GFM trajectories
-fail closed near `t=0.1`; two GFM reaches that horizon at `dt=0.0025`. This
-timestep sensitivity is reported, not tuned away. With case synchronism
-limits, the short default run reports `PENDING_SYNC_FAIL`; a successful
-reclose transaction is separately falsified with declared test-only guard
-overrides and is not a natural case result.
+The 15 s all-four-GFM event demonstration is numerically converged and remains
+within the sourced IBR current limits. The SG-on event at 3 s is an accepted
+reclose request, not an asserted breaker closure. With the case synchronism
+limits it reaches `SYNC_TIMEOUT` at 8 s; `actual_reclose_time=NaN`. This honest
+protection outcome is shown as a separate plot marker. A successful reclose
+transaction remains covered only by declared test guard overrides and is not
+claimed as natural case evidence.
 
 ```text
 IEEE14_IBR_GFL_MODEL_READY       = STRUCTURAL_ONLY
@@ -106,13 +117,13 @@ IBR_EVENT_RUNNER_READY           = IMPLEMENTED_FAIL_CLOSED
 IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 
-Remaining blockers are a feasible/stable sourced post-trip configuration,
-longer-horizon nonlinear TS evidence, natural synchronism/reclose evidence,
-and independent validation. The final full regression is complete. No
-external solver is reachable from production.
+Remaining blockers are natural synchronism/reclose evidence and independent
+validation. The final full-regression count is pending refresh on this working
+tree. No external solver is reachable from production.
 
 ## Preserved local material
 
 `docs/text/`, `docs/probes/ieee14_ibr_phaseG/`, the local Thai report source/
-PDF, and the archived font/resource file remain untracked user/validation
-material. They are not production dependencies and must not be staged.
+PDF, and the archived font/resource file are committed validation/provenance
+material by explicit user instruction. They remain unreachable from
+production and `pf_init_paths`.

@@ -49,6 +49,11 @@ if ~isfield(cand,'physical_kcl_norm'), cand.physical_kcl_norm = Inf; end
 if ~isfield(cand,'reason'), cand.reason = ''; end
 if ~isfield(cand,'failure_id'), cand.failure_id = ''; end
 if ~isfield(cand,'eigenvalues'), cand.eigenvalues = []; end
+if ~isfield(cand,'physical_eigenvalues'), cand.physical_eigenvalues = []; end
+if ~isfield(cand,'raw_omega'), cand.raw_omega = NaN; end
+if ~isfield(cand,'physical_reduction_method'), cand.physical_reduction_method = ''; end
+if ~isfield(cand,'active_bound_constraint_count'), cand.active_bound_constraint_count = 0; end
+if ~isfield(cand,'coordinate_mode_count'), cand.coordinate_mode_count = 0; end
 if ~isfield(cand,'gy_rcond'), cand.gy_rcond = NaN; end
 
 % --- gamma_req frozen check ---
@@ -140,7 +145,7 @@ end
 devices = [];
 dev_meta = [];
 dispatch = struct();
-if isfield(opt,'dispatch') && ~isempty(opt.dispatch)
+if isfield(opt,'dispatch') && has_dispatch_values(opt.dispatch)
     dispatch = opt.dispatch;
 elseif isfield(case_data,'dispatch_contract') && isfield(case_data.dispatch_contract,'post_trip')
     % IEEE14 dispatch contract fallback – build post-trip Pg
@@ -149,7 +154,10 @@ elseif isfield(case_data,'dispatch_contract') && isfield(case_data.dispatch_cont
     end
 end
 % Also check opt.scenario_opt.dispatch
-if isfield(opt,'scenario_opt') && isstruct(opt.scenario_opt) && isfield(opt.scenario_opt,'dispatch')
+if isfield(opt,'scenario_opt') && isstruct(opt.scenario_opt) && ...
+        isfield(opt.scenario_opt,'dispatch') && ...
+        has_dispatch_values(opt.scenario_opt.dispatch) && ...
+        ~has_dispatch_values(dispatch)
     dispatch = opt.scenario_opt.dispatch;
 end
 
@@ -307,7 +315,12 @@ cand.sssa_evaluated = false;
 sssa = [];
 sssa_opt = struct('full_kcl',true,'u_eq',eq_result.u_eq,...
     'event_context',eq_result.equilibrium_context,...
-    'active_state_indices',eq_result.active_state_indices);
+    'active_state_indices',eq_result.active_state_indices, ...
+    'reference_device_index',cand.reference_resource_index);
+if isfield(eq_result,'active_bound_regime_history') && ...
+        ~isempty(eq_result.active_bound_regime_history)
+    sssa_opt.active_bound_regimes = eq_result.active_bound_regime_history{end};
+end
 if isfield(opt,'sssa_opt') && isstruct(opt.sssa_opt)
     % keep full_kcl enforced – ignore other sssa options that could disable it
 end
@@ -320,14 +333,22 @@ catch me
 end
 cand.sssa_evaluated = true;
 cand.eigenvalues = sssa.eigenvalues;
+cand.physical_eigenvalues = sssa.physical_eigenvalues;
 cand.gy_rcond = sssa.gy_rcond;
 cand.reduction_method = sssa.reduction_method;
+cand.physical_reduction_method = sssa.physical_reduction_method;
+cand.active_bound_constraint_count = sssa.active_bound_constraint_count;
+cand.coordinate_mode_count = sssa.coordinate_mode_count;
 cand.sssa_f0_norm = sssa.active_f_residual_norm;
 cand.sssa_g0_norm = sssa.physical_kcl_residual_norm;
 cand.full_kcl = sssa.full_kcl;
 
 % --- Stability gate (frozen gamma_req) ---
-omega = max(real(sssa.eigenvalues));
+% The full state spectrum is retained above for reporting.  The decision
+% spectrum is a pre-eig fixed-active-set/gauge-coordinate projection; no
+% eigenvalue is filtered or deleted after eig.
+cand.raw_omega = max(real(sssa.eigenvalues));
+omega = max(real(sssa.physical_eigenvalues));
 if isempty(omega), omega = NaN; end
 cand.omega = omega;
 % margin definition: positive means stable beyond requirement
@@ -350,8 +371,15 @@ end
 % --- All gates pass ---
 cand.feasible = true;
 cand.ready_to_commit = true;
-cand.reason = sprintf('feasible: KCL %.2e, Omega %.4g <= -%.4g, margin %.4g, SCR pass', ...
-    cand.physical_kcl_norm, omega, gamma_req, cand.margin);
+cand.reason = sprintf(['feasible: KCL %.2e, physical Omega %.4g <= -%.4g, ' ...
+    'margin %.4g, full roots=%d, decision roots=%d, SCR pass'], ...
+    cand.physical_kcl_norm, omega, gamma_req, cand.margin, ...
+    numel(cand.eigenvalues),numel(cand.physical_eigenvalues));
 cand.failure_id = '';
 
+end
+
+function tf = has_dispatch_values(dispatch)
+tf = isstruct(dispatch) && isscalar(dispatch) && ...
+    ~isempty(fieldnames(dispatch));
 end

@@ -18,6 +18,18 @@ r=d.reconstruct(0,d.x0,y,d.u0,struct());
 testCase.verifyEqual(r.delta_VSM,r.delta_PLL+r.delta_IT_used,'AbsTol',1e-15);
 end
 
+function test_differential_angle_identity(testCase)
+% Fig.2 independent oracle: delta_IT is PLL-relative, hence its derivative
+% plus the PLL-angle derivative equals the inertial VSM-angle speed.
+[d,y]=fixture(struct(),0.4,1.0,0);
+x=d.x0; x(1)=1e-3; x(2)=0; x(5)=0.04; x(6)=2e-3;
+dx=d.f(0,x,y,d.u0,struct());
+omega0=d.provenance.params.omega0;
+testCase.verifyEqual(dx(2)+dx(5),omega0*x(1),'AbsTol',1e-12);
+testCase.verifyGreaterThan(abs(dx(5)),1e-3, ...
+    'Oracle must exercise a moving PLL, not the trivial locked case.');
+end
+
 function test_initializer_relative_angle_oracle(testCase)
 [d,~]=fixture(struct('Mbase',140),0.4,1.04,0.13);
 V=1.04*exp(1i*0.13); P=.4; Q=.05;

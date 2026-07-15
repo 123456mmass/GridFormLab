@@ -88,7 +88,8 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       2H*d(omega_m)/dt = P_ref_inv - Pinv_f ...
 %                          - (1/mp + D1)*omega_m - D2*(omega_m - x_washout)
 %       d(x_washout)/dt  = wD*(omega_m - x_washout)
-%       d(delta_IT)/dt    = omega0*omega_m, with conditional bound hold
+%       d(delta_IT)/dt    = omega0*omega_m-d(delta_PLL)/dt, with bound hold
+%       so d(delta_VSM)/dt=omega0*omega_m for delta_VSM=delta_PLL+delta_IT
 %     Voltage PI and G2 limits (Fig.3, Fig.5, Eqs.10-12):
 %       d(x_Eint)/dt = V_ref - Vinv_f
 %       EVSM_raw = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint
@@ -613,10 +614,21 @@ Iq = -Ix*sin(delta_PLL) + Iy*cos(delta_PLL);
 Vx = real(V_bus);  Vy = imag(V_bus);
 Vq = -Vx*sin(delta_PLL) + Vy*cos(delta_PLL);
 
+% PLL (Fig.4). Figure 2 integrates VSM/PLL relative speed into delta_IT,
+% so the PLL derivative is evaluated before the relative-angle state. This
+% preserves d(delta_VSM)=omega0*omega_m instead of counting PLL motion twice.
+if abs(V_bus) < VPLLfrz
+    d_x_PLL_int = 0;
+    d_delta_PLL = 0;
+else
+    d_x_PLL_int = Vq;
+    d_delta_PLL = omega0*(kpPLL*Vq + kiPLL*x_PLL_int);
+end
+
 % VSM swing (Fig.2, SOURCE_TRANSFORMED, inverter base).
 d_omega_m = (P_ref_inv - Pinv_f - (1/mp + D1)*omega_m - D2*(omega_m - x_washout)) / (2*H);
 d_x_washout = wD*(omega_m - x_washout);
-d_delta_IT_raw = omega0*omega_m;
+d_delta_IT_raw = omega0*omega_m-d_delta_PLL;
 d_delta_IT = conditional_hold(delta_IT,d_delta_IT_raw,used_lb,delta_ITmax);
 
 % Voltage PI (Fig.3).
@@ -636,15 +648,6 @@ if ESFlag == 1
     d_delta_ITmin = conditional_hold(delta_ITmin,d_delta_ITmin_raw,-delta_max,0);
 else
     d_delta_ITmin = 0;
-end
-
-% G1: PLL freeze at low voltage (REGFM_B1 Fig.4, Table 1 VPLLfrz=0.05 pu).
-if abs(V_bus) < VPLLfrz
-    d_x_PLL_int = 0;
-    d_delta_PLL = 0;
-else
-    d_x_PLL_int = Vq;
-    d_delta_PLL = omega0*(kpPLL*Vq + kiPLL*x_PLL_int);
 end
 
 % Filters (Eqs.1-5, kappa = Sbase/Mbase). Uses limited Id/Iq/P_meas.

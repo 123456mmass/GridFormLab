@@ -17,33 +17,41 @@ canonical `powerflow_newton_raphson.m` or `ts_step_kernel.m`.
 
 ```text
 PF_PROGRAMMATIC_ROUTING_READY     = PASS      (gates below)
-PF_INTERACTIVE_SELECTION          = DEFERRED (dialogs untouched)
-BFS_ROUTED_CAPABILITY             = GATED     (meshed catalog fail-closed; radial factory-only)
+PF_INTERACTIVE_SELECTION          = PASS      (C5: listdlg method picker before settings)
+TS_INTERACTIVE_SELECTION          = PASS      (C5: listdlg integrator picker before settings)
+BFS_ROUTED_CAPABILITY             = GATED     (meshed catalog fail-closed; radial factory-only; hidden from meshed picker)
 TS_INTEGRATOR_ROUTING_READY       = PASS      (gates below)
 RK4_STATUS                        = DIAGNOSTIC_ONLY
-ADAPTIVE_BE_RK4                   = FROZEN_OUT (adaptiveNotFrozen, route + driver)
+ADAPTIVE_BE_RK4                   = FROZEN_OUT (adaptiveNotFrozen, route + driver + dialog gate)
 ESDIRK32                          = NOT_YET_APPROVED (notYetApproved, no scaffold)
 ```
 
-## Scope (programmatic API routing only)
+## Scope (programmatic API + interactive dropdown pickers)
 
 This slice wires the factories into `solve_case` (PF) and `ts_simulate` /
-`ts_simulate_emf6` / `ts_simulate_padiyar_model11` / `ts_adaptive_driver` (TS).
-The supported surface is the NON-INTERACTIVE programmatic API:
-`solve_case('analysis','pf','options',struct('pf_method',...))` and
-`solve_case('analysis','ts',...,'options',struct('integrator',...))`.
+`ts_simulate_emf6` / `ts_simulate_padiyar_model11` / `ts_adaptive_driver` (TS),
+exposed BOTH programmatically and via interactive `listdlg` pickers:
+- Programmatic: `solve_case('analysis','pf','options',struct('pf_method',...))`
+  and `solve_case('analysis','ts',...,'options',struct('integrator',...))`.
+- Interactive (C5): after case selection, a `listdlg` method/integrator picker
+  appears (capability-aware — BFS hidden for meshed cases), then the existing
+  `inputdlg` settings. Selection flows into the SAME C2/C3 routing.
 
-The interactive dialogs (`prompt_pf_options`, `prompt_ts_options` in
-`solve_case.m`) are NOT modified; `prompt_ts_options` continues to restrict
-`opt.method` to `'trapezoidal'` (interactive users stay on trapezoidal).
-Programmatic users can pass any registered integrator.
+The interactive `inputdlg` settings dialogs (`prompt_pf_options`,
+`prompt_ts_options`) keep their field structure; `parse_ts_dialog` Method
+validation is relaxed to the allowed set + a stepper-compat gate. A new
+`listdlg` picker (`prompt_pf_method` / `prompt_ts_integrator`) runs BEFORE
+the `inputdlg` (C5), reusing the existing `choose_item` pattern.
 
 ## Files changed (exact allowlist)
 
 - `solve_case.m` — PF dispatch wiring (line 92) through
   `pf_resolve_method` + `pf_method_strategy`; NR metadata enrichment
   (fill-if-missing, never clobbers FDPF/BFS `method_executed` 'XB'/'BX'/'bfs');
-  method-neutral PF label; logs report `Method executed` + `Dispatch req`.
+  method-neutral PF label; logs report `Method executed` + `Dispatch req`;
+  **C5**: `prompt_pf_method`/`prompt_ts_integrator` listdlg pickers before the
+  settings dialogs; `case_is_radial`/`pf_method_choices`/`ts_integrator_choices`
+  pure helpers; `parse_ts_dialog` stepper-compat gate.
 - `+stability/ts_simulate.m` — removed `method='trapezoidal'` pre-resolution
   default (line 24) so selector provenance is truthful; resolve+gate INSIDE the
   `model_bundle`/`model_fn` branches and the classical built-in path (exactly-
@@ -95,8 +103,8 @@ event helpers (`ts_topology_at`, `ts_event_transition`,
   (`ts_adaptive_driver:adaptiveNotFrozen`).
 - All event/right-limit behavior unchanged (no edits to topology/event helpers;
   step uses `Y_now`, right-limit re-solved at `t_next` with `Y_next`).
-- RK4 `capability='diagnostic'`, `runtime_diagnostic=true`; never default,
-  never interactive choice.
+- RK4 `capability='diagnostic'`, `runtime_diagnostic=true`; never default.
+  Interactive picker offers it (labeled diagnostic); it runs but is flagged.
 - Metadata: `method_source` (implementation provenance) vs `selection_source`
   (default/explicit_* selector) are DISTINCT. FDPF/BFS `method_executed`
   ('XB'/'BX'/'bfs') preserved; NR `full_ac_mismatch` sourced from existing
@@ -109,15 +117,15 @@ event helpers (`ts_topology_at`, `ts_event_transition`,
 
 ## Evidence (fresh, this branch)
 
-Tested tree: `wip/pf-ts-phase2` (commits C2 + C3). MATLAB R2025a.
+Tested tree: `wip/pf-ts-phase2` (commits C2 + C3 + C4 + C5). MATLAB R2025a.
 
 Baseline (pre-C2, on `17d2050`): 747 total / 743 passed / 0 failed / 4
 incomplete (4 = PGAz conversion contract, filtered by assumption — PGAz not
 installed; not new failures).
 
-Targeted gates (post-C3):
-- `test_pf_phase2_solve_case_routing`: 8/0
-- `test_ts_phase2_integrator_routing`: 20/0
+Targeted gates (post-C5):
+- `test_pf_phase2_solve_case_routing`: 10/0 (C2: 8; C5: +2)
+- `test_ts_phase2_integrator_routing`: 23/0 (C3: 20; C5: +3)
 - `test_p0_multimethod_factories`: 16/0
 - `test_pf_routing_end_to_end`: 7/0
 - `test_nr_solver`: 11/0, `test_pf_contract`: 23/0,
@@ -129,11 +137,17 @@ Targeted gates (post-C3):
   `test_ts_coupled_jacobian`: 7/0
 - `test_no_external_solver_dependency`: 12/0
 
-Full post-C3 regression: 775 total / 771 passed / 0 failed / 4 incomplete
+Full post-C5 regression: 780 total / 776 passed / 0 failed / 4 incomplete
 (4 = PGAz conversion contract, filtered by assumption — PGAz not installed;
-same 4 as baseline). Versus baseline (747 total / 743 passed): +28 tests
-(8 PF + 20 TS), all passing. A full PASS is invalidated by subsequent source
+same 4 as baseline). Versus baseline (747 total / 743 passed): +33 tests
+(10 PF + 23 TS), all passing. A full PASS is invalidated by subsequent source
 changes.
+
+Manual UI check (C5, documented; not CI-gated): `solve_case` interactive ->
+PF method `listdlg` appears after case selection (bfs absent for meshed
+ieee14, present for a radial case) -> pick method -> `inputdlg` settings ->
+log shows `Method executed`. TS integrator `listdlg` -> pick rk4 -> log shows
+`Integrator : rk4` + diagnostic metadata.
 
 ## Commands
 
@@ -150,22 +164,27 @@ r = runtests('tests','IncludeSubfolders',true);
 
 - **C2** (`87e943c`) — PF wiring (`solve_case.m`) + label + log +
   `test_pf_phase2_solve_case_routing.m`.
-- **C3** (this commit) — TS wiring (4 files) + `ts_method_metadata.m` +
+- **C3** (`79421ed`) — TS wiring (4 files) + `ts_method_metadata.m` +
   `test_ts_phase2_integrator_routing.m`.
-- **C4** (this doc) — handoff with honest statuses.
+- **C4** (`80a6ff7`) — handoff with honest statuses.
+- **C5** (`5f3f6c0`) — interactive `listdlg` method/integrator pickers before
+  the settings dialogs; `case_is_radial`/`pf_method_choices`/
+  `ts_integrator_choices` helpers; `parse_ts_dialog` stepper-compat gate;
+  +5 integration tests (PF +2, TS +3).
 
 ## Known limitations / deferred
 
-- Interactive dialogs unchanged (`PF_INTERACTIVE_SELECTION = DEFERRED`); a
-  capability-aware method menu is a separately-approved UI change.
 - BFS is catalog-gated: no radial catalog case exists, and `solve_case`
   cannot accept an inline three-bus case, so BFS SUCCESS is asserted by the
   existing direct-factory `test_pf_routing_end_to_end` (factory-level inline
-  radial). A radial catalog expansion is a separate approval.
-- RK4 is diagnostic-only (bounded stability region, not A-stable).
+  radial). The interactive picker hides BFS for meshed cases (UI hint);
+  `powerflow_bfs` still fails closed authoritatively at run time. A radial
+  catalog expansion is a separate approval.
+- RK4 is diagnostic-only (bounded stability region, not A-stable); the picker
+  offers it (labeled diagnostic) but it is never the default.
 - ESDIRK32 remains `notYetApproved` (source-gated; no scaffold created).
 - Adaptive BE/RK4 is FROZEN OUT (the method-specific algebraic adaptive-error
-  definition is not frozen; `adaptiveNotFrozen`).
+  definition is not frozen; `adaptiveNotFrozen` at route + driver + dialog).
 - Provider-bearing BE/RK4 bundle tests use a minimal synthetic linear-ODE
   oracle (no `+ibr` reference); composite/IBR provider bundles are out of
   scope for this slice.

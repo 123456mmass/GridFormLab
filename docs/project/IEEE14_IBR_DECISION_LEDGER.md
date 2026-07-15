@@ -767,3 +767,45 @@ requested plots are implemented. A converged 15 s nonlinear event run and a
 separate MATPOWER14 five-generator PF/SSSA/TS run are recorded. Remaining work
 is natural synchronism/reclose evidence and independent validation; readiness
 remains NOT_READY until those gates pass.
+
+## 2026-07-16 two-phase reclose + multi-island reference-ownership addendum
+
+The SG reclose / reference-handover workflow is restructured into a two-phase
+transaction (Phase 11 contract) with a multi-island reference-ownership schema:
+
+- **Multi-island reference-ownership schema (F1/C1)**: `reference_owner_indices`
+  (owner per island), `gfm_reference_resource_indices` (GFM numerical
+  reference per island; empty/NaN where an SG owns), `reference_island_ids`
+  (sorted, equal cardinality). Legacy `reference_resource_index` is a
+  read-only single-island alias. Generic eligibility (F3): not tied to the
+  PF REF bus; index-based (online, voltage-forming mode, capability, island).
+- **Three fingerprints (F1)**: `selector_table_fingerprint` (immutable),
+  `committed_config_fingerprint` (atomic per config), `pre_event_input_fingerprint`
+  (immutable). Phase 1 updates `committed_config_fingerprint` ONLY.
+- **Phase 1 (reclose)**: breaker close without SG state reset; restore
+  authenticated `pre_event_input`; `reference_owner_indices` -> SG;
+  `gfm_reference_resource_indices` -> empty; IBR modes unchanged; one
+  right-limit solve; one right sample.
+- **Phase 2 (reselection)**: precomputed authenticated SG_ON table lookup;
+  `T_down = max(T_minimum_hold, ln(1/rho)/(-Omega_target))`; hold/guard/
+  lockout; selector-chosen GFM->GFL transfers; one final right-limit solve.
+  No-mode-change (`NO_MODE_CHANGE_REQUIRED`) skips transfer/right-limit/
+  sample. Rejected Phase 2 does NOT roll back Phase 1.
+- **`sg_breaker_trip`/`optional_gfm_commit` split (C3/F2)**:
+  `automatic_gfm_switching=false` opens the breaker without GFM commit;
+  per-island voltage-forming-source check; `noVoltageFormingSource` fail-
+  closed with NO right-limit sample (trajectory ends at event-left).
+- **Precomputed authenticated selector table (C7/F1)**: SG_OFF + SG_ON
+  tables built before TS via existing `ibr_config_selector`/
+  `ibr_candidate_evaluate`; bound to `selector_table_fingerprint`.
+- **IEEE14 demo defaults**: `fault_on=3.0`, `fault_clear=3.1`, `sg_trip=5.0`,
+  `sg_on=8.0`, `t_end=15.0`. Synchronism gating retained.
+- **Comparison runner**: four trajectories (A/B/C-natural/C-workflow) +
+  delay comparison; Scenario B fails closed honestly; C-workflow uses
+  relaxed test-guard (ASSUMED_DIAGNOSTIC).
+
+Classification: two-phase transaction, multi-island schema, fingerprints, and
+table lookup are PROJECT_DERIVED; island detection via Ybus connected
+components is NUMERICAL_METHOD (in-house BFS, off-diagonal connectivity).
+Full-KCL TS formulation unchanged. `IBR_PRODUCTION_INTEGRATION_READY`
+remains NOT_READY.

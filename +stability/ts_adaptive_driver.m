@@ -44,6 +44,23 @@ q = p + 1;                              % local order (LTE ~ O(h^q))
 denom = 2^p - 1;                         % Richardson fine-solution denom = 3
 exp_ctl = 1/q;                           % controller exponent = 1/3
 
+% Phase-2 real fail-closed guard (not a comment): reject every non-trapezoidal
+% integrator BEFORE any adaptive step. Only trapezoidal has a frozen
+% method-specific algebraic adaptive-error definition; backward_euler and rk4
+% are FIXED-STEP ONLY (correction 6). The route-level adaptiveNotFrozen gate
+% fires first; this is defense-in-depth so the driver independently refuses.
+integrator = 'trapezoidal';
+if isfield(opt,'integrator') && ~isempty(opt.integrator)
+    integrator = lower(opt.integrator);
+end
+if ~strcmp(integrator,'trapezoidal')
+    error('ts_adaptive_driver:adaptiveNotFrozen', ...
+        ['Adaptive stepper is not frozen for integrator ''%s''. ' ...
+         'Only trapezoidal has a frozen method-specific algebraic ' ...
+         'adaptive-error definition. backward_euler and rk4 are ' ...
+         'FIXED-STEP ONLY. No silent fallback.'], integrator);
+end
+
 t0 = t_span(1); t_end = t_span(2);
 dt = opt.dt_init;  if isempty(dt), dt = opt.dt_nominal; end
 dt_min = opt.dt_min;

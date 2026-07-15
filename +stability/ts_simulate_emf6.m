@@ -18,6 +18,22 @@ function res = ts_simulate_emf6(case_data, opt)
 %               corrector_iter, max_corrector_iter, corrector_abs_tol,
 %               corrector_rel_tol, corrector_failure, load_model, verbose.
 
+% --- Phase-2: resolve integrator BEFORE DAE construction --------------------
+% (exactly-one resolution per executed route; the parent ts_simulate
+% dispatches unresolved). step_fn is the resolved single-step handle
+% (@ts_step_kernel for trapezoidal -> bit-identical). The adaptiveNotFrozen
+% gate fires before the stepper dispatch below.
+[integrator, integrator_source, opt] = stability.resolve_ts_integrator(opt);
+opt.integrator_source = integrator_source;
+step_fn = stability.ts_integrator_step(opt);
+if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive') ...
+        && ~strcmp(integrator,'trapezoidal')
+    error('ts_simulate_emf6:adaptiveNotFrozen', ...
+        ['Adaptive stepper is not frozen for integrator ''%s''. ' ...
+         'backward_euler and rk4 are FIXED-STEP ONLY (correction 6). ' ...
+         'No silent fallback.'], integrator);
+end
+
 % --- Build the single EMF6 DAE --------------------------------------------
 dae = stability.emf6_dae(case_data, opt);
 init = dae.init; ng = dae.ng; nb = dae.nb;
@@ -75,7 +91,7 @@ Ypost = Ypre;
 %   production default is fixed. Catalog/run_ts may inject stepper='adaptive'.
 % Fixed-step EMF6 Jyy caching is UNCHANGED (Open Q5).
 if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
-    res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost);
+    res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost, integrator, integrator_source);
     return;
 end
 
@@ -105,6 +121,8 @@ delta_hist = zeros(nt,ng); omega_hist = zeros(nt,ng);
 Pe_hist = zeros(nt,ng); Vbus_hist = zeros(nt,nb);
 corr_iters = zeros(nt-1,1); corr_residual = zeros(nt-1,1);
 corr_update = zeros(nt-1,1); corr_converged = true(nt-1,1); nonconv = 0;
+% Phase-2: endpoint algebraic-residual evidence (additive).
+integrator_alg_res = zeros(nt-1,1);
 
 % --- Algebraic network solver: solve dae_g(x,.,Y) = 0 for y ----------------
 g_tol = 1e-12;            % tight, so no-fault equilibrium is preserved
@@ -144,11 +162,26 @@ for it = 1:nt-1
         'max_corrector_iter',max_citer,'corrector_mode',cmode, ...
         'corrector_abs_tol',abs_tol,'corrector_rel_tol',rel_tol);
     if strcmp(cmode,'fixed'), kopt.max_corrector_iter=citer; end
-    step = stability.ts_step_kernel(strat,x,y,dt_step,Y_now,kopt);
+    step = step_fn(strat,x,y,dt_step,Y_now,kopt);
     corr_iters(it) = step.corrector_iterations;
     corr_residual(it) = step.corrector_residual;
     corr_update(it) = step.corrector_update;
     corr_converged(it) = step.corrector_converged;
+    integrator_alg_res(it) = step.algebraic_residual;
+    % Phase-2 endpoint gate for coupled BE/RK4.
+    if strcmp(integrator,'backward_euler') || strcmp(integrator,'rk4')
+        if ~step.finite
+            error('ts_simulate_emf6:algebraicResidual', ...
+                ['Integrator ''%s'' produced non-finite step at t=%.4f (step %d). ' ...
+                 'No silent fallback.'], integrator, t_next, it);
+        end
+        if step.algebraic_residual > g_tol
+            error('ts_simulate_emf6:algebraicResidual', ...
+                ['Integrator ''%s'' endpoint algebraic residual=%.3e exceeds tol=%.3e ' ...
+                 'at t=%.4f (step %d). No silent fallback.'], ...
+                integrator, step.algebraic_residual, g_tol, t_next, it);
+        end
+    end
     if ~step.corrector_converged
         nonconv = nonconv + 1;
         if strcmp(cfail,'error') && strcmp(cmode,'adaptive')
@@ -190,16 +223,22 @@ res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
     'max_corrector_residual',max(corr_residual),'nonconverged_step_count',nonconv, ...
     'event_idx',event_idx,'event_side',event_side, ...
     'load_model',dae.load_model,'case_name',dae.case_name, ...
-    'freq_Hz',dae.base.frequency_Hz);
+    'freq_Hz',dae.base.frequency_Hz, ...
+    'integrator',integrator, ...
+    'integrator_algebraic_residual',integrator_alg_res, ...
+    'max_integrator_algebraic_residual',max(integrator_alg_res));
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, 'built_in_string');
 end
 
-function res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost)
+function res = run_emf6_adaptive(opt, dae, Ypre, Yfault, Ypost, integrator, integrator_source)
 %RUN_EMF6_ADAPTIVE  Phase 5 EMF6 adaptive-step path.
 %   Builds the events struct + EMF6 strategy and calls the shared
 %   ts_adaptive_driver. Converts the adaptive result to the legacy schema (plus
 %   the frozen adaptive fields). Fixed-step EMF6 Jyy caching is NOT changed;
 %   adaptive substeps start from a consistent y and do not cache Jyy across
-%   rejected/independent trials (Open Q5).
+%   rejected/independent trials (Open Q5). Phase-2: the route-level
+%   adaptiveNotFrozen gate already guaranteed integrator='trapezoidal'; the
+%   driver independently re-checks via aopt.integrator.
 strat = stability.ts_model_strategy('emf6', dae);
 events = struct('fault_enabled', ~isempty(opt.fault_enabled) && opt.fault_enabled, ...
     't_fault',opt.t_fault,'t_clear',opt.t_clear, ...
@@ -220,6 +259,7 @@ aopt.max_corrector_iter = 10;
 aopt.corrector_abs_tol = 1e-10;
 aopt.corrector_rel_tol = 1e-8;
 aopt.corrector_mode = 'adaptive';
+aopt.integrator = integrator;   % Phase-2: thread for driver guard
 ares = stability.ts_adaptive_driver(strat, dae.init.x0, dae.init.y0, ...
     [0, opt.t_end], events, aopt);
 nt = numel(ares.t);
@@ -234,7 +274,7 @@ res = struct('t',ares.t,'delta',delta_hist,'omega',omega_hist, ...
     'Pe_pu',Pe_hist,'Pe_MW',Pe_hist*dae.base.S_base_MVA, ...
     'Vbus',Vbus_hist,'pf',dae.pf,'bus_ids',dae.bus_ids,'gen_buses',dae.gen_buses, ...
     'H',dae.units.H_system(:),'D',dae.units.D_system(:),'Pm',dae.init.Tm, ...
-    'method','trapezoidal','dt',opt.dt,'t_end',opt.t_end, ...
+    'method',opt.method,'dt',opt.dt,'t_end',opt.t_end, ...
     'fault_bus',opt.fault_bus,'t_fault',opt.t_fault,'t_clear',opt.t_clear,'Zf',opt.Zf, ...
     'model','emf6','model_key','emf6','engine','stability.synchronous_emf6_ssa', ...
     'omega_is_deviation',true,'initial_dae_residual',init_res, ...
@@ -250,6 +290,10 @@ res = struct('t',ares.t,'delta',delta_hist,'omega',omega_hist, ...
     'accepted_steps',ares.accepted_steps,'rejected_steps',ares.rejected_steps, ...
     'rejection_history',ares.rejection_history,'event_diagnostics',ares.event_diagnostics, ...
     'p',ares.p,'q',ares.q,'denominator',ares.denominator, ...
-    'controller_exponent',ares.controller_exponent);
+    'controller_exponent',ares.controller_exponent, ...
+    'integrator',integrator, ...
+    'integrator_algebraic_residual',zeros(nt-1,1), ...
+    'max_integrator_algebraic_residual',0);
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, 'built_in_string');
 end
 

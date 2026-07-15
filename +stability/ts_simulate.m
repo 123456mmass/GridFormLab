@@ -21,7 +21,7 @@ function res = ts_simulate(case_data, varargin)
 %   via the per-machine .model field (stage 2).
 
 opt = struct('t_end',15.0,'dt',0.01,'fault_bus',[],'t_fault',1.0,'t_clear',1.1, ...
-    'Zf',1i*0.1,'method','trapezoidal', ...
+    'Zf',1i*0.1, ...
     'corrector_mode','adaptive','corrector_iter',[], ...
     'corrector_abs_tol',1e-10,'corrector_rel_tol',1e-8, ...
     'max_corrector_iter',10,'corrector_failure','error', ...
@@ -71,7 +71,22 @@ if has_bundle
     % any solver. (Previously validate_ts_bundle was dead code — only tests
     % called it; production never validated.)
     bundle = stability.validate_ts_bundle(opt.model_bundle);
-    res = run_model_bundle(bundle, case_data, opt);
+    % Phase-2: resolve the integrator INSIDE this branch (exactly-one
+    % resolution per executed route). The parent does NOT pre-resolve opt
+    % before dispatch, so selection provenance is truthful. step_fn is the
+    % resolved single-step handle (@ts_step_kernel for trapezoidal ->
+    % bit-identical); passed to run_model_bundle (a subfunction, no closure).
+    [integrator, integrator_source, opt] = stability.resolve_ts_integrator(opt);
+    opt.integrator_source = integrator_source;
+    step_fn = stability.ts_integrator_step(opt);
+    if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive') ...
+            && ~strcmp(integrator,'trapezoidal')
+        error('ts_simulate:adaptiveNotFrozen', ...
+            ['Adaptive stepper is not frozen for integrator ''%s''. ' ...
+             'backward_euler and rk4 are FIXED-STEP ONLY (correction 6). ' ...
+             'No silent fallback.'], integrator);
+    end
+    res = run_model_bundle(bundle, case_data, opt, step_fn, integrator, integrator_source);
     return;
 end
 if has_mfn
@@ -79,7 +94,17 @@ if has_mfn
     % B1: validate the factory-produced bundle BEFORE execution, same as
     % the explicit model_bundle path.
     bundle = stability.validate_ts_bundle(bundle);
-    res = run_model_bundle(bundle, case_data, opt);
+    [integrator, integrator_source, opt] = stability.resolve_ts_integrator(opt);
+    opt.integrator_source = integrator_source;
+    step_fn = stability.ts_integrator_step(opt);
+    if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive') ...
+            && ~strcmp(integrator,'trapezoidal')
+        error('ts_simulate:adaptiveNotFrozen', ...
+            ['Adaptive stepper is not frozen for integrator ''%s''. ' ...
+             'backward_euler and rk4 are FIXED-STEP ONLY (correction 6). ' ...
+             'No silent fallback.'], integrator);
+    end
+    res = run_model_bundle(bundle, case_data, opt, step_fn, integrator, integrator_source);
     return;
 end
 if any(strcmpi(opt.model,{'padiyar_1_1_avr','padiyar_1_1_manual'}))
@@ -97,6 +122,22 @@ elseif any(strcmpi(opt.model,{'flux6','genpj6','kundur6'}))
     end
     res = stability.ts_simulate_emf6(case_data, opt);
     return;
+end
+
+% --- Phase-2: resolve integrator for the classical built-in path ---------
+% (after child dispatches above have returned; exactly-one resolution per
+% executed route). step_fn is the resolved single-step handle
+% (@ts_step_kernel for trapezoidal -> bit-identical). The adaptiveNotFrozen
+% gate fires before the stepper dispatch below.
+[integrator, integrator_source, opt] = stability.resolve_ts_integrator(opt);
+opt.integrator_source = integrator_source;
+step_fn = stability.ts_integrator_step(opt);
+if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive') ...
+        && ~strcmp(integrator,'trapezoidal')
+    error('ts_simulate:adaptiveNotFrozen', ...
+        ['Adaptive stepper is not frozen for integrator ''%s''. ' ...
+         'backward_euler and rk4 are FIXED-STEP ONLY (correction 6). ' ...
+         'No silent fallback.'], integrator);
 end
 
 [mpc, mach, freq] = normalize_case(case_data);
@@ -219,7 +260,8 @@ Ypost_da = Ypre_da;
 %   Adaptive is reached only when opt.stepper is explicitly 'adaptive'; the
 %   production default is fixed. Catalog/run_ts may inject stepper='adaptive'.
 if isfield(opt,'stepper') && strcmpi(opt.stepper,'adaptive')
-    res = run_classical_adaptive(opt, cdae, strat, mpc, gbus, base);
+    res = run_classical_adaptive(opt, cdae, strat, mpc, gbus, base, ...
+        step_fn, integrator, integrator_source);
     return;
 end
 
@@ -240,6 +282,9 @@ corr_residual = zeros(nt-1,1);
 corr_update = zeros(nt-1,1);
 corr_converged = true(nt-1,1);
 nonconv_count = 0;
+% Phase-2: endpoint algebraic-residual evidence (additive), uniform across
+% trapezoidal/BE/RK4 (all return step.algebraic_residual).
+integrator_alg_res = zeros(nt-1,1);
 
 x=[delta0; ones(ng,1)];
 y = cdae.y0(:);
@@ -263,11 +308,27 @@ for it=1:nt-1
     Y_now  = stability.ts_topology_at(t_now,  opt, Ypre_da, Yfault_da, Ypost_da);
     Y_next = stability.ts_topology_at(t_next, opt, Ypre_da, Yfault_da, Ypost_da);
 
-    step = stability.ts_step_kernel(strat, x, y, dt_step, Y_now, kopt_cl);
+    step = step_fn(strat, x, y, dt_step, Y_now, kopt_cl);
     corr_iters(it) = step.corrector_iterations;
     corr_residual(it) = step.corrector_residual;
     corr_update(it) = step.corrector_update;
     corr_converged(it) = step.corrector_converged;
+    integrator_alg_res(it) = step.algebraic_residual;
+    % Phase-2 endpoint gate for coupled BE/RK4 (classical has
+    % algebraic_residual=0 by construction -> preserves bit-identical behavior).
+    if strcmp(integrator,'backward_euler') || strcmp(integrator,'rk4')
+        if ~step.finite
+            error('ts_simulate:algebraicResidual', ...
+                ['Integrator ''%s'' produced non-finite step at t=%.4f (step %d). ' ...
+                 'No silent fallback.'], integrator, t_next, it);
+        end
+        if strat.needs_algebraic_solve && step.algebraic_residual > kopt_cl.algebraic_tolerance
+            error('ts_simulate:algebraicResidual', ...
+                ['Integrator ''%s'' endpoint algebraic residual=%.3e exceeds tol=%.3e ' ...
+                 'at t=%.4f (step %d). No silent fallback.'], ...
+                integrator, step.algebraic_residual, kopt_cl.algebraic_tolerance, t_next, it);
+        end
+    end
     if ~step.corrector_converged
         nonconv_count = nonconv_count + 1;
         % Legacy fixed corrector uses a loose residual check (<= 1e-6) and does
@@ -310,16 +371,22 @@ res=struct('t',t,'delta',delta,'omega',omega,'Pe_pu',Pe,'Pe_MW',Pe*base, ...
     'max_corrector_iterations_used',max(corr_iters), ...
     'max_corrector_residual',max(corr_residual), ...
     'nonconverged_step_count',nonconv_count, ...
-    'event_idx',event_idx, 'event_side',event_side);
-res.metadata = struct('dispatch','built_in_string');
+    'event_idx',event_idx, 'event_side',event_side, ...
+    'integrator',integrator, ...
+    'integrator_algebraic_residual',integrator_alg_res, ...
+    'max_integrator_algebraic_residual',max(integrator_alg_res));
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, 'built_in_string');
 end
 
 % =========================================================================
-function res = run_classical_adaptive(opt, cdae, strat, mpc, gbus, base)
+function res = run_classical_adaptive(opt, cdae, strat, mpc, gbus, base, ...
+    step_fn, integrator, integrator_source) %#ok<INUSD>
 %RUN_CLASSICAL_ADAPTIVE  Phase 6 classical adaptive-step path.
 %   Builds the events struct + classical strategy and calls the shared
 %   ts_adaptive_driver. Converts the adaptive result to the legacy classical
-%   result schema (plus the frozen adaptive fields).
+%   result schema (plus the frozen adaptive fields). Phase-2: the route-level
+%   adaptiveNotFrozen gate already guaranteed integrator='trapezoidal'; the
+%   driver independently re-checks via aopt.integrator.
 events = struct('fault_enabled',opt.fault_enabled, ...
     't_fault',opt.t_fault,'t_clear',opt.t_clear, ...
     'Ypre',cdae.Ynet,'Yfault',cdae.Ynet,'Ypost',cdae.Ynet);
@@ -349,6 +416,7 @@ aopt.corrector_mode = opt.corrector_mode;
 if strcmp(opt.corrector_mode,'fixed') && ~isempty(opt.corrector_iter)
     aopt.corrector_iter = opt.corrector_iter;
 end
+aopt.integrator = integrator;   % Phase-2: thread resolved integrator for driver guard
 ares = stability.ts_adaptive_driver(strat, cdae.x0, cdae.y0, ...
     [0, opt.t_end], events, aopt);
 nt = numel(ares.t);
@@ -373,8 +441,11 @@ res = struct('t',ares.t,'delta',ares.delta,'omega',ares.omega, ...
     'accepted_steps',ares.accepted_steps,'rejected_steps',ares.rejected_steps, ...
     'rejection_history',ares.rejection_history,'event_diagnostics',ares.event_diagnostics, ...
     'p',ares.p,'q',ares.q,'denominator',ares.denominator, ...
-    'controller_exponent',ares.controller_exponent);
-res.metadata = struct('dispatch','built_in_string');
+    'controller_exponent',ares.controller_exponent, ...
+    'integrator',integrator, ...
+    'integrator_algebraic_residual',zeros(nt-1,1), ...
+    'max_integrator_algebraic_residual',0);
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, 'built_in_string');
 end
 
 % =========================================================================
@@ -555,17 +626,17 @@ Y = Y + diag((bus(:,5)+1i*bus(:,6))/mpc.baseMVA);
 end
 
 % =========================================================================
-function res = run_model_bundle(bundle, case_data, opt)
+function res = run_model_bundle(bundle, case_data, opt, step_fn, integrator, integrator_source)
 %RUN_MODEL_BUNDLE  Generic bundle-driven TS execution (R2).
-%   Executes a fixed-step trapezoidal TS simulation from a pre-built model
-%   bundle (bundle.ts = strategy+x0+y0+topology+mapping+metadata). This is the
-%   R2 dispatch target for opt.model_bundle and opt.model_fn. The bundle is
+%   Executes a fixed-step TS simulation from a pre-built model bundle
+%   (bundle.ts = strategy+x0+y0+topology+mapping+metadata). This is the R2
+%   dispatch target for opt.model_bundle and opt.model_fn. The bundle is
 %   validated by stability.validate_ts_bundle (Phase 5); here we execute it.
 %
-%   The loop mirrors the classical fixed-step loop: event-aware grid, topology
-%   selection via ts_topology_at, and the canonical ts_step_kernel. When
-%   bundle.ts.strategy.provider is present, the provider-aware kernel path is
-%   taken (R1); otherwise the legacy kernel path is taken.
+%   Phase-2: step_fn is the resolved single-step handle (@ts_step_kernel for
+%   trapezoidal -> bit-identical; @ts_step_be / @ts_step_rk4 for the other
+%   integrators). The route-level adaptiveNotFrozen gate already ran in the
+%   caller (ts_simulate main).
 ts = bundle.ts;
 strat = ts.strategy;
 x0 = ts.x0(:); y0 = ts.y0(:);
@@ -625,9 +696,10 @@ if isfield(opt,'stepper') && ~isempty(opt.stepper)
 end
 if strcmp(stepper, 'adaptive')
     res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
-        events_b, opt, kopt, has_provider);
+        events_b, opt, kopt, has_provider, integrator, integrator_source);
     return;
 end
+integrator_alg_res = zeros(nt-1,1);
 for k = 2:nt
     tk_prev = t(k-1); tk = t(k); hk = tk - tk_prev;
     % B3: arrival step uses LEFT topology (selected by time via
@@ -635,7 +707,22 @@ for k = 2:nt
     Y_now = stability.ts_topology_at(tk_prev, events_b, ...
         topo.Ypre, topo.Yfault, topo.Ypost);
     if has_provider, kopt.t = tk_prev; end
-    step = stability.ts_step_kernel(strat, x, y, hk, Y_now, kopt);
+    step = step_fn(strat, x, y, hk, Y_now, kopt);
+    integrator_alg_res(k-1) = step.algebraic_residual;
+    % Phase-2 endpoint gate for coupled BE/RK4.
+    if strcmp(integrator,'backward_euler') || strcmp(integrator,'rk4')
+        if ~step.finite
+            error('ts_simulate:algebraicResidual', ...
+                ['Integrator ''%s'' produced non-finite step at t=%.4f (step %d). ' ...
+                 'No silent fallback.'], integrator, tk, k-1);
+        end
+        if strat.needs_algebraic_solve && step.algebraic_residual > alg_tol
+            error('ts_simulate:algebraicResidual', ...
+                ['Integrator ''%s'' endpoint algebraic residual=%.3e exceeds tol=%.3e ' ...
+                 'at t=%.4f (step %d). No silent fallback.'], ...
+                integrator, step.algebraic_residual, alg_tol, tk, k-1);
+        end
+    end
     x = step.x_full; y = step.y_full;
     % B3: if this step landed on a declared event, switch ONCE to the right
     % topology via ts_event_transition (event_id explicit, no t+eps). Then
@@ -661,7 +748,10 @@ res = struct('t',t,'delta',delta_hist,'omega',omega_hist, ...
     'Pe_pu',Pe_hist,'Vbus',Vbus_hist,'model',strat.model, ...
     'gen_buses',mapping.gen_buses,'bus_ids',mapping.bus_ids, ...
     'method',opt.method,'dt',dt,'t_end',t_end, ...
-    'fault_bus',opt.fault_bus,'t_fault',t_fault,'t_clear',t_clear,'Zf',opt.Zf);
+    'fault_bus',opt.fault_bus,'t_fault',t_fault,'t_clear',t_clear,'Zf',opt.Zf, ...
+    'integrator',integrator, ...
+    'integrator_algebraic_residual',integrator_alg_res, ...
+    'max_integrator_algebraic_residual',max(integrator_alg_res));
 % R2 provenance metadata (no function handles serialized).
 if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
     res.metadata = bundle.metadata;
@@ -675,10 +765,11 @@ elseif has_bundle_field(opt,'model_fn')
 else
     res.metadata.dispatch = 'built_in_string';
 end
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, res.metadata.dispatch);
 end
 
 function res = run_model_bundle_adaptive(bundle, strat, x0, y0, topo, mapping, ...
-    events_b, opt, kopt, has_provider) %#ok<INUSD>
+    events_b, opt, kopt, has_provider, integrator, integrator_source) %#ok<INUSL>
 %RUN_MODEL_BUNDLE_ADAPTIVE  B9: delegate bundle adaptive to ts_adaptive_driver.
 %   Builds the adaptive opt struct from the bundle opt and calls
 %   stability.ts_adaptive_driver, which already shares ts_step_kernel and
@@ -704,6 +795,7 @@ aopt.controller_fac = 0.9;
 aopt.controller_fac_min = 0.2;
 aopt.controller_fac_max = 5.0;
 aopt.reject_limit = 10;
+aopt.integrator = integrator;   % Phase-2: thread for driver guard
 ares = stability.ts_adaptive_driver(strat, x0, y0, [0, opt.t_end], events_b, aopt);
 % Assemble the result schema to match the fixed-step bundle result.
 res = struct('t',ares.t,'delta',ares.delta,'omega',ares.omega, ...
@@ -719,6 +811,9 @@ res.accepted_steps = ares.accepted_steps;
 res.rejected_steps = ares.rejected_steps;
 res.rejection_history = ares.rejection_history;
 res.event_diagnostics = ares.event_diagnostics;
+res.integrator = integrator;
+res.integrator_algebraic_residual = zeros(numel(ares.t)-1,1);
+res.max_integrator_algebraic_residual = 0;
 % Provenance.
 if isfield(bundle,'metadata') && isfield(bundle.metadata,'dispatch')
     res.metadata = bundle.metadata;
@@ -732,6 +827,7 @@ elseif has_bundle_field(opt,'model_fn')
 else
     res.metadata.dispatch = 'built_in_string';
 end
+res.metadata = stability.ts_method_metadata(integrator, integrator_source, res.metadata.dispatch);
 end
 
 function tf = has_bundle_field(opt, name)

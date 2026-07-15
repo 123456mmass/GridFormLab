@@ -1,12 +1,14 @@
 # PF/TS Multi-Method Phase-2 Production Routing Handoff
 
 Date: 2026-07-15
-Branch: `wip/pf-ts-phase2`
+Branch: `wip/pf-ts-phase2` (rebased onto `origin/main` and fast-forwarded
+to `main` on 2026-07-15).
 Worktree: `C:\Users\User\Desktop\Power-flow-pf-ts`
-Base (tested): `origin/main` = `17d2050` ("Fix and verify G2 active-bound solver
-contract") — a descendant of `b555027` and `b6cad39`.
-Merge-base with `main`: `17d2050` (branch was created from the clean
-post-Agent-A `main`; `main` is an ancestor of this branch tip).
+Base (tested): `origin/main` = `5996ce9` (post-sync tip). The branch was
+originally based on `17d2050`, rebased onto Agent A's `2ac62d1` (IEEE14 IBR
+G2 event + analysis workflow), then fast-forwarded to `main`.
+Merge-base with `main`: `2ac62d1` (post-rebase; `main` is now equal to the
+branch tip at `5996ce9`).
 
 This handoff records the Phase-2 production wiring of the existing CORE_ONLY
 / NOT_ROUTED PF and TS factories into the single-owner dispatchers. It is PURE
@@ -191,6 +193,32 @@ r = runtests('tests','IncludeSubfolders',true);
 
 ## Delivery
 
-Independent read-only review pending. Fast-forward `main` and push ONLY if
-`main` is unchanged since `17d2050`; if `main` moved, stop for
-synchronization approval (do not rebase/merge without explicit approval).
+**SYNCED to `main` on 2026-07-15** (user-authorized rebase). The branch was
+rebased onto Agent A's `2ac62d1` (origin/main at sync time) and fast-forward
+pushed to `origin/main` as `5996ce9` (no force; `main` was an ancestor). The
+single overlap file was `solve_case.m`; the only conflict region was the
+PF label at line ~21 (both sides edited the analysis label) — resolved by
+combining both intents: `'Power Flow - in-house project solver (method via
+pf_method)'`. All other 8 Phase-2 files applied cleanly (verified: zero
+Agent-A changes on the 5 TS files; disjoint test/doc names). No semantic
+collision occurred; both function sets (Agent A's IBR helpers + Phase-2's
+PF/TS pickers) coexist.
+
+Fresh post-rebase regression (R2025a, rebased tree `5996ce9`):
+- Targeted: PF routing 10/0, TS routing 23/0, no-external 12/0, Agent A's
+  SSSA launcher eigenvalue table 6/0 (proves the SSSA region survived).
+- Full: 837 total / 833 passed / 0 failed / 4 incomplete (the 4 = PGAz
+  conversion contract, filtered by assumption — PGAz not installed; same 4
+  as baseline). Versus the pre-sync branch count (780/776/0/4), the +57
+  total is Agent A's new tests on `main` (IBR/SSSA/launcher); all pass.
+
+Verified post-sync: `origin/main` == `5996ce9` == branch HEAD; the local
+`main` ref in the shared main-repo worktree was intentionally NOT moved
+(git refuses to move a branch ref checked out by another worktree); Agent
+A's uncommitted working-tree changes in the main repo (32 modified files,
+Phase G IBR work) are untouched. The local `main` ref will advance on the
+next `git fetch` in the main repo. A local backup tag
+`backup/pf-ts-phase2-pre-rebase` -> `40f7882` is retained until independent
+review confirms the sync.
+
+Independent read-only review pending.

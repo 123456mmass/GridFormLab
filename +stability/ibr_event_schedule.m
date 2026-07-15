@@ -73,8 +73,20 @@ if ~enabled
     return;
 end
 
-required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on',...
-    'selected_gfm_indices','reference_resource_index'};
+% automatic_gfm_switching (C3/F2): when false, the SG breaker trip still
+% occurs but no GFM is committed and IBR modes remain unchanged. In that
+% mode selected_gfm_indices/reference_resource_index are not required.
+automatic_gfm_switching = true;
+if isfield(ibr_events,'automatic_gfm_switching') && ...
+        ~isempty(ibr_events.automatic_gfm_switching)
+    automatic_gfm_switching = logical(ibr_events.automatic_gfm_switching);
+end
+if automatic_gfm_switching
+    required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on',...
+        'selected_gfm_indices','reference_resource_index'};
+else
+    required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on'};
+end
 for k=1:numel(required)
     if ~isfield(ibr_events,required{k}) || isempty(ibr_events.(required{k}))
         error('stability:ibr_event_schedule:missingField', ...
@@ -88,8 +100,12 @@ fault_on = ibr_events.fault_on;
 fault_clear = ibr_events.fault_clear;
 sg_trip = ibr_events.sg_trip;
 sg_on = ibr_events.sg_on;
-selected = ibr_events.selected_gfm_indices;
-ref_idx = ibr_events.reference_resource_index;
+selected = [];
+ref_idx = [];
+if automatic_gfm_switching
+    selected = ibr_events.selected_gfm_indices;
+    ref_idx = ibr_events.reference_resource_index;
+end
 
 % --- fault_bus -------------------------------------------------------------
 if ~isnumeric(fault_bus) || ~isscalar(fault_bus) || ~isfinite(fault_bus) || ...
@@ -173,7 +189,8 @@ if nd < 2
         'Need at least SG + IBR devices.');
 end
 
-% --- selected_gfm_indices --------------------------------------------------
+% --- selected_gfm_indices (required only when automatic_gfm_switching) -----
+if automatic_gfm_switching
 if ~isnumeric(selected) || isempty(selected) || any(~isfinite(selected)) || ...
         any(selected ~= fix(selected))
     error('stability:ibr_event_schedule:badSelectedIndices', ...
@@ -206,10 +223,12 @@ for k = selected
         end
     end
 end
+end  % close automatic_gfm_switching validation block
 
 n_req = numel(selected);
 
-% --- reference_resource_index ----------------------------------------------
+% --- reference_resource_index (required only when automatic_gfm_switching) -
+if automatic_gfm_switching
 if ~isnumeric(ref_idx) || ~isscalar(ref_idx) || ~isfinite(ref_idx) || ref_idx ~= fix(ref_idx)
     error('stability:ibr_event_schedule:badReferenceIndex', ...
         'reference_resource_index must be finite integer scalar.');
@@ -218,6 +237,7 @@ if ~ismember(ref_idx, selected)
     error('stability:ibr_event_schedule:referenceNotSelected', ...
         'reference_resource_index %d must be member of selected_gfm_indices %s.', ...
         ref_idx, mat2str(selected));
+end
 end
 
 % --- Optional sg_id ---------------------------------------------------------
@@ -277,6 +297,7 @@ sched.selected_gfm_indices = selected;
 sched.reference_resource_index = ref_idx;
 sched.n_gfm_required = n_req;
 sched.sg_id = sg_id;
+sched.automatic_gfm_switching = automatic_gfm_switching;
 sched.events = ev;
 sched.tol = tol;
 sched.provenance = struct('source','ibr_event_schedule validation','fault','Yfault(fb,fb)+=1/Zf SOURCE_DEFINED','ordering','CASE_DEFINED');

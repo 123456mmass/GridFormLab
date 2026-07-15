@@ -147,9 +147,13 @@ while t < settings.t_end-settings.event_tol
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
             end
         case 'sg_trip'
+            agfm = true;
+            if isfield(opt,'automatic_gfm_switching') && ~isempty(opt.automatic_gfm_switching)
+                agfm = logical(opt.automatic_gfm_switching);
+            end
             [ok,x_new,y_new,u_new,ec_new,active_new,handler_log,reason, ...
                 right_norm,stage,dispatch_after] = trip_transaction( ...
-                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol);
+                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm);
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
             log.input_before = u;
@@ -465,31 +469,110 @@ end
 end
 
 function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] = ...
-    trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol)
+    trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol,automatic_gfm_switching)
+%TRIP_TRANSACTION  SG breaker trip + optional GFM commitment (C3/F2).
+%   When automatic_gfm_switching=true: open the SG breaker, select/commit the
+%   SG_OFF GFM configuration, apply transfer maps, solve one right limit.
+%   When automatic_gfm_switching=false: open the SG breaker normally, do NOT
+%   invoke the GFM selector, do NOT change IBR modes; run an explicit per-
+%   island voltage-forming-source check BEFORE Newton; if no online voltage-
+%   forming resource exists, fail closed with noVoltageFormingSource, publish
+%   NO right-limit sample, commit NO candidate hybrid state, and end the
+%   accepted trajectory at the event-left sample (F2).
+if nargin < 12, automatic_gfm_switching = true; end
 ok=false; xr=x; yr=y; ur=u; ecr=ec; active=[]; reason='';
 right_norm=inf; stage='tripTransaction'; dispatch=struct();
-event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
-    'committed_selection',struct('selected_gfm_indices',sched.selected_gfm_indices, ...
-    'n_gfm_required',sched.n_gfm_required, ...
-    'reference_resource_index',sched.reference_resource_index));
-[hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
-if ~handler_log.applied
-    reason=sprintf('%s: %s',handler_log.failure_id,handler_log.details); return;
+if automatic_gfm_switching
+    % --- sg_breaker_trip + optional_gfm_commit (full automatic path) ---
+    event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
+        'committed_selection',struct('selected_gfm_indices',sched.selected_gfm_indices, ...
+        'n_gfm_required',sched.n_gfm_required, ...
+        'reference_resource_index',sched.reference_resource_index));
+    [hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
+    if ~handler_log.applied
+        reason=sprintf('%s: %s',handler_log.failure_id,handler_log.details); return;
+    end
+    ecr=ec; ecr.hybrid_state=stability.ts_hybrid_state_snapshot(hs_candidate);
+    try
+        xr=apply_device_transfers(x,y,u,ec,ecr,dae);
+    catch me
+        stage='modeTransfer'; reason=sprintf('%s: %s',me.identifier,me.message); return;
+    end
+    try
+        [ur,dispatch]=input_for_dispatch_stage(u,dae,case_data,'post_trip');
+    catch me
+        stage='dispatch'; reason=sprintf('%s: %s',me.identifier,me.message); return;
+    end
+    [ok,yr,reason,right_norm]=right_limit(xr,y,Y,dae,ur,ecr,t,kcl_tol);
+    if ~ok, stage='rightLimit'; end
+    if ok, active=stability.ts_dynamic_state_indices(dae,ecr); end
+else
+    % --- sg_breaker_trip only (no firmware, F2) ---
+    % Open the SG breaker WITHOUT committing any GFM configuration. IBR
+    % modes remain unchanged. Then check whether any online voltage-forming
+    % resource remains; if not, fail closed with noVoltageFormingSource and
+    % publish NO right-limit sample (trajectory ends at the event-left).
+    hs_candidate = ec.hybrid_state;
+    sg_key = matlab.lang.makeValidName(char(sched.sg_id),'ReplacementStyle','underscore');
+    if isfield(hs_candidate,'device_online') && isfield(hs_candidate.device_online,sg_key)
+        hs_candidate.device_online.(sg_key) = false;
+    end
+    if isfield(hs_candidate,'device_modes') && isfield(hs_candidate.device_modes,sg_key)
+        hs_candidate.device_modes.(sg_key) = 'breaker_open';
+    end
+    % Per-island voltage-forming-source check (F2/F3): after the SG breaker
+    % opens, does any online voltage-forming resource remain?
+    has_vf = false;
+    for k = 1:numel(dae.devices)
+        dev = dae.devices(k);
+        key = matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+        online_k = isfield(hs_candidate,'device_online') && ...
+            isfield(hs_candidate.device_online,key) && ...
+            logical(hs_candidate.device_online.(key));
+        mode_k = '';
+        if isfield(hs_candidate,'device_modes') && isfield(hs_candidate.device_modes,key)
+            mode_k = char(hs_candidate.device_modes.(key));
+        end
+        if online_k && is_voltage_forming_mode(dev, mode_k)
+            has_vf = true;
+            break;
+        end
+    end
+    handler_log = struct('details','', 'applied', false, 'failure_id', '', ...
+        'selected_gfm_indices', [], 'n_gfm_required', [], ...
+        'reference_resource_index', []);
+    if ~has_vf
+        % Fail closed: no voltage-forming source after SG trip. Publish NO
+        % right-limit sample; commit NO candidate hybrid state (F2).
+        stage='noVoltageFormingSource';
+        reason='noVoltageFormingSource: no online voltage-forming resource after SG breaker trip.';
+        handler_log.failure_id='ts_simulate_ibr_hybrid:noVoltageFormingSource';
+        handler_log.details=reason;
+        return;
+    end
+    % A voltage-forming resource remains; proceed through the ordinary
+    % right-limit solve with IBR modes unchanged.
+    ecr=ec; ecr.hybrid_state=stability.ts_hybrid_state_snapshot(hs_candidate);
+    ur=u;  % no dispatch change (no GFM commit)
+    [ok,yr,reason,right_norm]=right_limit(x,y,Y,dae,ur,ecr,t,kcl_tol);
+    if ~ok, stage='rightLimit'; end
+    if ok
+        active=stability.ts_dynamic_state_indices(dae,ecr);
+        handler_log.applied=true;
+        handler_log.details=sprintf('SG %s breaker opened (no firmware); voltage-forming source retained.',sched.sg_id);
+    end
 end
-ecr=ec; ecr.hybrid_state=stability.ts_hybrid_state_snapshot(hs_candidate);
-try
-    xr=apply_device_transfers(x,y,u,ec,ecr,dae);
-catch me
-    stage='modeTransfer'; reason=sprintf('%s: %s',me.identifier,me.message); return;
 end
-try
-    [ur,dispatch]=input_for_dispatch_stage(u,dae,case_data,'post_trip');
-catch me
-    stage='dispatch'; reason=sprintf('%s: %s',me.identifier,me.message); return;
+
+function tf = is_voltage_forming_mode(dev, mode)
+tf = false;
+if isempty(mode), return; end
+if strcmpi(mode,'synchronous'), tf=true; return; end
+if isfield(dev,'capabilities') && isstruct(dev.capabilities) && ...
+        isfield(dev.capabilities,'voltage_forming_modes')
+    vf = string(dev.capabilities.voltage_forming_modes);
+    tf = any(strcmpi(vf, lower(mode)));
 end
-[ok,yr,reason,right_norm]=right_limit(xr,y,Y,dae,ur,ecr,t,kcl_tol);
-if ~ok, stage='rightLimit'; end
-if ok, active=stability.ts_dynamic_state_indices(dae,ecr); end
 end
 
 function xr=apply_device_transfers(x,y,u,ec_left,ec_right,dae)

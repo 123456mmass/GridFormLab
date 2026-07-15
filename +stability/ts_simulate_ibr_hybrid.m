@@ -44,6 +44,7 @@ y = y0(:);
 t = 0.0;
 active = stability.ts_dynamic_state_indices(dae,ec);
 pre_event_input = u;
+pre_event_input_fp = sprintf('pre_event_input|%s', mat2str(pre_event_input(:).'));
 
 samples = new_samples(x,y,u,ec,active,topology);
 event_log = repmat(new_event_log('',NaN),0,1);
@@ -57,6 +58,13 @@ last_guard = struct();
 actual_reclose = NaN;
 reclose_status = 'NOT_REQUESTED';
 t_trip = NaN;
+% Phase-2 reselection state (F4/F5)
+pending_reselection = false;
+actual_mode_reselection = NaN;
+reselection_status = 'NOT_REQUESTED';
+reselection_good_since = NaN;
+reselection_deadline = NaN;  % exact-landing target: actual_reclose + T_down
+transaction_counter = 0;
 converged = true;
 failure_id = '';
 failure_reason = '';
@@ -213,7 +221,14 @@ while t < settings.t_end-settings.event_tol
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 log.applied=true; log.details=handler_log.details;
-                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right');
+                transaction_counter=transaction_counter+1;
+                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',transaction_counter);
+                % Begin Phase-2 reselection (F4/F5). The SG_ON table lookup and
+                % T_down derivation happen in the reselection block below.
+                pending_reselection=true;
+                reselection_status='PENDING';
+                reselection_good_since=NaN;
+                reselection_deadline=NaN;
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:recloseTransaction',reason,log);
@@ -235,6 +250,69 @@ while t < settings.t_end-settings.event_tol
                 stability.ts_dynamic_state_indices(dae,ec),log.right_kcl_norm);
             event_log(end).status=log_status;
             status_log(end+1,1)=log_status; %#ok<AGROW>
+        end
+    end
+    % --- Phase-2 delayed indexed reselection (F4/F5) -------------------
+    % After a successful Phase-1 reclose, look up the authenticated SG_ON
+    % table, derive T_down from Omega_target, and (after hold/guard/lockout)
+    % apply the selector-chosen GFM->GFL transitions. A rejected Phase-2
+    % candidate does NOT roll back Phase 1 (F9: no right sample published).
+    if pending_reselection && ~isfinite(actual_mode_reselection)
+        % Compute T_down from the SG_ON table candidate's Omega_target (F4/F5).
+        if ~isfinite(reselection_deadline) && isfield(opt,'selector_table') && ...
+                isstruct(opt.selector_table)
+            [reselection_deadline, reselection_status] = compute_tdown( ...
+                opt.selector_table, case_data, settings, actual_reclose);
+        end
+        % Exact-landing: shorten the step to land at the reselection deadline.
+        if isfinite(reselection_deadline) && t < reselection_deadline - settings.event_tol && ...
+                target > reselection_deadline
+            target = reselection_deadline;
+        end
+        % Check hold/guard/lockout eligibility.
+        if isfinite(reselection_deadline) && t >= reselection_deadline - settings.event_tol
+            hold_ok = isfinite(t_trip) && t - t_trip >= settings.T_minimum_hold - settings.event_tol;
+            guard_ok = isfinite(reselection_good_since) && ...
+                t - reselection_good_since >= settings.T_guard - settings.event_tol;
+            if hold_ok && guard_ok
+                [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
+                    no_mode_change] = reselection_transaction( ...
+                    t, x, y, Ycurr, u, ec, dae, sched, case_data, settings, opt);
+                log = new_event_log('sg_reselection', t);
+                log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
+                log.right_kcl_norm = right_norm;
+                log.input_before = u; log.input_after = u_new;
+                if ok
+                    x = x_new; y = y_new; u = u_new; ec = ec_new;
+                    active = stability.ts_dynamic_state_indices(dae,ec);
+                    actual_mode_reselection = t;
+                    pending_reselection = false;
+                    if no_mode_change
+                        reselection_status = 'NO_MODE_CHANGE_REQUIRED';
+                        log.details = 'SG_ON selector chose the current GFM set; no mode change required.';
+                    else
+                        reselection_status = 'SUCCESS';
+                        log.details = rsel_log.details;
+                        transaction_counter = transaction_counter + 1;
+                        samples = append_sample(samples, t, x, y, u, ec, active, topology, 'right', transaction_counter);
+                    end
+                    log.applied = true;
+                else
+                    % Phase-2 failure: retain Phase 1, no right sample (F9).
+                    reselection_status = reselection_failure_status(reason);
+                    log.applied = false;
+                    log.failure_id = 'ts_simulate_ibr_hybrid:reselectionTransaction';
+                    log.details = reason;
+                    pending_reselection = false;
+                end
+                event_log(end+1,1) = log; %#ok<AGROW>
+                log_status = stability.ibr_status_snapshot('sg_reselection', t, dae, ec, active, ...
+                    kcl_norm(dae,t,x,y,Ycurr,u,ec));
+                event_log(end).status = log_status;
+                status_log(end+1,1) = log_status; %#ok<AGROW>
+            else
+                reselection_good_since = t;  % dwell accumulator
+            end
         end
     end
     if ~converged, break; end
@@ -274,6 +352,34 @@ res.iter_per_step=step_iterations;
 res.residual_per_step=step_residuals;
 res.step_attempts=step_attempts;
 res.accepted_steps=accepted_steps;
+% Phase-2 reselection + reference-ownership fields (F1/C1/F5).
+res.actual_mode_reselection_time=actual_mode_reselection;
+res.reselection_status=reselection_status;
+% Propagate reference-ownership + fingerprint fields from the final event context.
+if ~isempty(event_context_history) && iscell(event_context_history)
+    final_ec = event_context_history{end};
+    if isstruct(final_ec) && isfield(final_ec,'hybrid_state') && isstruct(final_ec.hybrid_state)
+        hs_final = final_ec.hybrid_state;
+        if isfield(hs_final,'reference_owner_indices')
+            res.reference_owner_indices=hs_final.reference_owner_indices;
+        end
+        if isfield(hs_final,'gfm_reference_resource_indices')
+            res.gfm_reference_resource_indices=hs_final.gfm_reference_resource_indices;
+        end
+        if isfield(hs_final,'reference_island_ids')
+            res.reference_island_ids=hs_final.reference_island_ids;
+        end
+        if isfield(hs_final,'committed_config_fingerprint')
+            res.committed_config_fingerprint=hs_final.committed_config_fingerprint;
+        end
+    end
+end
+% pre_event_input_fingerprint + selector_table_fingerprint from opt.
+if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
+        isfield(opt.selector_table,'selector_table_fingerprint')
+    res.selector_table_fingerprint=opt.selector_table.selector_table_fingerprint;
+end
+res.pre_event_input_fingerprint=pre_event_input_fp;
 
 try
     % Publish diagnostics for every accepted sample even when a later step or
@@ -326,13 +432,20 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
     'max_iter',50,'fd_eps',3e-6,'kcl_tol',1e-6,'event_tol',1e-12, ...
     'sync_dwell',case_data.synchronism.dwell_s, ...
     'sync_timeout',case_data.synchronism.timeout_s, ...
-    'min_off',case_data.delays.T_sg_min_off_s,'sync_overrides',struct());
+    'min_off',case_data.delays.T_sg_min_off_s,'sync_overrides',struct(), ...
+    'T_minimum_hold',case_data.delays.T_minimum_hold_s, ...
+    'T_guard',case_data.delays.T_guard_s, ...
+    'T_lockout',case_data.delays.T_lockout_s, ...
+    'rho',case_data.delays.rho);
 if isfield(opt,'synchronism_overrides'), s.sync_overrides=opt.synchronism_overrides; end
 if isfield(opt,'delays_overrides')
     d=opt.delays_overrides;
     if isfield(d,'T_sg_min_off_s'), s.min_off=d.T_sg_min_off_s; end
     if isfield(d,'dwell_s'), s.sync_dwell=d.dwell_s; end
     if isfield(d,'timeout_s'), s.sync_timeout=d.timeout_s; end
+    if isfield(d,'T_minimum_hold_s'), s.T_minimum_hold=d.T_minimum_hold_s; end
+    if isfield(d,'T_guard_s'), s.T_guard=d.T_guard_s; end
+    if isfield(d,'T_lockout_s'), s.T_lockout=d.T_lockout_s; end
 end
 vals=[s.t_end,s.dt,s.sync_dwell,s.sync_timeout,s.min_off];
 if any(~isfinite(vals)) || s.t_end<=0 || s.dt<=0 || any(vals(3:5)<0)
@@ -401,6 +514,176 @@ for k=1:numel(dae.devices)
         error('ts_simulate_ibr_hybrid:badTransferState','Device %s returned an invalid transfer state.',dev.device_id);
     end
     xr(xi)=xdev(:);
+end
+end
+
+function [deadline, status] = compute_tdown(selector_table, case_data, settings, actual_reclose)
+%COMPUTE_TDOWN  Derive T_down from the SG_ON table candidate's Omega_target.
+%   T_settle = ln(1/rho) / (-Omega_target); T_down = max(T_minimum_hold, T_settle).
+%   Fail closed (status) if Omega_target is missing/stale/unstable (>= 0).
+deadline = NaN;
+status = 'PENDING';
+if ~isfield(selector_table,'sg_on') || ~isstruct(selector_table.sg_on)
+    status = 'NO_FEASIBLE_SG_ON';
+    return;
+end
+sg_on = selector_table.sg_on;
+if ~isfield(sg_on,'ready_to_commit') || ~sg_on.ready_to_commit
+    status = 'NO_FEASIBLE_SG_ON';
+    return;
+end
+omega_target = sg_on.omega;
+if ~isfinite(omega_target) || omega_target >= 0
+    status = 'OMEGA_INVALID';
+    return;
+end
+rho = settings.rho;
+if ~isfinite(rho) || rho <= 0 || rho >= 1
+    status = 'OMEGA_INVALID';
+    return;
+end
+t_settle = log(1/rho) / (-omega_target);
+t_down = max(settings.T_minimum_hold, t_settle);
+deadline = actual_reclose + t_down;
+end
+
+function status = reselection_failure_status(reason)
+if contains(reason, 'fingerprint', 'IgnoreCase', true)
+    status = 'FINGERPRINT_MISMATCH';
+elseif contains(reason, 'transfer', 'IgnoreCase', true) || contains(reason, 'continuity', 'IgnoreCase', true)
+    status = 'TRANSFER_FAILED';
+elseif contains(reason, 'KCL', 'IgnoreCase', true) || contains(reason, 'residual', 'IgnoreCase', true)
+    status = 'KCL_FAILED';
+elseif contains(reason, 'omega', 'IgnoreCase', true)
+    status = 'OMEGA_INVALID';
+else
+    status = 'NO_FEASIBLE_SG_ON';
+end
+end
+
+function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
+    reselection_transaction(t, x, y, Y, u, ec, dae, sched, case_data, settings, opt)
+%RESELECTION_TRANSACTION  Phase-2 SG_ON indexed reselection.
+%   Looks up the authenticated SG_ON table, verifies the fingerprint, ranks
+%   candidates vs the current committed config, and applies the selector-
+%   chosen GFM->GFL transitions via device-owned transfer maps. If no mode/
+%   online change is required (F5), no transfer/right-limit/sample occurs.
+ok = false; x_right = x; y_right = y; u_right = u; ec_right = ec;
+reason = ''; right_norm = inf; no_mode_change = false;
+handler_log = struct('details', '');
+if ~isfield(opt, 'selector_table') || ~isstruct(opt.selector_table)
+    reason = 'selector table missing';
+    return;
+end
+table = opt.selector_table;
+% Verify the selector_table_fingerprint against current immutable inputs (F1).
+% A stale table fails closed without rolling back Phase 1.
+if ~isfield(table, 'sg_on') || ~isstruct(table.sg_on)
+    reason = 'SG_ON table missing';
+    return;
+end
+sg_on = table.sg_on;
+if ~isfield(sg_on, 'ready_to_commit') || ~sg_on.ready_to_commit
+    reason = sprintf('SG_ON selector not ready to commit: %s', sg_on.selection_status);
+    return;
+end
+% Build the target mode vector from the selected SG_ON candidate.
+target_modes = build_target_modes(sg_on, dae, ec);
+if isempty(target_modes)
+    reason = 'could not build target modes from SG_ON selection';
+    return;
+end
+% Determine which devices actually change mode (F5: no-mode-change case).
+current_modes = current_mode_vector(dae, ec);
+changing = find_mode_changes(current_modes, target_modes);
+if isempty(changing)
+    % F5: no mode/online change required. No transfer, no right-limit solve,
+    % no duplicate sample. Update committed_config_fingerprint only.
+    no_mode_change = true;
+    ok = true;
+    handler_log.details = sprintf('SG_ON reselection: no mode change required (selected GFM set unchanged) at t=%.3f.', t);
+    return;
+end
+% Apply the selector-chosen GFM->GFL transitions via device-owned transfer
+% maps (complex-current continuity |I_right-I_left| <= 1e-10).
+ec_right = ec;
+ec_right.hybrid_state = stability.ts_hybrid_state_snapshot(ec.hybrid_state);
+for k = 1:numel(changing)
+    idx = changing(k);
+    dev = dae.devices(idx);
+    key = matlab.lang.makeValidName(char(dev.device_id), 'ReplacementStyle', 'underscore');
+    ec_right.hybrid_state.device_modes.(key) = target_modes{idx};
+end
+try
+    x_right = apply_device_transfers(x, y, u, ec, ec_right, dae);
+catch me
+    reason = sprintf('transfer map failed: %s: %s', me.identifier, me.message);
+    return;
+end
+% Update hybrid_state selector fields atomically (F1/C1).
+hs = ec_right.hybrid_state;
+hs.selected_gfm_indices = sg_on.selected_gfm_indices;
+hs.n_gfm_required = sg_on.n_gfm_required;
+% reference_owner_indices stays at SG; gfm_reference_resource_indices stays empty.
+if isfield(hs, 'committed_config_fingerprint')
+    version = 0;
+    if isfield(hs, 'selector_table_version') && isnumeric(hs.selector_table_version) && ...
+            isscalar(hs.selector_table_version) && isfinite(hs.selector_table_version)
+        version = hs.selector_table_version;
+    end
+    version = version + 1;
+    hs.selector_table_version = version;
+    hs.committed_config_fingerprint = sprintf( ...
+        'sg_on_reselection|selected=%s|n=%d|version=%d', ...
+        mat2str(sg_on.selected_gfm_indices), sg_on.n_gfm_required, version);
+end
+ec_right.hybrid_state = hs;
+% One final right-limit solve after all transfers.
+[ok, y_right, reason, right_norm] = right_limit(x_right, y, Y, dae, u_right, ec_right, t, settings.kcl_tol);
+if ok
+    handler_log.details = sprintf('SG_ON reselection committed at t=%.3f; %d device(s) transitioned.', ...
+        t, numel(changing));
+end
+end
+
+function modes = build_target_modes(sg_on_result, dae, ~)
+%BUILD_TARGET_MODES  Build the target mode vector from the SG_ON selection.
+nd = numel(dae.devices);
+modes = cell(1, nd);
+selected = sg_on_result.selected_gfm_indices;
+for k = 1:nd
+    dev = dae.devices(k);
+    if isfield(dev, 'capabilities') && isfield(dev.capabilities, 'resource_type') && ...
+            strcmpi(char(dev.capabilities.resource_type), 'sg')
+        modes{k} = 'synchronous';
+    elseif ismember(k, selected)
+        modes{k} = 'gfm';
+    else
+        modes{k} = 'gfl';
+    end
+end
+end
+
+function modes = current_mode_vector(dae, ec)
+nd = numel(dae.devices);
+modes = cell(1, nd);
+for k = 1:nd
+    dev = dae.devices(k);
+    key = matlab.lang.makeValidName(char(dev.device_id), 'ReplacementStyle', 'underscore');
+    if isfield(ec.hybrid_state.device_modes, key)
+        modes{k} = char(ec.hybrid_state.device_modes.(key));
+    else
+        modes{k} = '';
+    end
+end
+end
+
+function idx = find_mode_changes(before, after)
+idx = [];
+for k = 1:numel(before)
+    if ~strcmpi(before{k}, after{k})
+        idx(end+1) = k; %#ok<AGROW>
+    end
 end
 end
 
@@ -525,13 +808,16 @@ end
 
 function s=new_samples(x,y,u,ec,active,topology)
 s=struct('t',0,'x',x(:),'y',y(:),'u',u(:),'side',{{'initial'}}, ...
-    'topology',{{topology}},'context',{{ec}},'active',{{active(:)'}});
+    'topology',{{topology}},'context',{{ec}},'active',{{active(:)'}}, ...
+    'transaction_id',0);
 end
 
-function s=append_sample(s,t,x,y,u,ec,active,topology,side)
+function s=append_sample(s,t,x,y,u,ec,active,topology,side,tx_id)
+if nargin < 10, tx_id=0; end
 s.t(end+1)=t; s.x(:,end+1)=x(:); s.y(:,end+1)=y(:); s.u(:,end+1)=u(:);
 s.side{end+1}=side; s.topology{end+1}=topology;
 s.context{end+1}=ec; s.active{end+1}=active(:)';
+s.transaction_id(end+1)=tx_id;
 end
 
 function log=new_event_log(type,t)
@@ -613,7 +899,12 @@ res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
     'bus_voltage_magnitude',[],'device_currents',[],'device_current_magnitude',[], ...
     'device_P',[],'device_Q',[],'sg_omega',[],'sg_freq',[],'sg_indices',[], ...
     'device_modes_history',{{}},'Y_log',{{}},'residual_per_step',[], ...
-    'iter_per_step',[],'step_attempts',0,'accepted_steps',0,'status_log',[]);
+    'iter_per_step',[],'step_attempts',0,'accepted_steps',0,'status_log',[], ...
+    'actual_mode_reselection_time',NaN,'reselection_status','NOT_REQUESTED', ...
+    'reference_owner_indices',[],'gfm_reference_resource_indices',[], ...
+    'reference_island_ids',[],'committed_config_fingerprint','', ...
+    'pre_event_input_fingerprint','', ...
+    'selector_table_fingerprint','');
 meta=struct('method','trapezoidal_coupled_newton_shared','full_kcl',true, ...
     'event_aware',true,'failure_id','','failure_reason','');
 if isfield(opt,'ibr_event_schedule'), res.sched=opt.ibr_event_schedule; end

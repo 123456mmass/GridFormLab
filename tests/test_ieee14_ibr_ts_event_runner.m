@@ -147,6 +147,27 @@ st=find(strcmp({r.status_log.stage},'sg_reclose'),1);
 tc.assertNotEmpty(st);
 tc.verifyEqual(r.status_log(st).n_sg_online,1);
 tc.verifyEqual(r.status_log(st).gfm_indices,2:5);
+% Phase-1 reference handback (F1/C1): reference_owner_indices points to the
+% reclosed SG (index 1), gfm_reference_resource_indices is empty for that
+% island, while selected_gfm_indices (the physical GFM set) is unchanged.
+if isfield(r,'reference_owner_indices') && ~isempty(r.reference_owner_indices)
+    tc.verifyEqual(r.reference_owner_indices,1,'AbsTol',0, ...
+        'Phase 1 must return reference ownership to the reclosed SG.');
+end
+if isfield(r,'gfm_reference_resource_indices') && ~isempty(r.gfm_reference_resource_indices)
+    % SG owns the island -> GFM reference entry is empty (NaN placeholder).
+    tc.verifyTrue(isnan(r.gfm_reference_resource_indices(1)), ...
+        'gfm_reference_resource_indices must be empty while SG owns reference.');
+end
+% Phase 2 reselection is PENDING at t_end=0.07 (T_down not yet elapsed).
+if isfield(r,'reselection_status')
+    tc.verifyEqual(r.reselection_status,'PENDING', ...
+        'Phase 2 reselection must remain PENDING when T_down has not elapsed.');
+end
+if isfield(r,'actual_mode_reselection_time')
+    tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...
+        'actual_mode_reselection_time must be NaN while reselection is pending.');
+end
 end
 
 function test_reclose_timeout_stays_offline(tc)

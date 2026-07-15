@@ -13,12 +13,12 @@ and not a production dependency. The local IEEE-1110 PDF has a different hash
 from the historical matrix and must not be claimed identical without a
 separate provenance update.
 
-## State vector (11, fixed order)
+## State vector (13, fixed order)
 
 | # | Name | Unit | Source | Meaning |
 |---|------|------|--------|---------|
 | 1 | `omega_m` | pu | SOURCE_TRANSFORMED (Fig.2) | VSM speed deviation (inv base) |
-| 2 | `delta_VSM` | rad | SOURCE_TRANSFORMED (Fig.2) | VSM angle |
+| 2 | `delta_IT` | rad | SOURCE_TRANSFORMED (Figs.2,6) | PLL-relative inertial VSM angle |
 | 3 | `x_washout` | pu | SOURCE_VERBATIM (Fig.2 D2·s/(s+ωD)) | transient damping washout |
 | 4 | `x_Eint` | pu·s | SOURCE_TRANSFORMED (Fig.3) | voltage PI integral |
 | 5 | `delta_PLL` | rad | SOURCE_VERBATIM (Fig.4) | PLL angle |
@@ -28,6 +28,8 @@ separate provenance update.
 | 9 | `Qinv_f` | pu | SOURCE_VERBATIM (Eq.3) | filtered reactive power (inv base) |
 | 10 | `Vinv_f` | pu | SOURCE_VERBATIM (Eq.4) | filtered voltage |
 | 11 | `Iqinv_f` | pu | SOURCE_VERBATIM (Eq.5) | filtered reactive current (inv base) |
+| 12 | `delta_ITmax` | rad | SOURCE_TRANSFORMED (Fig.6, Eq.12) | positive active-current angle bound |
+| 13 | `delta_ITmin` | rad | SOURCE_TRANSFORMED (Fig.6, Eq.12) | negative active-current angle bound |
 
 ## Inputs (nu=2): `u = [P_ref; V_ref]` (pu, system base) — SOURCE_TRANSFORMED/PROJECT_MAPPED
 
@@ -59,13 +61,30 @@ PLL (Fig.4; ΔωPLL limits deferred; sourced low-voltage freeze implemented):
 VSM swing (Fig.2, SOURCE_TRANSFORMED, FROZEN under flag profile ωFlag=0, FFlag=1, ωref=1 pu; inverter base):
 - `2H·dωm/dt = P_ref_inv - Pinv_f - (1/mp + D1)·ωm - D2·(ωm - x_washout)`
 - `dx_washout/dt = ωD·(ωm - x_washout)`
-- `dδVSM/dt = ω0·ωm`
+- `dδIT/dt = ω0·ωm`, subject to the active lower/upper bound contract
+- `δVSM = δPLL + clamp(δIT,used_δITmin,δITmax)`
 
 Steady state: `ωm = (P_ref_inv - Pinv_f)/(1/mp + D1)`; with D1=0 → `ωm = mp·(P_ref_inv - Pinv_f)` = P-f droop.
 
-Voltage PI (Fig.3; Emax/Emin deferred):
+Voltage PI and G2 magnitude limits (Fig.3, Eqs.10-11):
 - `dx_Eint/dt = V_ref - Vinv_f`
-- `EVSM = V_ref - mq·Qinv_f + kpv·(V_ref - Vinv_f) + kiv·x_Eint`
+- `EVSM_raw = V_ref - mq·Qinv_f + kpv·(V_ref - Vinv_f) + kiv·x_Eint`
+- `Emin=sqrt((Vinv_f-IqmaxSS·XL)^2+(Idinv_f·XL)^2)`
+- `Emax=sqrt((Vinv_f+IqmaxSS·XL)^2+(Idinv_f·XL)^2)`
+- `EVSM=clamp(EVSM_raw,Emin,Emax)`
+- `x_Eint` uses PROJECT_DERIVED conditional hold when a bound is active and
+  the raw voltage error points outward.
+
+Fig.5 PQ priority and Fig.6 angle-bound controllers:
+- P priority: `IdmaxSS=kf·ImaxSS` and
+  `IqmaxSS=sqrt(max(ImaxSS^2-Idinv_f^2,0))`
+- Q priority: `IqmaxSS=kf·ImaxSS` and
+  `IdmaxSS=sqrt(max(ImaxSS^2-Iqinv_f^2,0))`
+- `δmax=asin(XL·ImaxSS)`
+- `dδITmax/dt=kI·(IdmaxSS-Idinv_f)`, bounds `[0,δmax]`
+- `dδITmin/dt=kI·(-Ke·IdmaxSS-Idinv_f)`, bounds `[-δmax,0]` when `ESFlag=1`
+- all three bounded angle states use conditional hold dynamically and the
+  generic equality-residual active-bound contract at equilibrium.
 
 Output (Eq.13 with Phase-G1 transient clamp):
 - `Zsys = kappa·(Re + j·XL)` (PROJECT_DERIVED base conversion)
@@ -87,24 +106,31 @@ Mbase=CASE_DEFINED nameplate proxy. **NO ASSUMED_DIAGNOSTIC** (unlike GFL Kps/Ki
 ## Frozen flag profile (before results)
 ωFlag=0, FFlag=1, ωref=1 pu, VdrpFlag=0, QVFlag=1, PQFlag=1, ESFlag=1.
 
-## Phase-G split
+## Phase-G implementation
 
 Implemented in G1: Eq.13 `ImaxF` transient clamp, system/inverter-base
 conversion, `VPLLfrz` PLL freeze, and shared limiter metadata.
 
-Deferred to G2: Δω/ΔωPLL limits, Emax/Emin actuator behavior, Eqs.10-11 PQ
-priority, Fig.6 active-current limiter state, and anti-windup.
+Implemented in G2: Fig.5 PQ priority, Eqs.10-11 Emax/Emin behavior, two Fig.6
+dynamic bound states, Eq.12 angle bound, conditional anti-windup, and device-
+owned equilibrium active-bound specifications. The optional Δω/ΔωPLL source
+switches remain outside the frozen flag profile and are not claimed.
 
 ## Initialization (PROJECT_DERIVED)
-ωm0=0, x_washout0=0, δVSM0=angle(V0), x_Eint0=0, δPLL0=angle(V0), x_PLL_int0=0,
-Pinv_f0=κ·P_ref_sys (inv base), Qinv_f0=0, Vinv_f0=|V0|, Idinv_f0/Iqinv_f0=0.
+ωm0=0, x_washout0=0, δIT0=0, x_Eint0=0, δPLL0=angle(V0), x_PLL_int0=0,
+Pinv_f0=κ·P_ref_sys (inv base), Qinv_f0=0, Vinv_f0=|V0|,
+Idinv_f0/Iqinv_f0=0, δITmax0=δmax, and δITmin0=-δmax for `ESFlag=1`.
 
 That constructor state is only a warm start. The mixed-resource reduced
 initializer solves terminal voltage/P/Q, then `equilibrium_initialize`
-algebraically reconstructs an exact 11-state device root from REGFM_B1
-Eqs.1-9, Eq.13, and Figs.2-4. GFM Q is network-solved, not a new input.
+algebraically reconstructs an exact 13-state device root from REGFM_B1
+Eqs.1-13 and Figs.2-7. GFM Q is network-solved, not a new input.
 
-## Tests (`tests/test_ibr_regfm_b1_vsg_model.m`, 18 tests, oracles declared before results)
+## Tests (oracles declared before results)
+
+The original 18 REGFM tests remain in
+`tests/test_ibr_regfm_b1_vsg_model.m`; 14 G2-specific tests are in
+`tests/test_ieee14_1sg_4ibr_phaseG2.m`.
 - state_count, pq_sign, current_into_network, equilibrium_residual (<1e-6)
 - jacobian_fd_agreement (coupled (x,y) Jacobian; Jxx structurally rank-deficient at
   equilibrium because Pinv_f/Idinv_f and Qinv_f/Iqinv_f share TIf and are driven by
@@ -122,10 +148,11 @@ Predeclared tolerances: residual 1e-6, FD Richardson 1e-4, poles RelTol 1e-3,
 linearization AbsTol 5e-2, rcond 1e-10.
 
 ## STATUS
-`PHASE_G1_LIMITER_READY = IMPLEMENTED_STRUCTURAL_ONLY`. Corrected equilibrium,
-fixed-step TS, and SSSA share the same f/g closures, solved `u_eq`, immutable
-context, and authenticated state maps. The top-level runner is still
-no-event/static-context; G2 and integrated hybrid rollback are deferred.
+`PHASE_G2_LIMITER_READY = IMPLEMENTED_PENDING_INTEGRATION_GATES`. Corrected
+equilibrium, fixed-step TS, and SSSA share the same f/g closures, solved
+`u_eq`, immutable context, authenticated state maps, and the active-bound
+contract. The top-level event runner, synchronism-enforced SG reclose, and
+end-to-end IEEE14 plotting gates are not yet closed.
 `IBR_PRODUCTION_INTEGRATION_READY` stays `NOT_READY`.
 
 ## Equation → source → code → test mapping
@@ -137,8 +164,10 @@ no-event/static-context; G2 and integrated hybrid rollback are deferred.
 | Eq.4 (Vinv filter) | 90260 p.2 | `gfm_f` dVinv_f | equilibrium_residual |
 | Eq.5 (Iqinv filter) | 90260 p.2 | `gfm_f` dIqinv_f | equilibrium_residual |
 | Eq.6-9 (dq) | 90260 p.2 | `gfm_f` Id/Iq/Vq | numerical_linearization |
-| Fig.2 (VSM swing) | 90260 p.1 | `gfm_f` dωm/dx_washout/dδVSM | vsm_poles, source_guards |
-| Fig.3 (voltage PI) | 90260 p.2 | `gfm_f` dx_Eint, EVSM | equilibrium_residual |
+| Fig.2 (VSM swing) | 90260 p.1 | `gfm_f` dωm/dx_washout/dδIT and algebraic δVSM identity | vsm_poles, source_guards, Phase-G2 angle identity |
+| Fig.3 (voltage PI) | 90260 p.2 | `gfm_f` dx_Eint, EVSM_raw | equilibrium_residual, Phase-G2 anti-windup |
 | Fig.4 (PLL) | 90260 p.2 | `gfm_f` dx_PLL_int/dδPLL + VPLLfrz branch | pll_poles, Phase-G low-voltage freeze |
+| Fig.5, Eqs.10-11 | 90260 pp.3-4 | `pq_limits`, `voltage_limits` | Phase-G2 P/Q priority and Emin/Emax hand oracles |
+| Fig.6, Eq.12 | 90260 p.4 | dδITmax/dδITmin and active-bound callbacks | Phase-G2 bound, release, and anti-windup tests |
 | Eq.13 (output) | 90260 p.4 | shared `limited_current` helper | current_into_network, Phase-G clamp/base/helper consistency |
 | Table 1 (params) | 90260 p.5 | parameter block | provenance_complete |

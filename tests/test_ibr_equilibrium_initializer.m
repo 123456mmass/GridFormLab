@@ -24,7 +24,7 @@ dx = dev.f(0, x, y, [P;abs(V)], struct());
 I = dev.current_injection(0, x, y, [P;abs(V)], struct());
 S = V*conj(I);
 
-testCase.verifyEqual(numel(x), 11, 'AbsTol', 0);
+testCase.verifyEqual(numel(x), 13, 'AbsTol', 0);
 testCase.verifyLessThan(norm(dx,inf), 1e-10);
 testCase.verifyEqual(real(S), P, 'AbsTol', 1e-12);
 testCase.verifyEqual(imag(S), Q, 'AbsTol', 1e-12);
@@ -45,8 +45,10 @@ Iref = conj((P + 1i*Q)/V);
 Eref = V + Zsys*Iref;
 Idq = Iref*exp(-1i*angle(V));
 xE = (abs(Eref) - abs(V) + 0.05*kappa*Q)/5.0;
-expected = [0; angle(Eref); 0; xE; angle(V); 0; ...
-    kappa*P; kappa*real(Idq); kappa*Q; abs(V); kappa*imag(Idq)];
+delta_max = asin(0.1);
+expected = [0; wrap_pi(angle(Eref)-angle(V)); 0; xE; angle(V); 0; ...
+    kappa*P; kappa*real(Idq); kappa*Q; abs(V); kappa*imag(Idq); ...
+    delta_max; -delta_max];
 
 dev = ibr.regfm_b1_vsg_model('IBR2', 2, 2, [1 2], V, ...
     struct('Mbase',140), P, abs(V));
@@ -98,16 +100,17 @@ yr = bus_y(Vr,2,2);
 Ir = dev.current_injection(0,xr,yr,[P;Q],struct());
 testCase.verifyLessThan(norm(dev.f(0,xr,yr,[P;Q],struct()),inf), 1e-12);
 testCase.verifyEqual(Ir, I*exp(1i*alpha), 'AbsTol', 1e-12);
-testCase.verifyEqual(wrap_pi(xr(1)-x(1)), alpha, 'AbsTol', 1e-12);
+testCase.verifyEqual(xr,x,'AbsTol',1e-12, ...
+    'WECC REGC_A/REEC_A states are rotationally invariant (no PLL state).');
 end
 
 % =========================================================================
 function test_gfl_initializer_fails_closed(testCase)
 dev = ibr.gfl_model('GFL_T',2,2,[1 2],1+0i,struct(),0.4,0.0);
 testCase.verifyError(@() dev.equilibrium_initialize(0,0.4,0,struct()), ...
-    'ibr:gfl_model:equilibriumBadVoltage');
+    'ibr:wecc_regca_reeca_model:equilibriumInput');
 testCase.verifyError(@() dev.equilibrium_initialize(1,Inf,0,struct()), ...
-    'ibr:gfl_model:equilibriumBadPower');
+    'ibr:wecc_regca_reeca_model:equilibriumInput');
 end
 
 % =========================================================================
@@ -118,18 +121,18 @@ dual = ibr.dual_mode_ibr_model('IBR2',2,2,ids,V,struct('Mbase',140), ...
     P,Q,abs(V),'gfl');
 y = bus_y(V,2,2);
 u = [P;Q;abs(V)];
-testCase.verifyEqual(dual.active_state_indices,[1 2 12 13 14 15], ...
+testCase.verifyEqual(dual.active_state_indices,14:20, ...
     'AbsTol',0,'Static compatibility metadata reflects constructor GFL mode.');
 
 % Constructor says gfl, runtime hybrid state says GFM.
 ec_gfm = mode_context('IBR2','GFM');
-testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfm),1:11, ...
+testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfm),1:13, ...
     'AbsTol',0,'Runtime GFM partition comes from the device-owned resolver.');
 x_gfm = dual.equilibrium_initialize(V,P,Q,ec_gfm);
 standalone_gfm = ibr.regfm_b1_vsg_model('IBR2',2,2,ids,V, ...
     struct('Mbase',140),P,abs(V));
 xgfm_expected = standalone_gfm.equilibrium_initialize(V,P,Q,ec_gfm);
-gfm_idx = [3 4 5 6 1 2 7 8 9 10 11];
+gfm_idx = 1:13;
 testCase.verifyEqual(x_gfm(gfm_idx), xgfm_expected, 'AbsTol', 1e-12);
 testCase.verifyLessThan(norm(dual.f(0,x_gfm,y,u,ec_gfm),inf), 1e-10);
 testCase.verifyEqual(dual.electrical_power(0,x_gfm,y,u,ec_gfm),P,'AbsTol',1e-12);
@@ -143,11 +146,11 @@ testCase.verifyFalse(isfield(r_gfm,'gfl'));
 % Runtime GFL dispatch uses the same mode resolution in every closure.
 ec_gfl = mode_context('IBR2','gfl');
 testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfl), ...
-    [1 2 12 13 14 15],'AbsTol',0);
+    14:20,'AbsTol',0);
 x_gfl = dual.equilibrium_initialize(V,P,Q,ec_gfl);
 standalone_gfl = ibr.gfl_model('IBR2',2,2,ids,V,struct('Mbase',140),P,Q);
 xgfl_expected = standalone_gfl.equilibrium_initialize(V,P,Q,ec_gfl);
-gfl_idx = [1 2 12 13 14 15];
+gfl_idx = 14:20;
 testCase.verifyEqual(x_gfl(gfl_idx),xgfl_expected,'AbsTol',1e-12);
 testCase.verifyLessThan(norm(dual.f(0,x_gfl,y,u,ec_gfl),inf),1e-12);
 testCase.verifyEqual(V*conj(dual.current_injection(0,x_gfl,y,u,ec_gfl)), ...
@@ -157,7 +160,7 @@ testCase.verifyEqual(r_gfl.mode,'gfl');
 testCase.verifyTrue(isfield(r_gfl,'gfl'));
 testCase.verifyFalse(isfield(r_gfl,'gfm'));
 
-testCase.verifyEqual(dual.nx,15,'AbsTol',0);
+testCase.verifyEqual(dual.nx,20,'AbsTol',0);
 end
 
 % =========================================================================

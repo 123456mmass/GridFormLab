@@ -18,6 +18,8 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %     OPTIONAL (normalized on every device; [] means unsupported):
 %       equilibrium_initialize(V_bus,P_terminal_pu,Q_terminal_pu,event_context)
 %       active_state_indices_for_context(event_context)
+%       equilibrium_constraint_specs(x_dev,y,u_dev,event_context)
+%       mode_transfer_state / transfer_state / mode_transfer
 %     ENGINE (capability + identity):
 %       device_type, mode, initial_mode, initial_online, capabilities,
 %       provenance (uniform: model, source, classification, details)
@@ -30,7 +32,7 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %
 %   Factory dispatch (model_id -> factory):
 %     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
-%     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (15-state GFL/GFM/tripped)
+%     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
 %   Future single-mode IBR factories are added here ONLY (no engine change).
 %
 %   SCENARIO_OPT may carry:
@@ -170,6 +172,22 @@ for k = 1:nr
     end
     if ~isfield(dev, 'dynamic_state_indices_for_context')
         dev.dynamic_state_indices_for_context = [];
+    end
+    % Optional active-bound equilibrium contract.  Devices without bounded
+    % controller states advertise unsupported ([]); normalizing here is
+    % required because MATLAB struct-array concatenation requires identical
+    % field sets across heterogeneous SG/IBR factories.
+    if ~isfield(dev, 'equilibrium_constraint_specs')
+        dev.equilibrium_constraint_specs = [];
+    end
+    % Optional physical mode-transfer ABI.  Dual-mode resources provide these
+    % aliases; fixed-mode SG resources explicitly advertise unsupported so
+    % heterogeneous factory structs retain an identical field set.
+    transfer_fields = {'mode_transfer_state','transfer_state','mode_transfer'};
+    for tf = 1:numel(transfer_fields)
+        if ~isfield(dev,transfer_fields{tf})
+            dev.(transfer_fields{tf}) = [];
+        end
     end
     % Uniform provenance: {model, source, classification, details}.
     p = r.provenance;

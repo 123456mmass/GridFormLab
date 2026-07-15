@@ -31,8 +31,18 @@ testCase.verifyEqual(eq.vcon_ref,[1.06;0],'AbsTol',0);
 testCase.verifyEqual(eq.y0(1:2),[1.06;0],'AbsTol',0);
 testCase.verifyEqual(eq.reference.slack_input_names,{'Tm','Efd'});
 testCase.verifyEqual(eq.partition.slack_input_unknowns,2,'AbsTol',0);
-testCase.verifyEqual(eq.partition.newton_dimension,57,'AbsTol',0);
-testCase.verifyEqual(eq.partition.residual_rows,57,'AbsTol',0);
+% The previous literal 57 encoded the retired six-state GFL layout. Derive
+% the square all-KCL dimension from the audited current state contract:
+% 5 active SG states + 4*7 active WECC GFL states + all 28 KCL rows = 61
+% residuals; unknowns replace two REF-voltage coordinates with Tm/Efd.
+nb=size(testCase.TestData.case_data.mpc.bus,1);
+expected_active=5+4*7;
+expected_rows=expected_active+2*nb;
+expected_unknowns=expected_active+(2*nb-numel(eq.vcon_vars))+ ...
+    eq.partition.slack_input_unknowns;
+testCase.verifyEqual(eq.partition.newton_dimension,expected_unknowns,'AbsTol',0);
+testCase.verifyEqual(eq.partition.residual_rows,expected_rows,'AbsTol',0);
+testCase.verifyEqual(expected_unknowns,expected_rows,'AbsTol',0);
 testCase.verifyNotEqual(eq.reference.Tm_solved_pu, ...
     eq.reference.Tm_scheduled_pu, ...
     'Tm is a solved REF output, not silently frozen to the old PF dispatch.');

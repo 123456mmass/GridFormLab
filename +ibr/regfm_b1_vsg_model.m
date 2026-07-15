@@ -1,5 +1,5 @@
 function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, params, P_ref_pu, V_ref_pu)
-%REGFM_B1_VSG_MODEL  Production GFM (grid-forming) VSM inverter, Phase 6 STRUCTURAL_ONLY.
+%REGFM_B1_VSG_MODEL  REGFM_B1 G2 grid-forming VSM inverter.
 %
 %   dev = regfm_b1_vsg_model(DEVICE_ID, BUS_ID, BUS_POSITION, BUS_IDS, V0, PARAMS,
 %                            P_REF_PU, V_REF_PU) returns a device struct conforming
@@ -21,8 +21,9 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %   source-behind-impedance output stage (Eq.13), VSM swing control (Fig.2),
 %   measurement filters (Eqs.1-5), Q-V droop + voltage PI (Fig.3), PLL (Fig.4).
 %   Phase-G-1 implements Eq.13 ImaxF transient clamp (Fig.7) and VPLLfrz PLL
-%   freeze (Fig.4). Anti-windup, PQ priority, Fig.6 active-current limiter,
-%   Eqs.10-11 Emin/Emax are deferred to Phase-G-2.
+%   freeze (Fig.4). Phase-G-2 implements Fig.5 steady-state PQ priority,
+%   Eqs.10-11 Emin/Emax, the Fig.6 upper/lower delta_IT bound controllers,
+%   and PROJECT_DERIVED conditional-integration anti-windup.
 %   The optional equilibrium initializer has the uniform device signature
 %     x_eq = equilibrium_initialize(V_bus, P_terminal_pu, ...
 %                                  Q_terminal_pu, event_context)
@@ -37,11 +38,12 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %     NO double conversion: P_ref converted once at the boundary.
 %     Mbase = CASE_DEFINED unity-PF nameplate proxy (NOT Pmax-MW proven).
 %
-%   State vector (11, fixed order, PROJECT_DERIVED interface contract):
-%     x_gfm = [omega_m; delta_VSM; x_washout; x_Eint; delta_PLL; x_PLL_int;
-%              Pinv_f; Idinv_f; Qinv_f; Vinv_f; Iqinv_f]
+%   State vector (13, fixed order, PROJECT_DERIVED interface contract):
+%     x_gfm = [omega_m; delta_IT; x_washout; x_Eint; delta_PLL; x_PLL_int;
+%              Pinv_f; Idinv_f; Qinv_f; Vinv_f; Iqinv_f;
+%              delta_ITmax; delta_ITmin]
 %       omega_m    - VSM speed deviation (inverter base)              [pu]
-%       delta_VSM  - VSM angle (network frame)                       [rad]
+%       delta_IT   - PLL-relative VSM angle                          [rad]
 %       x_washout   - transient damping washout (Fig.2 D2*s/(s+wD))  [pu]
 %       x_Eint      - voltage PI integral (Fig.3)                    [pu*s]
 %       delta_PLL   - PLL angle (Fig.4)                              [rad]
@@ -51,6 +53,8 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       Qinv_f      - filtered reactive power (Eq.3, inv base)        [pu]
 %       Vinv_f      - filtered voltage magnitude (Eq.4)              [pu]
 %       Iqinv_f     - filtered reactive current (Eq.5, inv base)      [pu]
+%       delta_ITmax - Fig.6 positive active-current angle bound      [rad]
+%       delta_ITmin - Fig.6 negative active-current angle bound      [rad]
 %
 %   Inputs (nu=2): u = [P_ref; V_ref]  (pu, system base)
 %     SOURCE_TRANSFORMED/PROJECT_MAPPED: with frozen flags VdrpFlag=0, QVFlag=1
@@ -64,7 +68,8 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       Iq = -Ix*sin(dPLL) + Iy*cos(dPLL)
 %       Vd =  Vx*cos(dPLL) + Vy*sin(dPLL)
 %       Vq = -Vx*sin(dPLL) + Vy*cos(dPLL)
-%     Output stage (Eq.13 + Phase-G-1 ImaxF clamp):
+%     Angle identity and output stage (Fig.2/Fig.6 + Eq.13):
+%       delta_VSM = delta_PLL + clamp(delta_IT,delta_ITmin,delta_ITmax)
 %       Iunc = (EVSM*exp(1i*delta_VSM) - V_bus)/(kappa*(Re + 1i*XL))
 %       I = Iunc when |Iunc|<ImaxF/kappa; otherwise circularly limited
 %     Measured power (generator convention S = V*conj(I), SYSTEM base):
@@ -83,27 +88,30 @@ function dev = regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, 
 %       2H*d(omega_m)/dt = P_ref_inv - Pinv_f ...
 %                          - (1/mp + D1)*omega_m - D2*(omega_m - x_washout)
 %       d(x_washout)/dt  = wD*(omega_m - x_washout)
-%       d(delta_VSM)/dt   = omega0*omega_m
-%     Voltage PI (Fig.3; Emax/Emin deferred):
+%       d(delta_IT)/dt    = omega0*omega_m, with conditional bound hold
+%     Voltage PI and G2 limits (Fig.3, Fig.5, Eqs.10-12):
 %       d(x_Eint)/dt = V_ref - Vinv_f
-%       EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint
+%       EVSM_raw = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint
+%       EVSM = clamp(EVSM_raw,Emin_iq_lim,Emax_iq_lim)
+%       d(delta_ITmax)/dt = kI*(IdmaxSS-Idinv_f)
+%       d(delta_ITmin)/dt = kI*(-Ke*IdmaxSS-Idinv_f), when ESFlag=1
 %
 %   Equilibrium (PROJECT_DERIVED): omega_m=0, x_washout=0, Pinv_f=P_ref_inv,
 %     P_meas=P_ref_sys (system base), Vinv_f=|V|, delta_PLL=angle(V_bus),
-%     delta_VSM=power angle s.t. I=(EVSM*exp(j*delta_VSM)-V)/(Re+jXL) delivers P_ref.
+%     delta_IT=angle(E_terminal)-delta_PLL and delta_VSM=delta_PLL+delta_IT,
+%     with Fig.6 bounds initialized at +/-asin(XL*ImaxSS).
 %
 %   Classification:
 %     - All REGFM_B1 Table 1 example values: SOURCE_VERBATIM (CASE_DEFINED
 %       application to IEEE14 IBR converters). NO ASSUMED_DIAGNOSTIC (unlike
-%       the GFL Kps/Kis).
+%       the independently sourced WECC GFL branch).
 %     - VSM swing ODE form (Fig.2 block-diagram collapse): SOURCE_TRANSFORMED.
 %     - u=[P_ref;V_ref] mapping: SOURCE_TRANSFORMED/PROJECT_MAPPED.
 %     - Mbase: CASE_DEFINED unity-PF nameplate proxy.
 %
-%   STATUS: IEEE14_IBR_GFM_MODEL_READY = STRUCTURAL_ONLY.
-%   Phase-G-1 (Eq.13 clamp + VPLL freeze): IMPLEMENTED_STRUCTURAL_ONLY.
-%   Phase-G-2 (anti-windup, PQ priority, Fig.6, Eqs.10-11): DEFERRED.
-%   IBR_PRODUCTION_INTEGRATION_READY = NOT_READY.
+%   STATUS: SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES.
+%   G1 Eq.13 clamp/VPLL freeze and G2 PQ priority, Eqs.10-11, Fig.6
+%   dynamic bounds, and PROJECT_DERIVED conditional anti-windup are active.
 %
 %   Source: docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md;
 %           docs/project/IEEE14_IBR_DECISION_LEDGER.md (Item 2);
@@ -176,11 +184,11 @@ Tpf      = 0.02;               % s, SOURCE_VERBATIM (Table 1)
 TQf      = 0.02;               % s, SOURCE_VERBATIM (Table 1)
 TVf      = 0.02;               % s, SOURCE_VERBATIM (Table 1)
 TIf      = 0.02;               % s, SOURCE_VERBATIM (Table 1)
-ImaxSS   = 1.0;                % pu, SOURCE_VERBATIM (Table 1) [G2 deferred]
+ImaxSS   = 1.0;                % pu, SOURCE_VERBATIM (Table 1)
 ImaxF    = 1.5;                % pu, SOURCE_VERBATIM (Table 1) [G1 implemented]
-kf       = 0.9;                % NA, SOURCE_VERBATIM (Table 1) [deferred limiter]
-kI       = 2.0;                % pu/s, SOURCE_VERBATIM (Table 1) [deferred limiter]
-Ke       = 1.0;                % NA, SOURCE_VERBATIM (Table 1) [deferred limiter]
+kf       = 0.9;                % NA, SOURCE_VERBATIM (Table 1)
+kI       = 2.0;                % pu/s, SOURCE_VERBATIM (Table 1)
+Ke       = 1.0;                % NA, SOURCE_VERBATIM (Table 1)
 VPLLfrz  = 0.05;               % pu, SOURCE_VERBATIM (Table 1) [G1 implemented]
 % Frozen flag profile (Phase 6, before results)
 omegaFlag = 0;  VdrpFlag = 0;  QVFlag = 1;  PQFlag = 1;  FFlag = 1;  ESFlag = 1;
@@ -192,7 +200,8 @@ Mbase    = 100.0;              % MVA, CASE_DEFINED unity-PF nameplate proxy (def
 overridden = struct('omega0',false,'H',false,'D1',false,'D2',false,'wD',false, ...
     'mp',false,'mq',false,'kpv',false,'kiv',false,'Re',false,'XL',false, ...
     'kpPLL',false,'kiPLL',false,'Tpf',false,'TQf',false,'TVf',false,'TIf',false, ...
-    'Mbase',false);
+    'ImaxSS',false,'ImaxF',false,'kf',false,'kI',false,'Ke',false, ...
+    'VPLLfrz',false,'PQFlag',false,'ESFlag',false,'Mbase',false);
 ov_fields = fieldnames(overridden);
 for fi = 1:numel(ov_fields)
     f = ov_fields{fi};
@@ -220,7 +229,31 @@ validate_param('Tpf', Tpf, true);
 validate_param('TQf', TQf, true);
 validate_param('TVf', TVf, true);
 validate_param('TIf', TIf, true);
+validate_param('ImaxSS', ImaxSS, true);
+validate_param('ImaxF', ImaxF, true);
+validate_param('kI', kI, true);
+validate_param('Ke', Ke, false);
+validate_param('VPLLfrz', VPLLfrz, false);
 validate_param('Mbase', Mbase, true);   % nameplate proxy must be positive finite
+if kf == 0
+    warning('ibr:regfm_b1_vsg_model:kfReset', ...
+        'kf=0 reset to 1 per REGFM_B1 parameter contract.');
+    kf = 1;
+elseif ~isfinite(kf) || kf < 0
+    error('ibr:regfm_b1_vsg_model:badParam', ...
+        'parameter kf must be finite and nonnegative.');
+end
+if ~(PQFlag==0 || PQFlag==1) || ~(ESFlag==0 || ESFlag==1) || ...
+        Ke < 0 || Ke > 1 || VPLLfrz < 0
+    error('ibr:regfm_b1_vsg_model:badParam', ...
+        'PQFlag/ESFlag must be binary, 0<=Ke<=1, and VPLLfrz>=0.');
+end
+delta_arg = XL*ImaxSS;
+if abs(delta_arg) > 1
+    error('ibr:regfm_b1_vsg_model:deltaMaxDomain', ...
+        'Eq.12 requires |XL*ImaxSS|<=1 (got %.15g).',delta_arg);
+end
+delta_max = asin(delta_arg);
 
 % Boundary mapping: system base -> inverter base (NO double conversion).
 kappa = Sbase / Mbase;
@@ -232,7 +265,7 @@ P_ref_inv = kappa * P_ref_pu;   % inverter base (REGFM_B1 Eq.1 semantics)
 % when the reduced network initializer supplies terminal P/Q. With the
 % corrected Z_sys = kappa*(Re+jXL), no old-Z base mismatch is retained.
 omega_m0   = 0.0;
-delta_VSM0 = theta0;            % VSM angle initialized to bus angle
+delta_IT0  = 0.0;               % PLL-relative VSM angle; refined by initializer
 x_washout0 = 0.0;
 x_Eint0    = 0.0;
 delta_PLL0 = theta0;            % PLL locked to bus angle
@@ -242,8 +275,11 @@ Idinv_f0   = 0.0;               % refined by Newton from measured current
 Qinv_f0    = 0.0;               % Qref=0 dispatch
 Vinv_f0    = V0_mag;            % warm-start |V_bus|
 Iqinv_f0   = 0.0;               % refined by Newton from measured current
-x0 = [omega_m0; delta_VSM0; x_washout0; x_Eint0; delta_PLL0; x_PLL_int0; ...
-      Pinv_f0; Idinv_f0; Qinv_f0; Vinv_f0; Iqinv_f0];
+delta_ITmax0 = delta_max;
+delta_ITmin0 = ternary(ESFlag==1,-delta_max,0.0);
+x0 = [omega_m0; delta_IT0; x_washout0; x_Eint0; delta_PLL0; x_PLL_int0; ...
+      Pinv_f0; Idinv_f0; Qinv_f0; Vinv_f0; Iqinv_f0; ...
+      delta_ITmax0; delta_ITmin0];
 u0 = [P_ref_pu; V_ref_pu];
 
 % --- Captured constants for closures ----------------------------------------
@@ -252,21 +288,25 @@ bp = bus_position;   % 1-based index into y for this device's bus
 % --- Differential RHS f(t, x_dev, y, u_dev, event_context) -----------------
 f = @(t, x_dev, y, u_dev, event_context) gfm_f( ...
     x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, Re, XL, ...
-    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxF, VPLLfrz);
+    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxSS, ImaxF, kf, kI, Ke, ...
+    PQFlag, ESFlag, delta_max, VPLLfrz);
 
 % --- current_injection(t, x_dev, y, u_dev, event_context): complex, INTO net
 current_injection = @(t, x_dev, y, u_dev, event_context) ...
-    gfm_current_injection_g1( ...
-    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF);
+    gfm_current_injection_g2( ...
+    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxSS, ImaxF, ...
+    kf, PQFlag, ESFlag);
 
 % --- electrical_power(t, x_dev, y, u_dev, event_context): Pe (pu, system base)
-electrical_power = @(t, x_dev, y, u_dev, event_context) gfm_pe_g1( ...
-    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF);
+electrical_power = @(t, x_dev, y, u_dev, event_context) gfm_pe_g2( ...
+    x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxSS, ImaxF, ...
+    kf, PQFlag, ESFlag);
 
 % --- reconstruct(t, x_dev, y, u_dev, event_context): struct -----------------
-reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct_g1( ...
+reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct_g2( ...
     x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, Re, XL, ...
-    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxF, VPLLfrz);
+    kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxSS, ImaxF, ...
+    kf, kI, Ke, PQFlag, ESFlag, delta_max, VPLLfrz);
 
 % --- Optional exact device-equilibrium initializer -------------------------
 % PROJECT_DERIVED inversion of REGFM_B1 Eqs.1-9, 13 and Figs.2-4. Q_terminal
@@ -274,7 +314,18 @@ reconstruct = @(t, x_dev, y, u_dev, event_context) gfm_reconstruct_g1( ...
 % it is not a new Q-reference input. Network KCL remains composite-owned.
 equilibrium_initialize = @(V_bus, P_terminal_pu, Q_terminal_pu, event_context) ...
     gfm_equilibrium_initialize(V_bus, P_terminal_pu, Q_terminal_pu, ...
-        event_context, V_ref_pu, kappa, Re, XL, mq, kpv, kiv, ImaxF, VPLLfrz);
+        event_context, V_ref_pu, kappa, Re, XL, mq, kpv, kiv, ImaxSS, ImaxF, ...
+        kf, PQFlag, ESFlag, delta_max, VPLLfrz);
+% Runtime mode transfer is not a stationary-equilibrium solve: terminal
+% voltage may differ from V_ref immediately after a disturbance. It uses the
+% same sourced inversion but does not impose the stationary |V|=V_ref row.
+transfer_initialize = @(V_bus, P_terminal_pu, Q_terminal_pu, event_context) ...
+    gfm_transfer_initialize(V_bus, P_terminal_pu, Q_terminal_pu, ...
+        event_context, V_ref_pu, kappa, Re, XL, mq, kpv, kiv, ImaxSS, ImaxF, ...
+        kf, PQFlag, ESFlag, delta_max, VPLLfrz);
+equilibrium_constraint_specs = @(x_dev,y,u_dev,event_context) ...
+    g2_constraint_specs(x_dev,y,u_dev,event_context,bp,omega0,V_ref_pu, ...
+        mq,kpv,kiv,XL,ImaxSS,kf,kI,Ke,PQFlag,ESFlag,delta_max);
 
 % --- Assemble device struct (composite_dae ABI, R3 Revision 2) --------------
 dev = struct();
@@ -285,10 +336,11 @@ dev.bus_position = bus_position;
 dev.bus_ids = bus_ids(:).';
 dev.device_type = 'ibr_gfm';
 dev.mode = 'GFM';
-dev.nx = 11;
+dev.nx = 13;
 dev.nu = 2;
-dev.state_names = {'omega_m','delta_VSM','x_washout','x_Eint','delta_PLL', ...
-    'x_PLL_int','Pinv_f','Idinv_f','Qinv_f','Vinv_f','Iqinv_f'};
+dev.state_names = {'omega_m','delta_IT','x_washout','x_Eint','delta_PLL', ...
+    'x_PLL_int','Pinv_f','Idinv_f','Qinv_f','Vinv_f','Iqinv_f', ...
+    'delta_ITmax','delta_ITmin'};
 dev.input_names = {'P_ref','V_ref'};
 dev.x0 = x0;
 dev.u0 = u0;
@@ -297,6 +349,12 @@ dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
 dev.equilibrium_initialize = equilibrium_initialize;
+dev.transfer_initialize = transfer_initialize;
+dev.equilibrium_constraint_specs = equilibrium_constraint_specs;
+dev.active_state_indices = 1:13;
+if ESFlag == 0
+    dev.active_state_indices = 1:12;
+end
 % F4: parameter classifications — frozen defaults keep their original label;
 % any overridden parameter is reclassified DIAGNOSTIC_ONLY. Mbase is a
 % CASE_DEFINED nameplate proxy (not a REGFM_B1 Table 1 value), so it keeps
@@ -304,7 +362,7 @@ dev.equilibrium_initialize = equilibrium_initialize;
 cls = @(nm) ternary(overridden.(nm), 'DIAGNOSTIC_ONLY', 'SOURCE_VERBATIM');
 cls_Mbase = ternary(overridden.Mbase, 'DIAGNOSTIC_ONLY', 'CASE_DEFINED');
 dev.provenance = struct( ...
-    'model','gfm_regfm_b1_phase6_structural_only', ...
+    'model','gfm_regfm_b1_phase_g2', ...
     'source','REGFM_B1 NREL/TP-5D00-90260 (docs/paper/90260.pdf) Eqs.1-13 + Table 1', ...
     'provenance_doc','docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md', ...
     'V0', V0, 'V0_mag', V0_mag, 'theta0', theta0, ...
@@ -327,18 +385,43 @@ dev.provenance = struct( ...
     'swing_form','SOURCE_TRANSFORMED (Fig.2 block-diagram collapse, frozen under omegaFlag=0,FFlag=1,omega_ref=1 pu)', ...
     'pu_base_contract','external=system base; internal swing/filters=inverter base (kappa=Sbase/Mbase); no double conversion', ...
     'param_overridden', overridden, ...
-    'readiness','STRUCTURAL_ONLY', ...
-    'phase_g1_status','IMPLEMENTED_STRUCTURAL_ONLY');
+    'angle_contract','delta_VSM=delta_PLL+delta_IT (SOURCE_TRANSFORMED)', ...
+    'g2_antiwindup','conditional integration (PROJECT_DERIVED)', ...
+    'readiness','SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES', ...
+    'phase_g1_status','IMPLEMENTED_STRUCTURAL_ONLY', ...
+    'phase_g2_status','SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES');
 end
 
 % =========================================================================
 function x_eq = gfm_equilibrium_initialize(V_bus, P_terminal_pu, ...
     Q_terminal_pu, event_context, V_ref, kappa, Re, XL, mq, kpv, kiv, ...
-    ImaxF, VPLLfrz) %#ok<INUSD>
+    ImaxSS, ImaxF, kf, PQFlag, ESFlag, delta_max, VPLLfrz) %#ok<INUSD>
 %GFM_EQUILIBRIUM_INITIALIZE  Exact regular REGFM_B1 device equilibrium.
 %   Terminal P/Q are system-base injections under S=V*conj(I), positive INTO
 %   the network. The returned state is device-consistent only; the caller must
 %   still solve/check the composite network KCL.
+x_eq = gfm_state_initialize(V_bus,P_terminal_pu,Q_terminal_pu,event_context, ...
+    V_ref,kappa,Re,XL,mq,kpv,kiv,ImaxSS,ImaxF,kf,PQFlag,ESFlag, ...
+    delta_max,VPLLfrz,true);
+end
+
+function x_eq = gfm_transfer_initialize(V_bus, P_terminal_pu, ...
+    Q_terminal_pu, event_context, V_ref, kappa, Re, XL, mq, kpv, kiv, ...
+    ImaxSS, ImaxF, kf, PQFlag, ESFlag, delta_max, VPLLfrz)
+%GFM_TRANSFER_INITIALIZE Physical left-limit state map for GFL->GFM.
+% Unlike a stationary root, a runtime transfer permits |V_bus|~=V_ref. The
+% voltage-integrator state is reconstructed so EVSM equals |V+Z_sys*I|,
+% preserving terminal current while all source current/angle limits remain
+% fail-closed.
+x_eq = gfm_state_initialize(V_bus,P_terminal_pu,Q_terminal_pu,event_context, ...
+    V_ref,kappa,Re,XL,mq,kpv,kiv,ImaxSS,ImaxF,kf,PQFlag,ESFlag, ...
+    delta_max,VPLLfrz,false);
+end
+
+function x_eq = gfm_state_initialize(V_bus, P_terminal_pu, ...
+    Q_terminal_pu, event_context, V_ref, kappa, Re, XL, mq, kpv, kiv, ...
+    ImaxSS, ImaxF, kf, PQFlag, ESFlag, delta_max, VPLLfrz,require_stationary_voltage) %#ok<INUSD>
+%GFM_STATE_INITIALIZE Shared sourced inversion for equilibrium and transfer.
 if ~isscalar(V_bus) || ~isfinite(V_bus) || abs(V_bus) <= 0
     error('ibr:regfm_b1_vsg_model:equilibriumBadVoltage', ...
         'Equilibrium V_bus must be a finite nonzero scalar phasor.');
@@ -363,7 +446,7 @@ vscale = max([1.0, Vmag, abs(V_ref)]);
 % perturbation-scale consistency gate; a machine-epsilon-only gate rejects a
 % mathematically converged warm start before the full residual can refine it.
 vtol = sqrt(eps)*vscale;   % NUMERICAL_METHOD, not an acceptance relaxation
-if abs(Vmag - V_ref) > vtol
+if require_stationary_voltage && abs(Vmag - V_ref) > vtol
     error('ibr:regfm_b1_vsg_model:equilibriumVoltageReferenceMismatch', ...
         ['Exact equilibrium at the supplied V_bus requires |V_bus|=V_ref; ' ...
          '|V_bus|=%.15g, V_ref=%.15g.'], Vmag, V_ref);
@@ -398,6 +481,17 @@ P_f = kappa*P_terminal_pu;
 Q_f = kappa*Q_terminal_pu;
 V_f = Vmag;
 EVSM = abs(E_terminal);
+[IdmaxSS,IqmaxSS] = pq_limits(ImaxSS,kf,PQFlag, ...
+    kappa*real(I_dq_sys),kappa*imag(I_dq_sys));
+[Emin_iq_lim,Emax_iq_lim] = voltage_limits(V_f,kappa*real(I_dq_sys), ...
+    IqmaxSS,XL);
+elim_tol = 64*eps(max([1,abs(EVSM),abs(Emin_iq_lim),abs(Emax_iq_lim)]));
+if EVSM < Emin_iq_lim-elim_tol || EVSM > Emax_iq_lim+elim_tol
+    error('ibr:regfm_b1_vsg_model:equilibriumSteadyCurrentLimit', ...
+        ['Requested internal voltage %.15g is outside the sourced G2 ' ...
+         'range [%.15g,%.15g] (IdmaxSS=%.15g,IqmaxSS=%.15g).'], ...
+        EVSM,Emin_iq_lim,Emax_iq_lim,IdmaxSS,IqmaxSS);
+end
 if kiv <= 0
     error('ibr:regfm_b1_vsg_model:equilibriumVoltageIntegrator', ...
         'Exact GFM equilibrium inversion requires finite kiv>0.');
@@ -408,8 +502,15 @@ if ~isfinite(x_Eint)
         'The reconstructed voltage-PI integrator state is non-finite.');
 end
 
-x_eq = [0.0; angle(E_terminal); 0.0; x_Eint; delta_PLL; 0.0; ...
-        P_f; kappa*real(I_dq_sys); Q_f; V_f; kappa*imag(I_dq_sys)];
+delta_IT = wrap_pi(angle(E_terminal)-delta_PLL);
+used_lb = ternary(ESFlag==1,-delta_max,0.0);
+if delta_IT < used_lb-elim_tol || delta_IT > delta_max+elim_tol
+    error('ibr:regfm_b1_vsg_model:equilibriumAngleLimit', ...
+        'delta_IT=%.15g is outside [%.15g,%.15g].',delta_IT,used_lb,delta_max);
+end
+x_eq = [0.0; delta_IT; 0.0; x_Eint; delta_PLL; 0.0; ...
+        P_f; kappa*real(I_dq_sys); Q_f; V_f; kappa*imag(I_dq_sys); ...
+        delta_max; ternary(ESFlag==1,-delta_max,0.0)];
 if any(~isfinite(x_eq))
     error('ibr:regfm_b1_vsg_model:equilibriumNonfinite', ...
         'The reconstructed GFM equilibrium state contains non-finite values.');
@@ -467,10 +568,11 @@ end
 
 % =========================================================================
 function dx = gfm_f(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, kpv, kiv, ...
-    Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxF, VPLLfrz)
-%GFM_F  Differential RHS (11 states). Phase-G-1: shared limited current + PLL freeze.
+    Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, ImaxSS, ImaxF, ...
+    kf, kI, Ke, PQFlag, ESFlag, delta_max, VPLLfrz)
+%GFM_F  REGFM_B1 G2 RHS (13 states), including conditional anti-windup.
 omega_m    = x_dev(1);
-delta_VSM  = x_dev(2);
+delta_IT   = x_dev(2);
 x_washout  = x_dev(3);
 x_Eint     = x_dev(4);
 delta_PLL  = x_dev(5);
@@ -480,12 +582,20 @@ Idinv_f    = x_dev(8);
 Qinv_f     = x_dev(9);
 Vinv_f     = x_dev(10);
 Iqinv_f    = x_dev(11);
+delta_ITmax = x_dev(12);
+delta_ITmin = x_dev(13);
 [P_ref_sys, V_ref] = refs_from_u(u_dev);
 P_ref_inv = kappa * P_ref_sys;   % boundary mapping (no double conversion)
 
 % Network-frame bus voltage.
 V_bus = complex(y(2*bp-1), y(2*bp));
-EVSM  = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+[~,IqmaxSS] = pq_limits(ImaxSS,kf,PQFlag,Idinv_f,Iqinv_f);
+[Emin_iq_lim,Emax_iq_lim] = voltage_limits(Vinv_f,Idinv_f,IqmaxSS,XL);
+EVSM_raw = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+EVSM = clamp_value(EVSM_raw,Emin_iq_lim,Emax_iq_lim);
+used_lb = ternary(ESFlag==1,delta_ITmin,0.0);
+delta_IT_used = clamp_value(delta_IT,used_lb,delta_ITmax);
+delta_VSM = delta_PLL+delta_IT_used;
 
 % G1: shared limited current (Eq.13, Fig.7).
 [I_out, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
@@ -506,10 +616,27 @@ Vq = -Vx*sin(delta_PLL) + Vy*cos(delta_PLL);
 % VSM swing (Fig.2, SOURCE_TRANSFORMED, inverter base).
 d_omega_m = (P_ref_inv - Pinv_f - (1/mp + D1)*omega_m - D2*(omega_m - x_washout)) / (2*H);
 d_x_washout = wD*(omega_m - x_washout);
-d_delta_VSM = omega0*omega_m;
+d_delta_IT_raw = omega0*omega_m;
+d_delta_IT = conditional_hold(delta_IT,d_delta_IT_raw,used_lb,delta_ITmax);
 
 % Voltage PI (Fig.3).
-d_x_Eint = V_ref - Vinv_f;
+d_x_Eint_raw = V_ref - Vinv_f;
+d_x_Eint = d_x_Eint_raw;
+if (EVSM_raw >= Emax_iq_lim && d_x_Eint_raw > 0) || ...
+        (EVSM_raw <= Emin_iq_lim && d_x_Eint_raw < 0)
+    d_x_Eint = 0;
+end
+
+% Fig.6 dynamic upper/lower bounds and PROJECT_DERIVED conditional hold.
+[IdmaxSS,~] = pq_limits(ImaxSS,kf,PQFlag,Idinv_f,Iqinv_f);
+d_delta_ITmax_raw = kI*(IdmaxSS-Idinv_f);
+d_delta_ITmax = conditional_hold(delta_ITmax,d_delta_ITmax_raw,0,delta_max);
+if ESFlag == 1
+    d_delta_ITmin_raw = kI*((-Ke*IdmaxSS)-Idinv_f);
+    d_delta_ITmin = conditional_hold(delta_ITmin,d_delta_ITmin_raw,-delta_max,0);
+else
+    d_delta_ITmin = 0;
+end
 
 % G1: PLL freeze at low voltage (REGFM_B1 Fig.4, Table 1 VPLLfrz=0.05 pu).
 if abs(V_bus) < VPLLfrz
@@ -527,43 +654,52 @@ d_Qinv_f  = (kappa*Q_meas  - Qinv_f)  / TQf;
 d_Vinv_f  = (abs(V_bus)    - Vinv_f)  / TVf;
 d_Iqinv_f = (kappa*Iq      - Iqinv_f) / TIf;
 
-dx = [d_omega_m; d_delta_VSM; d_x_washout; d_x_Eint; d_delta_PLL; d_x_PLL_int; ...
-      d_Pinv_f; d_Idinv_f; d_Qinv_f; d_Vinv_f; d_Iqinv_f];
+dx = [d_omega_m; d_delta_IT; d_x_washout; d_x_Eint; d_delta_PLL; d_x_PLL_int; ...
+      d_Pinv_f; d_Idinv_f; d_Qinv_f; d_Vinv_f; d_Iqinv_f; ...
+      d_delta_ITmax; d_delta_ITmin];
 end
 
 % =========================================================================
-function I = gfm_current_injection_g1(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF)
-%GFM_CURRENT_INJECTION_G1  Phase-G-1: shared limited current (REGFM_B1 Eq.13, Fig.7).
-delta_VSM = x_dev(2);
+function I = gfm_current_injection_g2(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, ...
+    kappa, ImaxSS, ImaxF, kf, PQFlag, ESFlag)
+%GFM_CURRENT_INJECTION_G2  G2 voltage/angle limits followed by Eq.13 clamp.
+delta_IT   = x_dev(2);
 x_Eint    = x_dev(4);
+delta_PLL = x_dev(5);
 Qinv_f    = x_dev(9);
 Vinv_f    = x_dev(10);
+Idinv_f   = x_dev(8);
+Iqinv_f   = x_dev(11);
+delta_ITmax = x_dev(12);
+delta_ITmin = x_dev(13);
 [~, V_ref] = refs_from_u(u_dev);
 V_bus = complex(y(2*bp-1), y(2*bp));
-EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+[~,IqmaxSS] = pq_limits(ImaxSS,kf,PQFlag,Idinv_f,Iqinv_f);
+[Emin_iq_lim,Emax_iq_lim] = voltage_limits(Vinv_f,Idinv_f,IqmaxSS,XL);
+EVSM_raw = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+EVSM = clamp_value(EVSM_raw,Emin_iq_lim,Emax_iq_lim);
+used_lb = ternary(ESFlag==1,delta_ITmin,0.0);
+delta_VSM = delta_PLL+clamp_value(delta_IT,used_lb,delta_ITmax);
 [I, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
 end
 
 % =========================================================================
-function Pe = gfm_pe_g1(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ImaxF)
-%GFM_PE_G1  Phase-G-1: electrical power from shared limited current (system base).
-delta_VSM = x_dev(2);
-x_Eint    = x_dev(4);
-Qinv_f    = x_dev(9);
-Vinv_f    = x_dev(10);
-[~, V_ref] = refs_from_u(u_dev);
+function Pe = gfm_pe_g2(x_dev, y, u_dev, bp, kpv, kiv, mq, Re, XL, kappa, ...
+    ImaxSS, ImaxF, kf, PQFlag, ESFlag)
+%GFM_PE_G2  Electrical power from the exact shared G2 current path.
+I = gfm_current_injection_g2(x_dev,y,u_dev,bp,kpv,kiv,mq,Re,XL,kappa, ...
+    ImaxSS,ImaxF,kf,PQFlag,ESFlag);
 V_bus = complex(y(2*bp-1), y(2*bp));
-EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
-[I, ~, ~] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
 Pe = real(V_bus * conj(I));
 end
 
 % =========================================================================
-function out = gfm_reconstruct_g1(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, ...
-    kpv, kiv, Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ImaxF, VPLLfrz)
-%GFM_RECONSTRUCT_G1  Phase-G-1: device outputs with limiter metadata.
+function out = gfm_reconstruct_g2(x_dev, y, u_dev, bp, omega0, H, D1, D2, wD, mp, mq, ...
+    kpv, kiv, Re, XL, kpPLL, kiPLL, Tpf, TQf, TVf, TIf, kappa, Mbase, Sbase, ...
+    ImaxSS, ImaxF, kf, kI, Ke, PQFlag, ESFlag, delta_max, VPLLfrz)
+%GFM_RECONSTRUCT_G2  Device outputs with sourced G2 limiter metadata.
 omega_m    = x_dev(1);
-delta_VSM  = x_dev(2);
+delta_IT   = x_dev(2);
 x_washout  = x_dev(3);
 x_Eint     = x_dev(4);
 delta_PLL  = x_dev(5);
@@ -573,25 +709,194 @@ Idinv_f    = x_dev(8);
 Qinv_f     = x_dev(9);
 Vinv_f     = x_dev(10);
 Iqinv_f    = x_dev(11);
+delta_ITmax = x_dev(12);
+delta_ITmin = x_dev(13);
 [P_ref_sys, V_ref] = refs_from_u(u_dev);
 V_bus = complex(y(2*bp-1), y(2*bp));
-EVSM = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+[IdmaxSS,IqmaxSS] = pq_limits(ImaxSS,kf,PQFlag,Idinv_f,Iqinv_f);
+[Emin_iq_lim,Emax_iq_lim] = voltage_limits(Vinv_f,Idinv_f,IqmaxSS,XL);
+EVSM_raw = V_ref - mq*Qinv_f + kpv*(V_ref - Vinv_f) + kiv*x_Eint;
+EVSM = clamp_value(EVSM_raw,Emin_iq_lim,Emax_iq_lim);
+used_delta_ITmin = ternary(ESFlag==1,delta_ITmin,0.0);
+delta_IT_used = clamp_value(delta_IT,used_delta_ITmin,delta_ITmax);
+delta_VSM = delta_PLL+delta_IT_used;
 [I_out, I_unc, I_limited] = limited_current(EVSM, delta_VSM, V_bus, Re, XL, kappa, ImaxF);
 ImaxF_sys = ImaxF / kappa;
 S = V_bus * conj(I_out);
 PLL_frozen = abs(V_bus) < VPLLfrz;
 out = struct( ...
-    'omega_m', omega_m, 'delta_VSM', delta_VSM, 'x_washout', x_washout, ...
+    'omega_m', omega_m, 'delta_IT', delta_IT, 'delta_IT_used',delta_IT_used, ...
+    'delta_VSM', delta_VSM, 'x_washout', x_washout, ...
     'x_Eint', x_Eint, 'delta_PLL', delta_PLL, 'x_PLL_int', x_PLL_int, ...
     'Pinv_f', Pinv_f, 'Idinv_f', Idinv_f, 'Qinv_f', Qinv_f, ...
     'Vinv_f', Vinv_f, 'Iqinv_f', Iqinv_f, ...
     'EVSM', EVSM, 'I_gfm', I_out, 'Vbus', abs(V_bus), ...
     'Pe', real(S), 'Qe', imag(S), ...
     'kappa', kappa, 'Mbase', Mbase, 'Sbase', Sbase, ...
+    'H',H,'H_system',H/kappa,'frequency_deviation_pu',omega_m, ...
     'P_ref_inv', kappa*P_ref_sys, ...
     'ImaxF_inv', ImaxF, 'ImaxF_sys', ImaxF_sys, ...
     'I_unc_sys', I_unc, 'I_abs_unc', abs(I_unc), 'I_abs_out', abs(I_out), ...
-    'I_limited', I_limited, 'VPLLfrz', VPLLfrz, 'PLL_frozen', PLL_frozen);
+    'I_limited', I_limited, 'VPLLfrz', VPLLfrz, 'PLL_frozen', PLL_frozen, ...
+    'ImaxSS',ImaxSS,'kf',kf,'kI',kI,'Ke',Ke,'PQFlag',PQFlag,'ESFlag',ESFlag, ...
+    'IdmaxSS',IdmaxSS,'IqmaxSS',IqmaxSS, ...
+    'Emin_iq_lim',Emin_iq_lim,'Emax_iq_lim',Emax_iq_lim, ...
+    'EVSM_raw',EVSM_raw,'EVSM_clamped',EVSM, ...
+    'delta_max',delta_max,'delta_ITmax',delta_ITmax, ...
+    'delta_ITmin',delta_ITmin,'used_delta_ITmin',used_delta_ITmin, ...
+    'x_Eint_saturated',EVSM_raw<Emin_iq_lim || EVSM_raw>Emax_iq_lim);
+end
+
+% =========================================================================
+function specs = g2_constraint_specs(~,~,~,~,bp,omega0,V_ref_default,mq,kpv,kiv, ...
+    XL,ImaxSS,kf,kI,Ke,PQFlag,ESFlag,delta_max)
+%G2_CONSTRAINT_SPECS  Equality/complementarity rows for equilibrium Newton.
+% Classification is evaluated only between Newton solves by the generic
+% active-bound layer.  residual_fn is evaluated with the locked regime.
+
+smax = bound_spec(12,'delta_ITmax', ...
+    @(x,y,u,ec) 0.0, @(x,y,u,ec) delta_max, ...
+    @(x,y,u,ec) kI*(first_pq_limit(x,ImaxSS,kf,PQFlag)-x(8)));
+
+sdelta = bound_spec(2,'delta_IT', ...
+    @(x,y,u,ec) ternary(ESFlag==1,x(13),0.0), ...
+    @(x,y,u,ec) x(12), ...
+    @(x,y,u,ec) omega0*x(1));
+
+svolt.local_idx = 4;
+svolt.classify_fn = @(x,y,u,ec) classify_voltage_constraint( ...
+    x,y,u,bp,V_ref_default,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+svolt.residual_fn = @(x,y,u,ec,reg) residual_voltage_constraint( ...
+    x,y,u,reg,bp,V_ref_default,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+svolt.raw_dot_fn = @(x,y,u,ec) voltage_raw_dot(x,u,V_ref_default);
+svolt.admissible_fn = @(x,y,u,ec,reg) admissible_voltage_constraint( ...
+    x,y,u,reg,bp,V_ref_default,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+svolt.description = 'x_Eint / EVSM G2 voltage limiter';
+
+if ESFlag == 1
+    smin = bound_spec(13,'delta_ITmin', ...
+        @(x,y,u,ec) -delta_max, @(x,y,u,ec) 0.0, ...
+        @(x,y,u,ec) kI*((-Ke*first_pq_limit(x,ImaxSS,kf,PQFlag))-x(8)));
+    specs = [smax;smin;sdelta;svolt];
+else
+    specs = [smax;sdelta;svolt];
+end
+end
+
+function spec = bound_spec(local_idx,label,lo_fn,hi_fn,raw_fn)
+spec.local_idx = local_idx;
+spec.classify_fn = @(x,y,u,ec) classify_bound_value( ...
+    x(local_idx),lo_fn(x,y,u,ec),hi_fn(x,y,u,ec),raw_fn(x,y,u,ec));
+spec.residual_fn = @(x,y,u,ec,reg) residual_bound_value( ...
+    x(local_idx),lo_fn(x,y,u,ec),hi_fn(x,y,u,ec),raw_fn(x,y,u,ec),reg);
+spec.raw_dot_fn = @(x,y,u,ec) raw_fn(x,y,u,ec);
+spec.admissible_fn = @(x,y,u,ec,reg) admissible_bound_value( ...
+    x(local_idx),lo_fn(x,y,u,ec),hi_fn(x,y,u,ec),raw_fn(x,y,u,ec),reg);
+spec.description = label;
+end
+
+function regime = classify_bound_value(x,lo,hi,raw)
+btol=1e-8; stol=1e-6;
+if ~all(isfinite([x,lo,hi,raw])) || lo>hi
+    error('ibr:regfm_b1_vsg_model:nonfiniteActiveBound', ...
+        'Invalid G2 active-bound value.');
+elseif x>hi+btol
+    regime='upper';
+elseif x<lo-btol
+    regime='lower';
+elseif x>=hi-btol && raw>=-stol
+    regime='upper';
+elseif x<=lo+btol && raw<=stol
+    regime='lower';
+else
+    regime='interior';
+end
+end
+
+function r = residual_bound_value(x,lo,hi,raw,regime)
+switch regime
+    case 'upper', r=x-hi;
+    case 'lower', r=x-lo;
+    case 'interior', r=raw;
+    otherwise
+        error('ibr:regfm_b1_vsg_model:badActiveBoundRegime', ...
+            'Unknown active-bound regime %s.',regime);
+end
+end
+
+function ok = admissible_bound_value(x,lo,hi,raw,regime)
+switch regime
+    case 'upper', ok=raw>=-1e-6 && abs(x-hi)<=1e-7;
+    case 'lower', ok=raw<=1e-6 && abs(x-lo)<=1e-7;
+    case 'interior', ok=x>lo+1e-8 && x<hi-1e-8 && abs(raw)<=1e-6;
+    otherwise, ok=false;
+end
+end
+
+function regime = classify_voltage_constraint(x,~,u,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag)
+[EVraw,Emin,Emax,raw] = voltage_constraint_values(x,u,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+regime=classify_bound_value(EVraw,Emin,Emax,kiv*raw);
+end
+
+function r = residual_voltage_constraint(x,~,u,reg,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag)
+[EVraw,Emin,Emax,raw] = voltage_constraint_values(x,u,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+r=residual_bound_value(EVraw,Emin,Emax,raw,reg);
+end
+
+function ok = admissible_voltage_constraint(x,~,u,reg,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag)
+[EVraw,Emin,Emax,raw] = voltage_constraint_values(x,u,bp,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag);
+ok=admissible_bound_value(EVraw,Emin,Emax,raw,reg);
+end
+
+function [EVraw,Emin,Emax,raw] = voltage_constraint_values(x,u,~,Vref0,mq,kpv,kiv,XL,ImaxSS,kf,PQFlag)
+if isempty(u), Vref=Vref0; else, [~,Vref]=refs_from_u(u); end
+[~,Iqmax] = pq_limits(ImaxSS,kf,PQFlag,x(8),x(11));
+[Emin,Emax] = voltage_limits(x(10),x(8),Iqmax,XL);
+EVraw=Vref-mq*x(9)+kpv*(Vref-x(10))+kiv*x(4);
+raw=Vref-x(10);
+end
+
+function raw = voltage_raw_dot(x,u,Vref0)
+if isempty(u), Vref=Vref0; else, [~,Vref]=refs_from_u(u); end
+raw=Vref-x(10);
+end
+
+function Idmax = first_pq_limit(x,ImaxSS,kf,PQFlag)
+[Idmax,~]=pq_limits(ImaxSS,kf,PQFlag,x(8),x(11));
+end
+
+function [IdmaxSS,IqmaxSS] = pq_limits(ImaxSS,kf,PQFlag,Idinv_f,Iqinv_f)
+if PQFlag==1
+    IdmaxSS=kf*ImaxSS;
+    IqmaxSS=sqrt(max(ImaxSS^2-Idinv_f^2,0));
+else
+    IqmaxSS=kf*ImaxSS;
+    IdmaxSS=sqrt(max(ImaxSS^2-Iqinv_f^2,0));
+end
+end
+
+function [Emin,Emax] = voltage_limits(Vinv_f,Idinv_f,IqmaxSS,XL)
+Emin=sqrt((Vinv_f-IqmaxSS*XL)^2+(Idinv_f*XL)^2);
+Emax=sqrt((Vinv_f+IqmaxSS*XL)^2+(Idinv_f*XL)^2);
+if Emin>Emax
+    tmp=Emin; Emin=Emax; Emax=tmp;
+end
+end
+
+function dx = conditional_hold(x,raw,lo,hi)
+if (x>=hi && raw>0) || (x<=lo && raw<0)
+    dx=0;
+else
+    dx=raw;
+end
+end
+
+function value = clamp_value(value,lo,hi)
+value=min(max(value,lo),hi);
+end
+
+function a = wrap_pi(a)
+a=mod(a+pi,2*pi)-pi;
 end
 
 % =========================================================================

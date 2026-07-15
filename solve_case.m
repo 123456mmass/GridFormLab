@@ -18,7 +18,7 @@ case_selection_interactive=isempty(case_id);
 
 analyses=struct( ...
     'id',{'pf','sssa','ts','ibr'}, ...
-    'label',{'Power Flow - in-house Newton-Raphson', ...
+    'label',{'Power Flow - in-house project solver', ...
              'Small-Signal Stability Analysis (SSSA)', ...
              'Transient Stability (TS)', ...
              'IBR Simulation - mixed-resource transient stability'});
@@ -65,7 +65,7 @@ switch analysis
     case 'ibr'
         ibr_opt=merge_options(entry.options,user_opt);
         if case_selection_interactive
-            [ibr_opt,accepted]=prompt_ibr_options(ibr_opt,entry.label);
+            [ibr_opt,accepted]=prompt_ibr_options(case_data,ibr_opt,entry.label);
             if ~accepted, result=[]; return; end
         end
 end
@@ -109,9 +109,13 @@ switch analysis
         result = run_ibr_analysis(case_data, opt, entry.label, root, case_id);
 end
 
+result=annotate_launcher_execution(analysis,result);
+if ~strcmp(analysis,'ibr'), print_launcher_execution(result.execution_summary); end
+
 result.launcher=struct('analysis',analysis,'case_id',case_id, ...
     'case_label',entry.label,'log_file',logfile);
-fprintf('\nSTATUS: COMPLETE\n');
+run_ok=~isfield(result,'converged') || logical(result.converged);
+if run_ok, fprintf('\nSTATUS: COMPLETE\n'); else, fprintf('\nSTATUS: FAILED CLOSED\n'); end
 fprintf('Saved log: %s\n',logfile);
 diary('off');
 if interactive
@@ -122,53 +126,44 @@ end
 
 % =========================================================================
 function result = run_ibr_analysis(case_data, opt, label, root, case_id)
-% Build scenario via the generic engine, solve equilibrium + TS.
-modes = struct('device_id',{'IBR2','IBR3','IBR6','IBR8'},...
-               'mode',{'gfl','gfl','gfl','gfl'});
-if isfield(opt,'ibr_modes') && ~isempty(opt.ibr_modes)
-    modes = opt.ibr_modes;
-end
-disp_s = struct('IBR2',40.0,'IBR3',0.0,'IBR6',0.0,'IBR8',0.0);
+% The IBR launcher is a thin case-profile adapter. Device construction,
+% equilibrium, events, TS, index status, and rollback remain generic owners.
+scenario_opt=struct();
 if isfield(opt,'ibr_dispatch') && ~isempty(opt.ibr_dispatch)
-    disp_s = opt.ibr_dispatch;
+    scenario_opt.dispatch=opt.ibr_dispatch;
+end
+base=cases.scenario_ieee14_1sg_4ibr(scenario_opt);
+[scenario,selection]=stability.ibr_configure_scenario(base,opt);
+if ~selection.ready
+    result=struct('converged',false,'metadata',struct( ...
+        'failure','solve_case:ibr:initialSelection', ...
+        'error',selection.failure_reason),'selector_log',selection, ...
+        'execution_summary',selection_failure_summary(selection));
+    fprintf('\nIBR initial configuration rejected (no fallback).\n');
+    stability.print_ibr_run_log(result);
+    return;
 end
 
-% Build
-devices = ibr.build_ieee14_sg_ibr_devices(case_data, modes, disp_s);
-config = struct('devices', devices);
-eq = stability.mixed_equilibrium_solve(case_data, config, struct('verbose',false));
-if ~eq.converged
-    error('solve_case:ibr:equilibrium', 'IBR equilibrium did not converge: %s', eq.failure_reason);
+% Programmatic callers may pass the normalized nested event struct directly.
+% Interactive fields are converted to the same ABI here.
+if ~isfield(opt,'ibr_events') || ~isstruct(opt.ibr_events)
+    opt.ibr_events=event_struct_from_flat(opt);
 end
-
-% TS
-ts_opt = struct('t_end',5.0,'dt',0.01,'verbose',false);
-if isfield(opt,'t_end'), ts_opt.t_end = opt.t_end; end
-if isfield(opt,'dt'), ts_opt.dt = opt.dt; end
-if isfield(opt,'verbose'), ts_opt.verbose = opt.verbose; end
-ts_devices = devices;
-if isfield(eq,'reference') && isstruct(eq.reference) && ...
-        isfield(eq.reference,'physical_kcl_enforced') && ...
-        isequal(eq.reference.physical_kcl_enforced,true)
-    ts_devices = eq.devices;
-    ts_opt.u_eq = eq.u_eq;
-    ts_opt.event_context = eq.equilibrium_context;
-    ts_opt.dynamic_state_indices = eq.dynamic_state_indices;
-    ts_opt.full_kcl = true;
+result=stability.run_hybrid_case(scenario,opt);
+result.selector_log=selection;
+if isfield(result,'execution_summary')
+    result.execution_summary.selector_candidate_evaluations=selection.candidate_count;
+    result.execution_summary.sssa_invocations=selection.sssa_evaluations;
 end
-[ts_res, ~] = stability.ts_simulate_composite(case_data, ts_devices, eq.x0, eq.y0, ts_opt);
+stability.print_ibr_run_log(result);
 
-result = struct();
-result.converged = ts_res.converged;
-result.x_traj = ts_res.x_traj;
-result.y_traj = ts_res.y_traj;
-result.t = ts_res.t;
-result.equilibrium = eq;
-result.n_states = numel(eq.x0);
-result.SG1_Edp = eq.x0(4);
-fprintf('\nIBR mixed-resource TS complete.\n');
-fprintf('Samples: %d, States: %d, SG1 Edp=%.6f\n', ...
-    numel(ts_res.t), numel(eq.x0), result.SG1_Edp);
+if result.converged && (~isfield(opt,'plot_results') || opt.plot_results)
+    p=stability.plot_ibr_ts_results(result,struct( ...
+        'output_dir',fullfile(root,'output','plots'),'visible', ...
+        logical(option_value(opt,'plot_visible',false)),'prefix',case_id));
+    result.figure_files={p.freq_plot,p.power_plot};
+    fprintf('IBR plots (%s):\n  %s\n  %s\n',label,p.freq_plot,p.power_plot);
+end
 end
 
 % =========================================================================
@@ -185,7 +180,7 @@ switch analysis
         r=items_from_catalog(catalog,'ts_options');
     case 'ibr'
         r = [item('ieee14_1sg_4ibr','IEEE14 1-SG + 4-IBR (Kodsi SG1 + dual-mode IBRs)', ...
-            @cases.case_ieee14_1sg_4ibr_auto_vsg, struct('t_end',5.0,'dt',0.01))];
+            @cases.case_ieee14_1sg_4ibr_auto_vsg, ibr_defaults())];
 end
 end
 
@@ -213,25 +208,148 @@ out=defaults; names=fieldnames(user);
 for k=1:numel(names), out.(names{k})=user.(names{k}); end
 end
 
-function [opt,accepted]=prompt_ibr_options(opt,case_label)
-prompts={'Simulation end time t_end (s)'; 'Integration step dt (s)'; ...
+function opt=ibr_defaults()
+opt=struct('t_end',0.10,'dt',0.01,'verbose',false, ...
+    'plot_results',true,'plot_visible',false, ...
+    'initial_gfm_count',0,'initial_gfl_count',4,'initial_gfm_indices',[], ...
+    'initial_reference_resource_index',[], ...
+    'ibr_events',struct('enabled',true,'fault_bus',4,'Zf',1i*0.1, ...
+        'fault_on',0.02,'fault_clear',0.03,'sg_trip',0.04,'sg_on',0.06, ...
+        'selected_gfm_indices',2:5,'reference_resource_index',2));
+end
+
+function ev=event_struct_from_flat(opt)
+required={'events_enabled','fault_bus','Zf','fault_on','fault_clear', ...
+    'sg_trip','sg_on','post_trip_gfm_indices','post_trip_reference_resource_index'};
+for k=1:numel(required)
+    if ~isfield(opt,required{k})
+        error('solve_case:ibr:eventOptions','Missing options.%s.',required{k});
+    end
+end
+ev=struct('enabled',logical(opt.events_enabled),'fault_bus',opt.fault_bus, ...
+    'Zf',opt.Zf,'fault_on',opt.fault_on,'fault_clear',opt.fault_clear, ...
+    'sg_trip',opt.sg_trip,'sg_on',opt.sg_on, ...
+    'selected_gfm_indices',opt.post_trip_gfm_indices, ...
+    'reference_resource_index',opt.post_trip_reference_resource_index);
+end
+
+function summary=selection_failure_summary(selection)
+summary=struct('pf_stage_invocations',3*selection.equilibrium_evaluations, ...
+    'pf_stage_names',{{'selector_candidate_device/equilibrium/sssa_warm_starts'}}, ...
+    'equilibrium_invocations',selection.equilibrium_evaluations, ...
+    'equilibrium_newton_iterations',0, ...
+    'sssa_invocations',selection.sssa_evaluations, ...
+    'selector_candidate_evaluations',selection.candidate_count, ...
+    'ts_invocations',0,'ts_step_attempts',0,'ts_accepted_steps',0, ...
+    'ts_newton_iterations',0,'event_transactions',0);
+end
+
+function result=annotate_launcher_execution(analysis,result)
+if isfield(result,'execution_summary'), return; end
+summary=struct('pf_invocations',0,'sssa_invocations',0,'ts_invocations',0, ...
+    'solver_iterations',0,'linearized_state_count',0,'eigenvalue_count',0, ...
+    'ts_step_count',0);
+switch analysis
+    case 'pf'
+        summary.pf_invocations=1;
+        if isfield(result,'iterations'), summary.solver_iterations=result.iterations; end
+    case 'sssa'
+        summary.sssa_invocations=1;
+        if isfield(result,'newton_iterations'), summary.solver_iterations=result.newton_iterations; end
+        if isfield(result,'Afull'), summary.linearized_state_count=size(result.Afull,1); end
+        if isfield(result,'eigenvalues'), summary.eigenvalue_count=numel(result.eigenvalues); end
+    case 'ts'
+        summary.ts_invocations=1;
+        if isfield(result,'accepted_steps'), summary.ts_step_count=result.accepted_steps;
+        elseif isfield(result,'t'), summary.ts_step_count=max(0,numel(result.t)-1); end
+end
+result.execution_summary=summary;
+end
+
+function print_launcher_execution(q)
+fprintf('\n---------------- LAUNCHER WORK COUNTS --------------------\n');
+fprintf('PF / SSSA / TS invocations : %d / %d / %d\n', ...
+    q.pf_invocations,q.sssa_invocations,q.ts_invocations);
+fprintf('Solver iterations          : %d\n',q.solver_iterations);
+fprintf('Linearized states / roots  : %d / %d\n', ...
+    q.linearized_state_count,q.eigenvalue_count);
+fprintf('TS accepted steps          : %d\n',q.ts_step_count);
+end
+
+function [opt,accepted]=prompt_ibr_options(case_data,opt,case_label)
+base=cases.scenario_ieee14_1sg_4ibr();
+ids={base.resources.resource_id}; eligible=find(strcmp({base.resources.resource_type},'ibr'));
+bus_text=format_bus_ids(case_bus_ids(case_data));
+prompts={'t_end (s)';'dt (s)'; ...
+    sprintf('Initial GFM count [0..%d]',numel(eligible)); ...
+    sprintf('Initial GFL count [0..%d] (GFM+GFL=%d)',numel(eligible),numel(eligible)); ...
+    sprintf('Initial GFM resource indices (eligible %s; blank=count selector)',mat2str(eligible)); ...
+    'Initial GFM reference index (blank=automatic)'; ...
+    'Enable IBR fault/trip events (true/false)'; ...
+    sprintf('Fault bus (valid external IDs: %s)',bus_text);'Fault R (pu)';'Fault X (pu)'; ...
+    'fault_on (s)';'fault_clear (s)';'sg_trip (s)';'sg_on request (s)'; ...
+    'Post-trip GFM indices';'Post-trip reference index'; ...
+    'Plot two audited IBR figures (true/false)';'Visible figures (true/false)'; ...
     'Verbose output (true/false)'};
-defaults={num_text(opt.t_end),num_text(opt.dt),logical_text(opt.verbose)};
+ev=opt.ibr_events;
+defaults={num_text(opt.t_end),num_text(opt.dt),num_text(opt.initial_gfm_count), ...
+    num_text(opt.initial_gfl_count),index_text(opt.initial_gfm_indices),index_text(opt.initial_reference_resource_index), ...
+    logical_text(ev.enabled),num_text(ev.fault_bus),num_text(real(ev.Zf)), ...
+    num_text(imag(ev.Zf)),num_text(ev.fault_on),num_text(ev.fault_clear), ...
+    num_text(ev.sg_trip),num_text(ev.sg_on),index_text(ev.selected_gfm_indices), ...
+    num_text(ev.reference_resource_index),logical_text(opt.plot_results), ...
+    logical_text(opt.plot_visible),logical_text(opt.verbose)};
 accepted=false;
 while true
     answer=inputdlg(prompts,sprintf('IBR settings - %s',case_label), ...
-        repmat([1 58],3,1),defaults,struct('Resize','on'));
+        repmat([1 72],numel(prompts),1),defaults,struct('Resize','on'));
     if isempty(answer), return; end
-    vals=cellfun(@str2double,answer(1:2));
-    if any(~isfinite(vals))||vals(1)<=0||vals(2)<=0
-        errordlg('t_end and dt must be positive numbers.','Invalid','modal');
-        defaults=answer; continue;
-    end
-    opt.t_end=vals(1); opt.dt=vals(2);
-    [opt.verbose,ok]=parse_logical_text(answer{3});
-    if ~ok, errordlg('Verbose must be true/false.','Invalid','modal'); defaults=answer; continue; end
-    accepted=true; return;
+    [candidate,message]=parse_ibr_dialog(opt,answer,case_bus_ids(case_data),eligible,ids);
+    if isempty(message), opt=candidate; accepted=true; return; end
+    errordlg(message,'Invalid IBR settings','modal'); defaults=answer;
 end
+end
+
+function [opt,message]=parse_ibr_dialog(opt,a,bus_ids,eligible,resource_ids)
+message=''; nums=cellfun(@str2double,a([1 2 3 4 8:14 16]));
+if any(~isfinite(nums)), message='All required numeric IBR settings must be finite.'; return; end
+opt.t_end=nums(1); opt.dt=nums(2); opt.initial_gfm_count=nums(3); opt.initial_gfl_count=nums(4);
+[initial,ok_i]=parse_index_text(a{5}); [iref,ok_ir]=parse_optional_scalar(a{6});
+[enabled,ok_e]=parse_logical_text(a{7});
+ev=struct('enabled',enabled,'fault_bus',nums(5),'Zf',nums(6)+1i*nums(7), ...
+    'fault_on',nums(8),'fault_clear',nums(9),'sg_trip',nums(10), ...
+    'sg_on',nums(11),'reference_resource_index',nums(12));
+[post,ok_p]=parse_index_text(a{15}); ev.selected_gfm_indices=post;
+[opt.plot_results,ok_plot]=parse_logical_text(a{17});
+[opt.plot_visible,ok_vis]=parse_logical_text(a{18});
+[opt.verbose,ok_verbose]=parse_logical_text(a{19});
+if opt.t_end<=0 || opt.dt<=0, message='t_end and dt must be positive.';
+elseif opt.initial_gfm_count<0 || opt.initial_gfm_count~=fix(opt.initial_gfm_count) || ...
+        opt.initial_gfm_count>numel(eligible), message='Initial GFM count is out of range.';
+elseif opt.initial_gfl_count<0 || opt.initial_gfl_count~=fix(opt.initial_gfl_count) || ...
+        opt.initial_gfm_count+opt.initial_gfl_count~=numel(eligible)
+    message=sprintf('Initial GFM+GFL counts must equal %d.',numel(eligible));
+elseif ~ok_i || any(~ismember(initial,eligible)) || numel(unique(initial))~=numel(initial)
+    message=sprintf('Initial indices must be unique members of %s (%s).',mat2str(eligible),strjoin(resource_ids(eligible),','));
+elseif ~isempty(initial) && numel(initial)~=opt.initial_gfm_count
+    message='Initial count must equal the explicit initial-index count.';
+elseif ~ok_ir || (~isempty(iref) && ~ismember(iref,initial))
+    message='Initial reference must belong to explicit initial GFM indices.';
+elseif ~ok_e || ~ok_plot || ~ok_vis || ~ok_verbose
+    message='Logical settings must be true/false.';
+elseif enabled && (~ismember(ev.fault_bus,bus_ids) || abs(ev.Zf)<eps)
+    message='Fault bus must be a valid external ID and Zf must be nonzero.';
+elseif enabled && ~(ev.fault_on<ev.fault_clear && ev.fault_clear<=ev.sg_trip && ...
+        ev.sg_trip<ev.sg_on && ev.sg_on<=opt.t_end)
+    message='Require fault_on < fault_clear <= sg_trip < sg_on <= t_end.';
+elseif enabled && (~ok_p || isempty(post) || any(~ismember(post,eligible)) || ...
+        numel(unique(post))~=numel(post) || ~ismember(ev.reference_resource_index,post))
+    message='Post-trip indices must be unique eligible resources and include the reference.';
+end
+if ~isempty(message), return; end
+opt.initial_gfm_indices=initial;
+opt.initial_reference_resource_index=iref;
+opt.ibr_events=ev;
 end
 
 function [opt,accepted]=prompt_pf_options(opt,case_label)
@@ -400,6 +518,21 @@ else text=sprintf('%s,... (%d buses)',strjoin(compose('%g',ids(1:20)),', '),nume
 end
 
 function text=num_text(value), text=sprintf('%.12g',value); end
+function text=index_text(value)
+if isempty(value), text=''; else, text=strjoin(compose('%d',reshape(value,1,[])),','); end
+end
+function [value,ok]=parse_index_text(text)
+text=strtrim(text);
+if isempty(text), value=[]; ok=true; return; end
+parts=regexp(text,'[,;\s]+','split'); value=str2double(parts);
+ok=all(isfinite(value)) && all(value==fix(value));
+if ok, value=reshape(value,1,[]); else, value=[]; end
+end
+function [value,ok]=parse_optional_scalar(text)
+if isempty(strtrim(text)), value=[]; ok=true; return; end
+value=str2double(text); ok=isscalar(value)&&isfinite(value)&&value==fix(value);
+if ~ok, value=[]; end
+end
 function text=logical_text(value), if value, text='true'; else, text='false'; end; end
 function [value,ok]=parse_logical_text(text)
 switch lower(strtrim(text))
@@ -407,6 +540,10 @@ switch lower(strtrim(text))
     case {'false','0','no','off'}, value=false; ok=true;
     otherwise, value=false; ok=false;
 end
+end
+
+function value=option_value(s,name,default)
+value=default; if isfield(s,name)&&~isempty(s.(name)), value=s.(name); end
 end
 
 function print_case_manifest(c)
@@ -505,7 +642,7 @@ if nargin<4||isempty(mode_labels), mode_labels=cell(numel(lam),1); end
 nx=size(A,1); lam=lam(:); nms=state_names(:);
 mode_labels=mode_labels(:);
 if nx~=numel(lam)||nx~=numel(nms)||nx~=numel(mode_labels), return; end
-[V,Dval]=eig(A); W=inv(V); d=diag(Dval);
+[V,Dval]=eig(A); W=V\eye(size(V)); d=diag(Dval);
 perm=zeros(nx,1); tag=false(nx,1);
 for i=1:nx
   for j=1:nx
@@ -519,7 +656,7 @@ for i=1:nx
   fhz=abs(im_i)/(2*pi); zet=-re_i/(abs(lam(i))+eps);
   cm=mode_labels{i};
   if isempty(cm), cm=mode_comment(lbl,abs(im_i)); end
-  fprintf('%4d  %-24s %+11.2e %+11.2e %11.2e %10.2e  %s\n', ...
+  fprintf('  %02d  %-24s %+11.2e %+11.2e %11.2e %10.2e  %s\n', ...
       i,lbl,re_i,im_i,fhz,zet,cm);
 end
 end

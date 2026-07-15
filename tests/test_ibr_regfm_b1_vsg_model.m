@@ -73,12 +73,13 @@ end
 % =========================================================================
 function test_gfm_state_count(testCase)
 [~, dev, ~, ~, ~, ~, ~] = local_gfm_fixture(0.4, 1.0);
-testCase.verifyEqual(dev.nx, 11, 'AbsTol', 0, 'nx == 11.');
+testCase.verifyEqual(dev.nx, 13, 'AbsTol', 0, 'G2 nx == 13.');
 testCase.verifyEqual(dev.nu, 2, 'AbsTol', 0, 'nu == 2.');
-testCase.verifyEqual(numel(dev.state_names), 11, 'AbsTol', 0, '11 state names.');
+testCase.verifyEqual(numel(dev.state_names), 13, 'AbsTol', 0, '13 state names.');
 testCase.verifyEqual(dev.mode, 'GFM', 'mode == GFM.');
 testCase.verifyEqual(dev.device_type, 'ibr_gfm', 'device_type == ibr_gfm.');
-testCase.verifyEqual(dev.provenance.readiness, 'STRUCTURAL_ONLY', 'STRUCTURAL_ONLY.');
+testCase.verifyEqual(dev.provenance.readiness, ...
+    'SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES');
 end
 
 % =========================================================================
@@ -150,15 +151,19 @@ fd_eps = 3e-6;
 nx = dev.nx; ny = numel(y_eq);
 z = [x_eq; y_eq];
 nz = numel(z);
+specs = dev.equilibrium_constraint_specs(x_eq,y_eq,u0,struct());
+locked = cell(numel(specs),1);
+for k=1:numel(specs)
+    locked{k}=specs(k).classify_fn(x_eq,y_eq,u0,struct());
+end
 % Full coupled Jacobian d[f;g]/d[x;y].
 J = zeros(nz, nz);
-r0 = coupled_r(dev, x_eq, y_eq, Y, u0);
 for j = 1:nz
     zp = z; zm = z;
     zp(j) = zp(j) + fd_eps;
     zm(j) = zm(j) - fd_eps;
-    rp = coupled_r(dev, zp(1:nx), zp(nx+1:nz), Y, u0);
-    rm = coupled_r(dev, zm(1:nx), zm(nx+1:nz), Y, u0);
+    rp = coupled_r_locked(dev, zp(1:nx), zp(nx+1:nz), Y, u0, specs, locked);
+    rm = coupled_r_locked(dev, zm(1:nx), zm(nx+1:nz), Y, u0, specs, locked);
     J(:,j) = (rp - rm) / (2*fd_eps);
 end
 testCase.verifyTrue(all(isfinite(J(:))), 'coupled FD Jacobian finite.');
@@ -169,16 +174,19 @@ for j = 1:nz
     zp = z; zm = z;
     zp(j) = zp(j) + fd_eps/2;
     zm(j) = zm(j) - fd_eps/2;
-    rp = coupled_r(dev, zp(1:nx), zp(nx+1:nz), Y, u0);
-    rm = coupled_r(dev, zm(1:nx), zm(nx+1:nz), Y, u0);
+    rp = coupled_r_locked(dev, zp(1:nx), zp(nx+1:nz), Y, u0, specs, locked);
+    rm = coupled_r_locked(dev, zm(1:nx), zm(nx+1:nz), Y, u0, specs, locked);
     J2(:,j) = (rp - rm) / (2*(fd_eps/2));
 end
 rel = max(abs(J - J2), [], 'all') / (max(abs(J), [], 'all') + max(abs(J2), [], 'all') + 1e-12);
 testCase.verifyLessThan(rel, 1e-4, 'coupled FD Jacobian h-vs-h/2 stable (rel<1e-4).');
 end
 
-function r = coupled_r(dev, x, y, Y, u)
+function r = coupled_r_locked(dev, x, y, Y, u, specs, locked)
 f = dev.f(0, x, y, u, struct());
+for k=1:numel(specs)
+    f(specs(k).local_idx)=specs(k).residual_fn(x,y,u,struct(),locked{k});
+end
 g = network_g(dev, x, y, Y, u);
 r = [f(:); g];
 end

@@ -1,6 +1,6 @@
 function tests = test_ieee14_1sg_4ibr_phaseC()
 %TEST_IEEE14_1SG_4IBR_PHASEC  Phase C transfer maps + frozen anchor tests.
-%   Verifies: dimension constant (15 across modes), live mode switch preserves
+%   Verifies: dimension constant (20 across modes), live mode switch preserves
 %   state dimension, transfer_maps builds per-device maps, hybrid_state_init
 %   includes device_frozen_anchor, current continuity across GFL<->GFM,
 %   inactive frozen at anchor, repeated switching, invalid mode fail-closed.
@@ -16,16 +16,16 @@ end
 
 % =========================================================================
 function test_dimension_constant_across_modes(testCase)
-% Device nx must be 15 for all modes (gfl, GFM, tripped).
+% Source-model superset is REGFM_B1 G2(13) + WECC GFL(7) = 20.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 bus_ids = c.mpc.bus(:,1)';
 for mode = ["gfl","GFM","tripped"]
     dev = ibr.dual_mode_ibr_model("IBR2", 2, 2, bus_ids, 1.04, ...
         struct('Mbase',140), 0.4, 0.0, 1.04, mode);
-    testCase.verifyEqual(dev.nx, 15, 'AbsTol', 0, ...
-        sprintf('nx=15 in mode "%s".', mode));
-    testCase.verifyEqual(numel(dev.x0), 15, 'AbsTol', 0, ...
-        sprintf('x0 length 15 in mode "%s".', mode));
+    testCase.verifyEqual(dev.nx, 20, 'AbsTol', 0, ...
+        sprintf('nx=20 in mode "%s".', mode));
+    testCase.verifyEqual(numel(dev.x0), 20, 'AbsTol', 0, ...
+        sprintf('x0 length 20 in mode "%s".', mode));
 end
 end
 

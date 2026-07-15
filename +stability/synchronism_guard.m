@@ -9,8 +9,8 @@ function result = synchronism_guard(V_bus, V_sg, delta_sg, omega_sg, omega_ref, 
 %
 %   Correction 5 (SG breaker physics + synchronism):
 %   - Delta-V: |V_bus - V_sg_open_circuit|
-%   - Delta-f: |omega_sg/(2*pi) - f_nominal| (slip)
-%   - Delta-theta: wrapped angle between V_bus and V_sg (absolute, [-pi,pi])
+%   - Delta-f: |omega_sg-omega_ref| in per-unit speed deviation
+%   - Delta-theta: wrapped phasor angle(V_bus)-angle(V_sg), [-pi,pi]
 %   - Dwell: margin > 0 sustained for dwell_duration
 %   - Min-off: SG must have been offline >= T_sg_min_off
 %   - Lockout: must not be in lockout state
@@ -41,8 +41,8 @@ if isfield(opt,'dwell_min'), dwell_min = opt.dwell_min; end
 
 % --- Compute metrics ------------------------------------------------------
 dV   = abs(abs(V_bus) - abs(V_sg));
-df   = abs(omega_sg - omega_ref) / (2*pi);
-dtheta_rad = mod(abs(angle(V_bus) - delta_sg) + pi, 2*pi) - pi;
+df   = abs(omega_sg - omega_ref);
+dtheta_rad = mod(angle(V_bus) - angle(V_sg) + pi, 2*pi) - pi;
 dtheta = rad2deg(abs(dtheta_rad));
 
 % --- Signed margin (negative = fail, positive = pass with margin) ----------
@@ -61,4 +61,5 @@ result.passes = signed_margin >= 0;
 result.dwell_required = dwell_min;
 result.dV_max = dV_max; result.df_max = df_max; result.dtheta_max = dtheta_max;
 result.V_bus = V_bus; result.V_sg = V_sg;
+result.delta_sg = delta_sg;
 end

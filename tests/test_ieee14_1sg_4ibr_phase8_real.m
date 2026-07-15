@@ -97,7 +97,7 @@ testCase.verifyEqual(devices(1).nx, 6, 'AbsTol', 0, 'SG1 nx=6.');
 for k = 2:numel(devices)
     testCase.verifyEqual(devices(k).device_type, 'ibr_dual_mode', ...
         'IBR is real dual_mode.');
-    testCase.verifyEqual(devices(k).nx, 15, 'AbsTol', 0, 'real IBR nx=15.');
+    testCase.verifyEqual(devices(k).nx, 20, 'AbsTol', 0, 'real IBR nx=20.');
 end
 end
 

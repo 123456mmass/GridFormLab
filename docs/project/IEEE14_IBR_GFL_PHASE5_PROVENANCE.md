@@ -1,5 +1,11 @@
 # IEEE14 IBR Phase 5 — GFL Model Provenance (STRUCTURAL_ONLY)
 
+> Historical record only. The canonical runtime GFL has been replaced by the
+> WECC REGC_A/REEC_A seven-state model documented in
+> `IEEE14_IBR_GFL_WECC_PROVENANCE.md`. The Ding-derived `Kps/Kis` profile below
+> is no longer reachable from `+ibr/gfl_model.m` and must not be used for a
+> current readiness claim.
+
 **Status:** `IEEE14_IBR_GFL_MODEL_READY` = STRUCTURAL_ONLY (not production-ready).
 `IBR_PRODUCTION_INTEGRATION_READY` = NOT_READY.
 **Phase:** 5 — sourced GFL (grid-following) inverter model, structural-only.
@@ -222,4 +228,3 @@ No new test functions; the count stays 21.
 The 6-state structure, equations, and frozen gains are unchanged. The
 round-2 patch is additive on top of the round-1 corrective patch
 (`321d98c`).
-

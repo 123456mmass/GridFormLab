@@ -64,6 +64,12 @@ dev.provenance = struct('source','tests/+fixtures/active_bound_diag_device', ...
 dev.equilibrium_initialize = @(x_dev, y, u_dev, ec) x_dev;
 dev.dynamic_state_indices_for_context = @(ec) [1 2];
 dev.active_state_indices_for_context = @(ec) [1 2];
+% Uniform optional transfer ABI. The diagnostic fixture does not switch
+% modes, but heterogeneous MATLAB struct arrays require the same field set as
+% production devices.
+dev.mode_transfer_state = [];
+dev.transfer_state = [];
+dev.mode_transfer = [];
 
 % --- DAE ---
 dev.f = @(t, xd, y, u, ec) [k_target * xd(1); k_target * xd(2)];

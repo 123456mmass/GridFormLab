@@ -28,13 +28,13 @@ eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
 sssa = stability.composite_sssa_model(devices, eq.x0, eq.y0, c);
-% Total states: SG1(6) + 4*IBR(15) = 6 + 60 = 66
+% Total states: SG1(6) + 4*(REGFM_B1 G2(13)+WECC GFL(7)) = 86
 % Frozen: SG1 Edp(1) = 1
-% Active: 66 - 1 = 65
-testCase.verifyEqual(sssa.nx_total, 66, 'AbsTol', 0, 'nx_total = 66.');
-testCase.verifyEqual(sssa.nx_active, 65, 'AbsTol', 0, 'nx_active = 65 (Edp excluded).');
-testCase.verifyEqual(size(sssa.A), [65, 65], 'AbsTol', 0, 'A is 65x65.');
-testCase.verifyEqual(numel(sssa.eigenvalues), 65, 'AbsTol', 0, '65 eigenvalues.');
+% Legacy full-state path excludes only the sourced SG singular state.
+testCase.verifyEqual(sssa.nx_total, 86, 'AbsTol', 0, 'nx_total = 86.');
+testCase.verifyEqual(sssa.nx_active, 85, 'AbsTol', 0, 'nx_active = 85 (Edp excluded).');
+testCase.verifyEqual(size(sssa.A), [85, 85], 'AbsTol', 0, 'A is 85x85.');
+testCase.verifyEqual(numel(sssa.eigenvalues), 85, 'AbsTol', 0, '85 eigenvalues.');
 end
 
 % =========================================================================

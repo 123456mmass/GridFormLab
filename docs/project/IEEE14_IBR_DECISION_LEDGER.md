@@ -1,8 +1,9 @@
 # IEEE14 1-SG + 4-IBR Mission — Decision Ledger (Phase 1B)
 
 **Status:** `IEEE14_IBR_EQUATION_CONTRACT_READY = PASS` for the implemented
-structural contracts. GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC` and excluded
-from production acceptance; `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`.
+contracts. The former GFL `Kps/Kis` profile has been replaced by WECC
+REGC_A/REEC_A; `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY` until the
+integrated event/plot and final regression gates close.
 Legacy `SOURCE_VERBATIM` and `SOURCE_TRANSFORMED` labels are documentary
 sublabels of `SOURCE_DEFINED`.
 
@@ -85,18 +86,61 @@ prove `ImaxSS` compliance.
   rotor coast and open-circuit flux dynamics with zero network current.
 - `Tpq0=0` `Edp` remains a frozen SOURCE_DEFINED singular limit.
 
-### D14 — Phase-G split and readiness
+### D14 — REGFM G2 limiter contract
 
-G1 implemented REGFM_B1 Eq.13 transient clamp, correct inverter/system-base
-conversion, sourced `VPLLfrz=0.05`, and one shared current helper. G2 still
-owns Emax/Emin handling, anti-windup, PQ priority, Fig.6 `kI/s`, and Eqs.10-11.
+G1 implements REGFM_B1 Eq.13 transient clamp, correct inverter/system-base
+conversion, sourced `VPLLfrz=0.05`, and one shared current helper. G2 adds
+Fig.5 PQ priority, Eqs.10-11 magnitude limits, two Fig.6 dynamic angle-bound
+states, and PROJECT_DERIVED conditional anti-windup. The generic active-bound
+equilibrium solver replaces a saturated ODE row by its locked equality while
+holding the active set fixed through every Newton/FD evaluation.
 
-GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC`; therefore the blanket historical
-claim “No ASSUMED_DIAGNOSTIC production values” is not a readiness claim.
+Classification: REGFM blocks/parameters `SOURCE_DEFINED`; fixed 13-state ODE
+realization `SOURCE_TRANSFORMED`; conditional anti-windup and active-bound
+equilibrium treatment `PROJECT_DERIVED`; active-set tolerances and iteration
+limit `NUMERICAL_METHOD`.
+
+### D15 — Canonical GFL is WECC REGC_A/REEC_A
+
+The six-state Ding reduction and its unsourced `Kps/Kis` gains are removed
+from the runtime path. The canonical GFL is the seven-state WECC
+REGC_A/REEC_A current-source model with constant P/Q control and P-priority
+current limiting. Device quantities use inverter base and the public ABI uses
+system base via `kappa=Sbase/Mbase`. REGC_A has no PLL state; its current is
+aligned algebraically to terminal voltage.
+
+Classification: source blocks and ranges `SOURCE_DEFINED`; state-order ODE
+realization `SOURCE_TRANSFORMED`; IEEE14 flag/default selection and Mbase
+`CASE_DEFINED`; zero-voltage division guard `NUMERICAL_METHOD`.
+
+### D16 — Dual 20-state ABI and physical transfer
+
+The fixed layout is REGFM G2 states `1:13` plus WECC GFL states `14:20`.
+There are no shared states. The inactive branch is an exact hold. A device-
+owned transfer callback measures left-limit terminal `I/P/Q`, invokes the
+target mode's sourced equilibrium initializer, preserves the inactive branch,
+and requires `|I(t+)-I(t-)|<=1e-10`. A tripped target is an exact frozen hold
+and is intentionally excluded from the GFL↔GFM continuity oracle.
+
+Classification: inactive hold and transfer map `PROJECT_DERIVED` from the
+sourced device equations and terminal-current continuity.
+
+### D17 — SCR applicability and candidate evidence
+
+The WECC GFL branch is accepted only for `SCR>3`; `SCR<=3` fails closed. SCR
+uses branch/shunt Ybus on the system base, REF-source shorting, `Zth` from a
+linear solve, and explicit resource `Mbase`. Loads and SG subtransient
+reactance are not folded into the present metric. That omission is a frozen
+PROJECT_DERIVED simplification and must be re-approved before changing it.
+
+Candidate selection is not structural-only: each candidate is gated by SCR,
+physical all-KCL equilibrium, `rcond`, and full-state SSSA using the exact
+equilibrium `u_eq`, context, and active-state map. Deterministic ordering is
+feasible first, fewer mode changes, larger stability margin, then resource ID.
 
 ```text
-IEEE14_IBR_GFL_MODEL_READY       = STRUCTURAL_ONLY
-PHASE_G1_LIMITER_READY           = IMPLEMENTED_STRUCTURAL_ONLY
+IEEE14_IBR_GFL_MODEL_READY       = SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES
+PHASE_G2_LIMITER_READY           = IMPLEMENTED_PENDING_INTEGRATION_GATES
 IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 
@@ -191,7 +235,11 @@ constant is used.
 
 ---
 
-## Item 1 — GFL positive-sequence model → PROJECT_DERIVED reduction from Ding + standard utility representation (Phase 5 STRUCTURAL_ONLY freeze)
+## Item 1 — Historical Ding GFL contract (superseded by D15)
+
+> This section preserves the Phase-5 decision record. It is not the current
+> runtime contract; D15 and `IEEE14_IBR_GFL_WECC_PROVENANCE.md` are
+> authoritative.
 
 ### 1. Exact equations/values required
 
@@ -365,7 +413,10 @@ tests enforce current continuity.
 
 ---
 
-## Item 4 — Current limiter + anti-windup → G1 IMPLEMENTED / G2 DEFERRED
+## Item 4 — Historical G1/G2 split (superseded by D14)
+
+> This section preserves the pre-G2 decision record. D14 is the current
+> implementation status.
 
 ### 1. Exact equations/values required
 
@@ -679,26 +730,31 @@ None — (a) is CASE_DEFINED from the a-priori study. Documented derivation.
 | # | Item | Classification | Value/Source |
 |---|------|---------------|--------------|
 | 7 | IEEE14 SG dynamics | CASE_DEFINED | Kodsi 60Hz Table A.2 (base-converted) |
-| 1 | GFL model | PROJECT_DERIVED | Reduction from Ding EMT (phasor-compatible) |
-| 3 | GFL↔VSG transfer | PROJECT_DERIVED | Continuity + algebraic-residual minimization |
-| 4 | Current limiter + anti-windup | G1 SOURCE_DEFINED + PROJECT_DERIVED implemented; G2 deferred | Eq.13 clamp + VPLL freeze implemented; PQ priority/Fig.6/Eqs.10-11/anti-windup not ready |
+| 1 | GFL model | SOURCE_DEFINED + SOURCE_TRANSFORMED + CASE_DEFINED | WECC REGC_A/REEC_A 7-state implementation and IEEE14 flag/profile selection |
+| 3 | GFL↔VSG transfer | PROJECT_DERIVED | Physical terminal-current continuity through the 20-state dual-mode ABI |
+| 4 | Current limiter + anti-windup | SOURCE_DEFINED + SOURCE_TRANSFORMED + PROJECT_DERIVED | G1 Eq.13/VPLL freeze plus G2 Fig.5/Eqs.10-11/Fig.6 and conditional anti-windup implemented |
 | 5 | SG synchronism | CASE_DEFINED | Frozen project thresholds; not SOURCE_DEFINED IEEE-TR-121 values |
 | 6 | Delays | CASE_DEFINED + PROJECT_DERIVED | Frozen project delays and modal-settling relation; integrated timing deferred |
 | 8 | Post-trip dispatch/reference | CASE_DEFINED + PROJECT_DERIVED | Pmax-proportional schedules; one reference P solved; all-KCL structural feasibility verified |
 | 9 | gamma_req | CASE_DEFINED | 0.1 s^-1 frozen a-priori; real candidate evidence deferred |
 
-The GFM slice uses SOURCE_DEFINED/CASE_DEFINED/PROJECT_DERIVED values, but the
-GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC` and are excluded from production
-acceptance. No readiness statement may erase that limitation.
+The former GFL `Kps/Kis` assumptions are no longer on the runtime path. The
+integrated fixed-step event route, atomic right-limit rollback, synchronism
+guard, index-derived status log, and two audited plots are now implemented.
+They do not establish production readiness: the frozen full-state SSSA margin
+currently rejects every evaluated post-trip IEEE14 subset, the natural short
+run does not reclose, and longer-horizon/independent validation remains.
 
 **No value may change after viewing outcomes.** All values are frozen in
 this ledger BEFORE Phase 4-17 implementation. The decision ledger is the
 frozen contract; any change requires re-approval.
 
-## What proceeds next after the corrective checkpoint
+## What proceeds next after the G2/event checkpoint
 
-Mixed equilibrium, fixed-step equation sharing, and structural index-selected
-event primitives are implemented. Next work is Phase-G2, integrated
-topology/equilibrium/SSSA selection evidence, event-driving adaptive TS with
-right-limit rollback, source closure for GFL gains, and independent validation.
-Readiness remains NOT_READY until those gates pass.
+WECC GFL, REGFM G2, the 20-state physical transfer map, mixed equilibrium,
+full-state SSSA candidate evaluation, fixed-step event driving, guarded
+reclose transactions, logs, and the two requested plots are implemented.
+Next work is to diagnose/resolve the positive post-trip spectral abscissa from
+the sourced model/case contract, obtain longer-horizon and natural-reclose
+evidence, and perform independent multi-case validation. Readiness remains
+NOT_READY until those gates pass.

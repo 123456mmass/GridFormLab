@@ -27,20 +27,29 @@ Canonical acceptance classes in the current `AGENTS.md` are
   SOURCE_DEFINED network/device equations.
 - Exact index-selected sets with 1, 2, and 3 GFMs pass; exactly one selected
   member is the numerical reference and other selected members remain GFMs.
-- G1 implements REGFM_B1 Eq.13 transient clamp and sourced PLL freeze. G2
-  steady-state PQ priority, Fig.6 integration, Eqs.10-11, Emax/Emin behavior,
-  and anti-windup remain deferred.
+- G1 implements REGFM_B1 Eq.13 transient clamp and sourced PLL freeze. G2 now
+  implements Fig.5 PQ priority, Eqs.10-11 Emax/Emin behavior, the Fig.6
+  upper/lower angle-bound controllers, and PROJECT_DERIVED conditional
+  anti-windup through the generic active-bound equilibrium contract.
 - Equilibrium returns `u_eq`, context, and authenticated state maps used by the
   same f/g closures in fixed-step TS and SSSA.
-- The selector currently enumerates structural candidates only; it does not
-  fabricate topology/SSSA evidence and keeps `ready_to_commit=false`.
-- GFL `Kps/Kis` remain `ASSUMED_DIAGNOSTIC`, so production readiness remains
-  NOT_READY regardless of structural test success.
+- The selector now evaluates each candidate against branch/shunt Ybus SCR,
+  physical all-KCL equilibrium, and full-state SSSA using the exact solved
+  `u_eq`, event context, and active-state map. It still fails closed and keeps
+  `ready_to_commit=false` when any evidence layer is absent or rejected.
+- The former six-state Ding reduction and its `Kps/Kis` assumptions have been
+  removed from the canonical path. The canonical GFL is the sourced WECC
+  REGC_A/REEC_A positive-sequence model. Overall production readiness remains
+  NOT_READY until selector, event-driving TS, plotting, and final regression
+  gates close on one runtime tree.
 
 ## Source PDFs (SHA-256 provenance)
 
 | File | Document | SHA-256 |
 |------|----------|---------|
+| WECC-Second-Generation-Wind-Turbine-Model Spec-012314.pdf | WECC/EPRI, Second Generation Generic WTG Models (2014) | aef13405133f110351eeb341ffb4c674af5b498bd7881a936c03521e3584caea |
+| WECC Wind Plant Dynamic Modeling Guidelines.pdf | WECC Wind Plant Dynamic Modeling Guidelines | 077f6c8e295a7e5914f962981bb3782d3ae6575d6e929e227bb7131f0883f94d |
+| Converting REEC_B to REEC_A for Solar PV Generators.pdf | WECC conversion guidance and Table 2 example | a6fe566afec39b22368d1227d8b6145ee7d4350d1ae5dd100d415d2e4381c10c |
 | 90260.pdf | REGFM_B1 VSM GFM Inverter Model Spec (Du et al., PNNL, 2024) | de52a0b7c8beec6d16d8e10b53a565d902ab1a79ef093ba3d6d80260a9287d50 |
 | 83340.pdf | Ding et al., Dynamically Configurable GFM/GFL (NREL/Temple, 2022) | 2aeded379710e3f93e5f47e79a9eb98a2b9fd05e2b79d1fc1713f5d50a995727 |
 | 1110-2002.pdf | IEEE Std 1110-2002, SG Modeling Practices (two byte-distinct copies) | historical recorded copy, not present locally: `2eb08ed83ea8c5d728a482d17777406ab37d01638f0eadb9848f01f9fb24b6c3`; current local validation copy: `90ee662b4e099dccf2154ead223a568831fb88ff45a99b15e2dcc05d4e62434f` |
@@ -60,29 +69,27 @@ state which copy was inspected.
 
 ### Item 1 — GFL positive-sequence model + state order
 
-- **Ding 83340 §II-B (pp. 3-4), Eqs. 8-10 + shared 3-6:** GFL model is a
-  FULL EMT/LCL model (14-state: ε_L, δ_inv, P_inv, Q_inv, ϕ'_d, ϕ'_q, γ_d,
-  γ_q, i_ld, i_lq, v_od, v_oq, i_od, i_oq). SRF-PLL (Eq. 8), power-tracking
-  loop (Eqs. 9-10), inner voltage/current PI cascades + LCL filter (Eqs. 3-6).
-  **SOURCE_VERBATIM** at equation level. GFL controller params (K_ps, K_is,
-  K_pL, K_iL) NOT in Ding Table I.
-- **Gap:** Ding's GFL is an EMT/LCL model, NOT a positive-sequence RMS model.
-  The canonical plan requires "the smallest source-closed positive-sequence
-  RMS GFL profile compatible with the project's DAE." A reduced-order
-  positive-sequence GFL (current-source with PLL-synchronized angle) is the
-  standard utility representation, but no inspected source states its
-  reduced-order state equations explicitly. The RMS reduction (ideal inner
-  loop + LCL elimination) is **PROJECT_DERIVED** (documented in
-  `docs/project/IEEE14_IBR_GFL_PHASE5_PROVENANCE.md`); it is NOT claimed
-  source-closed verbatim. Kps/Kis are **ASSUMED_DIAGNOSTIC** (Ding Table I
-  lacks them; a-priori critically-damped rationale) and are excluded from
-  production acceptance.
-- **Status: STRUCTURAL_ONLY (Phase 5 done).** Full EMT GFL equations are
-  sourced; the positive-sequence RMS reduction is PROJECT_DERIVED and
-  `Kps/Kis` remain ASSUMED_DIAGNOSTIC. Mixed-equilibrium integration is now
-  implemented with all physical KCL rows and explicit SG/GFM reference
-  controls (`6f48eff`). Production GFL readiness remains blocked by the
-  ASSUMED_DIAGNOSTIC gains.
+- **WECC Second Generation Generic WTG Models (2014), §§3.2-3.3 and
+  Appendices A-B:** REGC_A converter-current lags, LVPL, low-voltage active
+  current management, high-voltage reactive-current management, REEC_A
+  electrical control, voltage-dip reactive-current injection, and P/Q
+  priority current-limit logic are SOURCE_DEFINED block diagrams and tables.
+- **WECC REEC_B-to-REEC_A conversion guidance, Table 2:** supplies the
+  official example parameter profile used as the source-mapped starting
+  point. The IEEE14 option selects constant P/Q control and P priority as
+  CASE_DEFINED flags; it does not claim every example flag describes an
+  actual plant.
+- **Implemented state order (7, SOURCE_TRANSFORMED):**
+  `[Vt_f,P_f,Iq_cmd_f,Pord,Vlvpl_f,Ip_reg,Iq_reg]`. Internal currents and
+  powers use inverter base; the device ABI uses system base with
+  `kappa=Sbase/Mbase`. The network current convention is positive injection
+  and `S=V*conj(I)`.
+- **Status: SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES.** The canonical
+  implementation is `+ibr/wecc_regca_reeca_model.m`; `+ibr/gfl_model.m` is a
+  compatibility wrapper. The former Ding-derived six-state model and
+  `Kps/Kis` assumptions are off the runtime path. REGC_A remains a
+  strong-grid current-source model, so the integrated selector must reject a
+  GFL assignment when the implemented SCR contract is not satisfied.
 
 ### Item 2 — VSG/VSM profile from REGFM_B1
 
@@ -96,31 +103,34 @@ state which copy was inspected.
 - **IEEE 1110-2002:** electromagnetic torque Te=ψ_d·i_q−ψ_q·i_d (Eq. 12/C.1,
   VERBATIM) — the physical ancestor the VSM mimics. Does NOT define H, D, or
   the swing equation (delegates to Kundur [B54], NOT locally available).
-- **Gaps (closed in Phase 6):** (a) REGFM_B1 gives no explicit state vector
-  — reconstructed as 11 states (PROJECT_DERIVED, frozen); (b) initialization
-  derived (PROJECT_DERIVED warm-start); (c) G2 steady-state limiting and
-  anti-windup remain deferred;
-  (d) swing ODE reconstructed as SOURCE_TRANSFORMED under frozen flag profile
+- **Gaps closed by the implemented contract:** (a) REGFM_B1 gives no explicit
+  state vector — reconstructed as 13 states (PROJECT_DERIVED, frozen);
+  (b) initialization is a PROJECT_DERIVED algebraic warm-start; (c) the
+  Fig.6 upper/lower controllers are SOURCE_TRANSFORMED into two differential
+  bound states; (d) conditional anti-windup is PROJECT_DERIVED because the
+  source supplies limit blocks but no back-calculation law; and (e) the swing
+  ODE is SOURCE_TRANSFORMED under frozen flag profile
   ωFlag=0, FFlag=1, ωref=1 pu: 2H·dωm/dt = P_ref_inv − Pinv_f − (1/mp+D1)·ωm
   − D2·(ωm − x_washout).
-- **Status: CLOSED (Phase 6).** Implemented in `+ibr/regfm_b1_vsg_model.m`
-  (11 states, STRUCTURAL_ONLY). Per-unit base contract (user-confirmed,
+- **Status: SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES.** Implemented in
+  `+ibr/regfm_b1_vsg_model.m` (13 states). Per-unit base contract
+  (user-confirmed,
   FROZEN): external ABI on system base; internal swing/filters on inverter
   base (kappa=Sbase/Mbase); P_ref_inv=kappa·P_ref_sys (no double conversion).
-  All params SOURCE_VERBATIM from Table 1; NO ASSUMED_DIAGNOSTIC. 18/18 tests
-  pass. See `docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md`.
-- **Phase 7 (dual-mode):** superset 15-state fixed-layout device
-  (`+ibr/dual_mode_ibr_model.m`) reuses GFL (Phase 5) + GFM (Phase 6) as
-  single source of truth. Inactive online mode-unique states are exact holds
-  (`dx=0`, PROJECT_DERIVED); explicit active-state reduction handles Newton
-  and eig conditioning without an artificial decay pole.
+  All REGFM parameters use the Table 1 example profile unless explicitly
+  overridden for diagnostics. See
+  `docs/project/IEEE14_IBR_GFM_PHASE6_PROVENANCE.md`.
+- **Dual-mode ABI:** the superset is 20 states: REGFM G2 states 1:13 and WECC
+  GFL states 14:20. No state is artificially shared because REGC_A/REEC_A has
+  no PLL state. Inactive mode-unique states are exact holds (`dx=0`,
+  PROJECT_DERIVED); explicit active-state reduction handles Newton and SSSA.
 - **Phase 8 (IEEE14 builder):** `+ibr/build_ieee14_ibr_devices.m` builds
   real devices (IBR2@2, IBR3@3, IBR6@6, IBR8@8) with CASE_DEFINED Mbase
   nameplate proxy (IBR2=140, IBR3/6/8=100 MVA). The corrected solver checks
   every KCL row, solves explicit SG/GFM reference controls, supports exact
   one/two/three-GFM sets, and rejects a pure-GFL SG_OFF island.
 
-### Item 3 — GFL↔VSG transfer maps + inactive-state rule — PROJECT_DERIVED CONTRACT / PARTIAL IMPLEMENTATION
+### Item 3 — GFL↔VSG transfer maps + inactive-state rule — PROJECT_DERIVED IMPLEMENTED
 
 - **Ding 83340 §IV-B (p. 5):** ONLY the concept "freeze the integral values
   in the inner loops at the time when the operation mode transition occurs.
@@ -129,14 +139,12 @@ state which copy was inspected.
   controller. No synchronism check. No inactive-state evolution rule.
   Different state dimensions (GFL 14 vs GFM 13) with no remapping formula.
 - **REGFM_B1 90260:** no mode switching at all.
-- **Status: PROJECT_DERIVED CONTRACT / PARTIAL IMPLEMENTATION.** Decision
-  Ledger Item 3 authorizes frozen inactive states plus continuity- and
-  algebraic-residual-derived transfer semantics. The fixed 15-state device,
-  shared-PLL carryover, exact inactive-state holds, and active-state reduction
-  are implemented. Full current-continuous bumpless transfer in the integrated
-  event-driving TS remains deferred. The absence of a source-verbatim transfer
-  map is a documented limitation, not a stop on the approved PROJECT_DERIVED
-  contract.
+- **Status: PROJECT_DERIVED IMPLEMENTED.** The 20-state device owns the
+  transfer callback. It measures the left-limit terminal current and power,
+  calls the target mode's sourced equilibrium initializer, preserves the
+  inactive branch exactly, and enforces `|I(t+)-I(t-)|<=1e-10`. There is no
+  PLL carryover because WECC REGC_A/REEC_A has no PLL state. Integrated
+  event-driving TS is still a separate readiness gate.
 
 ### Item 4 — Current limiter + anti-windup
 
@@ -147,10 +155,10 @@ state which copy was inspected.
 - **Gap:** anti-windup logic for the voltage PI and the active-current
   integrator is NOT specified. Reset-to-zero described; no back-calculation
   or conditional-integration formula.
-- **Status: G1 IMPLEMENTED_STRUCTURAL_ONLY / G2 DEFERRED.** G1 implements
+- **Status: G1+G2 IMPLEMENTED_PENDING_INTEGRATION_GATES.** G1 implements
   Eq.13 circular saturation, correct base conversion, and sourced Fig.4 PLL
-  freeze. G2 owns PQ priority, Eqs.10-11, Fig.6 integrator, Emax/Emin behavior,
-  and PROJECT_DERIVED anti-windup.
+  freeze. G2 implements PQ priority, Eqs.10-11, two Fig.6 dynamic angle-bound
+  states, Emax/Emin behavior, and PROJECT_DERIVED conditional anti-windup.
 
 ### Item 5 — SG synchronism thresholds/dwell/timeout — CASE_DEFINED / INTEGRATION DEFERRED
 
@@ -243,22 +251,23 @@ state which copy was inspected.
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | GFL positive-sequence model | STRUCTURAL_ONLY (Phase 5 done; RMS reduction PROJECT_DERIVED, Kps/Kis ASSUMED_DIAGNOSTIC) |
-| 2 | VSG/VSM from REGFM_B1 | CLOSED (Phase 6 done; 11-state model, all params SOURCE_VERBATIM, NO ASSUMED_DIAGNOSTIC) |
-| 3 | GFL↔VSG transfer maps | PROJECT_DERIVED contract partially implemented; full integrated bumpless transfer deferred |
-| 4 | Current limiter + anti-windup | G1 IMPLEMENTED_STRUCTURAL_ONLY (Eq.13 clamp + VPLL freeze); G2 steady-state PQ priority, Fig.6 state, Eqs.10-11, and anti-windup deferred |
+| 1 | GFL positive-sequence model | WECC REGC_A/REEC_A 7-state SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES; strong-grid SCR applicability enforced by selector |
+| 2 | VSG/VSM from REGFM_B1 | REGFM G2 13-state SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES |
+| 3 | GFL↔VSG transfer maps | PROJECT_DERIVED 20-state physical transfer implemented and current-continuity tested; event-runner integration pending |
+| 4 | Current limiter + anti-windup | G1 Eq.13/VPLL freeze and G2 Fig.5/Eqs.10-11/Fig.6/conditional anti-windup implemented pending integration gates |
 | 5 | SG synchronism thresholds | CASE_DEFINED and frozen; guard primitive exists; integrated reclose deferred |
 | 6 | Delays | CASE_DEFINED/PROJECT_DERIVED and frozen; event-time integration deferred |
 | 7 | IEEE14 SG dynamic data | CASE_DEFINED Kodsi 60 Hz profile implemented for SG1 |
-| 8 | Post-trip dispatch/energy contract | CASE_DEFINED schedule; physical all-KCL equilibrium implemented; G2/ramp/energy validation deferred |
-| 9 | `gamma_req` eigenvalue margin | CASE_DEFINED at `0.1 s^-1`; real topology/SSSA candidate evaluation deferred |
+| 8 | Post-trip dispatch/energy contract | CASE_DEFINED schedule; physical all-KCL equilibrium and G2 limits implemented; integrated ramp/energy validation pending |
+| 9 | `gamma_req` eigenvalue margin | CASE_DEFINED at `0.1 s^-1`; real topology/SCR/equilibrium/full-state-SSSA candidate evaluation implemented |
 
 Historical source gaps were resolved where authorized through explicit
 CASE_DEFINED or PROJECT_DERIVED decisions in the Decision Ledger. This does
 not make them source-verbatim and does not imply production readiness. Mixed
-equilibrium and structural fixed-step TS/SSSA are now implemented; integrated
-automatic event driving, G2 limiting/anti-windup, source-closed GFL gains, and
-independent validation remain open.
+equilibrium and equation-shared fixed-step TS/SSSA are implemented. The
+remaining runtime closure is integrated automatic event driving, synchronism-
+enforced SG reclose, selector/plot end-to-end verification, and independent
+multi-case validation.
 
 ## Conventions that ARE source-closed (reusable)
 
@@ -282,16 +291,18 @@ independent validation remain open.
 
 - Phase 2 scheduled/guard event primitives are implemented.
 - Phase 3 persistent hybrid-state and rollback primitives are implemented.
-- These foundations do not constitute an integrated automatic event-driving
-  simulation or production readiness.
+- The fixed-step automatic event driver, device-owned transfer, exact event
+  landing, atomic right-limit rollback, synchronism transaction, status log,
+  and two audited plots are integrated. This does not establish production
+  readiness.
 
 ## Remaining readiness blockers
 
-- Source-close or replace GFL `Kps/Kis` before a production GFL claim.
-- Implement and validate G2 steady-state limiting and anti-windup.
-- Couple selector candidates to real topology/equilibrium/SSSA evidence.
-- Implement an event-driving adaptive hybrid TS with right-limit rollback and
-  synchronism-enforced reclose.
-- Complete and falsify current-continuous bumpless GFL↔GFM transfer in the
-  integrated event-driving TS.
+- The real-topology SCR/equilibrium/full-state-SSSA selector is connected and
+  fail-closed, but no current IEEE14 post-trip subset passes frozen
+  `gamma_req=0.1 s^-1`. Diagnose the sourced model/case result; do not tune the
+  threshold after viewing outcomes.
+- Adaptive IBR event stepping remains outside this fixed-step checkpoint.
+- Obtain natural (non-override) synchronism/reclose and longer-horizon TS
+  evidence for a feasible post-trip configuration.
 - Complete independent multi-case validation and readiness derivation.

@@ -87,9 +87,15 @@ dev = build_gfm(100, 0.0, 1.2);
 V_bus = 1.0 + 0i;  nb = 14;  y = make_y(V_bus, nb);
 u0 = [0.0; 1.2];
 [I_out, ~, ~] = current_inj_oracle(dev, y, u0);
-% Manual: Z_sys=kappa*Z_inv=0+0.1i, ImaxF_sys=1.5/1=1.5
-x = dev.x0; delta_VSM = x(2);
-EVSM = 1.2;  % V_ref - mq*0 + kpv*(V_ref-|V|) + kiv*0 at init
+% Independent G2 oracle: Fig.5 gives IqmaxSS=1 at Idinv_f=0 and Eq.11
+% clamps EVSM_raw=1.2 to Emax=Vinv_f+IqmaxSS*XL=1.14.
+x = dev.x0;
+delta_VSM = x(5) + max(x(13),min(x(12),x(2)));
+IqmaxSS = sqrt(max(1.0^2-x(8)^2,0));
+Emin = sqrt((x(10)-IqmaxSS*0.1)^2+(x(8)*0.1)^2);
+Emax = sqrt((x(10)+IqmaxSS*0.1)^2+(x(8)*0.1)^2);
+EVSM_raw = 1.2 - 0.05*x(9) + 5.0*x(4);
+EVSM = max(Emin,min(Emax,EVSM_raw));
 I_manual = (EVSM*exp(1i*delta_VSM) - V_bus) / (0 + 0.1i);
 I_mag = abs(I_manual);
 if I_mag >= 1.5, I_manual = 1.5 * (I_manual / I_mag); end
@@ -126,9 +132,15 @@ function test_rhs_filters_use_limited_current(testCase)
 dev = build_gfm(100, 0.0, 1.5);
 V_bus = 0.9*exp(1i*0.15);  nb = 14;  y = make_y(V_bus, nb);
 u0 = [0.0; 1.5];
-% Independent Eq.13 oracle at kappa=1: EVSM=Vref=1.5, delta_VSM=0,
-% Zsys=j0.1 and ImaxF_sys=1.5 (REGFM_B1 Table 1).
-I_unc = (1.5*exp(1i*dev.x0(2)) - V_bus)/(1i*0.1);
+% Independent Fig.5/Eqs.10-11 + Eq.13 oracle at kappa=1.
+x = dev.x0;
+IqmaxSS = sqrt(max(1.0^2-x(8)^2,0));
+Emin = sqrt((x(10)-IqmaxSS*0.1)^2+(x(8)*0.1)^2);
+Emax = sqrt((x(10)+IqmaxSS*0.1)^2+(x(8)*0.1)^2);
+EVSM_raw = 1.5 - 0.05*x(9) + 5.0*x(4);
+EVSM = max(Emin,min(Emax,EVSM_raw));
+delta_VSM = x(5)+max(x(13),min(x(12),x(2)));
+I_unc = (EVSM*exp(1i*delta_VSM) - V_bus)/(1i*0.1);
 I_out_oracle = 1.5*I_unc/abs(I_unc);
 I_out = dev.current_injection(0, dev.x0, y, u0, struct());
 rec = dev.reconstruct(0, dev.x0, y, u0, struct());
@@ -228,7 +240,7 @@ c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 bus_ids = c.mpc.bus(:,1)';
 dev = ibr.dual_mode_ibr_model("IBR2", 2, 2, bus_ids, 1.04+0i, ...
     struct('Mbase',140), 0.4, 0.0, 1.04, "GFM");
-testCase.verifyEqual(dev.nx, 15, 'AbsTol', 0, 'dual-mode nx=15 preserved.');
+testCase.verifyEqual(dev.nx, 20, 'AbsTol', 0, 'dual-mode source superset nx=20.');
 % current_injection at GFM dispatch
 V_bus = 1.04 + 0i;  nb = 14;  y = make_y(V_bus, nb);; y_bus = zeros(28,1); y_bus(3) = 1.04;
 u_dev = [0.4; 0.0; 1.04];   % P_ref, Q_ref, V_ref
@@ -292,11 +304,11 @@ end
 end
 
 % =========================================================================
-function test_nx_unchanged(testCase)
-% GFM: nx=11. Dual-mode: nx=15. Composite: nx_total=66, nx_active=65.
+function test_g2_nx_contract(testCase)
+% GFM G2 adds the two sourced Fig.6 dynamic bound states.
 dev = build_gfm(100, 0.4, 1.0);
-testCase.verifyEqual(dev.nx, 11, 'AbsTol', 0, 'GFM nx=11 unchanged.');
-testCase.verifyEqual(numel(dev.x0), 11, 'AbsTol', 0, 'GFM x0 length=11.');
+testCase.verifyEqual(dev.nx, 13, 'AbsTol', 0, 'GFM G2 nx=13.');
+testCase.verifyEqual(numel(dev.x0), 13, 'AbsTol', 0, 'GFM G2 x0 length=13.');
 end
 
 % =========================================================================

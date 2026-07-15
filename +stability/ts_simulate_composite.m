@@ -134,7 +134,7 @@ if full_kcl
             'opt.event_context must be the scalar equilibrium context when opt.full_kcl=true.');
     end
     ec = opt.event_context;
-    expected_dynamic = expected_dynamic_indices(dae,ec);
+    expected_dynamic = stability.ts_dynamic_state_indices(dae,ec);
     if ~isequal(active_x_indices(:)',expected_dynamic(:)')
         error('ts_simulate_composite:dynamicStateMismatch', ...
             ['opt.dynamic_state_indices must exactly match the device/runtime ' ...
@@ -151,6 +151,11 @@ t_vals = (0:n_steps) * dt;
 nx_total = numel(x0);
 nx_active = numel(active_x_indices);
 ny_free = numel(free_vars);
+if full_kcl
+    step_free_rows = 1:ny_full;
+else
+    step_free_rows = setdiff(1:ny_full,dae.vcon.rows,'stable');
+end
 
 x_traj = zeros(nx_total, n_steps+1);
 y_traj = zeros(ny_full, n_steps+1);
@@ -161,24 +166,23 @@ x_curr = x0(:);
 y_curr = y0_full(:);
 Ynet = dae.Ynet;
 converged = true;
+iterations_per_step = zeros(1,n_steps);
+residual_per_step = nan(1,n_steps);
+accepted_steps = 0;
 
 for step = 1:n_steps
     t_now = (step-1)*dt;
-    % Evaluate f0 at state start
-    f0 = dae.dae_f(t_now, x_curr, y_curr, u, ec);
-
-    % --- Coupled trapezoidal Newton: solve z = [x1_active; y1_free] --------
-    % z = [x1(active); y1(free)]
-    z0 = [x_curr(active_x_indices); y_curr(free_vars)];
-
-    residual_fn = @(z) trapezoidal_residual(z, x_curr, f0, dt, ...
-        active_x_indices, frozen_x_indices, frozen_x_values, ...
-        free_vars, vcon_vars, vcon_ref, ny_full, dae, Ynet, u, ec, full_kcl);
-    J_fn = @(z) trapezoidal_jacobian_fd(z, residual_fn, fd_eps, ...
-        nx_active, ny_free);
-
-    [z_sol, niter, step_ok, res_norm, rcond_val] = stability.composite_newton( ...
-        z0, residual_fn, J_fn, newton_tol, max_iter, verbose);
+    step_opt = struct('newton_tol',newton_tol,'max_iter',max_iter, ...
+        'fd_eps',fd_eps,'verbose',verbose,'full_kcl',full_kcl,'t_now',t_now, ...
+        'vcon_vars',vcon_vars,'vcon_ref',vcon_ref,'free_vars',free_vars, ...
+        'free_rows',step_free_rows);
+    step_result = stability.ts_step_composite(x_curr,y_curr,dt,dae,Ynet,u, ...
+        ec,active_x_indices,step_opt);
+    niter = step_result.iterations;
+    step_ok = step_result.converged;
+    res_norm = step_result.residual_norm;
+    iterations_per_step(step) = niter;
+    residual_per_step(step) = res_norm;
 
     if ~step_ok
         if verbose
@@ -189,24 +193,15 @@ for step = 1:n_steps
         break;
     end
 
-    % --- Extract solution -------------------------------------------------
-    x1_active = z_sol(1:nx_active);
-    y1_free = z_sol(nx_active+1:nx_active+ny_free);
-
-    x1_full = zeros(nx_total, 1);
-    x1_full(active_x_indices) = x1_active;
-    for fi = 1:numel(frozen_x_indices)
-        x1_full(frozen_x_indices(fi)) = frozen_x_values(fi);
-    end
-
-    y1_full = zeros(ny_full, 1);
-    y1_full(vcon_vars) = vcon_ref;
-    y1_full(free_vars) = y1_free;
+    % --- Extract solution from the shared composite step -----------------
+    x1_full = step_result.x_full;
+    y1_full = step_result.y_full;
 
     x_traj(:, step+1) = x1_full;
     y_traj(:, step+1) = y1_full;
     x_curr = x1_full;
     y_curr = y1_full;
+    accepted_steps = step;
 end
 
 ts_result = struct();
@@ -215,6 +210,10 @@ ts_result.y_traj = y_traj;
 ts_result.t = t_vals;
 ts_result.converged = converged;
 ts_result.n_steps = step;   % last completed step
+ts_result.step_attempts = step;
+ts_result.accepted_steps = accepted_steps;
+ts_result.iterations_per_step = iterations_per_step(1:step);
+ts_result.residual_per_step = residual_per_step(1:step);
 
 ts_meta = struct();
 ts_meta.nx_total = nx_total; ts_meta.nx_active = nx_active;
@@ -222,109 +221,14 @@ ts_meta.ny_free = ny_free;
 ts_meta.frozen_state_count = numel(frozen_x_indices);
 ts_meta.dt = dt; ts_meta.t_end = t_end;
 ts_meta.method = 'trapezoidal_coupled_newton';
+ts_meta.step_attempts = step;
+ts_meta.accepted_steps = accepted_steps;
+ts_meta.total_newton_iterations = sum(iterations_per_step(1:step));
 if full_kcl
     ts_meta.full_kcl = true;
     ts_meta.input_source = 'opt.u_eq_constant';
     ts_meta.active_state_source = 'opt.dynamic_state_indices';
     ts_meta.dynamic_state_indices = active_x_indices;
     ts_meta.complement_anchor = 'supplied_x0';
-end
-end
-
-% =========================================================================
-function indices = expected_dynamic_indices(dae,ec)
-%EXPECTED_DYNAMIC_INDICES  Authenticate the TS map against device metadata.
-indices = [];
-for k = 1:numel(dae.devices)
-    dev = dae.devices(k);
-    if isfield(dev,'dynamic_state_indices_for_context') && ...
-            isa(dev.dynamic_state_indices_for_context,'function_handle')
-        local = dev.dynamic_state_indices_for_context(ec);
-    elseif isfield(dev,'active_state_indices_for_context') && ...
-            isa(dev.active_state_indices_for_context,'function_handle')
-        local = dev.active_state_indices_for_context(ec);
-    else
-        is_online = true;
-        if isstruct(ec) && isfield(ec,'hybrid_state') && ...
-                isstruct(ec.hybrid_state) && ...
-                isfield(ec.hybrid_state,'device_online')
-            key = matlab.lang.makeValidName(char(dev.device_id), ...
-                'ReplacementStyle','underscore');
-            if isfield(ec.hybrid_state.device_online,key)
-                is_online = logical(ec.hybrid_state.device_online.(key));
-            end
-        end
-        if ~is_online
-            local = [];
-        elseif isfield(dev,'active_state_indices')
-            local = dev.active_state_indices;
-        else
-            local = 1:dev.nx;
-        end
-    end
-    local = local(:)';
-    if any(~isfinite(local)) || any(local~=fix(local)) || ...
-            any(local<1) || any(local>dev.nx) || ...
-            numel(unique(local))~=numel(local)
-        error('ts_simulate_composite:badDeviceDynamicStates', ...
-            'Device %s returned invalid dynamic-state indices.',dev.device_id);
-    end
-    if isfield(dev,'frozen_state_indices') && ~isempty(dev.frozen_state_indices)
-        local = setdiff(local,dev.frozen_state_indices(:)','stable');
-    end
-    indices = [indices,dae.device_offsets(k)+local]; %#ok<AGROW>
-end
-end
-
-% =========================================================================
-function r = trapezoidal_residual(z, x0_full, f0, h, ...
-    active_idx, frozen_idx, frozen_val, ...
-    free_vars, vcon_vars, vcon_ref, ny_full, dae, Y, u, ec, full_kcl)
-% z = [x1_active; y1_free]
-nx_active = numel(active_idx);
-nx_total = numel(active_idx) + numel(frozen_idx);
-x1_active = z(1:nx_active);
-y1_free = z(nx_active+1:end);
-
-% Reconstruct full x1
-x1_full = zeros(nx_total, 1);
-x1_full(active_idx) = x1_active;
-for fi = 1:numel(frozen_idx)
-    x1_full(frozen_idx(fi)) = frozen_val(fi);
-end
-
-% Reconstruct full y1
-y1_full = zeros(ny_full, 1);
-y1_full(vcon_vars) = vcon_ref;
-y1_full(free_vars) = y1_free;
-
-f1 = dae.dae_f(0, x1_full, y1_full, u, ec);
-g1 = dae.dae_g(0, x1_full, y1_full, Y, u, ec);
-
-% Trapezoidal residual: R_x = x1 - x0 - h/2*(f0 + f1)
-R_x_full = x1_full - x0_full - 0.5*h*(f0 + f1);
-R_x = R_x_full(active_idx);   % only active states
-
-if full_kcl
-    R_g = g1;
-else
-    % Legacy algebraic residual: g_free (exclude replaced vcon rows).
-    free_rows = setdiff(1:numel(g1), dae.vcon.rows, 'stable');
-    R_g = g1(free_rows);
-end
-
-r = [R_x(:); R_g(:)];
-end
-
-% =========================================================================
-function J = trapezoidal_jacobian_fd(z, residual_fn, fd_eps, nx_active, ny_free)
-nz = numel(z);
-r0 = residual_fn(z);
-nr = nx_active + ny_free;
-J = zeros(nr, nz);
-for j = 1:nz
-    zp = z; zp(j) = zp(j) + fd_eps;
-    rp = residual_fn(zp);
-    J(:,j) = (rp - r0) / fd_eps;
 end
 end

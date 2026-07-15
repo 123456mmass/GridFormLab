@@ -142,10 +142,10 @@ cfg = struct('devices',devices,'device_modes',override, ...
     'reference_resource_index',2);
 r = stability.mixed_equilibrium_solve(c,cfg,struct('verbose',false));
 testCase.verifyTrue(r.converged,r.failure_reason);
-testCase.verifyEqual(r.partition.nx_active,29,'AbsTol',0);
-testCase.verifyEqual(r.partition.nx_frozen,37,'AbsTol',0);
+testCase.verifyEqual(r.partition.nx_active,34,'AbsTol',0);
+testCase.verifyEqual(r.partition.nx_frozen,52,'AbsTol',0);
 testCase.verifyEqual(r.partition.ny_free,27,'AbsTol',0);
-testCase.verifyEqual(r.partition.newton_dimension,57,'AbsTol',0);
+testCase.verifyEqual(r.partition.newton_dimension,62,'AbsTol',0);
 testCase.verifyEqual(r.devices(2).initial_mode,'GFM');
 testCase.verifyLessThan(r.physical_kcl_norm,1e-6);
 sg = r.devices(1);
@@ -194,18 +194,16 @@ testCase.verifyTrue(r.limit_checks.devices.IBR3.within_active_power_limit, ...
     'Machine-roundoff around a true zero schedule is not reverse power.');
 end
 
-function test_material_negative_dispatch_fails_limit_gate(testCase)
+function test_material_negative_dispatch_fails_source_limit(testCase)
+% The former oracle expected the generic post-solve limit gate.  WECC
+% REEC_A defines Pmin=0 in this selected option, so negative scheduled power
+% is invalid at device construction and must fail before Newton.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 ids = {'IBR2','IBR3','IBR6','IBR8'};
 modes = struct('device_id',ids,'mode',{'gfl','gfl','gfl','gfl'});
 dispatch = struct('IBR2',40,'IBR3',-1,'IBR6',0,'IBR8',0);
-devices = ibr.build_ieee14_sg_ibr_devices(c,modes,dispatch);
-r = stability.mixed_equilibrium_solve(c,struct('devices',devices), ...
-    struct('verbose',false));
-testCase.verifyFalse(r.converged);
-testCase.verifyEqual(r.failure_id,'mixed_equilibrium_solve:deviceLimit');
-testCase.verifyEqual(r.limit_checks.devices.IBR3.P_MW,-1,'AbsTol',1e-8);
-testCase.verifyFalse(r.limit_checks.devices.IBR3.within_active_power_limit);
+testCase.verifyError(@() ibr.build_ieee14_sg_ibr_devices(c,modes,dispatch), ...
+    'ibr:wecc_regca_reeca_model:equilibriumPowerLimit');
 end
 
 function r = solve_selected(testCase,n_gfm)

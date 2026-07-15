@@ -1,8 +1,8 @@
 function tests = test_ibr_dual_mode_model()
-%TEST_IBR_DUAL_MODE_MODEL  Phase 7 dual-mode fixed-layout device tests.
-%   Verifies +ibr/dual_mode_ibr_model: constant state dimension (15) across
-%   gfl/GFM/tripped, mode dispatch matches standalone models, tripped zero
-%   injection, transfer shared-state continuity, fail-closed modes.
+%TEST_IBR_DUAL_MODE_MODEL  Source-model dual-mode fixed-layout device tests.
+%   The former 15-state/shared-PLL ABI contradicted the WECC REGC_A/REEC_A
+%   model, which has no PLL state.  The independent source-model oracle is
+%   therefore GFM(13) + GFL(7) = 20 separate branch states.
 tests = functiontests(localfunctions);
 end
 
@@ -41,9 +41,9 @@ end
 function test_dimension_constant(testCase)
 for mode = ["gfl","GFM","tripped"]
     [~, dev, ~, ~, ~] = local_dual_fixture(mode);
-    testCase.verifyEqual(dev.nx, 15, 'AbsTol', 0, [char(mode) ': nx==15.']);
+    testCase.verifyEqual(dev.nx, 20, 'AbsTol', 0, [char(mode) ': nx==20.']);
     testCase.verifyEqual(dev.nu, 3, 'AbsTol', 0, [char(mode) ': nu==3.']);
-    testCase.verifyEqual(numel(dev.state_names), 15, 'AbsTol', 0, [char(mode) ': 15 names.']);
+    testCase.verifyEqual(numel(dev.state_names), 20, 'AbsTol', 0, [char(mode) ': 20 names.']);
 end
 end
 
@@ -56,7 +56,7 @@ gfl_only = ibr.gfl_model('T', 2, 2, bus_ids, V0, struct(), P_ref, Q_ref);
 dual = ibr.dual_mode_ibr_model('T', 2, 2, bus_ids, V0, struct(), P_ref, Q_ref, V_ref, "gfl");
 y = [1.06; 0; 1.0; 0];
 % Map dual superset state -> GFL sub-state.
-gfl_idx = [1, 2, 12, 13, 14, 15];
+gfl_idx = 14:20;
 x_gfl_from_dual = dual.x0(gfl_idx);
 u_gfl = [P_ref; Q_ref];
 I_dual = dual.current_injection(0, dual.x0, y, dual.u0, struct());
@@ -67,7 +67,7 @@ f_dual = dual.f(0, dual.x0, y, dual.u0, struct());
 f_gfl = gfl_only.f(0, x_gfl_from_dual, y, u_gfl, struct());
 testCase.verifyEqual(f_dual(gfl_idx), f_gfl, 'AbsTol', 1e-12, 'gfl mode f(active) == standalone.');
 % GFM-unique rows frozen (dx=0).
-gfm_unique = [3,4,5,6,7,8,9,10,11];
+gfm_unique = 1:13;
 testCase.verifyTrue(all(f_dual(gfm_unique) == 0), 'gfl mode: GFM-unique states frozen.');
 xp = dual.x0;
 xp(gfm_unique) = xp(gfm_unique) + (1:numel(gfm_unique))';
@@ -84,7 +84,7 @@ bus_ids = [1; 2]; V0 = 1.0+0i; P_ref = 0.4; Q_ref = 0.0; V_ref = 1.0;
 gfm_only = ibr.regfm_b1_vsg_model('T', 2, 2, bus_ids, V0, struct(), P_ref, V_ref);
 dual = ibr.dual_mode_ibr_model('T', 2, 2, bus_ids, V0, struct(), P_ref, Q_ref, V_ref, "GFM");
 y = [1.06; 0; 1.0; 0];
-gfm_idx = [3, 4, 5, 6, 1, 2, 7, 8, 9, 10, 11];
+gfm_idx = 1:13;
 x_gfm_from_dual = dual.x0(gfm_idx);
 u_gfm = [P_ref; V_ref];
 I_dual = dual.current_injection(0, dual.x0, y, dual.u0, struct());
@@ -94,7 +94,7 @@ f_dual = dual.f(0, dual.x0, y, dual.u0, struct());
 f_gfm = gfm_only.f(0, x_gfm_from_dual, y, u_gfm, struct());
 testCase.verifyEqual(f_dual(gfm_idx), f_gfm, 'AbsTol', 1e-12, 'GFM mode f(active) == standalone.');
 % GFL-unique rows frozen (dx=0).
-gfl_unique = [12,13,14,15];
+gfl_unique = 14:20;
 testCase.verifyTrue(all(f_dual(gfl_unique) == 0), 'GFM mode: GFL-unique states frozen.');
 xp = dual.x0;
 xp(gfl_unique) = xp(gfl_unique) + (1:numel(gfl_unique))';
@@ -121,30 +121,26 @@ testCase.verifyEqual(fp,zeros(dev.nx,1),'AbsTol',0, ...
 end
 
 % =========================================================================
-% 5. Transfer shared-state continuity (gfl -> GFM)
-%   Shared PLL states (delta_PLL, x_PLL_int) must be preserved across a mode
-%   switch. Phase 7 = deterministic initial only (full bumpless = Phase 10-11).
+% 5. Source branches are separate; no artificial shared PLL coordinates.
 % =========================================================================
-function test_transfer_shared_continuity(testCase)
+function test_source_branch_partition(testCase)
 bus_ids = [1; 2]; V0 = 1.0+0i; P_ref = 0.4; Q_ref = 0.0; V_ref = 1.0;
 dev_gfl = ibr.dual_mode_ibr_model('T', 2, 2, bus_ids, V0, struct(), P_ref, Q_ref, V_ref, "gfl");
 dev_gfm = ibr.dual_mode_ibr_model('T', 2, 2, bus_ids, V0, struct(), P_ref, Q_ref, V_ref, "GFM");
-% Shared PLL states (indices 1,2) must be identical (both warm-start from V0).
-testCase.verifyEqual(dev_gfl.x0(1), dev_gfm.x0(1), 'AbsTol', 1e-12, ...
-    'shared delta_PLL preserved across gfl->GFM.');
-testCase.verifyEqual(dev_gfl.x0(2), dev_gfm.x0(2), 'AbsTol', 1e-12, ...
-    'shared x_PLL_int preserved across gfl->GFM.');
-% Simulate a transfer: take gfl state, switch mode to GFM, verify shared states
-% carry over and GFM-unique states are warm-started (finite).
-x_gfl = dev_gfl.x0;
-x_gfm_after = dev_gfm.x0;
-% Shared states carried over (deterministic initial transfer).
-x_gfm_after(1) = x_gfl(1);
-x_gfm_after(2) = x_gfl(2);
-testCase.verifyTrue(all(isfinite(x_gfm_after)), 'post-transfer state finite.');
-% GFM-unique states warm-started from PF (not NaN).
-gfm_unique = [3,4,5,6,7,8,9,10,11];
-testCase.verifyTrue(all(isfinite(x_gfm_after(gfm_unique))), 'GFM-unique warm-started finite.');
+testCase.verifyEqual(dev_gfl.active_state_indices,14:20,'AbsTol',0);
+testCase.verifyEqual(dev_gfm.active_state_indices,1:13,'AbsTol',0);
+testCase.verifyTrue(all(startsWith(string(dev_gfm.state_names(1:13)),'gfm_')));
+testCase.verifyTrue(all(startsWith(string(dev_gfm.state_names(14:20)),'gfl_')));
+testCase.verifyEmpty(dev_gfm.provenance.shared_states);
+testCase.verifyTrue(all(isfinite(dev_gfm.x0)) && all(isfinite(dev_gfl.x0)));
+end
+
+function test_gfm_active_bound_specs_remapped(testCase)
+[~,dev,y,u] = local_dual_fixture('GFM');
+specs = dev.equilibrium_constraint_specs(dev.x0,y,u,struct());
+testCase.verifyEqual(numel(specs),4,'AbsTol',0);
+testCase.verifyEqual([specs.local_idx],[12 13 2 4],'AbsTol',0);
+testCase.verifyTrue(all([specs.local_idx] >= 1 & [specs.local_idx] <= 13));
 end
 
 % =========================================================================

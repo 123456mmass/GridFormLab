@@ -33,17 +33,35 @@ classes.
   by equilibrium, SSSA, and TS. Solved reference controls are held constant in
   TS; there is no per-step re-slack.
 
-### Exact selected-GFM contract
+### Exact selected-GFM contract (multi-island reference-ownership, F1/C1)
 
-- `n_gfm_required` is explicit and may be 1, 2, 3, or larger.
-- `selected_gfm_indices` must equal the complete online runtime GFM set.
-- Exactly one selected member is `reference_resource_index`; the other
-  selected resources remain physical GFMs.
-- The tuple is atomic and owned by the hybrid snapshot. Conflicting duplicate
-  metadata, offline/incapable members, count drift, order drift, or a reference
-  outside the set fails closed.
-- When an SG is online it owns the case REF; the committed GFM reference becomes
-  the numerical reference only on the SG_OFF right limit.
+- `n_gfm_required` is explicit and may be 0 (SG_ON all-GFL), 1, 2, 3, or larger.
+  SG_ON context (`opt.sg_online=true`) permits `n_gfm_required=0` because the
+  online SG owns the reference and no GFM is required. SG_OFF requires
+  `n_gfm_required>=1`.
+- `selected_gfm_indices` must equal the complete online runtime GFM set
+  (independent of reference ownership).
+- Reference ownership is multi-island and uses THREE distinct arrays:
+  - `reference_owner_indices` (owner per island; SG or GFM)
+  - `gfm_reference_resource_indices` (GFM numerical reference per island;
+    empty/NaN where an SG owns that island)
+  - `reference_island_ids` (sorted ascending, equal cardinality)
+  Every energized island has exactly one supervisory reference owner; no
+  duplicate owner within an island. Generic index-based eligibility (F3): the
+  owner is online, in a voltage-forming mode, capability-permitted, and
+  belongs to the affected island. NOT tied to the PF/MATPOWER REF bus.
+- Legacy `reference_resource_index` is a read-only single-island alias:
+  SG_OFF -> equals `gfm_reference_resource_indices(1)`; SG_ON -> `[]`
+  (must NOT point to SG); multi-island -> unsupported/empty. Conflicting
+  mixed schemas fail closed.
+- Three distinct fingerprints (F1): `selector_table_fingerprint` (immutable
+  for the run), `committed_config_fingerprint` (atomic per accepted config),
+  `pre_event_input_fingerprint` (immutable). Phase 1 reclose updates
+  `committed_config_fingerprint` ONLY.
+- When an SG is online it owns the reference for its island; the GFM
+  numerical reference for that island becomes empty. The full-KCL TS
+  formulation is unchanged: reference ownership is supervisory/physical,
+  not a KCL-row or per-step slack replacement.
 
 ### Current implementation boundary
 

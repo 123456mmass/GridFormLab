@@ -102,18 +102,61 @@ tangent spectrum. The complete raw spectrum is still retained for reporting;
 locked active-bound directions and the common PLL rotational gauge are
 removed before the physical eigenproblem, never by deleting roots afterward.
 
-The 15 s all-four-GFM event demonstration is numerically converged and remains
-within the sourced IBR current limits. The SG-on event at 3 s is an accepted
-reclose request, not an asserted breaker closure. With the case synchronism
-limits it reaches `SYNC_TIMEOUT` at 8 s; `actual_reclose_time=NaN`. This honest
-protection outcome is shown as a separate plot marker. A successful reclose
-transaction remains covered only by declared test guard overrides and is not
-claimed as natural case evidence.
+The SG reclose / reference-handover workflow is now a two-phase transaction
+(Phase 11 contract):
+- **Phase 1** (synchronism-qualified breaker close): closes the SG breaker
+  without resetting SG rotor angle/speed; restores the authenticated
+  `pre_event_input`; returns reference ownership to the reclosed SG
+  atomically (`reference_owner_indices` = SG; `gfm_reference_resource_indices`
+  = empty); updates `committed_config_fingerprint` ONLY (never
+  `selector_table_fingerprint` or `pre_event_input_fingerprint`); IBR modes
+  unchanged; one right-limit solve; one right sample. Full-KCL TS
+  formulation unchanged (reference handback is supervisory, not a KCL/slack
+  change).
+- **Phase 2** (delayed indexed reselection): looks up the precomputed
+  authenticated SG_ON table; derives `T_down` from `Omega_target`
+  (`T_settle = ln(1/rho)/(-Omega_target)`; `T_down = max(T_minimum_hold,
+  T_settle)`); after hold/guard/lockout, applies the selector-chosen
+  GFM->GFL transitions via device-owned transfer maps; one final right-limit
+  solve; one right sample. No-mode-change case (`NO_MODE_CHANGE_REQUIRED`)
+  skips transfer/right-limit/sample. Rejected Phase 2 does NOT roll back
+  Phase 1.
+
+Three distinct fingerprints (F1): `selector_table_fingerprint` (immutable for
+the run), `committed_config_fingerprint` (atomic per accepted config),
+`pre_event_input_fingerprint` (immutable). Multi-island reference-ownership
+schema: `reference_owner_indices` / `gfm_reference_resource_indices` /
+`reference_island_ids` (sorted by island ID, equal cardinality); legacy
+`reference_resource_index` is a read-only single-island alias.
+
+`sg_breaker_trip` / `optional_gfm_commit` split (C3/F2): when
+`automatic_gfm_switching=false`, the SG breaker opens but no GFM is
+committed; a per-island voltage-forming-source check runs before Newton; if
+no online voltage-forming resource exists, fail closed
+`noVoltageFormingSource`, publish NO right-limit sample, trajectory ends at
+the event-left sample.
+
+IEEE14 demo defaults updated: `fault_on=3.0`, `fault_clear=3.1`,
+`sg_trip=5.0`, `sg_on=8.0` (earliest reconnect request), `t_end=15.0`.
+Synchronism gating retained: SG must not close merely because `t=8.0 s`.
+
+Natural IEEE14 synchronism is expected to time out (`SYNC_TIMEOUT`,
+physical evidence). A separate C-workflow variant uses a declared relaxed
+test-guard to exercise the full reclose/handback/reselection path; it is
+labeled `ASSUMED_DIAGNOSTIC / NOT PHYSICAL ACCEPTANCE` and is never claimed
+as natural IEEE14 reclose evidence.
+
+A four-trajectory comparison runner
+(`scripts/run_ieee14_ibr_switching_comparison.m`) produces three audited
+figures: main physical-evidence (A/B/C-natural), workflow-validation
+(C-natural vs C-workflow), and delay comparison (C-workflow-delay-on vs
+C-workflow-delay-off). Scenario B (no firmware) fails closed honestly at
+its genuine failure point; its trajectory is NEVER extended to 15 s.
 
 ```text
 IEEE14_IBR_GFL_MODEL_READY       = STRUCTURAL_ONLY
 PHASE_G2_LIMITER_READY           = G2_IMPLEMENTED
-IBR_EVENT_RUNNER_READY           = IMPLEMENTED_FAIL_CLOSED
+IBR_EVENT_RUNNER_READY           = IMPLEMENTED_TWO_PHASE_RECLOSE_FAIL_CLOSED
 IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 

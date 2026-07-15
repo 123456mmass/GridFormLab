@@ -71,10 +71,21 @@ end
 
 n_required = resolve_required_count(scenario, opt);
 result.n_gfm_required = n_required;
-if ~is_scalar_integer(n_required) || n_required < 1
+% SG_ON context (opt.sg_online=true) permits n_gfm_required=0 (all-GFL),
+% because the online SG owns the reference and no GFM is required.
+% SG_OFF context requires n_gfm_required >= 1 (a GFM must form the voltage).
+sg_online = isfield(opt,'sg_online') && ~isempty(opt.sg_online) && ...
+    isscalar(opt.sg_online) && logical(opt.sg_online);
+min_required = 1;
+if sg_online
+    min_required = 0;
+end
+if ~is_scalar_integer(n_required) || n_required < min_required
     result.selection_status = 'INVALID_REQUIRED_COUNT';
     result.failure_id = 'stability:ibr_config_selector:badRequiredCount';
-    result.feasibility_log = {'n_gfm_required must be a positive integer.'};
+    result.feasibility_log = {sprintf( ...
+        'n_gfm_required must be an integer >= %d (sg_online=%d).', ...
+        min_required, sg_online)};
     result.fingerprint = sprintf('selector_v3:badRequiredCount:%g', n_required);
     return;
 end
@@ -119,8 +130,55 @@ subsets = nchoosek(eligible_indices, n_required);
 if isvector(subsets) && n_required == 1
     subsets = subsets(:);
 end
+% n_required == 0 (SG_ON all-GFL): exactly one candidate with no GFM selected.
+% The SG owns the reference; selected_gfm_indices is empty.
+if n_required == 0
+    subsets = zeros(1, 0);  % one empty subset
+    subsets = reshape(subsets, 1, 0);  % ensure 1x0 for the loop below
+    % Represent as a single row with zero columns so size(subsets,1)==1.
+    subsets = struct('row', {[]});  % placeholder; handled specially below
+end
 
 candidates = repmat(candidate_template(), 0, 1);
+if n_required == 0
+    % Single all-GFL candidate (SG_ON context).
+    selected = [];
+    reference_index = [];
+    candidate_modes = modes;
+    for j = 1:numel(eligible_indices)
+        idx = eligible_indices(j);
+        candidate_modes{idx} = 'gfl';
+    end
+    changed = 0;
+    for k = 1:nr
+        changed = changed + ~strcmpi(candidate_modes{k}, modes{k});
+    end
+    c = candidate_template();
+    c.resource_ids = resource_ids;
+    c.resource_type = resource_type;
+    c.modes = candidate_modes;
+    c.online = online;
+    c.selected_gfm_indices = selected;
+    c.n_gfm_required = n_required;
+    c.reference_resource_index = reference_index;
+    c.structural_feasible = true;
+    c.topology_evaluated = false;
+    c.scr_evaluated = false;
+    c.equilibrium_evaluated = false;
+    c.sssa_evaluated = false;
+    c.margin = NaN;
+    c.omega = NaN;
+    c.physical_kcl_norm = Inf;
+    c.eigenvalues = [];
+    c.ready_to_commit = false;
+    c.feasible = false;
+    c.reason = 'sg_on_all_gfl_no_gfm_required';
+    c.failure_id = 'stability:ibr_config_selector:sssaNotEvaluated';
+    c.n_mode_changes = changed;
+    c.tie_break = '';
+    c.ordering_key = sprintf('%09d|%s', changed, '');
+    candidates(end+1, 1) = c; %#ok<AGROW>
+else
 for row = 1:size(subsets, 1)
     selected = reshape(subsets(row, :), 1, []);
     if reference_specified && ~ismember(preferred_reference, selected)
@@ -177,6 +235,7 @@ for row = 1:size(subsets, 1)
     c.ordering_key = sprintf('%09d|%s', changed, c.tie_break);
     candidates(end+1, 1) = c; %#ok<AGROW>
 end
+end  % close the n_required ~= 0 else branch
 
 if isempty(candidates)
     result.selection_status = 'NO_STRUCTURAL_CANDIDATE';

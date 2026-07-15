@@ -160,6 +160,46 @@ end
 if isfield(opt,'delays_overrides') && isstruct(opt.delays_overrides)
     ts_opt_ibr.delays_overrides = opt.delays_overrides;
 end
+% Plumb the resource table and precomputed authenticated selector table
+% (F1/C7). The TS driver uses the table for Phase-2 SG_ON reselection
+% lookup; the resource table is needed by the reselection transaction.
+ts_opt_ibr.resources = resources;
+if isfield(opt,'automatic_gfm_switching') && ~isempty(opt.automatic_gfm_switching)
+    ts_opt_ibr.automatic_gfm_switching = logical(opt.automatic_gfm_switching);
+else
+    ts_opt_ibr.automatic_gfm_switching = true;  % backward-compat default
+end
+result.metadata.automatic_gfm_switching = ts_opt_ibr.automatic_gfm_switching;
+% Build the precomputed authenticated selector table (SG_OFF + SG_ON) before
+% TS. Fail closed if the table cannot be built (no feasible candidate for a
+% required context). The table is bound to an immutable selector_table_fingerprint.
+try
+    table_opt = struct();
+    if isfield(opt,'gamma_req') && ~isempty(opt.gamma_req)
+        table_opt.gamma_req = opt.gamma_req;
+    end
+    table_opt.sg_off = struct('n_gfm_required', sched.n_gfm_required, ...
+        'reference_resource_index', sched.reference_resource_index);
+    % SG_ON context: SG owns the reference, so n_gfm_required may be 0
+    % (all-GFL) or more, determined by the selector. The pre_fault dispatch
+    % is the SG_ON contract (C2: pre_event_input is authoritative, so the
+    % table uses the same dispatch the runtime will restore).
+    sg_on_n = 0;
+    if isfield(opt,'sg_on_n_gfm_required') && ~isempty(opt.sg_on_n_gfm_required)
+        sg_on_n = opt.sg_on_n_gfm_required;
+    end
+    table_opt.sg_on = struct('n_gfm_required', sg_on_n);
+    selector_table = stability.ibr_selector_table(case_data, resources, ...
+        scenario, table_opt);
+    ts_opt_ibr.selector_table = selector_table;
+    result.metadata.selector_table_fingerprint = selector_table.selector_table_fingerprint;
+catch me
+    result.metadata.failure = 'run_hybrid_case:selectorTableBuild';
+    result.metadata.error = me.message;
+    result.metadata.error_id = me.identifier;
+    result.converged = false;
+    return;
+end
 
 [ts_res, ts_meta] = stability.ts_simulate_ibr_hybrid(case_data, ts_devices, ...
     eq.x0, eq.y0, ts_opt_ibr);
@@ -187,6 +227,32 @@ result.requested_sg_on_time = ts_res.requested_sg_on_time;
 result.actual_reclose_time = ts_res.actual_reclose_time;
 result.reclose_status = ts_res.reclose_status;
 result.sched = ts_res.sched;
+% New Phase-2 reselection + reference-ownership fields (F1/C1/F5).
+if isfield(ts_res,'actual_mode_reselection_time')
+    result.actual_mode_reselection_time = ts_res.actual_mode_reselection_time;
+else
+    result.actual_mode_reselection_time = NaN;
+end
+if isfield(ts_res,'reselection_status')
+    result.reselection_status = ts_res.reselection_status;
+else
+    result.reselection_status = 'NOT_REQUESTED';
+end
+if isfield(ts_res,'reference_owner_indices')
+    result.reference_owner_indices = ts_res.reference_owner_indices;
+end
+if isfield(ts_res,'gfm_reference_resource_indices')
+    result.gfm_reference_resource_indices = ts_res.gfm_reference_resource_indices;
+end
+if isfield(ts_res,'reference_island_ids')
+    result.reference_island_ids = ts_res.reference_island_ids;
+end
+if isfield(ts_res,'committed_config_fingerprint')
+    result.committed_config_fingerprint = ts_res.committed_config_fingerprint;
+end
+if isfield(ts_res,'pre_event_input_fingerprint')
+    result.pre_event_input_fingerprint = ts_res.pre_event_input_fingerprint;
+end
 if isfield(ts_res,'t_sg_trip'), result.t_sg_trip = ts_res.t_sg_trip; end
 if isfield(ts_res,'failure_id')
     result.failure_id = ts_res.failure_id;

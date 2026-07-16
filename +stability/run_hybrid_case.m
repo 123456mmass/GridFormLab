@@ -49,6 +49,69 @@ end
 case_data = scenario.case_data;
 resources = scenario.resources;
 
+% --- C0: Resolve automatic_gfm_switching canonical value EARLY ------------
+% Normalize/validate the switching flag IMMEDIATELY after the scenario-schema
+% check, BEFORE device build and equilibrium. A conflict or non-scalar/non-
+% boolean value must fail closed here without wasting the expensive
+% build_mixed_resource_devices + mixed_equilibrium_solve computation. The
+% nested opt.ibr_events.automatic_gfm_switching is the validated event-schedule
+% value (set by comparison runners); the top-level flag is backward-compat
+% only. If both are explicitly set and conflict, fail closed with a structured
+% result (do not throw an uncaught error).
+has_ibr_events_field = isfield(opt,'ibr_events') && isstruct(opt.ibr_events);
+has_nested = has_ibr_events_field && ...
+    isfield(opt.ibr_events,'automatic_gfm_switching') && ...
+    ~isempty(opt.ibr_events.automatic_gfm_switching);
+has_top = isfield(opt,'automatic_gfm_switching') && ...
+    ~isempty(opt.automatic_gfm_switching);
+% Type validation: a valid flag is scalar and boolean (or convertible).
+% Non-scalar or non-boolean values fail closed with a structured result.
+nested_ok = true; nested_val = []; nested_reason = '';
+if has_nested
+    [nested_ok, nested_val, nested_reason] = validate_agfm( ...
+        opt.ibr_events.automatic_gfm_switching, 'ibr_events');
+end
+top_ok = true; top_val = []; top_reason = '';
+if has_top
+    [top_ok, top_val, top_reason] = validate_agfm( ...
+        opt.automatic_gfm_switching, 'top-level');
+end
+if ~nested_ok || ~top_ok
+    result.converged = false;
+    result.failure_id = 'run_hybrid_case:automaticGfmSwitchingInvalidType';
+    if ~nested_ok, msg = nested_reason; else, msg = top_reason; end
+    result.failure_reason = msg;
+    result.metadata.failure = result.failure_id;
+    result.metadata.error = msg;
+    result.metadata.automatic_gfm_switching = [];
+    return;
+end
+event_opt = struct();
+if has_ibr_events_field, event_opt = opt.ibr_events; end
+canonical_agfm = true;   % backward-compat default when neither is set
+if has_top && ~has_nested
+    % Top-level only: promote to the event schedule (canonical location).
+    canonical_agfm = top_val;
+    event_opt.automatic_gfm_switching = top_val;
+elseif has_nested && ~has_top
+    canonical_agfm = nested_val;
+elseif has_nested && has_top
+    if nested_val ~= top_val
+        % Unresolvable conflict: structured fail-closed result.
+        result.converged = false;
+        result.failure_id = 'run_hybrid_case:automaticGfmSwitchingConflict';
+        result.failure_reason = sprintf(['automatic_gfm_switching: ' ...
+            'top-level (%d) conflicts with ibr_events (%d).'], ...
+            top_val, nested_val);
+        result.metadata.failure = result.failure_id;
+        result.metadata.error = result.failure_reason;
+        result.metadata.automatic_gfm_switching = [];
+        return;
+    end
+    canonical_agfm = nested_val;
+end
+result.metadata.automatic_gfm_switching = canonical_agfm;
+
 % --- Build devices from the resource table (uniform schema) ---------------
 try
     % The scenario owns dispatch and t0 mode/online commitments. Runtime TS
@@ -136,13 +199,37 @@ if ~has_ibr_events
     if isfield(scenario, 'scenario_id')
         result.fingerprint.scenario_id = scenario.scenario_id;
     end
+    % Phase 6: derived diagnostics for the no-event path (read-only
+    % reconstruction). Core trajectory fields (t, x_traj, y_traj, converged,
+    % residual_per_step, iter_per_step) remain bit-identical. u_history is a
+    % new public field = eq.u_eq repeated across samples. bus_voltage_magnitude
+    % is reconstructed from y_traj. Device-level diagnostics that require
+    % device reconstruct (coi_frequency_Hz, device_P_MW, device_modes_history)
+    % are NOT produced on the no-event path; Scenario-A quantitative
+    % comparison is limited to voltage metrics, and the gap is documented.
+    nt = numel(result.t);
+    if nt > 0 && ~isempty(eq.u_eq)
+        result.u_history = repmat(eq.u_eq(:), 1, nt);
+    else
+        result.u_history = [];
+    end
+    if ~isempty(result.y_traj) && mod(size(result.y_traj,1),2) == 0
+        Vmat = complex(result.y_traj(1:2:end,:), result.y_traj(2:2:end,:));
+        result.bus_voltage_magnitude = abs(Vmat);
+    else
+        result.bus_voltage_magnitude = [];
+    end
+    result.sample_side = repmat({'continuous'}, 1, nt);
+    result.transaction_id = zeros(1, nt);
     return;
 end
 
 % ---- IBR event route (opt-in) --------------------------------------------
-% Validate schedule fail-closed, no silent fallback.
+% C0: automatic_gfm_switching was already resolved/validated EARLY (before
+% device build). event_opt and canonical_agfm are in scope from that block.
+% Validate schedule with canonical event_opt.
 try
-    sched = stability.ibr_event_schedule(case_data, ts_devices, opt.ibr_events, t_end, dt);
+    sched = stability.ibr_event_schedule(case_data, ts_devices, event_opt, t_end, dt);
 catch me
     result.metadata.failure = 'run_hybrid_case:invalidEventSchedule';
     result.metadata.error = me.message;
@@ -154,22 +241,28 @@ end
 % Build TS options for hybrid driver
 ts_opt_ibr = ts_opt_base;
 ts_opt_ibr.ibr_event_schedule = sched;
+% Overrides may be supplied at top-level OR nested in opt.ibr_events. The
+% nested location is the canonical event-schedule value (set by comparison
+% runners); top-level is backward-compat. Nested takes precedence when both
+% are present (it is the validated schedule value).
 if isfield(opt,'synchronism_overrides') && isstruct(opt.synchronism_overrides)
     ts_opt_ibr.synchronism_overrides = opt.synchronism_overrides;
 end
 if isfield(opt,'delays_overrides') && isstruct(opt.delays_overrides)
     ts_opt_ibr.delays_overrides = opt.delays_overrides;
 end
+if isfield(event_opt,'synchronism_overrides') && isstruct(event_opt.synchronism_overrides)
+    ts_opt_ibr.synchronism_overrides = event_opt.synchronism_overrides;
+end
+if isfield(event_opt,'delays_overrides') && isstruct(event_opt.delays_overrides)
+    ts_opt_ibr.delays_overrides = event_opt.delays_overrides;
+end
 % Plumb the resource table and precomputed authenticated selector table
 % (F1/C7). The TS driver uses the table for Phase-2 SG_ON reselection
 % lookup; the resource table is needed by the reselection transaction.
 ts_opt_ibr.resources = resources;
-if isfield(opt,'automatic_gfm_switching') && ~isempty(opt.automatic_gfm_switching)
-    ts_opt_ibr.automatic_gfm_switching = logical(opt.automatic_gfm_switching);
-else
-    ts_opt_ibr.automatic_gfm_switching = true;  % backward-compat default
-end
-result.metadata.automatic_gfm_switching = ts_opt_ibr.automatic_gfm_switching;
+% Propagate canonical value (resolved early, before device build).
+ts_opt_ibr.automatic_gfm_switching = canonical_agfm;
 % Build the precomputed authenticated selector table (SG_OFF + SG_ON) before
 % TS. Fail closed if the table cannot be built (no feasible candidate for a
 % required context). The table is bound to an immutable selector_table_fingerprint.
@@ -206,6 +299,7 @@ end
 
 result.x_traj = ts_res.x_traj;
 result.y_traj = ts_res.y_traj;
+result.u_history = ts_res.u_history;
 result.t = ts_res.t;
 result.converged = ts_res.converged;
 result.events = ts_res.events;
@@ -263,10 +357,11 @@ if isfield(ts_res,'failure_reason')
     result.metadata.error = ts_res.failure_reason;
 end
 copy_fields = {'sample_side','topology_history','active_state_history', ...
+    'event_context_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
     'device_P_pu','device_Q_pu','device_P_MW','device_Q_MVAr', ...
     'device_current_limit_sys','device_ids','device_bus_ids','bus_ids', ...
-    'last_synchronism_guard'};
+    'last_synchronism_guard','transaction_id'};
 for k = 1:numel(copy_fields)
     name = copy_fields{k};
     if isfield(ts_res,name), result.(name) = ts_res.(name); end
@@ -314,4 +409,25 @@ if isfield(scenario,'selection_log') && scenario.selection_log.selector_evaluate
     summary.pf_stage_invocations=summary.pf_stage_invocations+ ...
         3*scenario.selection_log.equilibrium_evaluations;
 end
+end
+
+function [ok, val, reason] = validate_agfm(raw, where)
+%VALIDATE_AGFM  Type-check an automatic_gfm_switching flag value.
+%   A valid flag is scalar and boolean (or numeric 0/1 convertible). Returns
+%   ok=false with a reason for non-scalar or non-boolean values so the caller
+%   can fail closed with a structured result instead of throwing.
+if isempty(raw)
+    ok = true; val = []; reason = ''; return;
+end
+if ~isscalar(raw)
+    ok = false; val = []; reason = sprintf( ...
+        'automatic_gfm_switching (%s) must be scalar, got size [%s].', ...
+        where, num2str(size(raw))); return;
+end
+if islogical(raw) || (isnumeric(raw) && (raw==0 || raw==1))
+    ok = true; val = logical(raw); reason = ''; return;
+end
+ok = false; val = []; reason = sprintf( ...
+    'automatic_gfm_switching (%s) must be boolean, got class %s.', ...
+    where, class(raw));
 end

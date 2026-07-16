@@ -127,38 +127,32 @@ end
 % =========================================================================
 
 function test_c_natural_honest_timeout(tc)
-% C-natural (physical synchronism thresholds) must time out honestly;
-% no natural reclose claim if actual_reclose_time is NaN. Uses a diagnostic
-% guard so the simulation converges to the timeout; the strict physical guard
-% would not converge post-trip on the short horizon. The timeout itself is
-% physical evidence (the guard never passes).
+% C-natural (public IEEE14 demo defaults, C1-test corrected). Uses the
+% physical synchronism thresholds from the case file:
+% dV_max=0.05, df_max=0.001, dtheta_max=10, dwell=0.5, timeout=5.0.
+% fault=3.0/3.1, trip=5.0, sg_on=8.0, t_end=15.0 — public timeline.
+% NO synchronism_overrides, NO delays_overrides. The test asserts
+% SYNC_TIMEOUT at ~13.0s (8.0 + 5.0). This run honours the complete
+% dynamic path between trip and reconnect.
 s = tc.TestData.scenario;
 [scenario, selection] = stability.ibr_configure_scenario(s, struct());
 tc.assertTrue(selection.ready, selection.failure_reason);
-opt = struct('t_end', 0.5, 'dt', 0.01, 'verbose', false, ...
+opt = struct('t_end', 15.0, 'dt', 0.01, 'verbose', false, ...
     'ibr_events', struct('enabled', true, 'fault_bus', 4, 'Zf', 1i*0.1, ...
-    'fault_on', 0.1, 'fault_clear', 0.12, 'sg_trip', 0.2, 'sg_on', 0.4, ...
+    'fault_on', 3.0, 'fault_clear', 3.1, 'sg_trip', 5.0, 'sg_on', 8.0, ...
     'selected_gfm_indices', 2:5, 'reference_resource_index', 2, ...
-    'automatic_gfm_switching', true, 'synchronism_overrides', ...
-    struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
-    'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.05)), ...
-    'plot_results', false);
+    'automatic_gfm_switching', true), 'plot_results', false);
+% NO synchronism_overrides, NO delays_overrides.
 r = stability.run_hybrid_case(scenario, opt);
-% If the simulation converged, C-natural must time out (physical evidence) or
-% stay pending; never a fake close.
-if r.converged
-    tc.verifyTrue(ismember(r.reclose_status, {'SYNC_TIMEOUT', 'PENDING', 'NOT_REQUESTED'}), ...
-        sprintf('C-natural must time out or stay pending; got %s.', r.reclose_status));
-    if strcmp(r.reclose_status, 'SYNC_TIMEOUT')
-        tc.verifyTrue(isnan(r.actual_reclose_time), ...
-            'No natural reclose; actual_reclose_time must be NaN.');
-    end
-else
-    % If it did not converge, that is an honest numerical outcome on the short
-    % horizon; the test does not fabricate a reclose.
-    tc.verifyTrue(isempty(r.failure_id) || ~contains(char(r.failure_id), 'reclose'), ...
-        'No fabricated reclose on non-converged C-natural.');
-end
+% C-natural must time out on physical defaults (no diagnostic overrides).
+tc.verifyEqual(r.reclose_status, 'SYNC_TIMEOUT');
+tc.verifyEqual(r.requested_sg_on_time, 8.0);
+tc.verifyTrue(isnan(r.actual_reclose_time));
+% Timeout event logged at ~13.0 s (8.0 + 5.0).
+timeout_mask = strcmp({r.event_log.type}, 'sg_reclose_timeout');
+tc.verifyTrue(any(timeout_mask), ...
+    'C-natural must contain sg_reclose_timeout record.');
+tc.verifyEqual(r.event_log(find(timeout_mask,1)).t, 13.0, 'AbsTol', 0.02);
 end
 
 % =========================================================================
@@ -194,6 +188,71 @@ mpc = struct('bus', [1 1 0 0 0 0 1 1.0 0 0 0 0; 2 1 0 0 0 0 1 1.0 0 0 0 0], ...
     'branch', [1 2 0 0.1 0 0 0 0 0 0 1]);  % but branch says connected
 tc.verifyError(@() stability.island_components(Y, mpc, struct()), ...
     'stability:island_components:ybusBranchInconsistent');
+end
+
+function test_per_island_vf_check_catches_orphaned_energized_island(tc)
+% C1 FALSIFICATION via the PRODUCTION helper stability.per_island_vf_check.
+% A global "any VF exists" check is INSUFFICIENT when the network has multiple
+% islands. Build a two-island Ybus where island A has a voltage-forming source
+% but island B is energized (has load) yet has NO voltage-forming source. The
+% production helper (called by trip_transaction in ts_simulate_ibr_hybrid.m)
+% must flag island B; a global check that breaks at the first VF resource
+% found anywhere would return has_vf=true and MASK island B's deficit — the
+% exact defect C1 fixed.
+Y = zeros(4);
+% Island 1: buses 1-2 connected, bus 2 has load (Pd,Qd).
+Y(1,2) = -10i; Y(2,1) = -10i;
+Y(1,1) = 10i; Y(2,2) = 10i;
+% Island 2: buses 3-4 connected, bus 3 has load (energized, no VF source).
+Y(3,4) = -5i; Y(4,3) = -5i;
+Y(3,3) = 5i; Y(4,4) = 5i;
+mpc = struct('bus', [1 1 0 0 0 0 1 1.0 0 0 0 0; ...
+                     2 1 30 10 0 0 1 1.0 0 0 0 0; ...  % load on bus 2 (island A)
+                     3 1 25 8 0 0 1 1.0 0 0 0 0; ...   % load on bus 3 (island B)
+                     4 1 0 0 0 0 1 1.0 0 0 0 0], ...
+              'branch', [1 2 0 0.1 0 0 0 0 0 0 1; 3 4 0 0.2 0 0 0 0 0 0 1]);
+% Devices: SG1 on bus 1 (voltage-forming via 'synchronous'), IBR2 on bus 3
+% (GFL mode — NOT voltage-forming). The SG is the tripped device (sg_id).
+devs = struct('device_id','','bus_position',0,'capabilities',struct());
+devs = repmat(devs,2,1);
+devs(1).device_id = 'SG1'; devs(1).bus_position = 1;
+devs(1).capabilities = struct('voltage_forming_modes','synchronous');
+devs(2).device_id = 'IBR2'; devs(2).bus_position = 3;
+devs(2).capabilities = struct('voltage_forming_modes','gfm');
+% Candidate hybrid_state: SG1 breaker open (offline), IBR2 online in GFL mode.
+hs = struct( ...
+    'device_online', struct('SG1', false, 'IBR2', true), ...
+    'device_modes',  struct('SG1', 'breaker_open', 'IBR2', 'gfl'));
+% Production helper: SG1 is the tripped sg_id (excluded from VF sources).
+[has_vf, failing_ids, vf_positions] = stability.per_island_vf_check( ...
+    Y, mpc, devs, hs, 'SG1');
+% Island A (buses 1-2): SG1 is offline (tripped), so NO online VF source.
+% Island B (buses 3-4): IBR2 is GFL (not voltage-forming), so NO VF source.
+% Both islands are energized (load) but lack an online VF source.
+tc.verifyFalse(has_vf, 'Per-island check must fail: no island has a VF source.');
+tc.verifyEqual(numel(failing_ids), 2, ...
+    'Both energized islands must be flagged as failing.');
+tc.verifyTrue(ismember(1, failing_ids), 'Island A (id=1) must be failing.');
+tc.verifyTrue(ismember(2, failing_ids), 'Island B (id=2) must be failing.');
+% vf_positions must be empty: SG1 is excluded (tripped), IBR2 is GFL.
+tc.verifyTrue(isempty(vf_positions), ...
+    'No online voltage-forming bus positions (SG1 tripped, IBR2 is GFL).');
+% Now flip IBR2 to GFM mode — island B gains a VF source, island A still
+% lacks one (SG1 offline). Only island A should fail.
+hs.device_modes.IBR2 = 'gfm';
+[has_vf2, failing_ids2, vf_positions2] = stability.per_island_vf_check( ...
+    Y, mpc, devs, hs, 'SG1');
+tc.verifyFalse(has_vf2, 'Island A still lacks a VF source (SG1 tripped).');
+tc.verifyEqual(numel(failing_ids2), 1, 'Only island A must fail now.');
+tc.verifyEqual(failing_ids2(1), 1, 'Island A (id=1) must be the failing one.');
+tc.verifyEqual(vf_positions2, 3, 'IBR2 (bus 3) must be the VF source.');
+% Demonstrate why a GLOBAL check is wrong for the same input: it would
+% find IBR2's VF source and report has_vf=true, masking island A.
+islands = stability.island_components(Y, mpc, ...
+    struct('online_vf_positions', vf_positions2));
+global_would_pass = any([islands.has_online_vf_source]);
+tc.verifyTrue(global_would_pass, ...
+    'Sanity: a global "any VF" test passes here, which is why per-island is required.');
 end
 
 function test_reference_owner_schema_generic_eligibility(tc)

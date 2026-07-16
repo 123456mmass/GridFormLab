@@ -39,3 +39,10 @@ These rules apply to the entire repository.
 - Record branch, tested tree/commit, environment, commands, pass/fail/incomplete counts, metrics, limitations, and whether the full regression was required, reused from an unchanged tree, or intentionally omitted under the risk policy above.
 - After approved scope passes declared gates, commit and fast-forward push without re-asking. Ask before conflicts, remote divergence, failed/unexplained gates, scope expansion, unrelated files, published-history rewrite, rebase, amend, or force-push.
 - Verify local HEAD equals the remote after delivery. Read `docs/project/AGENT_HANDOFF.md` for current status and technical debt.
+
+## Defect memory and context budget
+
+- Record every reproducible material defect or diagnostic trap in `docs/project/defects/YYYY-MM-DD-short-slug.md` before delivery. Include status, symptom, reproduction, affected branch/commit/environment, root cause with evidence, falsified hypotheses, fix, verification, limitations, and related files/commits. Mark unresolved records `OPEN`; update the same record to `RESOLVED` without erasing its history.
+- Add one compact row to `docs/project/defects/INDEX.md`. Before debugging, search the index and defect directory with `rg` using the failure ID, symptom, component, or model name; read only matching records. Never load every defect record merely because the directory exists.
+- Keep the current handoff and active plan concise and free of duplicated history. Move superseded detail to timestamped files under `docs/project/handoffs/` or an archive, and link it instead of copying it into every current document.
+- Defect records must distinguish observation from inference, avoid unsupported root-cause claims, contain no secrets or large raw dumps, and point to reproducible commands or stored artifacts rather than embedding bulky output.

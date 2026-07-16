@@ -117,12 +117,24 @@ while t < settings.t_end-settings.event_tol
         samples = append_sample(samples,t,x,y,u,ec,active,topology,side);
     end
 
-    % Apply every scheduled transition at this timestamp in deterministic order.
+    % Apply every scheduled transition at this timestamp as ONE atomic
+    % publication group (C4). Shared group_tx_id covers the left sample,
+    % every event ranking in the group, and the single committed right sample.
     event_applied = false;
+    group_tx_id = 0;
     while event_cursor<=numel(events) && ...
             abs(events(event_cursor).t-t)<=settings.event_tol
         ev = events(event_cursor);
         pre_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
+        if group_tx_id == 0
+            transaction_counter = transaction_counter + 1;
+            group_tx_id = transaction_counter;
+            % Back-patch the event-left sample with the group transaction ID.
+            if ~isempty(samples.t) && samples.t(end) == t ...
+                    && samples.transaction_id(end) == 0
+                samples.transaction_id(end) = group_tx_id;
+            end
+        end
         switch ev.type
         case 'fault_on'
             [ok,y_new,reason,right_norm] = right_limit(x,y,Yfault,dae,u,ec,t,settings.kcl_tol);
@@ -166,8 +178,27 @@ while t < settings.t_end-settings.event_tol
                 log.applied=true; log.details=handler_log.details;
                 t_trip=t;
             else
-                [converged,failure_id,failure_reason,log] = transition_failure( ...
-                    ['ts_simulate_ibr_hybrid:' stage],reason,log);
+                % Inline failure handling (preserve log struct fields + copy
+                % candidate metadata from handler_log per F2 audit contract).
+                converged = false;
+                failure_id = ['ts_simulate_ibr_hybrid:' stage];
+                failure_reason = reason;
+                log.failure_id = failure_id;
+                log.details = failure_reason;
+                % handler_log may lack candidate fields on early returns.
+                if isfield(handler_log, 'candidate_committed')
+                    log.candidate_committed = handler_log.candidate_committed;
+                    log.candidate_sg_online = handler_log.candidate_sg_online;
+                    log.candidate_modes = handler_log.candidate_modes;
+                    log.failing_island_ids = handler_log.failing_island_ids;
+                    log.n_failing_islands = handler_log.n_failing_islands;
+                else
+                    log.candidate_committed = [];
+                    log.candidate_sg_online = [];
+                    log.candidate_modes = struct();
+                    log.failing_island_ids = [];
+                    log.n_failing_islands = 0;
+                end
             end
         case 'sg_on'
             pending_reclose = true;
@@ -182,9 +213,10 @@ while t < settings.t_end-settings.event_tol
             [converged,failure_id,failure_reason,log] = transition_failure( ...
                 'ts_simulate_ibr_hybrid:badEvent',sprintf('Unknown event %s.',ev.type),log);
         end
+        log.transaction_id = group_tx_id;
         event_log(end+1,1) = log; %#ok<AGROW>
         current_active=stability.ts_dynamic_state_indices(dae,ec);
-        log_status=stability.ibr_status_snapshot(ev.type,t,dae,ec,current_active, ...
+        log_status=stability.ibr_status_snapshot(ev.type,t,dae,ec,current_active,...
             kcl_norm(dae,t,x,y,Ycurr,u,ec));
         event_log(end).status=log_status;
         status_log(end+1,1)=log_status; %#ok<AGROW>
@@ -195,7 +227,7 @@ while t < settings.t_end-settings.event_tol
     if ~converged, break; end
     if event_applied
         active = stability.ts_dynamic_state_indices(dae,ec);
-        samples = append_sample(samples,t,x,y,u,ec,active,topology,'right');
+        samples = append_sample(samples,t,x,y,u,ec,active,topology,'right',group_tx_id);
     end
 
     % sg_on is an earliest request. Check after every accepted sample, enforce
@@ -211,11 +243,15 @@ while t < settings.t_end-settings.event_tol
         dwell_ok = isfinite(good_since) && t-good_since>=settings.sync_dwell-settings.event_tol;
         off_ok = isfinite(t_trip) && t-t_trip>=settings.min_off-settings.event_tol;
         if eligible && dwell_ok && off_ok
+            transaction_counter=transaction_counter+1;
+            reclose_tx_id=transaction_counter;
+            samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reclose_tx_id);
             pre_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
             [ok,x_new,y_new,u_new,ec_new,handler_log,reason,right_norm, ...
                 dispatch_after] = reclose_transaction(t,x,y,Ycurr,u,ec, ...
                 pre_event_input,dae,sched,settings.kcl_tol);
             log = new_event_log('sg_reclose',t);
+            log.transaction_id=reclose_tx_id;
             log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             log.guard=last_guard;
             log.input_before=u; log.input_after=u_new;
@@ -225,8 +261,7 @@ while t < settings.t_end-settings.event_tol
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 log.applied=true; log.details=handler_log.details;
-                transaction_counter=transaction_counter+1;
-                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',transaction_counter);
+                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reclose_tx_id);
                 % Begin Phase-2 reselection (F4/F5). The SG_ON table lookup and
                 % T_down derivation happen in the reselection block below.
                 pending_reselection=true;
@@ -236,6 +271,17 @@ while t < settings.t_end-settings.event_tol
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:recloseTransaction',reason,log);
+                % C-workflow KCL instrumentation (read-only, Phase 5): record the
+                % left-limit state at the failed reclose attempt so the failure
+                % can be diagnosed as a physically infeasible close (relaxed guard
+                % allowing a non-synchronous SG state) rather than a numerical bug.
+                % This does NOT alter the trajectory or relax any gate.
+                try
+                    log.reclose_diag = reclose_left_state_diag( ...
+                        t, x, y, u, ec, dae, sched, Ycurr, last_guard, right_norm);
+                catch %#ok<CTCH>
+                    % Instrumentation must never mask the original failure.
+                end
             end
             event_log(end+1,1)=log; %#ok<AGROW>
             log_status=stability.ibr_status_snapshot('sg_reclose',t,dae,ec,active, ...
@@ -279,10 +325,14 @@ while t < settings.t_end-settings.event_tol
             guard_ok = isfinite(reselection_good_since) && ...
                 t - reselection_good_since >= settings.T_guard - settings.event_tol;
             if hold_ok && guard_ok
+                transaction_counter = transaction_counter + 1;
+                reselection_tx_id = transaction_counter;
+                samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reselection_tx_id);
                 [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
                     no_mode_change] = reselection_transaction( ...
                     t, x, y, Ycurr, u, ec, dae, sched, case_data, settings, opt);
                 log = new_event_log('sg_reselection', t);
+                log.transaction_id = reselection_tx_id;
                 log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
                 log.right_kcl_norm = right_norm;
                 log.input_before = u; log.input_after = u_new;
@@ -297,8 +347,7 @@ while t < settings.t_end-settings.event_tol
                     else
                         reselection_status = 'SUCCESS';
                         log.details = rsel_log.details;
-                        transaction_counter = transaction_counter + 1;
-                        samples = append_sample(samples, t, x, y, u, ec, active, topology, 'right', transaction_counter);
+                        samples = append_sample(samples, t, x, y, u, ec, active, topology, 'right', reselection_tx_id);
                     end
                     log.applied = true;
                 else
@@ -332,6 +381,7 @@ res.x_traj=samples.x;
 res.y_traj=samples.y;
 res.u_history=samples.u;
 res.sample_side=samples.side;
+res.transaction_id=samples.transaction_id;
 res.topology_history=samples.topology;
 res.Y_log=samples.topology;
 res.active_state_history=samples.active;
@@ -479,7 +529,7 @@ function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] =
 %   forming resource exists, fail closed with noVoltageFormingSource, publish
 %   NO right-limit sample, commit NO candidate hybrid state, and end the
 %   accepted trajectory at the event-left sample (F2).
-if nargin < 12, automatic_gfm_switching = true; end
+if nargin < 11, automatic_gfm_switching = true; end
 ok=false; xr=x; yr=y; ur=u; ecr=ec; active=[]; reason='';
 right_norm=inf; stage='tripTransaction'; dispatch=struct();
 if automatic_gfm_switching
@@ -520,34 +570,35 @@ else
     if isfield(hs_candidate,'device_modes') && isfield(hs_candidate.device_modes,sg_key)
         hs_candidate.device_modes.(sg_key) = 'breaker_open';
     end
-    % Per-island voltage-forming-source check (F2/F3): after the SG breaker
-    % opens, does any online voltage-forming resource remain?
-    has_vf = false;
-    for k = 1:numel(dae.devices)
-        dev = dae.devices(k);
-        key = matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
-        online_k = isfield(hs_candidate,'device_online') && ...
-            isfield(hs_candidate.device_online,key) && ...
-            logical(hs_candidate.device_online.(key));
-        mode_k = '';
-        if isfield(hs_candidate,'device_modes') && isfield(hs_candidate.device_modes,key)
-            mode_k = char(hs_candidate.device_modes.(key));
-        end
-        if online_k && is_voltage_forming_mode(dev, mode_k)
-            has_vf = true;
-            break;
-        end
-    end
+% Per-island voltage-forming-source check (C1): after the SG breaker
+    % opens, EVERY energized island must retain at least one online voltage-
+    % forming resource. A global "any device is VF" check is insufficient.
+    % Delegated to the pure helper stability.per_island_vf_check so the
+    % algorithm is unit-testable on a two-island Ybus without a composite DAE.
+    [has_vf, failing_island_ids, vf_bus_positions] = ...
+        stability.per_island_vf_check(Y, case_data.mpc, dae.devices, ...
+            hs_candidate, sched.sg_id); %#ok<VFBUS> vf_bus_positions retained for diagnostics
     handler_log = struct('details','', 'applied', false, 'failure_id', '', ...
         'selected_gfm_indices', [], 'n_gfm_required', [], ...
-        'reference_resource_index', []);
+        'reference_resource_index', [], ...
+        'candidate_committed', false, 'candidate_sg_online', false, ...
+        'candidate_modes', hs_candidate.device_modes, 'failing_island_ids', [], ...
+        'n_failing_islands', 0);
     if ~has_vf
-        % Fail closed: no voltage-forming source after SG trip. Publish NO
-        % right-limit sample; commit NO candidate hybrid state (F2).
+        % Fail closed: one or more islands lack a voltage source.
         stage='noVoltageFormingSource';
-        reason='noVoltageFormingSource: no online voltage-forming resource after SG breaker trip.';
+        reason='noVoltageFormingSource: per-island checks: island has no VF.';
+        if ~isempty(failing_island_ids)
+            reason = sprintf('%s Failing islands: %s.', reason, ...
+                strjoin(string(failing_island_ids), ', '));
+        end
         handler_log.failure_id='ts_simulate_ibr_hybrid:noVoltageFormingSource';
         handler_log.details=reason;
+        handler_log.candidate_committed = false;
+        handler_log.candidate_sg_online = false;
+        handler_log.candidate_modes = hs_candidate.device_modes;
+        handler_log.failing_island_ids = failing_island_ids;
+        handler_log.n_failing_islands = numel(failing_island_ids);
         return;
     end
     % A voltage-forming resource remains; proceed through the ordinary
@@ -572,6 +623,45 @@ if isfield(dev,'capabilities') && isstruct(dev.capabilities) && ...
         isfield(dev.capabilities,'voltage_forming_modes')
     vf = string(dev.capabilities.voltage_forming_modes);
     tf = any(strcmpi(vf, lower(mode)));
+end
+end
+
+function diag = reclose_left_state_diag(t, x, y, u, ec, dae, sched, Y, guard, right_norm)
+%RECLOSE_LEFT_STATE_DIAG  Read-only diagnostic of the left-limit state at a
+% failed reclose attempt (Phase 5 instrumentation). Records the SG rotor
+% state, bus voltage, guard margins, and right-limit residual so the failure
+% can be attributed to a physically infeasible close (relaxed guard allowing a
+% non-synchronous SG state) rather than a numerical bug. Does NOT alter the
+% trajectory or relax any gate.
+diag = struct('t', t, 'right_norm', right_norm);
+try
+    idx = find(strcmp({dae.devices.device_id}, sched.sg_id));
+    if numel(idx) == 1
+        dev = dae.devices(idx);
+        xi = dae.device_offsets(idx)+(1:dev.nx);
+        rec = dev.reconstruct(t, x(xi), y, u(dae.u_offsets(idx)+(1:dev.nu)), ec);
+        if isfield(rec,'delta'), diag.sg_delta = rec.delta; end
+        if isfield(rec,'omega'), diag.sg_omega = rec.omega; end
+        if isfield(rec,'V_open_circuit'), diag.sg_V_open_circuit = rec.V_open_circuit; end
+        diag.sg_bus_position = dev.bus_position;
+        vb = complex(y(2*dev.bus_position-1), y(2*dev.bus_position));
+        diag.bus_voltage_pu = abs(vb);
+        diag.bus_angle_deg = angle(vb)*180/pi;
+        if isfield(rec,'V_open_circuit') && isfinite(rec.V_open_circuit)
+            diag.dV_pu = abs(abs(vb) - abs(rec.V_open_circuit));
+        end
+        if isfield(rec,'omega') && isfinite(rec.omega)
+            diag.df_pu = abs(rec.omega - 1.0);
+        end
+        if isfield(rec,'delta') && isfinite(rec.delta)
+            diag.dtheta_deg = abs(angle(vb)*180/pi - rec.delta*180/pi);
+        end
+    end
+catch %#ok<CTCH>
+    % Diagnostic must never throw; partial fields are acceptable.
+end
+if isstruct(guard) && ~isempty(fieldnames(guard))
+    diag.guard = guard;
 end
 end
 
@@ -903,12 +993,30 @@ s.context{end+1}=ec; s.active{end+1}=active(:)';
 s.transaction_id(end+1)=tx_id;
 end
 
+function s=mark_transaction_left(s,t,x,y,u,ec,active,topology,tx_id)
+%MARK_TRANSACTION_LEFT Publish or relabel the accepted pre-transaction limit.
+% If another transaction already published a right limit at the same physical
+% time, preserve it and append a distinct left limit for this transaction.
+same_time = ~isempty(s.t) && abs(s.t(end)-t) <= 10*eps(max(1,abs(t)));
+if same_time && ~strcmp(s.side{end},'right') && s.transaction_id(end)==0
+    s.side{end}='left';
+    s.transaction_id(end)=tx_id;
+else
+    s=append_sample(s,t,x,y,u,ec,active,topology,'left',tx_id);
+end
+end
+
 function log=new_event_log(type,t)
 log=struct('type',type,'t',t,'applied',false,'failure_id','', ...
     'details','','pre_kcl_norm',NaN,'right_kcl_norm',NaN, ...
     'selected_gfm_indices',[],'reference_resource_index',[], ...
     'guard',struct(),'status',struct(),'input_before',[], ...
-    'input_after',[],'dispatch_after_pu',struct());
+    'input_after',[],'dispatch_after_pu',struct(), ...
+    'transaction_id',0, ...
+    'candidate_committed',[],'candidate_sg_online',[], ...
+    'candidate_modes',struct(),'failing_island_ids',[], ...
+    'n_failing_islands',0, ...
+    'reclose_diag',struct());
 end
 
 function [converged,id,reason,log]=transition_failure(id,reason,log)
@@ -974,6 +1082,7 @@ end
 
 function [res,meta]=empty_result(opt)
 res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
+    'transaction_id', [], ...
     'u_history',[], ...
     'topology_history',{{}},'event_context_history',{{}},'active_state_history',{{}}, ...
     'events',[],'event_log',[],'converged',false,'failure_id','', ...

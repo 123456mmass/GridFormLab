@@ -32,7 +32,7 @@ end
 
 function test_sg_on_request_does_not_close_with_strict_guard(tc)
 % With a strict synchronism guard, the sg_on request must NOT close the SG;
-% it stays offline and reclose_status is PENDING or SYNC_TIMEOUT.
+% it stays offline until the declared short diagnostic timeout.
 over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
     'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
     't_end', 0.10);
@@ -40,12 +40,12 @@ r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % SG (device 1) must remain offline at the end.
 tc.verifyFalse(r.device_online_history(1, end));
-tc.verifyTrue(ismember(r.reclose_status, {'PENDING', 'SYNC_TIMEOUT'}));
+tc.verifyEqual(r.reclose_status, 'SYNC_TIMEOUT');
 end
 
-function test_natural_sync_timeout_is_physical_evidence(tc)
-% Strict guard + short timeout -> SYNC_TIMEOUT (physical evidence, not a failure
-% of the engine). SG stays offline; no fabricated reclose.
+function test_strict_diagnostic_guard_times_out_fail_closed(tc)
+% ASSUMED_DIAGNOSTIC strict guard + short timeout -> SYNC_TIMEOUT. This is a
+% supervisory fail-closed unit test, not natural IEEE14 physical evidence.
 over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
     'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
     't_end', 0.10);
@@ -69,14 +69,12 @@ r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyEqual(r.reclose_status, 'SUCCESS');
 tc.verifyEqual(r.actual_reclose_time, 0.07, 'AbsTol', 1e-12);
-if isfield(r, 'reference_owner_indices') && ~isempty(r.reference_owner_indices)
-    tc.verifyEqual(r.reference_owner_indices, 1, 'AbsTol', 0, ...
-        'Phase 1 must return reference ownership to the reclosed SG.');
-end
-if isfield(r, 'gfm_reference_resource_indices') && ~isempty(r.gfm_reference_resource_indices)
-    tc.verifyTrue(isnan(r.gfm_reference_resource_indices(1)), ...
-        'gfm_reference_resource_indices must be empty (NaN) while SG owns reference.');
-end
+tc.verifyTrue(isfield(r, 'reference_owner_indices'));
+tc.verifyEqual(r.reference_owner_indices, 1, 'AbsTol', 0, ...
+    'Phase 1 must return reference ownership to the reclosed SG.');
+tc.verifyTrue(isfield(r, 'gfm_reference_resource_indices'));
+tc.verifyTrue(isnan(r.gfm_reference_resource_indices(1)), ...
+    'gfm_reference_resource_indices must be empty (NaN) while SG owns reference.');
 end
 
 function test_phase1_preserves_sg_state_and_restores_pre_event_input(tc)
@@ -104,19 +102,18 @@ r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % committed_config_fingerprint must be present and reflect the reclose (if the
 % field is propagated to the result).
-if isfield(r, 'committed_config_fingerprint') && ~isempty(r.committed_config_fingerprint)
-    tc.verifyTrue(contains(r.committed_config_fingerprint, 'sg_on_reclose'), ...
-        'committed_config_fingerprint must reflect the Phase-1 reclose.');
-end
-% selector_table_fingerprint and pre_event_input_fingerprint must be present
-% and non-empty (immutable for the run) if propagated. (event_run does not
-% build a selector table, so these may be empty in this unit context.)
-if isfield(r, 'selector_table_fingerprint') && ~isempty(r.selector_table_fingerprint)
-    tc.verifyTrue(true);  % present and non-empty
-end
-if isfield(r, 'pre_event_input_fingerprint') && ~isempty(r.pre_event_input_fingerprint)
-    tc.verifyTrue(true);  % present and non-empty
-end
+tc.verifyTrue(isfield(r, 'committed_config_fingerprint'));
+tc.verifyFalse(isempty(r.committed_config_fingerprint));
+tc.verifyTrue(contains(r.committed_config_fingerprint, 'sg_on_reclose'), ...
+    'committed_config_fingerprint must reflect the Phase-1 reclose.');
+% event_run calls the TS driver directly without a selector table, so the
+% public field is intentionally empty.  The pre-event input fingerprint is
+% always owned by the driver and must be populated.
+tc.verifyTrue(isfield(r, 'selector_table_fingerprint'));
+tc.verifyEmpty(r.selector_table_fingerprint);
+tc.verifyTrue(isfield(r, 'pre_event_input_fingerprint'));
+tc.verifyFalse(isempty(r.pre_event_input_fingerprint), ...
+    'pre_event_input_fingerprint must authenticate the restored input.');
 end
 
 function test_phase1_exactly_one_right_limit_sample(tc)
@@ -126,6 +123,12 @@ r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 right_samples = find(abs(r.t - 0.07) < 1e-12 & strcmp(r.sample_side, 'right'));
 tc.verifyEqual(numel(right_samples), 1, 'Exactly one right-limit sample at reclose.');
+reclose_log=r.event_log(strcmp({r.event_log.type},'sg_reclose'));
+tc.verifyEqual(numel(reclose_log),1);
+tx=reclose_log.transaction_id;
+tc.verifyGreaterThan(tx,0);
+tc.verifyEqual(sum(r.transaction_id==tx & strcmp(r.sample_side,'left')),1);
+tc.verifyEqual(sum(r.transaction_id==tx & strcmp(r.sample_side,'right')),1);
 % KCL residual at the right sample must be finite and within tolerance.
 tc.verifyTrue(isfinite(r.event_log(end).right_kcl_norm));
 tc.verifyLessThan(r.event_log(end).right_kcl_norm, 1e-6);
@@ -143,11 +146,13 @@ over = diagnostic_overrides(0.07);
 r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyEqual(r.reclose_status, 'SUCCESS');
-if isfield(r, 'reselection_status')
-    % PENDING or NO_MODE_CHANGE_REQUIRED or SUCCESS depending on T_down.
-    tc.verifyTrue(ismember(r.reselection_status, ...
-        {'PENDING', 'NO_MODE_CHANGE_REQUIRED', 'SUCCESS'}));
-end
+% reselection_status is always published (default 'NOT_REQUESTED'); assert it.
+tc.verifyTrue(isfield(r, 'reselection_status'), ...
+    'reselection_status must be published.');
+% PENDING or NO_MODE_CHANGE_REQUIRED or SUCCESS depending on T_down.
+tc.verifyTrue(ismember(r.reselection_status, ...
+    {'PENDING', 'NO_MODE_CHANGE_REQUIRED', 'SUCCESS'}), ...
+    sprintf('Unexpected reselection_status: %s', r.reselection_status));
 end
 
 function test_phase2_no_mode_change_when_sg_on_keeps_gfm_set(tc)
@@ -160,7 +165,13 @@ over.delays_overrides.T_guard_s = 0;
 over.delays_overrides.T_lockout_s = 0;
 r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
-if isfield(r, 'reselection_status') && strcmp(r.reselection_status, 'NO_MODE_CHANGE_REQUIRED')
+% reselection_status must be published and one of the known outcomes.
+tc.verifyTrue(isfield(r, 'reselection_status'), ...
+    'reselection_status must be published.');
+tc.verifyTrue(ismember(r.reselection_status, ...
+    {'PENDING', 'NO_MODE_CHANGE_REQUIRED', 'SUCCESS'}), ...
+    sprintf('Unexpected reselection_status: %s', r.reselection_status));
+if strcmp(r.reselection_status, 'NO_MODE_CHANGE_REQUIRED')
     % No duplicate right sample at the reselection time.
     if isfinite(r.actual_mode_reselection_time)
         reselection_right = find(abs(r.t - r.actual_mode_reselection_time) < 1e-12 & ...
@@ -183,10 +194,14 @@ r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % SG must be online after Phase 1 regardless of Phase-2 outcome.
 tc.verifyTrue(r.device_online_history(1, end), 'Phase 1 must keep SG online.');
-if isfield(r, 'reference_owner_indices') && ~isempty(r.reference_owner_indices)
-    tc.verifyEqual(r.reference_owner_indices, 1, 'AbsTol', 0, ...
-        'Reference stays at SG regardless of Phase-2 outcome.');
-end
+% After a successful Phase-1 reclose, reference_owner_indices must be published
+% and point at the reclosed SG (index 1).
+tc.verifyTrue(isfield(r, 'reference_owner_indices'), ...
+    'reference_owner_indices must be published after reclose.');
+tc.verifyFalse(isempty(r.reference_owner_indices), ...
+    'reference_owner_indices must be non-empty after reclose.');
+tc.verifyEqual(r.reference_owner_indices, 1, 'AbsTol', 0, ...
+    'Reference stays at SG regardless of Phase-2 outcome.');
 end
 
 % =========================================================================
@@ -194,14 +209,15 @@ end
 % =========================================================================
 
 function test_sample_keys_unique_per_transaction(tc)
-% Raw identity (t, sample_side): duplicate t EXPECTED at discontinuities;
+% Raw identity (t, sample_side, transaction_id): duplicate t EXPECTED at discontinuities;
 % at most one left + one right per committed transaction; NO duplicate
-% complete (t, sample_side) keys. (transaction_id is internal to the sample
-% store; the result exposes t + sample_side.)
+% complete sample keys. The result exposes every key component.
 over = diagnostic_overrides(0.07);
 r = event_run(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
-% Build complete sample keys (t, sample_side) and assert uniqueness.
+tc.verifyTrue(isfield(r,'transaction_id'));
+tc.verifySize(r.transaction_id,size(r.t));
+% Build complete sample keys (t, sample_side, transaction_id) and assert uniqueness.
 n = numel(r.t);
 keys = cell(1, n);
 for k = 1:n
@@ -209,10 +225,16 @@ for k = 1:n
     if numel(r.sample_side) >= k && ~isempty(r.sample_side{k})
         side = r.sample_side{k};
     end
-    keys{k} = sprintf('%.12g|%s', r.t(k), side);
+    keys{k} = sprintf('%.12g|%s|%d', r.t(k), side, int32(r.transaction_id(k)));
 end
 tc.verifyEqual(numel(unique(keys)), numel(keys), 'AbsTol', 0, ...
-    'No duplicate complete (t, sample_side) sample keys.');
+    'No duplicate complete (t, sample_side, transaction_id) sample keys.');
+tx = unique(r.transaction_id(r.transaction_id>0));
+for j = 1:numel(tx)
+    mask = r.transaction_id==tx(j);
+    tc.verifyLessThanOrEqual(sum(mask & strcmp(r.sample_side,'left')),1);
+    tc.verifyLessThanOrEqual(sum(mask & strcmp(r.sample_side,'right')),1);
+end
 end
 
 function test_no_bare_unique_t_assertion(tc)
@@ -250,9 +272,21 @@ opt = struct('t_end', 1.0, 'dt', 0.01, 'verbose', false, ...
     'selected_gfm_indices', 2:5, 'reference_resource_index', 2, ...
     'automatic_gfm_switching', false), 'plot_results', false);
 r = stability.run_hybrid_case(scenario, opt);
-% Scenario B must fail closed (not converged, or converged with explicit failure).
-tc.verifyTrue(~r.converged || ~isempty(r.failure_id), ...
-    'Scenario B must fail closed with noVoltageFormingSource.');
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id,'ts_simulate_ibr_hybrid:noVoltageFormingSource');
+tc.verifyFalse(r.metadata.automatic_gfm_switching);
+trip_mask=strcmp({r.event_log.type},'sg_trip');
+tc.verifyEqual(sum(trip_mask),1);
+trip_log=r.event_log(trip_mask);
+tc.verifyFalse(trip_log.candidate_committed);
+tc.verifyFalse(trip_log.candidate_sg_online);
+tc.verifyFalse(isempty(fieldnames(trip_log.candidate_modes)));
+tc.verifyFalse(isempty(trip_log.failing_island_ids));
+right_after_trip=strcmp(r.sample_side,'right') & ...
+    r.t>=trip_log.t-1e-12;
+tc.verifyFalse(any(right_after_trip));
+tc.verifyTrue(r.device_online_history(1,end), ...
+    'Rejected breaker-open candidate must not enter accepted history.');
 % Trajectory must NOT extend to 15 s (ends near the trip event).
 tc.verifyLessThan(max(r.t), 1.0, 'Scenario B trajectory must not extend to 15 s.');
 end

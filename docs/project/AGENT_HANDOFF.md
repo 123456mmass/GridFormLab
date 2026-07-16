@@ -30,7 +30,7 @@ Verification: after the cache-clear sequence, `TestSuite.fromFile` discovered
 all files correctly (15/13/12/6 tests). Confirmed zero `.p` files in the
 repo (`find . -name '*.p'` = 0). The non-ASCII-comment and parentheses-in-
 declaration hypotheses were dis proven (34 test files have UTF-8 comments and
-all pass). Rule: NEVER run `ecode` from the repo root; if parse-checking is
+all pass). Rule: NEVER run `pcode` from the repo root; if parse-checking is
 needed, `pcode` into a temp dir.
 
 MATLAB version: R2026a Update 3 (26.1.0.3276743) 64-bit (glnxa64).
@@ -53,7 +53,8 @@ Validation tests detected three production defects:
 1. **FNV-1a hash modular-multiply saturation** (`+stability/ibr_selector_table.m`):
    MATLAB `uint32 * uint32` is SATURATING (clamps at 0xFFFFFFFF), not modular.
    Fixed by using `uint64` intermediate: `product = uint64(h) * 16777619; h = uint32(bitand(product, uint64(4294967295)));`
-   Independent oracle: FNV-1a specification (RFC 4122behavior)). Gates confirmed
+   Independent oracle: FNV-1a specification (the FNV-1a non-cryptographic hash,
+   distinct from RFC 4122 UUIDs). Gates confirmed
    fingerprint changes with topology/dispatch/resource-order, never `ffffffff`,
    deterministic.
 
@@ -71,6 +72,41 @@ Validation tests detected three production defects:
    for k = 1:numel(fn), m = metrics.(fn{k}); end`. Also `metrics(2).* →
    metrics.(fn{2}).*` and `metrics(3).* → metrics.(fn{3}).*`.
 
+### Corrective audit fixes (C0–C7, 2026-07-16)
+
+An independent audit after V0–V7 closure found production defects and weak
+tests. The corrective pass applied and verified:
+
+- **C0** (`run_hybrid_case.m`): `automatic_gfm_switching` normalization/conflict/
+  type validation moved BEFORE device build + equilibrium; non-scalar/non-boolean
+  values fail closed (`run_hybrid_case:automaticGfmSwitchingInvalidType`);
+  conflict returns `run_hybrid_case:automaticGfmSwitchingConflict` without
+  wasting build work. Overrides (`synchronism_overrides`/`delays_overrides`)
+  propagated from both top-level and nested `ibr_events` (nested precedence).
+- **C1** (`ts_simulate_ibr_hybrid.m` + new `+stability/per_island_vf_check.m`):
+  per-island VF check extracted into a pure helper (no algebraic solve, no
+  composite-DAE dependency); `trip_transaction` calls it; Scenario-B bit-identity
+  verified.
+- **C4** (`ts_simulate_ibr_hybrid.m`): `mark_transaction_left` helper back-patches
+  continuous→left + tx_id; reclose/reselection share group_tx_id with right
+  sample; `NO_MODE_CHANGE_REQUIRED` publishes no right sample; `res.transaction_id`
+  published.
+- **C2** (`plot_ibr_switching_comparison.m`): returns `[plot_path,
+  marker_metadata]`; `event_markers` typed by `log.type`; no fabricated timeout
+  marker at `requested_sg_on_time`.
+- **C5/C6**: weak `isfield` skip gates strengthened; tautological `unique(t)`
+  replaced by composite-key `(t, sample_side, transaction_id)`; deterministic
+  field names `metrics.B`/`metrics.C_natural`.
+- **Phase 5 (C-workflow KCL)**: diagnosed via instrumentation
+  (`reclose_left_state_diag`); relaxed guard passes at non-synchronous state
+  (SG omega ~0.07 pu); right-limit KCL correctly fails closed (preserved, not a
+  defect). Transaction-level equilibrium-consistent reclose mechanics proven
+  separately (`right_kcl_norm < 1e-6`). No KCL solve added to the guard.
+- **Phase 6 (Scenario-A metrics)**: no-event path now publishes `u_history`
+  (= `eq.u_eq` repeated), `bus_voltage_magnitude` (read-only reconstruction),
+  `sample_side`, `transaction_id`. Core fields bit-identical. Device-level
+  diagnostics requiring device reconstruct remain a documented gap.
+
 ### Regression evidence
 
 | Stage | Passed | Failed | Incomplete | Notes |
@@ -80,7 +116,7 @@ Validation tests detected three production defects:
 | Prior baseline (pre-push) | 800 | 0 | 4 | `2ac62d1` tree |
 
 Baseline incomplete set resolved: the 4 previously documented baseline
-incomplete testtests were corrected during Phase 1-7 implementation commits
+incomplete tests were corrected during Phase 1-7 implementation commits
 and no longer appear.
 
 ### Comparison runner metrics (V4 real runner)
@@ -90,22 +126,32 @@ and no longer appear.
 
 | Scenario | Converged | Failure ID |
 |----------|-----------|------------|
-| A (Normal) | true | — |
+| A (Normal) | true | — (voltage metrics finite; device-level metrics gap documented) |
 | B (No firmware) | false | noVoltageFormingSource |
 | C-natural | true | SYNC_TIMEOUT |
-| C-workflow | true | (relaxed guard) |
+| C-workflow | false | recloseTransaction (right-limit KCL infeasible at non-synchronous state) |
 
 Artifacts: 3 PNGs under `output/plots/` + 87 MB .mat under `output/comparison/`.
-C-natural SYNC_TIMEOUT confirms the physical timeout claim; C-workflow is
-ASSUMED_DIAGNOSTIC.
+C-natural SYNC_TIMEOUT confirms the physical timeout claim. C-workflow
+fail-closed at `recloseTransaction` is correct behavior: the relaxed guard
+allows the reclose to fire at a non-synchronous SG state (omega ~0.07 pu),
+and the atomic right-limit KCL solve correctly rejects it (residual ~1e-2 vs
+1e-6 tol). This is NOT a defect. The transaction-level equilibrium-consistent
+reclose mechanics are proven separately in
+`test_ieee14_ibr_sg_reclose_workflow` (`right_kcl_norm < 1e-6`).
 
-### MATLAB crash note (SIGBUS)
+### MATLAB invocation note (observed, bounded)
 
-MATLAB R2026a Update 3 crashed with stable SIGBUS (bus error) during 87 MB .mat
-save when run via `cat | matlab -nosplash -nodesktop`. This is a known R2026a
-memory corruption bug, NOT a logic defect. Workaround: use `matlab -batch
-"run('script.m')"` which handles exit cleanly. The 914/0/0 result was obtained
-with `matlab -batch` and is reproducible.
+In this environment, pipe-mode sessions (`cat script.m | matlab -nosplash
+-nodesktop`) hung or crashed during shutdown, and a leftover GUI MATLAB session
+could cause subsequent `matlab -batch` invocations to exit non-zero without
+producing output. This is observed, bounded environment behavior, NOT a
+confirmed MATLAB memory-corruption bug and NOT a logic defect. The working
+invocation is `/home/birds/bin/matlab -nodesktop -nosplash -batch "run('script.m')"`
+preceded by `pkill -9 -f matlab` when a GUI session is lingering. Every test
+invocation begins with the cache-clear sequence (`restoredefaultpath; cd(repo);
+pf_init_paths; addpath(fullfile(pwd,'tests')); clear functions; rehash; rehash
+toolboxcache;`).
 
 ## Delivered runtime path
 
@@ -119,7 +165,7 @@ case/resource table
   -> exact event landing and atomic right-limit transaction
   -> device-owned GFL<->GFM transfer
   -> SG synchronism dwell/reclose or fail-closed timeout
-  -> two audited TS plots + index/work-count log
+  -> three comparison figures + index/work-count log
 ```
 
 Implemented models/layouts are: WECC REGC_A/REEC_A GFL (7 states),
@@ -244,7 +290,19 @@ Natural IEEE14 synchronism is expected to time out (`SYNC_TIMEOUT`,
 physical evidence). A separate C-workflow variant uses a declared relaxed
 test-guard to exercise the full reclose/handback/reselection path; it is
 labeled `ASSUMED_DIAGNOSTIC / NOT PHYSICAL ACCEPTANCE` and is never claimed
-as natural IEEE14 reclose evidence.
+as natural IEEE14 reclose evidence. Under the relaxed guard
+(`dV_max=10, df_max=10, dtheta_max=180` with angle wrapping), the dynamic
+C-workflow reclose fires at a physically non-synchronous state (SG rotor
+omega ~0.07 pu, i.e. ~4 Hz, after coasting offline for ~3 s); the atomic
+right-limit KCL solve correctly rejects this and fails closed
+(`ts_simulate_ibr_hybrid:recloseTransaction`, residual ~1e-2 vs 1e-6 tol).
+This fail-closed behavior is preserved and is NOT a defect. The
+transaction-level equilibrium-consistent reclose mechanics (breaker close →
+right-limit KCL → commit → reference handback) are proven separately in
+`test_ieee14_ibr_sg_reclose_workflow` where reclose starts from a
+synchronous state (`right_kcl_norm < 1e-6`). No KCL/Newton solve was
+added to the synchronism guard (it remains a separate layer); no tolerance
+or physical parameter was relaxed.
 
 A four-trajectory comparison runner
 (`scripts/run_ieee14_ibr_switching_comparison.m`) produces three audited
@@ -260,8 +318,8 @@ IBR_EVENT_RUNNER_READY           = IMPLEMENTED_TWO_PHASE_RECLOSE_FAIL_CLOSED
 IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 
-Full-regression count after validation closure: **914 passed / 0 failed /
-0 incomplete** (673.5 s, R2026a Update 3, `matlab -batch`, cache-clear
+Full-regression count after validation closure: **922 passed / 0 failed /
+0 incomplete** (R2026a Update 3, `matlab -nodesktop -nosplash -batch`, cache-clear
 sequence applied). V5 targeted regression: **107/0/0** across 9 targeted
 files. All four previously documented baseline incomplete tests are resolved.
 

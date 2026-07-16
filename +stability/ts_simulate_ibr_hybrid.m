@@ -651,7 +651,9 @@ try
             diag.dV_pu = abs(abs(vb) - abs(rec.V_open_circuit));
         end
         if isfield(rec,'omega') && isfinite(rec.omega)
-            diag.df_pu = abs(rec.omega - 1.0);
+            % Convention: rec.omega is deviation-from-zero (the hybrid route
+            % calls synchronism_guard with omega_ref=0.0), so df_pu = abs(omega).
+            diag.df_pu = abs(rec.omega);
         end
         if isfield(rec,'delta') && isfinite(rec.delta)
             diag.dtheta_deg = abs(angle(vb)*180/pi - rec.delta*180/pi);

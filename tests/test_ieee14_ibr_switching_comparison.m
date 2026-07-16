@@ -222,6 +222,14 @@ tc.verifyTrue(isfield(rec_log.reclose_diag, 'sg_omega'), ...
     'sg_omega must be recorded in the diagnostic.');
 tc.verifyLessThan(rec_log.reclose_diag.sg_omega, 0.5, ...
     'SG omega must be far below synchronous (rotor has drifted).');
+% Independent oracle: the hybrid route calls synchronism_guard with
+% omega_ref=0.0 (ts_simulate_ibr_hybrid.m), so rec.omega IS the frequency
+% deviation. df_pu must therefore equal abs(sg_omega), NOT abs(sg_omega-1.0).
+diag = rec_log.reclose_diag;
+tc.verifyTrue(isfield(diag, 'df_pu'), ...
+    'df_pu must be recorded in the diagnostic.');
+tc.verifyEqual(diag.df_pu, abs(diag.sg_omega), ...
+    'AbsTol', 10*eps(max(1, abs(diag.sg_omega))));
 end
 
 function test_c_natural_sync_timeout_physical_evidence(tc)
@@ -396,6 +404,13 @@ tc.verifyGreaterThan(min(r.bus_voltage_magnitude(:)), 0.9);
 tc.verifyTrue(isfield(r, 'sample_side'));
 tc.verifyTrue(isfield(r, 'transaction_id'));
 tc.verifyEqual(numel(r.sample_side), numel(r.t), 'AbsTol', 0);
+% Independent oracle: the hybrid route new_samples() sets the first sample's
+% side to 'initial' (ts_simulate_ibr_hybrid.m). The no-event path must match:
+% first sample 'initial', all others 'continuous'. (For nt==1, sample_side(2:end)
+% is empty and all(...) returns true, which is correct for this contract.)
+tc.verifyEqual(r.sample_side{1}, 'initial');
+tc.verifyTrue(all(strcmp(r.sample_side(2:end), 'continuous')));
+tc.verifyEqual(r.transaction_id, zeros(size(r.transaction_id)));
 end
 
 function test_deterministic_repeat_numerical_payload(tc)

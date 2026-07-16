@@ -219,7 +219,10 @@ if ~has_ibr_events
     else
         result.bus_voltage_magnitude = [];
     end
+    % First sample is 'initial' (matches the hybrid route's new_samples);
+    % subsequent samples are 'continuous'.
     result.sample_side = repmat({'continuous'}, 1, nt);
+    if nt >= 1, result.sample_side{1} = 'initial'; end
     result.transaction_id = zeros(1, nt);
     return;
 end

@@ -327,9 +327,11 @@ IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 
 Full-regression count after validation closure: **922 passed / 0 failed /
-0 incomplete** (R2026a Update 3, `matlab -nodesktop -nosplash -batch`, cache-clear
-sequence applied). This 922 is the FINAL full-tree gate on the delivered
-`2b47369` tree and is distinct from the targeted gates below:
+0 incomplete / 0 errored** (R2026a Update 3, `matlab -nodesktop -nosplash
+-batch`, cache-clear sequence applied). The final numerical full-tree gate
+was run on tested source SHA-A `df5f97d`: **922 passed / 0 failed / 0 incomplete
+/ 0 errored**. Final delivery SHA-B `f928fd8` contains documentation-only
+changes. This 922 is distinct from the targeted gates below:
 
 - **V5 validation-closure targeted regression**: **107/0/0** across 9 targeted
   files (the final validation-closure gate, distinct from the full regression).

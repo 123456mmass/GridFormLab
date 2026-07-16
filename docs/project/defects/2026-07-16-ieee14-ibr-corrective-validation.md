@@ -158,7 +158,7 @@ narrative, and added the targeted assertions that were previously missing.
   This inflates a real ~0.07 pu slip to ~0.93 pu.
 - **Corrected convention:** `diag.df_pu = abs(rec.omega)`.
 - **Independent oracle:** the hybrid route calls `synchronism_guard(...,
-  rec.omega, 0.0f, gopt)` (`ts_simulate_ibr_hybrid.m`) with `omega_ref=0.0`,
+  rec.omega, 0.0, gopt)` (`ts_simulate_ibr_hybrid.m`) with `omega_ref=0.0`,
   so `rec.omega` IS the frequency deviation. Therefore `df_pu` must equal
   `abs(sg_omega)`. Verified both by the new assertion and by an independent
   read-only probe (`df_pu == abs(sg_omega)` to 17 digits: both = 0.07309…).
@@ -181,12 +181,12 @@ narrative, and added the targeted assertions that were previously missing.
 
 ### Evidence narrative corrected
 
-- **right_norm:** a prior narrative claimed `right_norm == Inf` and cited a
-  residual ~1.53e-2 from the `ts_algebraic_solve:failed` string as the KCL
-  residual. Both were wrong. A read-only probe of
-  `rec_log.reclose_diag.right_norm` (same C-workflow config, public entry
-  point `run_hybrid_case`, no code modified) returns exactly **Inf** — meaning
-  the algebraic right-limit solve returned no finite accepted residual. The
+- **right_norm:** prior narratives conflated two values. The ~1.53e-2 value came
+  from the `ts_algebraic_solve:failed` solver-failure message and is NOT
+  `reclose_diag.right_norm`. The read-only probe establishes
+  `reclose_diag.right_norm` == **Inf** (same C-workflow config, public entry
+  point `run_hybrid_case`, no code modified) — meaning the algebraic
+  right-limit solve returned no finite accepted residual. The
   ~1.53e-2 value is the *solver's own convergence failure* reported in the
   failure-id string, a different field. Honest report: `right_norm = Inf`.
 - **Current jump:** the mechanism "SG stator current jumps 0→large at the

@@ -360,8 +360,8 @@ res.accepted_steps=accepted_steps;
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
 % Propagate reference-ownership + fingerprint fields from the final event context.
-if ~isempty(event_context_history) && iscell(event_context_history)
-    final_ec = event_context_history{end};
+if ~isempty(res.event_context_history) && iscell(res.event_context_history)
+    final_ec = res.event_context_history{end};
     if isstruct(final_ec) && isfield(final_ec,'hybrid_state') && isstruct(final_ec.hybrid_state)
         hs_final = final_ec.hybrid_state;
         if isfield(hs_final,'reference_owner_indices')

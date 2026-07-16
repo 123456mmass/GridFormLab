@@ -215,10 +215,17 @@ end
 
 function h = hash_string(s)
 % Deterministic in-house hash (no toolbox dependency). FNV-1a 32-bit variant.
+% MATLAB integer multiply is SATURATING (clamps to intmax), not modular, so a
+% direct `h * uint32(16777619)` saturates at 0xFFFFFFFF after the first overflow
+% and every distinct input collides to the same hash. Use an exact uint64
+% intermediate and mask the low 32 bits to implement true modular arithmetic.
+% Max product 0xFFFFFFFF * 16777619 ~= 7.2e16 < uint64 max (1.8e19): no overflow.
 h = uint32(2166136261);
+mask32 = uint64(4294967295);   % 2^32 - 1
 for k = 1:numel(s)
     h = bitxor(h, uint32(double(s(k))));
-    h = h * uint32(16777619);
+    product = uint64(h) * uint64(16777619);
+    h = uint32(bitand(product, mask32));
 end
 h = sprintf('%08x', h);
 end

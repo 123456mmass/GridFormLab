@@ -169,6 +169,7 @@ m.event_times = struct();
 m.n_mode_changes = 0;
 m.n_rejected_transitions = 0;
 m.synchronization_outcome = '';
+m.reselection_status = 'NOT_REQUESTED';
 m.max_kcl_residual = NaN;
 if ~m.converged, return; end
 % Frequency metrics from COI frequency.

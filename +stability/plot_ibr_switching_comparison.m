@@ -81,16 +81,114 @@ plot_gfm_count(ax6, results_struct, scenario_names, colors);
 title(ax6,'Number of online GFM resources');
 legend(ax6,'Location','best','Interpreter','none');
 
-% Add event markers to each axis.
-for k = 1:6
-    ax = findobj(fig,'Tag',['comp_ax_' num2str(k)]);
-    if isempty(ax), ax = fig.Children(k); end
-end
+% Add event markers to each axis. Axes handles are kept directly (no findobj/
+% fig.Children fallback that breaks under tiledlayout). Event times/types are
+% drawn authoritatively from each result's event_log/events; scheduled,
+% committed, and rejected/timeout events use distinct line styles. Event lines
+% are excluded from the trajectory legend (HandleVisibility='off').
+axes_all = [ax1 ax2 ax3 ax4 ax5 ax6];
+add_event_markers(axes_all, results_struct, scenario_names);
 
 filename = sprintf('ieee14_ibr_switching_comparison_%s.png', figure_type);
 plot_path = fullfile(output_dir, filename);
 saveas(fig, plot_path);
 if ~visible, close(fig); end
+end
+
+% =========================================================================
+function add_event_markers(axes_all, results, names)
+%ADD_EVENT_MARKERS  Draw authoritative event markers on every axis.
+%   Scheduled events (from result.events / sched) use a dashed grey line;
+%   committed events (event_log.applied==true) use a solid dark line;
+%   rejected/timeout events (applied==false or reclose_status/reselection_status
+%   indicating failure) use a dotted red line. All lines are off-legend.
+sched_color = [0.6 0.6 0.6];   % grey: scheduled
+committed_color = [0.1 0.1 0.1]; % near-black: committed
+rejected_color = [0.8 0.2 0.2];   % red: rejected/timeout
+for s = 1:numel(names)
+    r = results.(names{s});
+    times = event_times(r);
+    % Scheduled event times (dashed grey).
+    for j = 1:numel(times.scheduled)
+        if isfinite(times.scheduled(j))
+            add_xline(axes_all, times.scheduled(j), ':', sched_color);
+        end
+    end
+    % Committed event times (solid dark).
+    for j = 1:numel(times.committed)
+        if isfinite(times.committed(j))
+            add_xline(axes_all, times.committed(j), '-', committed_color);
+        end
+    end
+    % Rejected/timeout event times (dotted red).
+    for j = 1:numel(times.rejected)
+        if isfinite(times.rejected(j))
+            add_xline(axes_all, times.rejected(j), '-.', rejected_color);
+        end
+    end
+end
+end
+
+function add_xline(axes_all, t, style, color)
+%ADD_XLINE  Add a vertical line at t to every axis, off-legend.
+%   style is a LineStyle string ('-', ':', '-.', '--'); passed as a Name-Value
+%   pair because xline's 3rd positional arg is a label, not a LineSpec.
+for k = 1:numel(axes_all)
+    ax = axes_all(k);
+    if isvalid(ax)
+        xline(ax, t, 'LineStyle', style, 'Color', color, 'HandleVisibility', 'off');
+    end
+end
+end
+
+function times = event_times(r)
+%EVENT_TIMES  Extract scheduled/committed/rejected event times from a result.
+times.scheduled = [];
+times.committed = [];
+times.rejected = [];
+% Scheduled times from the events array (if present).
+if isfield(r, 'events') && ~isempty(r.events)
+    try
+        times.scheduled = [r.events.t];
+    catch
+    end
+end
+% Committed/rejected from event_log.
+if isfield(r, 'event_log') && ~isempty(r.event_log)
+    applied = false(numel(r.event_log), 1);
+    ts = nan(numel(r.event_log), 1);
+    for j = 1:numel(r.event_log)
+        if isfield(r.event_log(j), 'applied')
+            applied(j) = logical(r.event_log(j).applied);
+        end
+        if isfield(r.event_log(j), 't')
+            ts(j) = r.event_log(j).t;
+        end
+    end
+    times.committed = ts(applied & isfinite(ts));
+    times.rejected = ts(~applied & isfinite(ts));
+end
+% Reclose/reselection actual times are committed (if finite).
+if isfield(r, 'actual_reclose_time') && isfinite(r.actual_reclose_time)
+    times.committed = [times.committed; r.actual_reclose_time]; %#ok<AGROW>
+end
+if isfield(r, 'actual_mode_reselection_time') && isfinite(r.actual_mode_reselection_time)
+    times.committed = [times.committed; r.actual_mode_reselection_time]; %#ok<AGROW>
+end
+% Timeout/failure -> rejected marker at the timeout boundary.
+if isfield(r, 'reclose_status')
+    if strcmpi(char(r.reclose_status), 'SYNC_TIMEOUT') || ...
+            strcmpi(char(r.reclose_status), 'PENDING_SYNC_FAIL')
+        % Use requested reconnect time as the timeout marker if available.
+        rt = NaN;
+        if isfield(r, 'requested_sg_on_time') && isfinite(r.requested_sg_on_time)
+            rt = r.requested_sg_on_time;
+        end
+        if isfinite(rt)
+            times.rejected = [times.rejected; rt]; %#ok<AGROW>
+        end
+    end
+end
 end
 
 % =========================================================================

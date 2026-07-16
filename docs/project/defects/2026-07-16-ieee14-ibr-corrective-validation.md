@@ -114,12 +114,18 @@ uncommitted corrective implementation is verified.
     (`reclose_left_state_diag` on failed reclose event log). Root cause: relaxed
     guard (`df_max=10`, `dtheta_max=180` with angle wrapping) passes at a
     non-synchronous state (SG omega ~0.07 pu, ~4 Hz after coasting ~3 s);
-    right-limit KCL correctly fails (residual ~1e-2 vs 1e-6). Dynamic C-workflow
-    stays fail-closed (preserved, NOT a defect). Transaction-level
-    equilibrium-consistent reclose mechanics proven in
-    `test_ieee14_ibr_sg_reclose_workflow` (`right_kcl_norm < 1e-6`). No KCL/Newton
-    solve added to the synchronism guard (separate layers preserved); no
-    tolerance/parameter relaxed.
+    right-limit KCL correctly fails. Observed at the failed close: nonzero SG
+    speed deviation, relaxed guard acceptance, and rejected KCL. Inferred from
+    the EMF6 breaker/current-injection equations: closing at that state
+    introduces an incompatible stator-current injection. **The current jump was
+    not directly measured** (the transaction was rejected, so no committed
+    post-close state exists to measure against; the diagnostic records rotor
+    state, bus voltage, guard margins, and the right-limit residual, but never
+    computes stator current). Dynamic C-workflow stays fail-closed (preserved,
+    NOT a defect). Transaction-level equilibrium-consistent reclose mechanics
+    proven in `test_ieee14_ibr_sg_reclose_workflow` (`right_kcl_norm < 1e-6`).
+    No KCL/Newton solve added to the synchronism guard (separate layers
+    preserved); no tolerance/parameter relaxed.
   - **Phase 6 (Scenario-A metrics)**: no-event path now publishes `u_history`
     (= `eq.u_eq` repeated), `bus_voltage_magnitude` (read-only reconstruction
     from `y_traj`), `sample_side`, `transaction_id`. Core fields
@@ -138,3 +144,71 @@ uncommitted corrective implementation is verified.
   sg_reclose_workflow 16/16). Full regression: **922 passed / 0 failed /
   0 incomplete / 0 errored** (R2026a Update 3, `matlab -nodesktop -nosplash
   -batch`, ~18.5 min). Status flipped to `RESOLVED`.
+
+## Follow-up (tested on SHA-A `df5f97d`)
+
+A post-delivery review found the C-workflow diagnostic evidence was partly
+over-claimed. This follow-up fixed two production bugs, corrected the evidence
+narrative, and added the targeted assertions that were previously missing.
+
+### Production bug 1 — `df_pu` used the wrong frequency convention
+
+- **Previous (bad) expression:** in `reclose_left_state_diag`
+  (`+stability/ts_simulate_ibr_hybrid.m`), `diag.df_pu = abs(rec.omega - 1.0)`.
+  This inflates a real ~0.07 pu slip to ~0.93 pu.
+- **Corrected convention:** `diag.df_pu = abs(rec.omega)`.
+- **Independent oracle:** the hybrid route calls `synchronism_guard(...,
+  rec.omega, 0.0f, gopt)` (`ts_simulate_ibr_hybrid.m`) with `omega_ref=0.0`,
+  so `rec.omega` IS the frequency deviation. Therefore `df_pu` must equal
+  `abs(sg_omega)`. Verified both by the new assertion and by an independent
+  read-only probe (`df_pu == abs(sg_omega)` to 17 digits: both = 0.07309…).
+- **Previous test defect:** the C-workflow test asserted only that
+  `reclose_diag`/`sg_omega` are present and `sg_omega < 0.5` — it never checked
+  the `df_pu` convention, so the suite passed despite the bug. Fixed by adding
+  a `df_pu == abs(sg_omega)` assertion, verified red-then-green.
+
+### Production bug 2 — no-event `sample_side` contract diverged from the hybrid route
+
+- **Previous (bad) contract:** `run_hybrid_case` set ALL samples to
+  `'continuous'` including `t=0`.
+- **Corrected contract:** first sample `'initial'`, all others `'continuous'`.
+- **Independent oracle:** the hybrid route's `new_samples()` sets the first
+  sample's side to `'initial'` (`ts_simulate_ibr_hybrid.m`). Verified by a new
+  assertion (`sample_side{1}=='initial'`, rest `'continuous'`,
+  `transaction_id` all zeros), red-then-green.
+- **Previous test defect:** the Scenario-A test asserted only `numel ==
+  numel(t)`, not per-sample values, so it passed despite the divergence.
+
+### Evidence narrative corrected
+
+- **right_norm:** a prior narrative claimed `right_norm == Inf` and cited a
+  residual ~1.53e-2 from the `ts_algebraic_solve:failed` string as the KCL
+  residual. Both were wrong. A read-only probe of
+  `rec_log.reclose_diag.right_norm` (same C-workflow config, public entry
+  point `run_hybrid_case`, no code modified) returns exactly **Inf** — meaning
+  the algebraic right-limit solve returned no finite accepted residual. The
+  ~1.53e-2 value is the *solver's own convergence failure* reported in the
+  failure-id string, a different field. Honest report: `right_norm = Inf`.
+- **Current jump:** the mechanism "SG stator current jumps 0→large at the
+  breaker close" was reclassified from *measured* to **inferred**. The reclose
+  transaction was rejected, so no committed post-close state exists to measure
+  against; the diagnostic records rotor state, bus voltage, guard margins, and
+  the right-limit residual, but never computes stator current. The narrative
+  now reads: "Observed: nonzero SG speed deviation, relaxed guard acceptance,
+  and rejected right-limit KCL. Inferred from the EMF6 breaker/current-injection
+  equations: closing at that state introduces an incompatible stator-current
+  injection. The current jump was not directly measured."
+
+### Verification
+
+- **Tested source SHA-A:** `df5f97d0b153f636ec21c134c2f4860d94d7efcb`
+  (fast-forwarded to `origin/main` before regression). SHA-A contains only
+  the two production fixes + the two new assertions; the documentation edits
+  in this record land in a later commit, so the record references a stable SHA.
+- **Targeted regression on SHA-A:** **58/0/0** across 4 files
+  (switching_comparison 19, sg_reclose_workflow 16, sg_on_integration 11,
+  ts_event_runner 12).
+- **Full regression on SHA-A:** **922 passed / 0 failed / 0 incomplete /
+  0 errored** (R2026a Update 3, `matlab -nodesktop -nosplash -batch`).
+- Current-jump classification changed: measured → **inferred**.
+- No IBR architecture redesign; no tolerance/parameter/threshold relaxed.

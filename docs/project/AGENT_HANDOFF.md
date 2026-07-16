@@ -133,12 +133,16 @@ and no longer appear.
 
 Artifacts: 3 PNGs under `output/plots/` + 87 MB .mat under `output/comparison/`.
 C-natural SYNC_TIMEOUT confirms the physical timeout claim. C-workflow
-fail-closed at `recloseTransaction` is correct behavior: the relaxed guard
-allows the reclose to fire at a non-synchronous SG state (omega ~0.07 pu),
-and the atomic right-limit KCL solve correctly rejects it (residual ~1e-2 vs
-1e-6 tol). This is NOT a defect. The transaction-level equilibrium-consistent
-reclose mechanics are proven separately in
-`test_ieee14_ibr_sg_reclose_workflow` (`right_kcl_norm < 1e-6`).
+fail-closed at `recloseTransaction` is correct behavior. Observed at the
+failed close: nonzero SG speed deviation, relaxed guard acceptance, and a
+rejected right-limit KCL. Inferred from the EMF6 breaker/current-injection
+equations: closing at that state introduces an incompatible stator-current
+injection. **The current jump was not directly measured** (the transaction
+was rejected, so no committed post-close state exists to measure against; the
+diagnostic records rotor state, bus voltage, guard margins, and the right-limit
+residual, but never computes stator current). This is NOT a defect. The
+transaction-level equilibrium-consistent reclose mechanics are proven
+separately in `test_ieee14_ibr_sg_reclose_workflow` (`right_kcl_norm < 1e-6`).
 
 ### MATLAB invocation note (observed, bounded)
 
@@ -295,10 +299,14 @@ as natural IEEE14 reclose evidence. Under the relaxed guard
 C-workflow reclose fires at a physically non-synchronous state (SG rotor
 omega ~0.07 pu, i.e. ~4 Hz, after coasting offline for ~3 s); the atomic
 right-limit KCL solve correctly rejects this and fails closed
-(`ts_simulate_ibr_hybrid:recloseTransaction`, residual ~1e-2 vs 1e-6 tol).
-This fail-closed behavior is preserved and is NOT a defect. The
-transaction-level equilibrium-consistent reclose mechanics (breaker close →
-right-limit KCL → commit → reference handback) are proven separately in
+(`ts_simulate_ibr_hybrid:recloseTransaction`). Observed at the failed close:
+nonzero SG speed deviation, relaxed guard acceptance, and rejected KCL.
+Inferred from the EMF6 breaker/current-injection equations: closing at that
+state introduces an incompatible stator-current injection. **The current jump
+was not directly measured.** This fail-closed behavior is preserved and is NOT
+a defect. The transaction-level equilibrium-consistent reclose mechanics
+(breaker close → right-limit KCL → commit → reference handback) are proven
+separately in
 `test_ieee14_ibr_sg_reclose_workflow` where reclose starts from a
 synchronous state (`right_kcl_norm < 1e-6`). No KCL/Newton solve was
 added to the synchronism guard (it remains a separate layer); no tolerance
@@ -320,8 +328,18 @@ IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 
 Full-regression count after validation closure: **922 passed / 0 failed /
 0 incomplete** (R2026a Update 3, `matlab -nodesktop -nosplash -batch`, cache-clear
-sequence applied). V5 targeted regression: **107/0/0** across 9 targeted
-files. All four previously documented baseline incomplete tests are resolved.
+sequence applied). This 922 is the FINAL full-tree gate on the delivered
+`2b47369` tree and is distinct from the targeted gates below:
+
+- **V5 validation-closure targeted regression**: **107/0/0** across 9 targeted
+  files (the final validation-closure gate, distinct from the full regression).
+- **C0–C7 corrective-pass targeted regression**: **80/0/0** across 7 targeted
+  files (`test_ieee14_ibr_switching_comparison`,
+  `test_ieee14_ibr_sg_on_integration`, `test_ieee14_ibr_sg_reclose_workflow`,
+  `test_ieee14_ibr_ts_event_runner`, `test_ieee14_1sg_4ibr_phaseEF`,
+  `test_ibr_ts_plotting_absolute`, `test_no_external_solver_dependency`).
+
+All four previously documented baseline incomplete tests are resolved.
 
 Remaining blockers remain natural synchronism/reclose evidence and independent
 validation (both out of scope for this validation-closure mission). No

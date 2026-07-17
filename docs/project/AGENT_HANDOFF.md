@@ -9,6 +9,77 @@ migration, validator latent-bug fixes, real timers, authenticated SG_ON routing,
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## Mission C — Characterization handoff (2026-07-17)
+
+**Status:** Characterization phase complete (read-only). Controller-enabled run NOT yet performed.
+**Branch:** `main`
+**Tested commit:** pending full regression (targeted 18/18 GREEN on `d213d9c`)
+
+Mission C aim: physical SG resync + IEEE14 demo close. Phase 0 audit found no sourced
+IEEE14 governor/synchronizer/AVR → binding STOP for physical acceptance.
+Proceeding with diagnostic workflow validation (opt-in, ASSUMED_DIAGNOSTIC, NOT VALIDATED).
+
+### What was delivered in this commit
+
+1. **Per-sample resync diagnostics** (`ts_simulate_ibr_hybrid.m:269-328`):
+   Pure read-only measurement hook records synchronism state every accepted sample
+   during offline coast. `res.resync_diagnostics` struct array with guard margins
+   (dV, df, dtheta, signed_margin, limiting_gate), SG state (omega, delta,
+   V_open_circuit, Tm, Te, Efd), bus voltage. Zero integration-logic dependency —
+   disabled route bit-identical (all 16 prior tests GREEN).
+
+2. **2 RED characterization tests** (`test_ieee14_ibr_sg_reclose_workflow.m:63-106`):
+   Record hook fires, no sample eligible with strict guard, df > df_max throughout
+   (Tm-frozen coast falsifies natural-reclose hypothesis), signed_margin<0 everywhere.
+   18/18 GREEN including all 16 prior tests.
+
+3. **Diagnostic parameter manifest** (`docs/project/diagnostic_synchronizer_parameter_manifest.md`):
+   SG plant (Kodsi, EMF6, τ=5.148s). Governor P-only (Kp=20 from 1/R_D, Ki=0) —
+   no integral/anti-windup. Exciter: fixed Efd default; Padiyar AVR deferred.
+   All gains = ASSUMED_DIAGNOSTIC. Status: REQUIRES_REVISION per advisor.
+
+### Characterization findings (physical)
+
+| Gate | Tm FROZEN | Tm=0 Diagnostic | Verdict |
+|---|---|---|---|
+| A. Frequency | df>0.001 always FAIL | df<0.001 always PASS | Runback solves df |
+| B. Voltage | dV≈0.064>0.05 FAIL | UNKNOWN (may converge) | ~0.014pu excess |
+| C. Phase | dθ cycles 0.2s FAIL | dwell feasible at ω<0.00053 (~25s) | ~25s asymptotic |
+| D. Base defects | NONE confirmed | NONE | V_open verified real |
+
+- ω₀≈0.073 at sg_on=8.0s (3s coast), ω→∞≈0.164 asymptotically
+- 0/501 samples all three margins >0 over 15s → SYNC_TIMEOUT is PHYSICAL
+- Analytical ω verified to 1e-8 for Tm frozen; τ=5.148s confirmed
+- dV≈0.064 NOT 18 pu (earlier margin/deg misinterpretation fixed)
+- dθ = binding gate; Tm=0 alone needs ~25s for ω to decay below dwell threshold
+  (ω·377·0.5 < 10° → ω<0.00053)
+
+### Missing contracts
+
+1. **Diagnostic timeout profile:** ~30s (τ·ln(ω₀/dwell_ω) + dwell + margin).
+   Public sync_timeout=5s unchanged.
+2. **Phase-synchronizer contract:** Tm=0 ω decay is asymptotic — active slip
+   control or braking could accelerate phase capture.
+3. **AVR contract:** Required only if fixed Efd does not converge dV below 0.05pu.
+
+### Next steps
+
+1. **Do NOT run controller-enabled reclose** before manifest revision.
+2. **Tm=0 passive characterization run:** verify dV trajectory with fixed Efd
+   over ~30s horizon, confirm ω matches analytical oracle, record dθ dwell stats.
+3. If dV converges <0.05: no AVR. If not: integrate Padiyar AVR (diagnostic limits).
+4. If ω/timing unacceptable: active slip control or separate opt-in timeout.
+5. File allowlist: `ts_simulate_ibr_hybrid.m` + new controller files + tests.
+   `sg_composite_device.m` is **read-only** (controller external to EMF6).
+6. Before mutation: read `AGENTS.md`, `TRACK_COORDINATION.md`, this handoff,
+   plan at `docs/project/plans/`, manifest.
+
+### Flags
+
+- `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY`
+- No VALIDATED milestone from diagnostic route
+- All diagnostic = ASSUMED_DIAGNOSTIC / NOT PHYSICAL ACCEPTANCE
+
 ## Revision 5 — Corrective closure (2026-07-17)
 
 The earlier "936 passed / 8 failed / full regression passed / zero new

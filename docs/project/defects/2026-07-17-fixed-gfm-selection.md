@@ -101,3 +101,71 @@ answer was exhaustive, nor could it adapt when a different count dominates.
   `Neligible <= N_exhaustive_max`.
 - Reference ownership and the per-island commit are outside this record (handled
   in the runtime transaction phases).
+
+## Revision 5 — Corrective closure (2026-07-17)
+
+The earlier "936 passed / 8 failed / full regression passed / zero new
+regressions" claim was WRONG. `git stash` does NOT revert committed source, so
+the 8 `test_ieee14_ibr_ts_event_runner` failures at `7c986f4` were incomplete
+schema migration, not pre-existing: the source now requires an authenticated
+selector table on the automatic path, but the `event_run` helper still did not
+inject one. This revision closes that gap and the remaining Phase 4b/5
+contracts.
+
+### Closed in Revision 5
+
+1. **Event-runner migration.** `tests/test_ieee14_ibr_ts_event_runner.m` now
+   builds two pinned authenticated tables in `setupOnce` (`table_4gfm`,
+   `table_1gfm`) and migrates the 8 physical-intent tests to
+   `event_run_with_table`. Two new missing-table tests assert the canonical
+   `stability:gfm_selection:missingTable` failure ID with full no-publication
+   semantics. 14/14 GREEN.
+2. **Missing-table failure ID.** `ts_simulate_ibr_hybrid.m:575` now emits
+   `stability:gfm_selection:missingTable` (shared namespace, no prepend).
+3. **Validator latent bugs fixed.** `validate_runtime_candidate_compatibility.m`
+   had two latent bugs exposed by the migration: (a) `fidi` nested-function
+   handle was unreachable from `manual_branch` (undefined function error); (b)
+   early-return paths did not assign `runtime_out`/`cand_out` outputs (MATLAB
+   "Output argument not assigned" error). Both fixed. All failure IDs now use
+   string concatenation `['stability:gfm_selection:' suffix]` consistently.
+4. **Production `cand` field bug fixed.** `ts_simulate_ibr_hybrid.m:610` read
+   `cand.selected_gfm_indices` but the validator output did not always carry
+   it; now reads from the validator output with a schedule-literal fallback.
+5. **Real timers.** `assemble_runtime_context` now reads `hold_timers`/`lockouts`
+   from `hybrid_state` (Step 3) instead of hardcoding `0`/`-inf`. Malformed
+   values fail closed with `runtimeContextMalformed`.
+6. **Validator parity.** Identity check now verifies ALL candidates (not only
+   `cfgs(1)`) + sanitized-key uniqueness (`identityCollision`). Manual branch
+   gains identity + hold/lockout checks. `runtime_n_mode_changes` reflects the
+   post-sort winner (`ranked(1)`), not `nchanges(1)`.
+7. **Authenticated SG_ON routing (Step 5).** `reselection_transaction` now
+   consumes an authenticated SG_ON candidate via `authenticate_sg_on_candidate`
+   (routes through the validator); `compute_tdown` derives `T_down` from the
+   authenticated candidate's omega, not the raw `table.sg_on` aggregate.
+8. **`N_exhaustive_max=4` guard (Step 6).** `ibr_selector_table.m` now fails
+   closed with `stability:gfm_selection:excessiveUniverse` before enumeration
+   if the eligible universe exceeds 4 (safety bound; IEEE14 has ≤ 4).
+9. **Unpinned automatic integration (Step 8).** New
+   `test_unpinned_automatic_sg_off_integration` builds a real IEEE14 table with
+   NO pin and asserts the runtime-selected candidate + provenance come from the
+   table, and SG_ON reports zero feasible (physically infeasible under frozen
+   gates).
+
+### Verification (Revision 5)
+
+- Targeted gates on the edited tree: selector unit 44/44, event runner 14/14,
+  reclose workflow 16/16, SG_ON integration 12/12 — **86/86 GREEN, 0 failed,
+  0 incomplete**.
+- Full regression pending (run once on the final tree per AGENTS.md risk
+  policy).
+
+### Limitations (Revision 5)
+
+- Automatic selection (unpinned) picks candidate `[5]` (highest margin) on
+  IEEE14, which can make post-trip dynamics fail to converge (stepNewton). This
+  is an honest outcome of the frozen margin-based ranking policy, not a bug;
+  the demo/comparison/solve_case defaults retain the known-stable manual
+  `[2 3 4 5]` tuple. A ranking-policy review (margin vs dynamics stability) is
+  a separate workstream.
+- `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY` (unchanged).
+

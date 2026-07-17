@@ -1,11 +1,63 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-16
+Date: 2026-07-17 (Revision 5 corrective closure)
 Branch: `main`
-Tested working tree: `74b51e3` + validation-closure fixes + 4 new test files
+Tested working tree: `7c986f4` + Revision 5 corrective closure (event-runner
+migration, validator latent-bug fixes, real timers, authenticated SG_ON routing,
+`N_exhaustive_max=4` guard, unpinned automatic integration).
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
+
+## Revision 5 — Corrective closure (2026-07-17)
+
+The earlier "936 passed / 8 failed / full regression passed / zero new
+regressions" claim was WRONG. `git stash` does NOT revert committed source, so
+the 8 `test_ieee14_ibr_ts_event_runner` failures at `7c986f4` were incomplete
+schema migration, not pre-existing. Revision 5 closes that gap and the remaining
+Phase 4b/5 contracts:
+
+- **Event-runner migration.** Two pinned authenticated tables in `setupOnce`;
+  8 physical-intent tests migrated to `event_run_with_table`; 2 new missing-table
+  tests assert `stability:gfm_selection:missingTable`. 14/14 GREEN.
+- **Validator latent bugs fixed.** `fidi` nested-handle unreachable from
+  `manual_branch`; early-return paths did not assign outputs. Both fixed; all
+  failure IDs use string concatenation consistently.
+- **Production `cand` field bug fixed.** `ts_simulate_ibr_hybrid.m:610` now
+  reads the committed selection from the validator output with a schedule-literal
+  fallback.
+- **Real timers (Step 3).** `assemble_runtime_context` reads `hold_timers`/
+  `lockouts` from `hybrid_state`; malformed values fail closed.
+- **Validator parity (Step 4).** Identity check for ALL candidates + sanitized-
+  key uniqueness; manual branch gains identity + hold/lockout checks;
+  `runtime_n_mode_changes` reflects the post-sort winner.
+- **Authenticated SG_ON routing (Step 5).** `reselection_transaction` consumes
+  an authenticated candidate via `authenticate_sg_on_candidate`; `compute_tdown`
+  derives `T_down` from the authenticated candidate's omega.
+- **`N_exhaustive_max=4` guard (Step 6).** `ibr_selector_table.m` fails closed
+  with `stability:gfm_selection:excessiveUniverse` before enumeration.
+- **Unpinned automatic integration (Step 8).** New
+  `test_unpinned_automatic_sg_off_integration` asserts the runtime-selected
+  candidate + provenance come from the table; SG_ON reports zero feasible.
+
+### Verification (Revision 5)
+
+Targeted gates on the edited tree: selector unit 44/44, event runner 14/14,
+reclose workflow 16/16, SG_ON integration 12/12 — **86/86 GREEN, 0 failed,
+0 incomplete**. Full regression pending (run once on the final tree per
+AGENTS.md risk policy).
+
+### Limitations (Revision 5)
+
+- Automatic selection (unpinned) picks candidate `[5]` (highest margin) on
+  IEEE14, which can make post-trip dynamics fail to converge (stepNewton). This
+  is an honest outcome of the frozen margin-based ranking policy, not a bug;
+  the demo/comparison/solve_case defaults retain the known-stable manual
+  `[2 3 4 5]` tuple. A ranking-policy review (margin vs dynamics stability) is
+  a separate workstream.
+- `IBR_PRODUCTION_INTEGRATION_READY = NOT_READY` (unchanged).
+
+
 
 ## Validation-closure summary (V0–V7)
 

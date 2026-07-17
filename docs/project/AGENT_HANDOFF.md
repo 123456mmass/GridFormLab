@@ -1,13 +1,100 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-17 (Revision 5 corrective closure)
+Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3
 Branch: `main`
-Tested working tree: `7c986f4` + Revision 5 corrective closure (event-runner
-migration, validator latent-bug fixes, real timers, authenticated SG_ON routing,
-`N_exhaustive_max=4` guard, unpinned automatic integration).
+Tested working tree: `0cb65e9` (IBR Phase 3: Section H reporting + modal_analysis cell-index fixes)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
+
+## IBR dynamic-equation contract — Phases 0A/1/2/3 (2026-07-18)
+
+**Status:** Phases 0A (source verdict), 1 (Section H core mappings), 2
+(standalone modal helper), and 3 (Section H reporting) complete and pushed
+to `main` (`0cb65e9`). Phases 0B, 4, 5 remain BLOCKED.
+**Branch:** `main`
+**Tested commit:** `0cb65e9` (HEAD == origin/main after fast-forward push)
+
+Source-traceable dynamic-equation and state-order contract for GFM-VSG
+(REGFM_B1, 13-state) + GFL-PLL (WECC REGC_A/REEC_A, 7-state, PLL-less).
+The primary paper (Fu et al. IEEE JESTIE 2024) supports LINEAR_SSSA only;
+no nonlinear GFL source is approved. GFL PLL participation is reported as
+`NOT APPLICABLE TO CURRENT PRODUCTION MODEL` until Phase 0B approves an
+explicit-state GFL source.
+
+### What was delivered (commits 5e7db6d..0cb65e9)
+
+1. **Phase 0A** (`5e7db6d`): frozen source verdict + equation register +
+   13/7-state tables + Section H contract + Phase 0B source checklist
+   (`docs/project/IEEE14_IBR_DYNAMIC_EQUATION_CONTRACT.md`).
+
+2. **Phase 1** (`d4d1c7d`): IBR-owned metadata registry
+   (`+ibr/device_contract_metadata.m`) + state/input inventory snapshot
+   (`+ibr/state_inventory_snapshot.m`). Strict device_type/nx/state_names
+   registry; GFM 13-state (page+eq citations from NREL/TP-5D00-90260),
+   GFL 7-state (WECC block-level provenance), dual 20-state composed.
+
+3. **Phase 2** (`aba4ba2`): standalone no-inv modal helper
+   (`+stability/modal_analysis.m`). Read-only consumer of `sssa.A` and
+   separately `sssa.physical_A`. Left via `eig(A','vector')`, biorthogonal
+   U/conj(alpha), signed participation, deterministic sort + conjugate
+   pairs + cluster projectors + physical lift (map-dependent oblique
+   attribution, NOT canonical eigenvectors of A). Does NOT modify
+   `composite_sssa_model.m` or `Ared` construction.
+
+4. **Phase 3** (`0cb65e9`): Section H report assembler
+   (`+ibr/section_h_report.m`) + text renderer
+   (`+ibr/render_section_h_report.m`). 12 mandatory log sections + full/
+   physical spectrum tables + participation table + TS tables + execution
+   counters + convergence summary + `analysis_fingerprint` (canonical
+   serialization + SHA-256). Pure read-only consumer: no eig/inv/pinv/
+   modal_analysis/state_inventory_snapshot/solver calls. Two shape-guard
+   tests added to prevent the cell-array collapse regression.
+
+5. **Cell-index bug fixes** (`0cb65e9`): five sites in
+   `+stability/modal_analysis.m` (lines 334, 335, 497, 512, 656) used
+   parentheses indexing on cell arrays, returning a cell instead of the
+   string content; `strcmp` then mis-compared on ill-conditioned/clustered
+   paths. Fixed to curly-brace indexing. Defect record:
+   `docs/project/defects/2026-07-18-cell-array-collapse-and-indexing.md`.
+
+### Verification (Phase 3 delivery, commit 0cb65e9)
+
+- Phase 3 targeted (`test_ibr_section_h_report.m`): **20/20 PASS**.
+- Phase 2 targeted (`test_modal_analysis.m`): **24/24 PASS**.
+- Phase 1+2+3 targeted: **74/74 PASS**.
+- Full regression: **1021 passed / 0 failed / 4 incomplete** (the 4
+  incomplete are pre-existing `test_pgaz_conversion_contract` assumption
+  filters on the external pgaz validation tool, unrelated to this change).
+- MATLAB R2026a Update 3 (glnxa64); `matlab -batch` with `pf_init_paths`.
+
+### Scope and ownership
+
+- Track B owned: `+ibr/**`, `tests/test_ibr_*.m`, `docs/ibr/**`,
+  `scripts/ibr/**`.
+- Single-owner shared (new file, not an edit to existing shared kernel):
+  `+stability/modal_analysis.m` (created in Phase 2 `aba4ba2`; cell-index
+  fixes in `0cb65e9`). No edit to `composite_sssa_model.m`, `composite_dae.m`,
+  `solve_case.m`, `run_pf.m`, `run_ssa.m`, `run_ts.m`, `pf_init_paths.m`,
+  TS kernel/driver, topology/event, or launcher files.
+- No production numerical equation, Ared, ABI, schema, or runtime contract
+  changed. `IBR_PRODUCTION_INTEGRATION_READY` remains `NOT_READY`.
+
+### Remaining BLOCKED phases
+
+- **Phase 0B** (pending, user/source decision): locate an authoritative
+  nonlinear positive-sequence GFL source covering the ten checklist items
+  (PLL angle+integrator ODE; PLL gains/base/freeze/limits; P/Q measurement+
+  controller; current command/dynamics; dq/network transforms; current
+  limit/priority/anti-windup; equilibrium init; low-voltage behavior;
+  parameter table; valid timescale/domain). Then approve that source OR
+  explicitly freeze Fu usage as linear-SSSA-only.
+- **Phase 4** (BLOCKED on 0B): explicit-state nonlinear GFL — new model
+  file (do not mutate WECC semantics); freeze model family, equations,
+  state order, parameters, bases, limits, init.
+- **Phase 5** (BLOCKED on 4; single-owner shared): PF/SSSA/TS routing of
+  the new GFL through the SAME equations; atomic switching/transfer if
+  approved; targeted + final regression.
 
 ## Mission C — Characterization handoff (2026-07-17)
 

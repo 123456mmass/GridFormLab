@@ -1,15 +1,23 @@
-function fp = compute_selector_table_fingerprint(inputs, evidence)
+function [fp, input_fp, evidence_fp] = compute_selector_table_fingerprint(inputs, evidence)
 %COMPUTE_SELECTOR_TABLE_FINGERPRINT  Canonical fingerprint for the authenticated selector table.
 %
-%   FP = compute_selector_table_fingerprint(INPUTS, EVIDENCE) computes a
-%   deterministic, canonical fingerprint that BOTH the table builder
-%   (ibr_selector_table.m) and the runtime validator
-%   (validate_runtime_candidate_compatibility.m) call. This is the single
-%   fingerprint source of truth -- builder and validator MUST agree.
+%   FP = compute_selector_table_fingerprint(INPUTS, EVIDENCE) computes the
+%   deterministic, canonical AGGREGATE fingerprint (backward-compatible:
+%   one-output callers are unchanged).
+%
+%   [FP, INPUT_FP, EVIDENCE_FP] = compute_selector_table_fingerprint( ... )
+%   additionally returns the two component layer hashes for 3-layer
+%   authentication. The validator recomputes all three from runtime inputs
+%   + live Y and compares each against the stored values. The aggregate
+%   FP remains the AUTHORITATIVE digest; the component hashes are
+%   diagnostic (advisor Q1, Revision 4).
+%
+%   This is the single fingerprint source of truth -- builder and validator
+%   MUST call this same function.
 %
 %   Architecture (3-layer, see plan):
 %     selector_input_fingerprint      = hash(immutable inputs + context topology)
-%     candidate_evidence_fingerprint  = hash(canonical candidate evidence)
+%     candidate_evidence_fingerprint  = hash(canonical full candidate evidence)
 %     selector_table_fingerprint      = hash(schema_version + input_fp + evidence_fp)
 %
 %   INPUTS struct:
@@ -25,9 +33,13 @@ function fp = compute_selector_table_fingerprint(inputs, evidence)
 %     .base_values      struct (or [])
 %     .topology_payload canonical complex Ybus + bus ordering (actual Y at event)
 %
-%   EVIDENCE struct:
-%     .sg_off_universe  serialized candidate array for SG_OFF context
-%     .sg_on_universe   serialized candidate array for SG_ON context
+%   EVIDENCE struct (REVISION 4): the evidence struct may carry either
+%   PRE-SERIALIZED universe strings (sg_off_universe / sg_on_universe) OR
+%   RAW candidate struct arrays (sg_off_configurations / sg_on_configurations).
+%   Raw arrays are canonicalized through THIS shared serializer so builder
+%   and validator use ONE serialization path (advisor: no duplicated
+%   serializer that collapses cell/struct to '?'). This closes the lossy
+%   '?' path in the prior local struct_to_str.
 %
 %   Classification: canonical serialization NUMERICAL_METHOD. No external solver.
 
@@ -68,21 +80,58 @@ if isfield(inputs,'topology_payload') && ~isempty(inputs.topology_payload)
     parts{end+1} = sprintf('topology=%s', topology_to_str(inputs.topology_payload)); %#ok<AGROW>
 end
 
-selector_input_fingerprint = hash_string(strjoin(parts, '|'));
+input_fp = hash_string(strjoin(parts, '|'));
 
-% Evidence fingerprint from serialized candidate universes.
+% Evidence fingerprint. Accept either pre-serialized universe strings
+% (legacy callers) or raw candidate struct arrays (Revision 4: builder +
+% validator pass raw arrays through this ONE shared serializer).
 evidence_parts = {};
-if isfield(evidence,'sg_off_universe')
-    evidence_parts{end+1} = sprintf('sg_off=%s', evidence.sg_off_universe); %#ok<AGROW>
+if isfield(evidence,'sg_off_universe') && ~isempty(evidence.sg_off_universe)
+    ev_off = evidence.sg_off_universe;
+    if ischar(ev_off) || isstring(ev_off)
+        off_str = char(ev_off);
+    else
+        off_str = config_array_to_str(ev_off);
+    end
+    evidence_parts{end+1} = sprintf('sg_off=%s', off_str); %#ok<AGROW>
+elseif isfield(evidence,'sg_off_configurations')
+    evidence_parts{end+1} = sprintf('sg_off=%s', ...
+        config_array_to_str(evidence.sg_off_configurations)); %#ok<AGROW>
 end
-if isfield(evidence,'sg_on_universe')
-    evidence_parts{end+1} = sprintf('sg_on=%s', evidence.sg_on_universe); %#ok<AGROW>
+if isfield(evidence,'sg_on_universe') && ~isempty(evidence.sg_on_universe)
+    ev_on = evidence.sg_on_universe;
+    if ischar(ev_on) || isstring(ev_on)
+        on_str = char(ev_on);
+    else
+        on_str = config_array_to_str(ev_on);
+    end
+    evidence_parts{end+1} = sprintf('sg_on=%s', on_str); %#ok<AGROW>
+elseif isfield(evidence,'sg_on_configurations')
+    evidence_parts{end+1} = sprintf('sg_on=%s', ...
+        config_array_to_str(evidence.sg_on_configurations)); %#ok<AGROW>
 end
-candidate_evidence_fingerprint = hash_string(strjoin(evidence_parts, '|'));
+evidence_fp = hash_string(strjoin(evidence_parts, '|'));
 
-% Combined table fingerprint.
+% Combined table fingerprint (aggregate, AUTHORITATIVE).
 fp = hash_string(sprintf('version=selector_table_v2|input=%s|evidence=%s', ...
-    selector_input_fingerprint, candidate_evidence_fingerprint));
+    input_fp, evidence_fp));
+end
+
+% ---------------------------------------------------------------------
+function s = config_array_to_str(cfgs)
+% Deterministic serialization of the full candidate universe (struct array).
+% Element order IS the enumeration order (already deterministic), so no
+% re-sort is needed. The fingerprint authenticates this whole array, not
+% only the single selected result. Shared by builder + validator.
+if isempty(cfgs)
+    s = 'none';
+    return;
+end
+parts = cell(1, numel(cfgs));
+for i = 1:numel(cfgs)
+    parts{i} = struct_to_str(cfgs(i));
+end
+s = strjoin(parts, ';');
 end
 
 % ---------------------------------------------------------------------

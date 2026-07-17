@@ -576,18 +576,43 @@ if automatic_gfm_switching
             'automatic SG_OFF requires opt.selector_table (no table injected).');
         reason = handler_log.details; return;
     end
+    % Assemble the identity-aligned runtime context (Step F): event-left modes,
+    % online/hold/lockout materialized in dae.devices order + eligible mask.
+    runtime_context = assemble_runtime_context(ec.hybrid_state, dae);
+    runtime_context.event_time = t;
+    % Authenticate against LIVE Y (topology drift detection, Step 8). Pass the
+    % runtime topology derived from case_data.mpc so the input fingerprint
+    % matches the build-time hash when the network has not drifted.
+    Ytopo = [];
+    if isfield(case_data,'mpc') && isstruct(case_data.mpc)
+        Ytopo = canonical_ybus_from_mpc(case_data.mpc);
+    end
     [auth_ok, auth_fid, auth_msg, ~, cand] = ...
         stability.validate_runtime_candidate_compatibility( ...
-        opt.selector_table, req, dae, sched, 'sg_off');
+        opt.selector_table, req, dae, sched, 'sg_off', Ytopo, runtime_context);
     if ~auth_ok
-        % Preserve the structured ID from the validator (advisor #6).
-        handler_log = auth_fail_log(['ts_simulate_ibr_hybrid:' auth_fid], auth_msg);
+        % Preserve the structured ID from the validator VERBATIM (advisor #6,
+        % Revision 4): do NOT prepend any namespace.
+        handler_log = auth_fail_log(auth_fid, auth_msg);
         reason = auth_msg; return;
+    end
+    % Canonical owner arrays + actual energized-island ID (Step F + Step 10):
+    % compute the live island ID from the actual topology (NOT literal 1).
+    actual_island_id = [];
+    if ~isempty(Ytopo) && isfield(case_data,'mpc') && isstruct(case_data.mpc)
+        islands = stability.island_components(Ytopo, case_data.mpc);
+        energized = islands([islands.energized]);
+        if ~isempty(energized)
+            actual_island_id = energized(1).island_id;
+        end
     end
     event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
         'committed_selection',struct('selected_gfm_indices',cand.selected_gfm_indices, ...
         'n_gfm_required',cand.n_gfm_required, ...
-        'reference_resource_index',cand.reference_resource_index));
+        'reference_resource_index',cand.reference_resource_index, ...
+        'reference_owner_indices',cand.reference_resource_index, ...
+        'gfm_reference_resource_indices',cand.reference_resource_index, ...
+        'reference_island_ids',actual_island_id));
     [hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
     if ~handler_log.applied
         reason=sprintf('%s: %s',handler_log.failure_id,handler_log.details); return;
@@ -1180,4 +1205,78 @@ end
 
 function value=ternary(condition,a,b)
 if condition, value=a; else, value=b; end
+end
+
+function rc = assemble_runtime_context(hs, dae)
+% Assemble the identity-aligned runtime context (Step F). Reads committed
+% event-left modes/online from hybrid_state (via makeValidName keys),
+% materializes them in dae.devices positional order, and computes the eligible
+% dual-mode IBR mask. hold/lockout timers default to unblocked (enforced
+% atomically by sg_event_handler at commit; the ranker only needs the mask,
+% modes, online, event_time set).
+n = numel(dae.devices);
+device_modes = cell(1, n);
+device_online = false(1, n);
+for k = 1:n
+    key = matlab.lang.makeValidName(char(dae.devices(k).device_id), 'ReplacementStyle','underscore');
+    if isfield(hs,'device_modes') && isfield(hs.device_modes, key)
+        device_modes{k} = char(hs.device_modes.(key));
+    else
+        device_modes{k} = 'gfl';
+    end
+    if isfield(hs,'device_online') && isfield(hs.device_online, key)
+        device_online(k) = logical(hs.device_online.(key));
+    end
+end
+hold_timers = zeros(1, n);
+lockout_timers = -inf(1, n);
+eligible = false(1, n);
+for k = 1:n
+    if ~device_online(k), continue; end
+    dev = dae.devices(k);
+    caps = struct();
+    if isfield(dev,'capabilities') && isstruct(dev.capabilities)
+        caps = dev.capabilities;
+    end
+    rt = '';
+    if isfield(caps,'resource_type'), rt = lower(char(caps.resource_type)); end
+    if ~strcmp(rt,'ibr'), continue; end
+    if isfield(caps,'can_switch_mode') && ~logical(caps.can_switch_mode), continue; end
+    sup = {};
+    if isfield(caps,'supported_modes'), sup = caps.supported_modes; end
+    has_gfl = any(strcmpi(string(sup),'gfl'));
+    has_gfm = any(strcmpi(string(sup),'gfm'));
+    if has_gfl && has_gfm, eligible(k) = true; end
+end
+rc = struct('device_modes',{device_modes},'device_online',device_online, ...
+    'hold_timers',hold_timers,'lockout_timers',lockout_timers, ...
+    'event_time',0,'eligible_mask',eligible);
+end
+
+function Y = canonical_ybus_from_mpc(mpc)
+% Canonical complex Ybus from an mpc struct (mirrors the audited construction
+% in ibr_selector_table.m: tap/shift, branch-status col 11, bus shunt G+B).
+% Used by trip_transaction to derive the runtime topology fingerprint without
+% the LOAD admittance term that the TS-specific build_ybus_local adds (so the
+% validator's input fingerprint matches the build-time hash in the no-drift
+% case — see composite_dae.build_ybus_local vs canonical_ybus_from_mpc).
+bus = mpc.bus; br = mpc.branch; nb = size(bus, 1); Y = complex(zeros(nb));
+for k = 1:size(br, 1)
+    if size(br, 2) >= 11 && br(k, 11) == 0, continue; end
+    from_id = br(k, 1); to_id = br(k, 2);
+    i = find(bus(:, 1) == from_id, 1); j = find(bus(:, 1) == to_id, 1);
+    if isempty(i) || isempty(j), continue; end
+    r = br(k, 3); x = br(k, 4); b = br(k, 5);
+    tap = br(k, 9); shift = br(k, 10);
+    if tap == 0, tap = 1; end
+    a = tap * exp(1i * deg2rad(shift));
+    yser = 1 / (r + 1i * x);
+    Y(i, i) = Y(i, i) + yser / (a * conj(a)) + 1i * b / 2;
+    Y(j, j) = Y(j, j) + yser + 1i * b / 2;
+    Y(i, j) = Y(i, j) - yser / conj(a);
+    Y(j, i) = Y(j, i) - yser / a;
+end
+if size(bus, 2) >= 6 && isfield(mpc,'baseMVA') && mpc.baseMVA ~= 0
+    Y = Y + diag((bus(:, 5) + 1i * bus(:, 6)) / mpc.baseMVA);
+end
 end

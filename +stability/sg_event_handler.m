@@ -102,22 +102,38 @@ next.selector_fingerprint = sprintf('event_commit|n=%d|selected=%s|ref=%d', ...
     transaction.n_gfm_required, ...
     strjoin(string(transaction.selected_gfm_indices), ','), ...
     transaction.reference_resource_index);
-% --- Multi-island reference-ownership schema (F1/C1, canonical) ---
-% SG_OFF: the selected GFM reference owns the (single, IEEE14) island.
-% Canonical arrays are sorted by island ID; the legacy alias remains a
-% read-only single-island compatibility view (validated by
-% reference_owner_schema, not interpreted ad hoc here).
-next.reference_owner_indices = transaction.reference_resource_index;
-next.gfm_reference_resource_indices = transaction.reference_resource_index;
-next.reference_island_ids = 1;
+% --- Multi-island reference-ownership schema (F1/C1, canonical, Step G) ---
+% The canonical owner arrays are validated above and published VERBATIM
+% (the handler does not re-derive ownership). reference_island_ids carries
+% the actual energized-island ID from the runtime island_components analysis
+% (NOT a literal 1). When owner arrays are absent (legacy callers) fall back
+% to the selected GFM reference and island 1 for backward compatibility.
+if ~isempty(transaction.reference_owner_indices)
+    next.reference_owner_indices = transaction.reference_owner_indices;
+else
+    next.reference_owner_indices = transaction.reference_resource_index;
+end
+if ~isempty(transaction.gfm_reference_resource_indices)
+    next.gfm_reference_resource_indices = transaction.gfm_reference_resource_indices;
+else
+    next.gfm_reference_resource_indices = transaction.reference_resource_index;
+end
+if ~isempty(transaction.reference_island_ids)
+    next.reference_island_ids = transaction.reference_island_ids;
+else
+    next.reference_island_ids = 1;
+end
 % selector_table_fingerprint and pre_event_input_fingerprint are immutable for
 % the run (set at table build / pre-event capture); they are NOT overwritten
-% by a trip commit. Only committed_config_fingerprint changes here.
+% by a trip commit. Only committed_config_fingerprint changes here. The
+% committed fingerprint records the ACTUAL island ID (not literal 1).
 next.committed_config_fingerprint = sprintf( ...
-    'sg_off_commit|n=%d|selected=%s|owner=%d|island=%d|version=%d', ...
+    'sg_off_commit|n=%d|selected=%s|owner=%s|island=%s|version=%d', ...
     transaction.n_gfm_required, ...
     strjoin(string(transaction.selected_gfm_indices), ','), ...
-    transaction.reference_resource_index, 1, next.selector_table_version);
+    strjoin(string(next.reference_owner_indices), ','), ...
+    strjoin(string(next.reference_island_ids), ','), ...
+    next.selector_table_version);
 
 hs = next;
 log.applied = true;
@@ -240,6 +256,52 @@ end
 selected = selection.selected_gfm_indices;
 n_required = selection.n_gfm_required;
 reference_index = selection.reference_resource_index;
+
+% --- Canonical owner arrays (Step G): validate + carry into transaction ---
+% The validator/compute path (Step F) now supplies the canonical owner arrays
+% and the actual energized-island ID (NOT literal 1). The handler validates
+% them and publishes verbatim (validate-only, does not re-derive ownership).
+has_owner_arrays = isfield(selection, 'reference_owner_indices') && ...
+    isfield(selection, 'gfm_reference_resource_indices') && ...
+    isfield(selection, 'reference_island_ids');
+tx.reference_owner_indices = [];
+tx.gfm_reference_resource_indices = [];
+tx.reference_island_ids = [];
+if has_owner_arrays
+    ro = selection.reference_owner_indices;
+    gr = selection.gfm_reference_resource_indices;
+    ri = selection.reference_island_ids;
+    if ~isnumeric(ro) || isempty(ro) || any(~isfinite(ro(:))) || ...
+            any(ro(:) ~= fix(ro(:))) || any(ro(:) < 1 | ro(:) > nd) || ...
+            ~isnumeric(gr) || isempty(gr) || any(~isfinite(gr(:))) || ...
+            any(gr(:) ~= fix(gr(:))) || any(gr(:) < 1 | gr(:) > nd) || ...
+            numel(ro) ~= numel(gr)
+        failure_id = 'stability:sg_event_handler:badOwnerArrays';
+        details = 'reference_owner_indices/gfm_reference_resource_indices must be equal-length in-range integer indices.';
+        return;
+    end
+    ro = reshape(ro, 1, []); gr = reshape(gr, 1, []);
+    if ~all(ismember(ro, selected)) || ~all(ismember(gr, selected))
+        failure_id = 'stability:sg_event_handler:ownerNotSelected';
+        details = 'Every owner/reference index must be a selected GFM member.';
+        return;
+    end
+    if ~isnumeric(ri) || isempty(ri) || any(~isfinite(ri(:))) || ...
+            any(ri(:) ~= fix(ri(:))) || any(ri(:) < 1)
+        failure_id = 'stability:sg_event_handler:badIslandIds';
+        details = 'reference_island_ids must be positive integer island IDs.';
+        return;
+    end
+    ri = reshape(ri, 1, []);
+    if numel(ri) ~= numel(ro)
+        failure_id = 'stability:sg_event_handler:ownerIslandCardinality';
+        details = 'reference_island_ids cardinality must match owner arrays.';
+        return;
+    end
+    tx.reference_owner_indices = ro;
+    tx.gfm_reference_resource_indices = gr;
+    tx.reference_island_ids = ri;
+end
 if ~isnumeric(selected) || isempty(selected) || any(~isfinite(selected(:))) || ...
         any(selected(:) ~= fix(selected(:))) || ...
         any(selected(:) < 1 | selected(:) > nd)

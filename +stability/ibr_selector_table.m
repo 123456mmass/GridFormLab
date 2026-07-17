@@ -53,13 +53,64 @@ end
 
 gamma_req = resolve_gamma_req(scenario, opt);
 
+% --- Single-island build gate (Step C) ---------------------------------
+% Detect energized islands from the build-time topology BEFORE any candidate
+% enumeration. Multi-energized-island topology is NOT_VALIDATED for automatic
+% selection (single-island scope, Step 5) and fails closed here. The actual
+% energized island ID is recorded so the handler publishes the real ID instead
+% of the literal `1` (closes the sg_event_handler.m:112 defect).
+[islands, energized_count, energized_island_ids] = analyze_build_islands(case_data);
+if energized_count > 1
+    error('stability:ibr_selector_table:multiIslandUnsupported', ...
+        ['The network has %d energized islands; automatic GFM selection is ' ...
+         'validated for a SINGLE energized island only (Step 5). ' ...
+         'Multi-island selection is NOT_VALIDATED.'], energized_count);
+end
+
 table = struct();
 table.gamma_req = gamma_req;
+table.build_islands = islands;
+table.energized_island_count = energized_count;
+table.reference_island_ids = energized_island_ids;
 table.sg_off = build_context(case_data, resources, scenario, opt, gamma_req, false);
 table.sg_on = build_context(case_data, resources, scenario, opt, gamma_req, true);
-table.selector_table_fingerprint = build_fingerprint(case_data, resources, ...
-    scenario, gamma_req, table.sg_off, table.sg_on);
+[table.selector_table_fingerprint, ...
+ table.selector_input_fingerprint, ...
+ table.candidate_evidence_fingerprint, ...
+ table.selector_auth_inputs, ...
+ table.selector_schema_version] = ...
+    build_fingerprint(case_data, resources, scenario, gamma_req, table.sg_off, table.sg_on);
 table.built_at = 'precomputed_before_ts';
+end
+
+% ---------------------------------------------------------------------
+function [islands, energized_count, energized_island_ids] = analyze_build_islands(case_data)
+% Build-time energized-island analysis (Step C). Uses the SAME canonical
+% Ybus construction as build_fingerprint (mirrors ibr_scr_metrics.build_ybus_network:
+% tap/shift, branch status col 11, bus shunt G+B) so the build-time Ybus and
+% the build-time mpc are always mutually consistent — the branch cross-check
+% in island_components.m:79-97 therefore always passes at build time.
+%
+% Returns the per-component struct array ISLANDS (from stability.island_components),
+% the count of ENERGIZED islands, and the list of energized island IDs.
+% An isolated bus with no load/shunt/resource is de-energized (island_components.m:8-14)
+% and does NOT count toward energized_count.
+topology_payload = [];
+if isfield(case_data, 'mpc') && isfield(case_data.mpc, 'bus') && ...
+        isfield(case_data.mpc, 'branch') && isfield(case_data.mpc, 'baseMVA')
+    topology_payload = canonical_ybus_from_mpc(case_data.mpc);
+end
+if isempty(topology_payload) || ~isfield(case_data, 'mpc')
+    islands = struct('island_id', {}, 'bus_positions', {}, 'bus_ids', {}, ...
+        'energized', {}, 'has_online_vf_source', {}, 'has_load', {}, 'has_shunt', {});
+    energized_count = 0;
+    energized_island_ids = [];
+    return;
+end
+islands = stability.island_components(topology_payload, case_data.mpc);
+energized_mask = [islands.energized];
+energized_count = sum(energized_mask);
+energized_island_ids = [islands(energized_mask).island_id];
 end
 
 % =========================================================================
@@ -305,7 +356,8 @@ if ~isscalar(gamma_req) || ~isfinite(gamma_req) || gamma_req < 0
 end
 end
 
-function fp = build_fingerprint(case_data, resources, scenario, gamma_req, sg_off, sg_on)
+function [fp, input_fp, evidence_fp, auth_inputs, schema_version] = ...
+        build_fingerprint(case_data, resources, scenario, gamma_req, sg_off, sg_on)
 % Canonical fingerprint via the shared function compute_selector_table_fingerprint.
 % Builder and validator MUST agree — both call the same canonical serializer.
 % Build-time topology is derived from case_data.mpc (immutable network data).
@@ -322,15 +374,22 @@ if isfield(case_data, 'mpc') && isfield(case_data.mpc, 'bus') && ...
     topology_payload = canonical_ybus_from_mpc(case_data.mpc);
 end
 
-% Immutable inputs struct.
-inputs = struct();
-inputs.bus = [];
-inputs.branch = [];
-inputs.baseMVA = [];
+% Closed versioned auth envelope (advisor Q1, Revision 4): the immutable
+% input struct stored on the table so the validator can recompute the input
+% fingerprint WITHOUT reconstructing bus/branch/baseMVA/model_ids/capabilities/
+% dispatch/selector/base_values from dae/sched (which do not carry them
+% identically to the builder side — see run_hybrid_case.m:263-269,315-329,
+% composite_dae.m:245-264). The validator MUST replace .topology_payload
+% with live Y before recomputing — it must NEVER compare the stored
+% topology fingerprint against itself.
+auth_inputs = struct();
+auth_inputs.bus = [];
+auth_inputs.branch = [];
+auth_inputs.baseMVA = [];
 if isfield(case_data, 'mpc')
-    if isfield(case_data.mpc, 'bus'), inputs.bus = case_data.mpc.bus; end
-    if isfield(case_data.mpc, 'branch'), inputs.branch = case_data.mpc.branch; end
-    if isfield(case_data.mpc, 'baseMVA'), inputs.baseMVA = case_data.mpc.baseMVA; end
+    if isfield(case_data.mpc, 'bus'), auth_inputs.bus = case_data.mpc.bus; end
+    if isfield(case_data.mpc, 'branch'), auth_inputs.branch = case_data.mpc.branch; end
+    if isfield(case_data.mpc, 'baseMVA'), auth_inputs.baseMVA = case_data.mpc.baseMVA; end
 end
 nr = numel(resources);
 ids = cell(1, nr);
@@ -352,28 +411,32 @@ for k = 1:nr
         caps{k} = 'none';
     end
 end
-inputs.resource_ids = ids;
-inputs.model_ids = model_ids;
-inputs.capabilities = caps;
+auth_inputs.resource_ids = ids;
+auth_inputs.model_ids = model_ids;
+auth_inputs.capabilities = caps;
 if isfield(scenario, 'config') && isstruct(scenario.config) && ...
         isfield(scenario.config, 'dispatch')
-    inputs.dispatch = scenario.config.dispatch;
+    auth_inputs.dispatch = scenario.config.dispatch;
 end
-inputs.gamma_req = gamma_req;
+auth_inputs.gamma_req = gamma_req;
 if isfield(scenario, 'selector') && isstruct(scenario.selector)
-    inputs.selector = scenario.selector;
+    auth_inputs.selector = scenario.selector;
 end
 if isfield(case_data, 'base_values') && isstruct(case_data.base_values)
-    inputs.base_values = case_data.base_values;
+    auth_inputs.base_values = case_data.base_values;
 end
-inputs.topology_payload = topology_payload;
+auth_inputs.topology_payload = topology_payload;
 
-% Evidence struct.
+% Evidence struct: pass RAW candidate struct arrays through the shared
+% canonical serializer (Revision 4). This removes the prior lossy local
+% struct_to_str that collapsed cell/struct fields to '?' (advisor Q1).
+% Builder + validator now use ONE serialization path.
 evidence = struct();
-evidence.sg_off_universe = config_array_to_str(sg_off.configurations);
-evidence.sg_on_universe = config_array_to_str(sg_on.configurations);
+evidence.sg_off_configurations = sg_off.configurations;
+evidence.sg_on_configurations = sg_on.configurations;
 
-fp = compute_selector_table_fingerprint(inputs, evidence);
+[fp, input_fp, evidence_fp] = compute_selector_table_fingerprint(auth_inputs, evidence);
+schema_version = 'selector_table_v2';
 end
 
 function Y = canonical_ybus_from_mpc(mpc)
@@ -406,49 +469,6 @@ end
 if size(bus, 2) >= 6 && isfield(mpc, 'baseMVA') && mpc.baseMVA ~= 0
     Y = Y + diag((bus(:, 5) + 1i * bus(:, 6)) / mpc.baseMVA);
 end
-end
-
-function s = struct_to_str(s)
-% Deterministic canonical serialization of a scalar struct (recursive).
-if ~isstruct(s) || isempty(s)
-    s = '';
-    return;
-end
-fns = sort(fieldnames(s));
-parts = {};
-for k = 1:numel(fns)
-    v = s.(fns{k});
-    if isnumeric(v)
-        parts{end+1} = sprintf('%s=%s', fns{k}, mat2str(v(:).')); %#ok<AGROW>
-    elseif ischar(v)
-        parts{end+1} = sprintf('%s=%s', fns{k}, v); %#ok<AGROW>
-    elseif isstring(v)
-        parts{end+1} = sprintf('%s=%s', fns{k}, char(v)); %#ok<AGROW>
-    elseif islogical(v)
-        parts{end+1} = sprintf('%s=%d', fns{k}, v); %#ok<AGROW>
-    elseif isstruct(v) && isscalar(v)
-        parts{end+1} = sprintf('%s={%s}', fns{k}, struct_to_str(v)); %#ok<AGROW>
-    else
-        parts{end+1} = sprintf('%s=?', fns{k}); %#ok<AGROW>
-    end
-end
-s = strjoin(parts, ',');
-end
-
-function s = config_array_to_str(cfgs)
-% Deterministic serialization of the full candidate universe (struct array).
-% Element order IS the enumeration order (already deterministic), so no
-% re-sort is needed. The fingerprint authenticates this whole array, not
-% only the single selected result.
-if isempty(cfgs)
-    s = 'none';
-    return;
-end
-parts = cell(1, numel(cfgs));
-for i = 1:numel(cfgs)
-    parts{i} = struct_to_str(cfgs(i));
-end
-s = strjoin(parts, ';');
 end
 
 function h = hash_string(s)

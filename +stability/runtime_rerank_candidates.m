@@ -38,34 +38,33 @@ arguments
     runtime_context struct
 end
 
-n = numel(configurations);
-reject_reasons = cell(1, n);
-if n == 0
-    ranked = configurations;
-    order_key = {};
-    return;
-end
 % Fail closed: incomplete runtime context never falls back to build-time.
-[rctxt_ok, rctxt_reason] = runtime_context_complete(runtime_context, n);
+[rctxt_ok, rctxt_reason] = runtime_context_complete(runtime_context);
 if ~rctxt_ok
-    for i = 1:n
-        reject_reasons{i} = rctxt_reason;
-    end
-    ranked = configurations;
+    ranked = repmat(struct(), 0, 1);   % EMPTY, not the nonempty input (defect 3 fix)
     order_key = {};
+    reject_reasons = {rctxt_reason};
     return;
 end
 
+% Derive the RESOURCE count from the identity-aligned context (defect 1 fix:
+% do NOT use numel(configurations) — device_modes is indexed per RESOURCE,
+% one mode per resource, and a candidate set typically has FEWER rows than
+% resources). The validator is responsible for identity alignment; the ranker
+% trusts the aligned context but verifies each candidate's mode vector length.
 baseline_modes = runtime_context.device_modes;
 device_online = runtime_context.device_online;
 hold_timers = runtime_context.hold_timers;
 lockout_timers = runtime_context.lockout_timers;
 event_time = runtime_context.event_time;
 eligible_mask = runtime_context.eligible_mask;
+n_res = numel(baseline_modes);
 
+n = numel(configurations);
+keep = true(n, 1);
 nchanges = zeros(n, 1);
 incompat = false(n, 1);
-keep = true(n, 1);
+reject_reasons = cell(1, n);
 for i = 1:n
     c = configurations(i);
     if ~candidate_consistent(c)
@@ -74,6 +73,11 @@ for i = 1:n
         continue;
     end
     cm = c.modes;
+    if ~iscell(cm) || numel(cm) ~= n_res
+        keep(i) = false;
+        reject_reasons{i} = 'candidateModeCountMismatch';
+        continue;
+    end
     [nc, icm] = count_gfl_gfm_transitions(baseline_modes, cm, eligible_mask);
     nchanges(i) = nc;
     incompat(i) = any(icm);
@@ -90,16 +94,34 @@ for i = 1:n
         continue;
     end
 end
-[M, ~] = candidate_order_matrix(configurations, nchanges, incompat');
+
+% Defect 2 fix: actually REMOVE rejected rows before sorting and return
+% survivors only. The ordering matrix (col5 = stable position tie-break) is
+% therefore built over survivors, and a rejected build winner cannot leak
+% into the returned ranking.
+survivors = configurations(keep);
+n_surv = numel(survivors);
+if n_surv == 0
+    ranked = survivors;
+    order_key = {};
+    reject_reasons = reject_reasons(~keep);
+    return;
+end
+[M, ~] = candidate_order_matrix(survivors, nchanges(keep), incompat(keep)');
 [~, order] = sortrows(M, [1 2 3 4 5]);
-ranked = configurations(order);
-order_key = arrayfun(@(k) sprintf('feas=%d|nc=%d|ngfm=%d|m=%g|idx=%d|keep=%d', ...
+ranked = survivors(order);
+order_key = arrayfun(@(k) sprintf('feas=%d|nc=%d|ngfm=%d|m=%g|idx=%d', ...
     M(order(k), 1), M(order(k), 2), M(order(k), 3), -M(order(k), 4), ...
-    M(order(k), 5), keep(order(k))), 1:n, 'UniformOutput', false);
+    M(order(k), 5)), 1:n_surv, 'UniformOutput', false);
+reject_reasons = reject_reasons(~keep);
 end
 
 % ---------------------------------------------------------------------
-function [ok, reason] = runtime_context_complete(rc, n)
+function [ok, reason] = runtime_context_complete(rc)
+% Validate that the runtime context carries all required fields with
+% nonempty values. Field-presence only — the resource count is NOT validated
+% here (the ranker derives it from numel(rc.device_modes); the validator is
+% responsible for identity alignment per advisor Q2, Revision 4).
 ok = true; reason = '';
 req_fields = {'device_modes', 'device_online', 'hold_timers', ...
     'lockout_timers', 'event_time', 'eligible_mask'};
@@ -110,11 +132,6 @@ for k = 1:numel(req_fields)
         reason = ['missingRuntimeContext:' f];
         return;
     end
-end
-if numel(rc.device_modes) ~= n
-    ok = false;
-    reason = 'runtimeContextDeviceCountMismatch';
-    return;
 end
 end
 

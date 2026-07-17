@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exact Lazy Search Pipeline — Generic Mixed-Resource IBR Selector</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #5f6b7a;
+      --line: #d8e0e8;
+      --paper: #ffffff;
+      --page: #f4f7fa;
+      --blue: #155eef;
+      --blue-soft: #eef4ff;
+      --green: #087a55;
+      --green-soft: #eafaf4;
+      --amber: #9a6700;
+      --amber-soft: #fff8df;
+      --red: #b42318;
+      --red-soft: #fff1f0;
+      --code: #0f172a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "Noto Sans Thai", "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.72;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 32px auto 64px;
+    }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 28px 32px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 16px rgba(16, 24, 40, 0.04);
+    }
+
+    header {
+      border-top: 6px solid var(--blue);
+    }
+
+    h1, h2, h3 { line-height: 1.3; }
+    h1 { margin: 0 0 10px; font-size: clamp(1.7rem, 4vw, 2.55rem); }
+    h2 { margin: 0 0 14px; font-size: 1.45rem; }
+    h3 { margin: 24px 0 8px; font-size: 1.08rem; }
+    p { margin: 8px 0 14px; }
+    ul, ol { padding-left: 1.45rem; }
+    li { margin: 7px 0; }
+
+    code, pre {
+      font-family: Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      background: #f1f4f8;
+      border-radius: 5px;
+      padding: 0.12rem 0.35rem;
+      color: var(--code);
+    }
+
+    pre {
+      overflow-x: auto;
+      background: var(--code);
+      color: #e7eef8;
+      border-radius: 10px;
+      padding: 18px;
+      line-height: 1.5;
+    }
+
+    .subtitle { color: var(--muted); font-size: 1.04rem; max-width: 920px; }
+    .meta { color: var(--muted); font-size: 0.88rem; }
+
+    .callout {
+      border-left: 5px solid var(--blue);
+      background: var(--blue-soft);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+    }
+
+    .safe { border-left-color: var(--green); background: var(--green-soft); }
+    .warning { border-left-color: var(--amber); background: var(--amber-soft); }
+    .danger { border-left-color: var(--red); background: var(--red-soft); }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 9px;
+      margin-right: 5px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      vertical-align: 1px;
+    }
+
+    .badge.safe { color: var(--green); background: var(--green-soft); border: 1px solid #9ddcc5; }
+    .badge.order { color: var(--amber); background: var(--amber-soft); border: 1px solid #eed58b; }
+    .badge.expensive { color: var(--red); background: var(--red-soft); border: 1px solid #f3aaa5; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 18px;
+      background: #fbfcfe;
+    }
+
+    .card h3 { margin-top: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 0.94rem;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: #edf2f7; }
+    .nowrap { white-space: nowrap; }
+    .equation { text-align: center; font-size: 1.04rem; margin: 15px 0; }
+
+    .pipeline > li {
+      border-left: 3px solid #b9c8de;
+      padding: 2px 0 12px 16px;
+      margin: 0 0 8px;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: center;
+      text-align: center;
+      margin: 20px 0;
+    }
+
+    .decision div { padding: 14px; border-radius: 10px; border: 1px solid var(--line); }
+    .arrow { border: 0 !important; font-size: 1.4rem; color: var(--blue); }
+
+    footer { color: var(--muted); text-align: center; font-size: 0.85rem; padding: 8px; }
+
+    @media (max-width: 720px) {
+      main { width: min(100% - 18px, 1120px); margin-top: 10px; }
+      header, section { padding: 21px 18px; }
+      .decision { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Exact Lazy Search Pipeline</h1>
+    <p class="subtitle">
+      แผนขยาย Generic Mixed-Resource IBR Selector ให้รองรับ IBR จำนวนมาก โดยลดจำนวนครั้งที่ต้องรัน
+      Power Flow / mixed equilibrium และ SSSA แต่ยังคงผลลัพธ์ที่ตรวจสอบย้อนกลับได้ เป็น deterministic
+      และไม่ตัด candidate ที่ดีที่สุดด้วย heuristic ที่พิสูจน์ไม่ได้
+    </p>
+    <p class="meta">
+      สถานะเอกสาร: proposed architecture — ยังไม่ใช่ production behavior ที่ส่งมอบแล้ว<br>
+      ขอบเขต: candidate generation, safe pruning, ordered evaluation, fail-closed search และ index contract
+    </p>
+  </header>
+
+  <section id="motivation">
+    <h2>1. ปัญหาที่ต้องแก้</h2>
+    <p>
+      หากมี IBR ที่สลับ GFL/GFM ได้จำนวน <code>N</code> ตัว การ enumerate ทุก subset จะมี
+      <code>2^N</code> รูปแบบ สำหรับ IEEE14 ปัจจุบันมี 4 IBR จึงมีเพียง 16 รูปแบบและ exhaustive search
+      เหมาะมากในฐานะ oracle แต่เมื่อมี 20 IBR จะเพิ่มเป็น 1,048,576 รูปแบบ การรัน nonlinear equilibrium
+      และ eigenvalue analysis ให้ครบทุกแบบจะมีต้นทุนสูงเกินจำเป็น
+    </p>
+
+    <div class="callout safe">
+      <strong>เป้าหมายไม่ใช่การเปลี่ยน selector ให้เป็น heuristic selector</strong><br>
+      เป้าหมายคือยังได้คำตอบตาม ranking contract เดิม แต่สร้างและประเมิน candidate เท่าที่จำเป็น
+      พร้อมตัดทิ้งเฉพาะกรณีที่มีหลักฐานว่าเป็นไปไม่ได้จริง
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Exact</h3>
+        <p>หยุดค้นหาได้ต่อเมื่อพิสูจน์แล้วว่า candidate tier ที่ยังไม่ประเมินไม่สามารถชนะ tier ปัจจุบันตาม ranking contract</p>
+      </div>
+      <div class="card">
+        <h3>Lazy</h3>
+        <p>สร้าง candidate ทีละ tier และทีละชุด ไม่สร้างรายการ <code>2^N</code> ทั้งหมดไว้ในหน่วยความจำตั้งแต่ต้น</p>
+      </div>
+      <div class="card">
+        <h3>Fail-closed</h3>
+        <p>หากหมด candidate/time budget ก่อนพิสูจน์คำตอบ ให้รายงาน <code>SEARCH_INCOMPLETE</code> และห้าม commit “best so far” อัตโนมัติ</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="indices">
+    <h2>2. Index คืออะไร และทำไมต้องใช้แบบนี้</h2>
+
+    <div class="callout danger">
+      <strong>Resource index ไม่ใช่ bus number, generator-row index หรือ state index</strong><br>
+      ตัวเลข <code>2</code> ใน <code>selected_gfm_indices = [2 3 4 5]</code> หมายถึง resource ลำดับที่ 2
+      ใน canonical resource/device table ของ scenario นั้น ต้อง resolve กลับไปหา stable <code>device_id</code>
+      และ external bus ได้เสมอ
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ชื่อ</th>
+          <th>ความหมาย</th>
+          <th>เหตุผลที่มี</th>
+          <th>สิ่งที่ห้ามตีความ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>resource index</code></td>
+          <td>ตำแหน่งใน canonical resource table ซึ่งรวม SG และ IBR ตาม ordering ที่ fingerprint รับรอง</td>
+          <td>ใช้เชื่อม selector, device model, capability, dispatch และ event state ด้วย identity เดียวกัน</td>
+          <td>ไม่ใช่หมายเลข bus และห้าม hard-code โดยไม่ validate resource ID</td>
+        </tr>
+        <tr>
+          <td><code>selected_gfm_indices</code></td>
+          <td>เซต resource indices ของ IBR ที่อยู่ใน physical GFM mode และ online ใน committed configuration</td>
+          <td>บอก “ใครบ้างเป็น GFM” แยกจาก “ใครเป็น reference owner”</td>
+          <td>ไม่ใช่ reference เพียงตัวเดียว และไม่จำเป็นต้องเท่ากับทุก IBR</td>
+        </tr>
+        <tr>
+          <td><code>reference_owner_indices</code></td>
+          <td>เจ้าของ supervisory/physical reference หนึ่ง resource ต่อ energized island อาจเป็น SG หรือ GFM</td>
+          <td>รองรับ SG handback และ multi-island โดยไม่ผูกกับ MATPOWER REF bus</td>
+          <td>ไม่ใช่การแทน KCL row หรือเพิ่ม slack bus ใน TS</td>
+        </tr>
+        <tr>
+          <td><code>gfm_reference_resource_indices</code></td>
+          <td>GFM numerical reference ต่อ island ใช้เฉพาะขณะที่ island นั้นไม่มี SG เป็น reference owner</td>
+          <td>แยก numerical GFM reference ออกจาก physical reference ownership</td>
+          <td>ต้องว่างใน island ที่ SG ครอง reference</td>
+        </tr>
+        <tr>
+          <td><code>reference_island_ids</code></td>
+          <td>island identity ที่จับคู่กับ owner/reference arrays</td>
+          <td>ทำให้ validation ตรวจได้ว่าทุก energized island มี owner หนึ่งตัวและไม่มี duplicate owner</td>
+          <td>ไม่ใช่ zone จาก electrical-distance clustering</td>
+        </tr>
+        <tr>
+          <td><code>n_gfm_required</code></td>
+          <td>จำนวน GFM เป้าหมายของ candidate context</td>
+          <td>เป็น cardinality constraint หรือ search tier ตาม policy</td>
+          <td>ไม่เท่ากับจำนวนอุปกรณ์ที่ต้องเปลี่ยนโหมด</td>
+        </tr>
+        <tr>
+          <td><code>n_mode_changes</code></td>
+          <td>Hamming distance ระหว่าง committed runtime modes ปัจจุบันกับ candidate target</td>
+          <td>สะท้อนจำนวน transfer operations จริงและใช้ ranking candidate ที่รบกวนน้อยกว่า</td>
+          <td>ห้ามคำนวณจากค่าที่ cache ไว้โดยไม่เทียบ runtime configuration ปัจจุบัน</td>
+        </tr>
+        <tr>
+          <td><code>bus position / external bus ID</code></td>
+          <td>ตำแหน่ง internal network matrix และหมายเลข bus ภายนอกของ resource</td>
+          <td>ใช้สร้าง Ybus, island membership, SCR และ electrical distance</td>
+          <td>ไม่ควรใช้แทน resource identity</td>
+        </tr>
+        <tr>
+          <td><code>state index</code></td>
+          <td>ตำแหน่ง state ของ device ใน composite DAE vector</td>
+          <td>ใช้ numerical residual/Jacobian และ transfer maps</td>
+          <td>ไม่ใช่ selector identity และเปลี่ยนได้ตาม active mode/state layout</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>ตัวอย่างที่ชี้ว่าจำนวน GFM ไม่เท่ากับจำนวน switches</h3>
+    <ul>
+      <li>Current GFM = <code>{2,3,4,5}</code>, target = <code>{2,3,4}</code>: <code>n_gfm_required=3</code> แต่ <code>n_mode_changes=1</code></li>
+      <li>Current GFM = <code>{2,3,4}</code>, target = <code>{5,6,7}</code>: <code>n_gfm_required=3</code> แต่ <code>n_mode_changes=6</code></li>
+    </ul>
+    <p>
+      เพราะฉะนั้นการกำหนด “GFM สูงสุด 3 ตัว” ไม่ใช่กลไกเดียวกับ “สลับพร้อมกันสูงสุด 3 ตัว”
+      ค่าแรกจำกัด physical configuration ส่วนค่าหลังจำกัด transaction disturbance หากต้องใช้ข้อจำกัดใด
+      ต้องกำหนดชื่อและ provenance ให้ตรงความหมาย
+    </p>
+  </section>
+
+  <section id="classification">
+    <h2>3. แบ่ง filter เป็น 3 ประเภทก่อนใช้งาน</h2>
+    <ol>
+      <li>
+        <span class="badge safe">HARD-SAFE</span>
+        <strong>Necessary-condition filter</strong>
+        <ul>
+          <li>ตัด candidate ได้เมื่อพิสูจน์ว่า candidate นั้นไม่มีทาง feasible</li>
+          <li>ตัวอย่าง: energized island ไม่มี voltage-forming source, capability ไม่รองรับ GFM, conservative headroom upper bound ต่ำกว่าความต้องการ</li>
+          <li>ทุกการ reject ต้องมี structured reason และ evidence</li>
+        </ul>
+      </li>
+      <li>
+        <span class="badge order">ORDER ONLY</span>
+        <strong>Search-order heuristic</strong>
+        <ul>
+          <li>ใช้เลือกว่าจะประเมิน candidate ใดก่อน แต่ห้ามลบ candidate จาก feasible set</li>
+          <li>ตัวอย่าง: electrical distance, zonal spread, <code>dV/dQ</code>, weak-bus score</li>
+          <li>เปลี่ยน heuristic ได้โดยผลสุดท้ายต้องเหมือน exhaustive oracle</li>
+        </ul>
+      </li>
+      <li>
+        <span class="badge expensive">FULL GATE</span>
+        <strong>Nonlinear / dynamic acceptance gate</strong>
+        <ul>
+          <li>mixed equilibrium / full KCL</li>
+          <li>device current and capability limits</li>
+          <li>full-state SSSA และ frozen stability margin <code>gamma_req</code></li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section id="pipeline">
+    <h2>4. Exact Lazy Search Pipeline — ลำดับการทำงาน</h2>
+    <ol class="pipeline">
+      <li>
+        <h3>รับ authenticated runtime context</h3>
+        <ul>
+          <li>network topology และค่า Ybus ที่เกี่ยวข้องครบถ้วน</li>
+          <li>canonical resource IDs/order, models, parameters, capabilities และ dispatch</li>
+          <li>committed online/mode/reference configuration ปัจจุบัน</li>
+          <li>selector policy, SCR threshold และ <code>gamma_req</code> ที่ freeze ก่อนเห็นผล</li>
+          <li>สร้าง/ตรวจ <code>selector_table_fingerprint</code> เพื่อป้องกัน stale evidence</li>
+        </ul>
+        <p><strong>ทำไม:</strong> candidate จาก topology หรือ dispatch เก่าห้ามนำมาใช้กับ runtime ใหม่ แม้ resource indices จะมีเลขเหมือนเดิม</p>
+      </li>
+
+      <li>
+        <h3>ตรวจ resource eligibility</h3>
+        <ul>
+          <li>resource online และอยู่ใน affected energized island</li>
+          <li>รองรับ GFL/GFM transition ตาม capability metadata</li>
+          <li>ไม่ติด hold, dwell หรือ lockout</li>
+          <li>มี device-owned transfer map สำหรับ transition ที่ต้องเกิด</li>
+        </ul>
+        <p><strong>ทำไม:</strong> ลด search universe จาก IBR ทั้งหมดเหลือเฉพาะ resource ที่สั่งได้จริง โดยไม่ต้องเรียก PF</p>
+      </li>
+
+      <li>
+        <h3>แยก connected islands และบังคับ reference coverage</h3>
+        <ul>
+          <li>หา connected components จาก actual topology/Ybus</li>
+          <li>ทุก energized island ต้องมี supervisory reference owner หนึ่งตัว</li>
+          <li>หาก SG offline ต้องมี GFM-capable online resource อย่างน้อยหนึ่งตัวใน island นั้น</li>
+          <li>ห้ามใช้ heuristic “zone” แทน connected island จริง</li>
+        </ul>
+        <p><strong>ทำไม:</strong> เป็นเงื่อนไขเชิงโครงสร้างที่จำเป็นและตรวจได้แบบ O(network size) จึงใช้ hard reject ได้อย่างปลอดภัย</p>
+      </li>
+
+      <li>
+        <h3>คำนวณ topology quantities ครั้งเดียว</h3>
+        <ul>
+          <li>SCR ของ online GFL candidates</li>
+          <li>electrical-distance matrix หรือ zonal descriptors สำหรับ ordering</li>
+          <li>linear sensitivities เช่น <code>dV/dQ</code> สำหรับ ordering หรือ conservative bound ที่พิสูจน์แล้วเท่านั้น</li>
+        </ul>
+        <p><strong>ทำไม:</strong> ปริมาณเหล่านี้ขึ้นกับ topology/operating context มากกว่าตัว subset จึงควร cache ภายใต้ fingerprint ไม่คำนวณซ้ำทุก candidate</p>
+      </li>
+
+      <li>
+        <h3>บังคับ inclusion/exclusion ที่พิสูจน์ได้</h3>
+        <ul>
+          <li>IBR ที่ไม่มี GFM capability ถูก exclude จาก GFM subset</li>
+          <li>หาก contract กำหนดว่า online GFL ที่ SCR ไม่ผ่านต้องไม่คงเป็น GFL ให้ force เข้า GFM หรือ reject ถ้าทำไม่ได้</li>
+          <li>resource ที่ติด lockout หรือไม่มี transfer map ถูกห้าม transition</li>
+        </ul>
+        <p><strong>ทำไม:</strong> constraint propagation ลดจำนวน binary choices ก่อนเริ่ม enumerate โดยยังรักษา exactness</p>
+      </li>
+
+      <li>
+        <h3>ใช้ conservative per-island headroom filter</h3>
+        <p class="equation"><code>max_available_P(island) &gt;= required_delta_P + loss_bound + P_margin</code></p>
+        <ul>
+          <li>ตรวจทั้ง upward และ downward active-power capability ตาม dispatch/control contract</li>
+          <li>ตรวจ reactive reserve และ voltage-support capability</li>
+          <li>ตรวจ apparent-power/current circle เช่น <code>P_i^2 + Q_i^2 &lt;= S_i,max^2</code></li>
+          <li>นับเฉพาะ resource ที่ control contract อนุญาตให้รับ mismatch</li>
+          <li>margin/loss bound ต้องมี provenance และ freeze ก่อนผล ไม่ปรับเพื่อให้ candidate ผ่าน</li>
+        </ul>
+        <p><strong>ทำไม:</strong> ถ้า upper bound ของ capability ยังไม่พอ candidate ย่อมไม่มีทางผ่าน nonlinear PF แต่การ “ผ่าน filter” ยังไม่ใช่หลักฐานว่า PF ผ่าน</p>
+      </li>
+
+      <li>
+        <h3>สร้าง candidate แบบ lazy ตาม lexicographic tier</h3>
+        <ol>
+          <li>เริ่มจาก <code>d = n_mode_changes = 0</code> แล้วเพิ่มทีละหนึ่ง</li>
+          <li>ภายใน tier เดียวกันเรียง <code>n_gfm_required</code> ตาม frozen selector policy</li>
+          <li>generate เฉพาะ candidate ของ tier ปัจจุบัน ไม่ materialize ทุก subset</li>
+          <li>หากมี approved maximum simultaneous switches ให้ใช้เป็น operational transaction constraint ไม่ใช่แอบใช้แทน maximum GFM count</li>
+        </ol>
+        <p><strong>ทำไม:</strong> ranking ปัจจุบันให้ความสำคัญกับจำนวน runtime mode changes จึงค้นหา tier ที่มีโอกาสชนะก่อน และหยุดก่อน tier ที่ด้อยกว่าได้เมื่อ proof condition ครบ</p>
+      </li>
+
+      <li>
+        <h3>จัดลำดับภายใน tier ด้วย heuristic</h3>
+        <ul>
+          <li>ให้ candidate ที่ครอบคลุม weak electrical areas ถูกประเมินก่อน</li>
+          <li>ใช้ electrical distance ลดการกระจุกตัว ถ้าต้องการ</li>
+          <li>ใช้ <code>|dV/dQ|</code>, SCR หรือ sensitivity score เป็น priority</li>
+          <li>ใช้ stable resource-ID tie-break เพื่อ deterministic repeat</li>
+        </ul>
+        <p><strong>ทำไม:</strong> เพิ่มโอกาสพบ feasible candidate เร็ว แต่ห้าม hard reject เพราะ sensitivity และ zone เป็น local/heuristic evidence ไม่ใช่ nonlinear feasibility proof</p>
+      </li>
+
+      <li>
+        <h3>รัน mixed equilibrium / full-KCL gate</h3>
+        <ul>
+          <li>ใช้ project-owned warm start และ Newton path</li>
+          <li>ตรวจ convergence, KCL norm, dispatch consistency และ physical limits</li>
+          <li>candidate ที่ equilibrium ไม่ผ่านไม่ถูกส่งเข้า SSSA</li>
+        </ul>
+        <p><strong>ทำไม:</strong> PF/equilibrium แพงกว่า algebraic filters แต่ถูกกว่า full SSSA และเป็น prerequisite ของ linearization ที่มีความหมาย</p>
+      </li>
+
+      <li>
+        <h3>รัน current/transfer instantaneous checks</h3>
+        <ul>
+          <li>device current และ apparent-power limits</li>
+          <li>transfer-state mapping และ continuity contract</li>
+          <li>right-limit consistency ที่จำเป็นก่อน commit</li>
+        </ul>
+        <p><strong>ทำไม:</strong> steady equilibrium ที่แก้สมการได้อาจยังละเมิด hardware/controller capability</p>
+      </li>
+
+      <li>
+        <h3>รัน full-state SSSA เฉพาะ candidate ที่รอด</h3>
+        <ul>
+          <li>คำนวณ eigenvalues จาก mixed SG/IBR full-state model</li>
+          <li>ผ่านเมื่อ <code>max(real(lambda)) &lt;= -gamma_req</code></li>
+          <li>เก็บ margin, dominant mode และ complete candidate evidence</li>
+        </ul>
+        <p><strong>ทำไม:</strong> SSSA เป็นด่านแพงสุด จึงควรถูกเรียกหลัง cheap proofs และ nonlinear equilibrium เท่านั้น</p>
+      </li>
+
+      <li>
+        <h3>เลือกผู้ชนะและพิสูจน์เงื่อนไขหยุด</h3>
+        <ul>
+          <li>ประเมิน candidate ทั้งหมดใน feasible lexicographic tier แรก</li>
+          <li>ภายใน tier เลือก stability margin ที่ดีกว่า แล้วใช้ resource-ID tie-break</li>
+          <li>หยุดก่อน tier ที่มี <code>n_mode_changes</code> แย่กว่า เพราะไม่สามารถชนะ ranking contract ได้</li>
+          <li>เก็บจำนวน generated/pruned/PF-called/SSSA-called เพื่อ audit performance</li>
+        </ul>
+        <p><strong>ทำไม:</strong> การหยุดหลังพบ feasible ตัวแรกอาจพลาด candidate margin ดีกว่าใน tier เดียวกัน จึงต้องประเมินครบ tier ก่อน</p>
+      </li>
+
+      <li>
+        <h3>commit หรือ fail closed</h3>
+        <ul>
+          <li>ก่อน commit ตรวจ fingerprint, runtime modes, transfer maps และ right-limit KCL ซ้ำ</li>
+          <li>ถ้าไม่พบ feasible candidate: <code>NO_FEASIBLE_CONFIGURATION</code></li>
+          <li>ถ้าหมด time/candidate budget ก่อน proof: <code>SEARCH_INCOMPLETE</code></li>
+          <li>ห้ามนำ best-so-far มา commit โดยอัตโนมัติเมื่อ search incomplete</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section id="filter-policy">
+    <h2>5. สถานะของ Pre-filter ที่เสนอ</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>แนวคิด</th>
+          <th>บทบาทที่อนุมัติได้</th>
+          <th>เหตุผล</th>
+          <th>เงื่อนไขก่อนใช้เป็น hard gate</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="nowrap">Maximum k-switches</td>
+          <td><span class="badge order">TIER / POLICY</span></td>
+          <td>ใช้ค้นหา Hamming-distance ต่ำก่อน ลด disturbance และตรงกับ runtime ranking</td>
+          <td>ถ้าจะห้ามเกิน k จริง ต้องเป็น sourced/CASE_DEFINED operational constraint และต้องแยกจากจำนวน GFM</td>
+        </tr>
+        <tr>
+          <td>Algebraic headroom</td>
+          <td><span class="badge safe">HARD-SAFE</span></td>
+          <td>upper bound ที่ยังต่ำกว่าความต้องการพิสูจน์ infeasibility ได้โดยไม่รัน PF</td>
+          <td>ต้อง conservative, per-island, control-aware และรวม P/Q/S/current/loss bounds</td>
+        </tr>
+        <tr>
+          <td>Electrical distance / zones</td>
+          <td><span class="badge order">ORDER ONLY</span></td>
+          <td>ช่วยประเมินชุดที่กระจายตัวก่อน แต่ zone boundary ไม่ใช่ physical island</td>
+          <td>ใช้ hard gate ได้เฉพาะ constraint ที่พิสูจน์เป็น necessary condition; connected-island coverage เป็นคนละกรณีและ hard-safe</td>
+        </tr>
+        <tr>
+          <td><code>dV/dQ</code> sensitivity</td>
+          <td><span class="badge order">ORDER ONLY</span></td>
+          <td>บอก local voltage weakness ณ operating point แต่เปลี่ยนตาม controls, limits และ PV/PQ behavior</td>
+          <td>ต้องมี conservative bound ที่พิสูจน์เทียบ nonlinear PF ก่อนจึง hard prune ได้</td>
+        </tr>
+        <tr>
+          <td>SCR capability gate</td>
+          <td><span class="badge safe">HARD-SAFE ตาม frozen contract</span></td>
+          <td>เป็น acceptance gate ที่มี threshold/provenance อยู่แล้ว</td>
+          <td>ต้องใช้ topology/resource rating ที่ fingerprint รับรอง และไม่ปรับ threshold เพื่อเร่ง search</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="flow">
+    <h2>6. ภาพรวมการไหลของข้อมูล</h2>
+    <pre>Case + topology + canonical resources + committed runtime configuration
+        |
+        v
+Authenticate fingerprint and resource identities
+        |
+        v
+Eligibility + exact island coverage + forced capability constraints
+        |
+        v
+Conservative per-island P/Q/S/current headroom pruning
+        |
+        v
+Lazy tiers: runtime mode changes -&gt; GFM count
+        |
+        v
+Order only: electrical distance + dV/dQ + stable resource-ID
+        |
+        v
+Mixed equilibrium / full KCL -&gt; current/transfer checks -&gt; full SSSA
+        |
+        v
+Complete first feasible tier -&gt; margin -&gt; resource-ID tie-break
+        |
+        +---- proof complete ----&gt; authenticated commit
+        |
+        +---- budget exhausted -&gt; SEARCH_INCOMPLETE, no commit</pre>
+  </section>
+
+  <section id="pseudocode">
+    <h2>7. Pseudocode ระดับสถาปัตยกรรม</h2>
+    <pre>context = authenticate(case_data, resources, topology, committed_state)
+eligible = resolve_mode_eligible_resources(context)
+constraints = derive_exact_island_and_capability_constraints(context)
+
+for d = 0:N                      % runtime mode-change tier
+    tier = lazy_generate(eligible, constraints, d)
+    tier = hard_prune_headroom_bounds(tier, context)
+    tier = order_only(tier, electrical_distance, dVdQ, resource_ids)
+
+    feasible = []
+    while tier.has_next()
+        assert_search_budget_or_fail_closed()
+        candidate = tier.next()
+
+        eq = mixed_equilibrium_full_kcl(candidate)
+        if ~eq.pass, record_reject(candidate, eq); continue; end
+
+        limits = current_and_transfer_checks(candidate, eq)
+        if ~limits.pass, record_reject(candidate, limits); continue; end
+
+        sssa = full_state_sssa(candidate, eq, gamma_req)
+        if ~sssa.pass, record_reject(candidate, sssa); continue; end
+
+        feasible.append(candidate, eq, limits, sssa)
+    end
+
+    if ~isempty(feasible)
+        winner = rank_margin_then_resource_id(feasible)
+        return authenticated_commit_candidate(winner)
+    end
+end
+
+return NO_FEASIBLE_CONFIGURATION</pre>
+
+    <div class="callout warning">
+      Pseudocode นี้ตั้งใจไม่ระบุว่า <code>d</code> หรือ <code>n_gfm_required</code> ต้องมีค่าสูงสุดเท่าใด
+      เพราะ maximum ต้องมาจาก approved operational contract ไม่ใช่ค่าที่ตั้งเพื่อให้โปรแกรมเร็วขึ้น
+    </div>
+  </section>
+
+  <section id="tests">
+    <h2>8. แผนพิสูจน์ว่า Lazy Search ยัง Exact</h2>
+    <ol>
+      <li>
+        <strong>IEEE14 exhaustive oracle</strong>
+        <ul>
+          <li>เก็บการ enumerate 16 subsets ทั้งหมดเป็น oracle</li>
+          <li>เปรียบเทียบ selected resource IDs/indices, reference ownership, feasibility, margin และ rejection reasons</li>
+          <li>Lazy selector ต้องให้ผู้ชนะเดียวกัน ไม่ใช่เพียง “ได้ candidate ที่ผ่าน”</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Synthetic small-N equivalence</strong>
+        <ul>
+          <li>สร้างกรณี N ประมาณ 6–10 ที่ exhaustive ยังรันได้</li>
+          <li>เปรียบเทียบ hard-pruned/lazy กับ exhaustive ทุก seed/configuration ที่ predeclared</li>
+          <li>พิสูจน์ว่า hard filter ไม่เคยตัด exhaustive optimum</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Index-contract tests</strong>
+        <ul>
+          <li>สลับ resource table ordering แล้ว fingerprint ต้องเปลี่ยน</li>
+          <li>stable device-ID mapping ต้องให้ physical configuration เดิมเมื่อ remap อย่างถูกต้อง</li>
+          <li>bus number และ state index ที่ถูกส่งมาแทน resource index ต้อง fail closed</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Hard-vs-order tests</strong>
+        <ul>
+          <li>เปลี่ยน electrical-distance / sensitivity score แล้ว evaluation order เปลี่ยนได้ แต่ final winner ห้ามเปลี่ยน</li>
+          <li>สร้าง candidate ที่ heuristic ให้คะแนนต่ำแต่ feasible เพื่อยืนยันว่าไม่ถูกตัด</li>
+          <li>ทดสอบ distinction ระหว่าง <code>n_gfm_required</code> กับ <code>n_mode_changes</code></li>
+        </ul>
+      </li>
+      <li>
+        <strong>Budget and fail-closed tests</strong>
+        <ul>
+          <li>candidate budget หมดก่อนจบ tier ต้องคืน <code>SEARCH_INCOMPLETE</code></li>
+          <li>ห้ามมี committed configuration หรือ right-limit sample จาก best-so-far</li>
+          <li>rejected trial ต้องไม่เดิน hold/dwell/lockout timers</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Performance evidence</strong>
+        <ul>
+          <li>บันทึก candidates generated, hard-pruned, equilibrium calls, SSSA calls และ wall time แยกกัน</li>
+          <li>รายงาน worst case อย่างซื่อสัตย์: exact search ยังมี exponential worst case</li>
+          <li>ห้ามเพิ่ม dt หรือลด numerical tolerance เพื่อทำให้ selector ดูเร็วขึ้น</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section id="decisions">
+    <h2>9. สิ่งที่ต้อง Freeze ก่อนเขียน Production Code</h2>
+    <ul>
+      <li>ranking contract ที่แน่นอน: mode changes, GFM count, stability margin และ resource-ID tie-break</li>
+      <li>นิยาม headroom ต่อ island รวม dispatch participation, losses, P/Q/current และ provenance ของ margin</li>
+      <li>SCR rule ใดเป็น hard gate และ rule ใดเป็น priority</li>
+      <li>มี operational maximum simultaneous switches หรือไม่ และ staged transition อนุญาตเมื่อใด</li>
+      <li>candidate/time/memory budget และ structured failure IDs</li>
+      <li>fingerprint inputs และ cache invalidation policy</li>
+      <li>หลักฐาน equivalence กับ exhaustive oracle ที่ถือเป็น acceptance gate</li>
+    </ul>
+
+    <div class="decision">
+      <div><strong>พิสูจน์ได้ว่าเป็น necessary condition</strong><br>ใช้ hard prune ได้</div>
+      <div class="arrow">→</div>
+      <div><strong>เป็นเพียง engineering intuition / linear score</strong><br>ใช้จัดลำดับเท่านั้น</div>
+    </div>
+  </section>
+
+  <section id="conclusion">
+    <h2>10. ข้อสรุป</h2>
+    <ul>
+      <li>IEEE14 ที่มี 4 IBR ควรคง exhaustive 16-subset route ไว้เป็น oracle</li>
+      <li>ระบบขนาดใหญ่ใช้ exact lazy enumeration + constraint propagation แทนการ materialize <code>2^N</code></li>
+      <li>Headroom และ connected-island coverage ใช้ hard pruning ได้เมื่อ formulation conservative และมี provenance</li>
+      <li>Electrical distance และ <code>dV/dQ</code> ใช้จัดลำดับก่อน จนกว่าจะพิสูจน์ conservative rejection bound ได้</li>
+      <li>Index ทุกตัวต้อง resolve ผ่าน canonical resource table และ stable device ID; ห้ามใช้ตัวเลขคงที่โดยไม่มี schema/fingerprint validation</li>
+      <li>ถ้ายังพิสูจน์ search completion ไม่ได้ ต้อง fail closed ด้วย <code>SEARCH_INCOMPLETE</code></li>
+      <li>วิธีนี้ลดจำนวน PF/SSSA calls ได้มากในกรณีทั่วไป แต่ไม่ปิดบังว่า exact search ยังมี exponential worst case</li>
+    </ul>
+  </section>
+
+  <footer>
+    IEEE14 Generic Mixed-Resource IBR — Exact Lazy Search Pipeline proposal
+  </footer>
+</main>
+</body>
+</html>

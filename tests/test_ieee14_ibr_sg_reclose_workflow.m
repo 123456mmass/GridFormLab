@@ -57,6 +57,55 @@ tc.verifyTrue(isnan(r.actual_reclose_time), 'No reclose occurred; time must be N
 end
 
 % =========================================================================
+% Phase-1 read-only resynchronization diagnostics (Mission C, Phase 1+3)
+% =========================================================================
+
+function test_resync_diagnostics_recorded_during_coast(tc)
+% Phase-1 measurement hook must record per-sample synchronism state during the
+% offline coast. With a strict guard the SG never synchronises; the hook still
+% records every sample. Independent oracle: df exceeds df_max throughout, which
+% falsifies the hypothesis that natural IEEE14 can reclose without a governor.
+over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
+    'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
+    't_end', 0.10);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
+tc.assertTrue(r.converged, r.failure_reason);
+tc.verifyEqual(r.reclose_status, 'SYNC_TIMEOUT');
+% The hook must fire: at least one diagnostic record during the coast.
+tc.verifyTrue(isfield(r, 'resync_diagnostics'), 'resync_diagnostics must be published.');
+tc.verifyFalse(isempty(r.resync_diagnostics), 'resync_diagnostics must be non-empty during coast.');
+% Every sample: strict guard never eligible.
+eligible = [r.resync_diagnostics.eligible];
+tc.verifyFalse(any(eligible), 'Strict guard: no sample may be eligible.');
+% Physics falsification: df > df_max throughout the coast (the independent
+% oracle for WHY natural reclose times out — frozen Tm, Te=0 -> monotonic slip).
+df = [r.resync_diagnostics.df];
+tc.verifyTrue(all(isfinite(df)) && all(df > 1e-12), ...
+    'Slip (df) must exceed df_max=1e-12 throughout: Tm-frozen coast cannot synchronise.');
+% The binding limiter is frequency (slip dominates dV/dtheta on a frozen coast).
+limg = {r.resync_diagnostics.limiting_gate};
+tc.verifyTrue(all(ismember(limg, {'V','f','theta'})), 'Limiting gate must be {V,f,theta}; none may be "none".');
+	tc.verifyFalse(any(strcmp(limg, 'none')), 'Strict guard always has at least one failing margin.');
+end
+
+function test_resync_diagnostics_explain_timeout_via_margin(tc)
+% Deeper Phase-1 oracle: the signed margin must be negative throughout AND
+% governed by the frequency term. Proves the timeout is physical (slip), not a
+% numerical defect. ASSUMED_DIAGNOSTIC strict guard, not natural evidence.
+over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
+    'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
+    't_end', 0.10);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
+tc.assertTrue(r.converged, r.failure_reason);
+sm = [r.resync_diagnostics.signed_margin];
+mf = [r.resync_diagnostics.margin_f];
+% Signed margin negative everywhere = never eligible.
+tc.verifyTrue(all(sm < 0), 'Signed margin must be negative throughout the coast.');
+	% The frequency margin is also negative everywhere (dV margin is more negative).
+tc.assertTrue(all(mf < 0), 'Margin_f must be negative throughout: slip blocks reclose.');
+end
+
+% =========================================================================
 % Phase-1 reclose (diagnostic relaxed guard; ASSUMED_DIAGNOSTIC, not physical)
 % =========================================================================
 

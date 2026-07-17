@@ -78,6 +78,16 @@ step_iterations = [];
 step_residuals = [];
 step_attempts = 0;
 accepted_steps = 0;
+% --- Phase-1 read-only resynchronization diagnostics (Mission C) -------------
+% Per-sample record of the synchronism state during the offline coast. These
+% accumulators are written but never read by the integration logic, so they do
+% not alter the trajectory. They exist to explain WHY the natural coast times
+% out (Tm frozen + Te=0 -> slip monotonically -> Tm/D, far above df_max).
+% Start as a completely empty struct (1×1, zero fields). The first appended
+% record DEFINES the field template, and every subsequent record must match it.
+% This avoids MATLAB struct-array field-type mismatch between a pre-declared
+% empty template (e.g. char '' vs char 'none') and the real records.
+resync_diag = struct();
 
 while t < settings.t_end-settings.event_tol
     target = min(t+settings.dt,settings.t_end);
@@ -265,6 +275,78 @@ while t < settings.t_end-settings.event_tol
         end
         dwell_ok = isfinite(good_since) && t-good_since>=settings.sync_dwell-settings.event_tol;
         off_ok = isfinite(t_trip) && t-t_trip>=settings.min_off-settings.event_tol;
+        % --- Phase-1 read-only: record the synchronism state this step --------
+        % Pure measurement hook; writes to resync_diag but never alters the
+        % trajectory. Limiting gate = the margin that governs eligibility.
+        lim_gate = 'none';
+        if isstruct(last_guard) && isfield(last_guard,'signed_margin')
+            mg = [last_guard.margin_V, last_guard.margin_f, last_guard.margin_theta];
+            gates = {'V','f','theta'};
+            [~,klim] = min(mg);
+            if numel(klim) == 1 && ~eligible
+                lim_gate = gates{klim};
+            end
+        end
+        % SG state via device reconstruct (authoritative for delta/omega/V_open).
+        % Note: sg_reconstruct does NOT expose Te; for the offline (breaker-open)
+        % SG, Te=0 by physics (Pe=0 in sg_composite_device offlineline branch).
+        sg_Tm = NaN; sg_Te = NaN; sg_Efd = NaN; sg_delta = NaN; sg_omega = NaN; sgVo = NaN;
+        idx_sg = find(strcmp({dae.devices.device_id},sched.sg_id));
+        if numel(idx_sg) == 1
+            dev_sg = dae.devices(idx_sg);
+            ui_sg = dae.u_offsets(idx_sg)+(1:dev_sg.nu);
+            xi_sg = dae.device_offsets(idx_sg)+(1:dev_sg.nx);
+            if numel(ui_sg) == 2 && numel(xi_sg) == 6
+                sg_Tm = u(ui_sg(1)); sg_Efd = u(ui_sg(2));
+                rec_sg = dev_sg.reconstruct(t,x(xi_sg),y,u(ui_sg),ec);
+                if isfield(rec_sg,'delta'),       sg_delta = rec_sg.delta;       end
+                if isfield(rec_sg,'omega'),       sg_omega = rec_sg.omega;       end
+                if isfield(rec_sg,'V_open_circuit'), sgVo = rec_sg.V_open_circuit; end
+                % Offline SG: Te=0 (breaker open, Pe=0). The reconstruct does not
+                % carry Te, so we flag it explicitly when the device is offline.
+                if isfield(rec_sg,'online') && ~logical(rec_sg.online)
+                    sg_Te = 0;
+                end
+            end
+        end
+        % bus voltage magnitude/angle from the network algebraic state.
+        busVm = NaN; busAg = NaN;
+        if numel(idx_sg) == 1
+            bp_sg = dae.devices(idx_sg).bus_position;
+            vb = complex(y(2*bp_sg-1), y(2*bp_sg));
+            busVm = abs(vb); busAg = angle(vb)*180/pi;
+        end
+        % Build a UNIFORM record: every field present every time (numeric NaN /
+        % char 'none' defaults) so the struct-array append never hits a
+        % field-name mismatch between records.
+        g = last_guard;  % alias; may be struct() on the very first pass
+        rec = struct('t',t, ...
+            'eligible',eligible, ...
+            'dwell_ok',dwell_ok, ...
+            'off_ok',off_ok, ...
+            'good_since',good_since, ...
+            'dV',NaN, 'df',NaN, 'dtheta',NaN, ...
+            'margin_V',NaN, 'margin_f',NaN, 'margin_theta',NaN, ...
+            'signed_margin',NaN, ...
+            'limiting_gate',lim_gate, ...
+            'sg_omega',sg_omega, 'sg_delta',sg_delta, ...
+            'sg_V_open',sgVo, ...
+            'bus_V_mag',busVm, 'bus_angle_deg',busAg, ...
+            'Tm',sg_Tm, 'Te',sg_Te, 'Efd',sg_Efd);
+        if isstruct(g) && ~isempty(fieldnames(g))
+            if isfield(g,'dV'),           rec.dV           = g.dV;           end
+            if isfield(g,'df'),           rec.df           = g.df;           end
+            if isfield(g,'dtheta'),       rec.dtheta       = g.dtheta;       end
+            if isfield(g,'margin_V'),     rec.margin_V     = g.margin_V;     end
+            if isfield(g,'margin_f'),     rec.margin_f     = g.margin_f;     end
+            if isfield(g,'margin_theta'), rec.margin_theta = g.margin_theta; end
+            if isfield(g,'signed_margin'),rec.signed_margin= g.signed_margin;end
+        end
+        if isempty(fieldnames(resync_diag))
+            resync_diag = rec;            % first record defines the template
+        else
+            resync_diag(end+1) = rec; %#ok<AGROW> % subsequent records append
+        end
         if eligible && dwell_ok && off_ok
             transaction_counter=transaction_counter+1;
             reclose_tx_id=transaction_counter;
@@ -442,6 +524,14 @@ res.reclose_status=reclose_status;
 res.sched=sched;
 res.t_sg_trip=t_trip;
 res.last_synchronism_guard=last_guard;
+% Phase-1 read-only resynchronization diagnostics (Mission C): per-sample
+% synchronism state during the offline coast. struct([]) (0×0) when pending_reclose
+% was never entered; otherwise a struct array with the fields defined by rec.
+if isempty(fieldnames(resync_diag))
+    res.resync_diagnostics = struct([]);
+else
+    res.resync_diagnostics = resync_diag;
+end
 res.iter_per_step=step_iterations;
 res.residual_per_step=step_residuals;
 res.step_attempts=step_attempts;

@@ -331,8 +331,8 @@ for step = 1:n
     dist(i_chosen) = dmin;
     used_left(j_chosen) = true;
     if dmin > pair_tol
-        status(i_chosen) = 'UNAVAILABLE_ILL_CONDITIONED';
-        reason(i_chosen) = 'PAIR_DISTANCE_EXCEEDED';
+        status{i_chosen} = 'UNAVAILABLE_ILL_CONDITIONED';
+        reason{i_chosen} = 'PAIR_DISTANCE_EXCEEDED';
     else
         % Check ambiguity: nearest rival distance.
         row = Cused(i_chosen, :);
@@ -497,7 +497,7 @@ for i = 1:n
         reason{i} = 'PAIRING_UNRESOLVED';
         continue;
     end
-    if ~strcmp(cond_status(i), 'AVAILABLE_SIMPLE')
+    if ~strcmp(cond_status{i}, 'AVAILABLE_SIMPLE')
         status{i} = 'UNAVAILABLE_ILL_CONDITIONED';
         reason{i} = 'SMALL_BIORTHOGONAL_PRODUCT';
         continue;
@@ -512,7 +512,7 @@ for i = 1:n
         reason{i} = 'LEFT_RESIDUAL_FAILURE';
         continue;
     end
-    if ~strcmp(pair_status(i), 'AVAILABLE_SIMPLE')
+    if ~strcmp(pair_status{i}, 'AVAILABLE_SIMPLE')
         status{i} = 'UNAVAILABLE_ILL_CONDITIONED';
         reason{i} = 'PAIRING_AMBIGUOUS_OR_DISTANT';
         continue;
@@ -653,7 +653,7 @@ modal.lifted_biorthogonality_residual = norm(Blift - eye(n), 'fro') / max(1, nor
 
 % Map-dependent oblique attribution (NOT canonical global-state participation).
 for i = 1:n
-    if strcmp(part_status(i), 'AVAILABLE_SIMPLE')
+    if strcmp(part_status{i}, 'AVAILABLE_SIMPLE')
         modal.global_lifted_signed_participation(:, i) = conj(Uglobal(:, i)) .* Vglobal(:, i);
     end
 end

@@ -177,13 +177,15 @@ function test_repeated_eigenvalue_individual_unavailable(testCase)
 A = diag([-1; -1; -2]);   % repeated -1 (diagonalizable)
 m = stability.modal_analysis(sssa_from_A(A));
 % The two -1 modes should have individual participation unavailable (the
-% reason may be CLUSTERED_OR_REPEATED or SMALL_BIORTHOGONAL_PRODUCT — both
-% correctly indicate basis-sensitivity for a repeated eigenvalue).
+% reason may be CLUSTERED_OR_REPEATED, PAIRING_AMBIGUOUS_OR_DISTANT, or
+% SMALL_BIORTHOGONAL_PRODUCT — all correctly indicate basis-sensitivity
+% for a repeated eigenvalue).
 for k = 1:3
     if abs(m.eigenvalues(k) - (-1)) < 1e-9
         testCase.assertEqual(m.participation_status{k}, 'UNAVAILABLE_ILL_CONDITIONED');
         testCase.assertTrue(ismember(m.participation_reason{k}, ...
-            {'CLUSTERED_OR_REPEATED','SMALL_BIORTHOGONAL_PRODUCT'}), ...
+            {'CLUSTERED_OR_REPEATED','SMALL_BIORTHOGONAL_PRODUCT', ...
+             'PAIRING_AMBIGUOUS_OR_DISTANT'}), ...
             sprintf('unexpected reason %s for repeated mode', m.participation_reason{k}));
     end
 end

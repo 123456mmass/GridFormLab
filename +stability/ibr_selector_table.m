@@ -132,6 +132,19 @@ pinned = isfield(opt, prefix) && isstruct(opt.(prefix)) && ...
 % cmax = number of eligible switchable GFM-capable IBRs.
 eligible = eligible_gfm_indices(resources);
 cmax = numel(eligible);
+% Exhaustive-universe safety bound (Step 6): the full-band enumeration is
+% validated only for a small eligible universe. A larger universe would make
+% the exhaustive build intractable and is NOT_VALIDATED for automatic
+% selection. Fail closed BEFORE enumeration with a canonical ID. IEEE14 has
+% <= 4 eligible, so this is a safety bound, not a behavior change.
+N_exhaustive_max = 4;
+if cmax > N_exhaustive_max
+    error('stability:gfm_selection:excessiveUniverse', ...
+        ['Eligible GFM-capable universe (%d) exceeds the exhaustive ' ...
+         'enumeration bound N_exhaustive_max=%d. Automatic selection over a ' ...
+         'larger universe is NOT_VALIDATED (use lazy search, a separate mission).'], ...
+        cmax, N_exhaustive_max);
+end
 cmin = 1;
 if sg_online, cmin = 0; end
 cmin = min(cmin, max(cmax, 0));

@@ -46,6 +46,15 @@ if ~rctxt_ok
     reject_reasons = {rctxt_reason};
     return;
 end
+% Fail closed: malformed timer values (non-scalar / non-finite where a numeric
+% scalar is required) are reported by the assembler and must not be silently
+% treated as unblocked.
+if isfield(runtime_context,'runtime_context_malformed') && logical(runtime_context.runtime_context_malformed)
+    ranked = repmat(struct(), 0, 1);   % EMPTY — malformed context is not trusted
+    order_key = {};
+    reject_reasons = {'runtimeContextMalformed'};
+    return;
+end
 
 % Derive the RESOURCE count from the identity-aligned context (defect 1 fix:
 % do NOT use numel(configurations) — device_modes is indexed per RESOURCE,

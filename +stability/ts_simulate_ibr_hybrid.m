@@ -64,6 +64,10 @@ actual_mode_reselection = NaN;
 reselection_status = 'NOT_REQUESTED';
 reselection_good_since = NaN;
 reselection_deadline = NaN;  % exact-landing target: actual_reclose + T_down
+sg_on_cand = [];  % authenticated SG_ON candidate (Step 5); [] until authenticated
+sg_on_auth_ok = false;
+sg_on_auth_fid = '';
+sg_on_auth_msg = '';
 transaction_counter = 0;
 converged = true;
 failure_id = '';
@@ -287,6 +291,7 @@ while t < settings.t_end-settings.event_tol
                 reselection_status='PENDING';
                 reselection_good_since=NaN;
                 reselection_deadline=NaN;
+                sg_on_cand=[];  % reset: re-authenticate on the next reselection block
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:recloseTransaction',reason,log);
@@ -322,16 +327,32 @@ while t < settings.t_end-settings.event_tol
         end
     end
     % --- Phase-2 delayed indexed reselection (F4/F5) -------------------
-    % After a successful Phase-1 reclose, look up the authenticated SG_ON
-    % table, derive T_down from Omega_target, and (after hold/guard/lockout)
-    % apply the selector-chosen GFM->GFL transitions. A rejected Phase-2
-    % candidate does NOT roll back Phase 1 (F9: no right sample published).
+    % After a successful Phase-1 reclose, AUTHENTICATE the SG_ON candidate
+    % through the validator (Step 5), derive T_down from the authenticated
+    % candidate's Omega_target, and (after hold/guard/lockout) apply the
+    % selector-chosen GFM->GFL transitions. A rejected Phase-2 candidate does
+    % NOT roll back Phase 1 (F9: no right sample published).
     if pending_reselection && ~isfinite(actual_mode_reselection)
-        % Compute T_down from the SG_ON table candidate's Omega_target (F4/F5).
-        if ~isfinite(reselection_deadline) && isfield(opt,'selector_table') && ...
+        % Authenticate the SG_ON candidate ONCE (Step 5): the validator is the
+        % sole commit authority; raw table.sg_on aggregates are no longer read
+        % directly. The authenticated candidate is cached for the deadline +
+        % transaction so omega/T_down and target modes come from one source.
+        if ~isstruct(sg_on_cand) && isfield(opt,'selector_table') && ...
                 isstruct(opt.selector_table)
+            [sg_on_cand, sg_on_auth_ok, sg_on_auth_fid, sg_on_auth_msg] = ...
+                authenticate_sg_on_candidate(opt.selector_table, dae, sched, ...
+                ec, Ycurr, t, case_data);
+            if ~sg_on_auth_ok
+                reselection_status = 'NO_FEASIBLE_SG_ON';
+                sg_on_cand = struct();
+            end
+        end
+        % Compute T_down from the AUTHENTICATED candidate's Omega_target.
+        if ~isfinite(reselection_deadline) && isstruct(sg_on_cand) && ~isempty(sg_on_cand)
             [reselection_deadline, reselection_status] = compute_tdown( ...
-                opt.selector_table, case_data, settings, actual_reclose);
+                sg_on_cand, settings, actual_reclose);
+        elseif ~isstruct(sg_on_cand) || isempty(sg_on_cand)
+            reselection_status = 'NO_FEASIBLE_SG_ON';
         end
         % Exact-landing: shorten the step to land at the reselection deadline.
         if isfinite(reselection_deadline) && t < reselection_deadline - settings.event_tol && ...
@@ -349,7 +370,7 @@ while t < settings.t_end-settings.event_tol
                 samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reselection_tx_id);
                 [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
                     no_mode_change] = reselection_transaction( ...
-                    t, x, y, Ycurr, u, ec, dae, sched, case_data, settings, opt);
+                    t, x, y, Ycurr, u, ec, dae, sched, case_data, settings, opt, sg_on_cand);
                 log = new_event_log('sg_reselection', t);
                 log.transaction_id = reselection_tx_id;
                 log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
@@ -572,7 +593,7 @@ if automatic_gfm_switching
         req = sched.selection_request;
     end
     if ~isfield(opt,'selector_table') || ~isstruct(opt.selector_table)
-        handler_log = auth_fail_log('ts_simulate_ibr_hybrid:missingAuthenticatedSelectorTable', ...
+        handler_log = auth_fail_log('stability:gfm_selection:missingTable', ...
             'automatic SG_OFF requires opt.selector_table (no table injected).');
         reason = handler_log.details; return;
     end
@@ -606,12 +627,28 @@ if automatic_gfm_switching
             actual_island_id = energized(1).island_id;
         end
     end
+    % Read the committed selection from the validator output; fall back to the
+    % schedule literals only if a field is missing (defensive — the validator
+    % output carries the authoritative authenticated tuple in scope).
+    cand_sel = [];
+    cand_n = [];
+    cand_ref = [];
+    if isfield(cand,'selected_gfm_indices'), cand_sel = cand.selected_gfm_indices; end
+    if isfield(cand,'n_gfm_required'), cand_n = cand.n_gfm_required; end
+    if isfield(cand,'reference_resource_index'), cand_ref = cand.reference_resource_index; end
+    if isempty(cand_sel) && isfield(sched,'selection_request') && isstruct(sched.selection_request) && ...
+            isfield(sched.selection_request,'manual_candidate') && ~isempty(sched.selection_request.manual_candidate)
+        mc = sched.selection_request.manual_candidate;
+        if isempty(cand_sel) && isfield(mc,'selected_gfm_indices'), cand_sel = mc.selected_gfm_indices; end
+        if isempty(cand_n) && isfield(mc,'n_gfm_required'), cand_n = mc.n_gfm_required; end
+        if isempty(cand_ref) && isfield(mc,'reference_resource_index'), cand_ref = mc.reference_resource_index; end
+    end
     event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
-        'committed_selection',struct('selected_gfm_indices',cand.selected_gfm_indices, ...
-        'n_gfm_required',cand.n_gfm_required, ...
-        'reference_resource_index',cand.reference_resource_index, ...
-        'reference_owner_indices',cand.reference_resource_index, ...
-        'gfm_reference_resource_indices',cand.reference_resource_index, ...
+        'committed_selection',struct('selected_gfm_indices',cand_sel, ...
+        'n_gfm_required',cand_n, ...
+        'reference_resource_index',cand_ref, ...
+        'reference_owner_indices',cand_ref, ...
+        'gfm_reference_resource_indices',cand_ref, ...
         'reference_island_ids',actual_island_id));
     [hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
     if ~handler_log.applied
@@ -767,22 +804,50 @@ for k=1:numel(dae.devices)
 end
 end
 
-function [deadline, status] = compute_tdown(selector_table, case_data, settings, actual_reclose)
-%COMPUTE_TDOWN  Derive T_down from the SG_ON table candidate's Omega_target.
+function [cand, ok, err_id, err_msg] = authenticate_sg_on_candidate(table, dae, sched, ec, Y, t, case_data)
+%AUTHENTICATE_SG_ON_CANDIDATE  Route the SG_ON selection through the validator.
+%   Returns the authenticated SG_ON candidate (sole commit authority, Step 5)
+%   or an empty struct with a failure ID. No raw table.sg_on aggregate is read
+%   as commit authority. Builds the runtime context from the event-left
+%   hybrid_state and the live Y (post-fault-clear topology).
+cand = struct();
+ok = false; err_id = ''; err_msg = '';
+if ~isstruct(table) || ~isfield(table,'sg_on') || ~isstruct(table.sg_on)
+    err_id = 'stability:gfm_selection:missingTable';
+    err_msg = 'SG_ON reselection requires an authenticated selector_table.';
+    return;
+end
+req = struct('mode','automatic');
+if isfield(sched,'selection_request') && isstruct(sched.selection_request) && ...
+        isfield(sched.selection_request,'mode')
+    req = sched.selection_request;
+    req.mode = 'automatic';   % SG_ON reselection is always automatic (table-ranked)
+end
+runtime_context = assemble_runtime_context(ec.hybrid_state, dae);
+runtime_context.event_time = t;
+Ytopo = Y;
+if isempty(Ytopo) && isfield(case_data,'mpc') && isstruct(case_data.mpc)
+    Ytopo = canonical_ybus_from_mpc(case_data.mpc);
+end
+[ok, err_id, err_msg, ~, cand] = stability.validate_runtime_candidate_compatibility( ...
+    table, req, dae, sched, 'sg_on', Ytopo, runtime_context);
+end
+
+function [deadline, status] = compute_tdown(sg_on_cand, settings, actual_reclose)
+%COMPUTE_TDOWN  Derive T_down from the AUTHENTICATED SG_ON candidate's Omega.
 %   T_settle = ln(1/rho) / (-Omega_target); T_down = max(T_minimum_hold, T_settle).
-%   Fail closed (status) if Omega_target is missing/stale/unstable (>= 0).
+%   Fail closed (status) if the candidate is missing or Omega is stale/unstable.
 deadline = NaN;
 status = 'PENDING';
-if ~isfield(selector_table,'sg_on') || ~isstruct(selector_table.sg_on)
+if ~isstruct(sg_on_cand) || isempty(sg_on_cand)
     status = 'NO_FEASIBLE_SG_ON';
     return;
 end
-sg_on = selector_table.sg_on;
-if ~isfield(sg_on,'ready_to_commit') || ~sg_on.ready_to_commit
+if ~isfield(sg_on_cand,'ready_to_commit') || ~sg_on_cand.ready_to_commit
     status = 'NO_FEASIBLE_SG_ON';
     return;
 end
-omega_target = sg_on.omega;
+omega_target = sg_on_cand.omega;
 if ~isfinite(omega_target) || omega_target >= 0
     status = 'OMEGA_INVALID';
     return;
@@ -826,35 +891,27 @@ hl = struct('applied', false, ...
 end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
-    reselection_transaction(t, x, y, Y, u, ec, dae, sched, case_data, settings, opt)
+    reselection_transaction(t, x, y, Y, u, ec, dae, sched, case_data, settings, opt, sg_on_cand)
 %RESELECTION_TRANSACTION  Phase-2 SG_ON indexed reselection.
-%   Looks up the authenticated SG_ON table, verifies the fingerprint, ranks
-%   candidates vs the current committed config, and applies the selector-
-%   chosen GFM->GFL transitions via device-owned transfer maps. If no mode/
-%   online change is required (F5), no transfer/right-limit/sample occurs.
+%   Consumes the AUTHENTICATED SG_ON candidate (Step 5) — never reads the raw
+%   table.sg_on aggregate as commit authority. Applies the selector-chosen
+%   GFM->GFL transitions via device-owned transfer maps. If no mode/online
+%   change is required (F5), no transfer/right-limit/sample occurs.
 ok = false; x_right = x; y_right = y; u_right = u; ec_right = ec;
 reason = ''; right_norm = inf; no_mode_change = false;
 handler_log = struct('details', '');
-if ~isfield(opt, 'selector_table') || ~isstruct(opt.selector_table)
-    reason = 'selector table missing';
+if ~isstruct(sg_on_cand) || isempty(sg_on_cand)
+    reason = 'no authenticated SG_ON candidate';
     return;
 end
-table = opt.selector_table;
-% Verify the selector_table_fingerprint against current immutable inputs (F1).
-% A stale table fails closed without rolling back Phase 1.
-if ~isfield(table, 'sg_on') || ~isstruct(table.sg_on)
-    reason = 'SG_ON table missing';
+if ~isfield(sg_on_cand, 'ready_to_commit') || ~sg_on_cand.ready_to_commit
+    reason = 'authenticated SG_ON candidate not ready to commit';
     return;
 end
-sg_on = table.sg_on;
-if ~isfield(sg_on, 'ready_to_commit') || ~sg_on.ready_to_commit
-    reason = sprintf('SG_ON selector not ready to commit: %s', sg_on.selection_status);
-    return;
-end
-% Build the target mode vector from the selected SG_ON candidate.
-target_modes = build_target_modes(sg_on, dae, ec);
+% Build the target mode vector from the AUTHENTICATED SG_ON candidate.
+target_modes = build_target_modes(sg_on_cand, dae, ec);
 if isempty(target_modes)
-    reason = 'could not build target modes from SG_ON selection';
+    reason = 'could not build target modes from authenticated SG_ON selection';
     return;
 end
 % Determine which devices actually change mode (F5: no-mode-change case).
@@ -884,10 +941,11 @@ catch me
     reason = sprintf('transfer map failed: %s: %s', me.identifier, me.message);
     return;
 end
-% Update hybrid_state selector fields atomically (F1/C1).
+% Update hybrid_state selector fields atomically (F1/C1) from the AUTHENTICATED
+% candidate (not the raw table aggregate).
 hs = ec_right.hybrid_state;
-hs.selected_gfm_indices = sg_on.selected_gfm_indices;
-hs.n_gfm_required = sg_on.n_gfm_required;
+hs.selected_gfm_indices = sg_on_cand.selected_gfm_indices;
+hs.n_gfm_required = sg_on_cand.n_gfm_required;
 % reference_owner_indices stays at SG; gfm_reference_resource_indices stays empty.
 if isfield(hs, 'committed_config_fingerprint')
     version = 0;
@@ -899,7 +957,7 @@ if isfield(hs, 'committed_config_fingerprint')
     hs.selector_table_version = version;
     hs.committed_config_fingerprint = sprintf( ...
         'sg_on_reselection|selected=%s|n=%d|version=%d', ...
-        mat2str(sg_on.selected_gfm_indices), sg_on.n_gfm_required, version);
+        mat2str(sg_on_cand.selected_gfm_indices), sg_on_cand.n_gfm_required, version);
 end
 ec_right.hybrid_state = hs;
 % One final right-limit solve after all transfers.
@@ -1208,15 +1266,25 @@ if condition, value=a; else, value=b; end
 end
 
 function rc = assemble_runtime_context(hs, dae)
-% Assemble the identity-aligned runtime context (Step F). Reads committed
-% event-left modes/online from hybrid_state (via makeValidName keys),
+% Assemble the identity-aligned runtime context (Step F + Step 3). Reads
+% committed event-left modes/online from hybrid_state (via makeValidName keys),
 % materializes them in dae.devices positional order, and computes the eligible
-% dual-mode IBR mask. hold/lockout timers default to unblocked (enforced
-% atomically by sg_event_handler at commit; the ranker only needs the mask,
-% modes, online, event_time set).
+% dual-mode IBR mask.
+%
+% Hold/lockout timers are read REAL from hybrid_state (Step 3): the ranker's
+% hold/lockout predicates are now meaningful on the production path instead of
+% being hardcoded to unblocked. Semantics mirror sg_event_handler.transition_blocked:
+%   hold_timers(k)   > 0         -> a required transition on device k is held
+%   lockout_timers(k) > event_time -> device k is locked out at event_time
+% Missing key = unblocked (struct may omit a device). Malformed (field present
+% but non-scalar / non-finite where a numeric scalar is required) is reported
+% via runtime_context_malformed so the ranker fails closed.
 n = numel(dae.devices);
 device_modes = cell(1, n);
 device_online = false(1, n);
+hold_timers = zeros(1, n);
+lockout_timers = -inf(1, n);
+runtime_context_malformed = false;
 for k = 1:n
     key = matlab.lang.makeValidName(char(dae.devices(k).device_id), 'ReplacementStyle','underscore');
     if isfield(hs,'device_modes') && isfield(hs.device_modes, key)
@@ -1227,9 +1295,25 @@ for k = 1:n
     if isfield(hs,'device_online') && isfield(hs.device_online, key)
         device_online(k) = logical(hs.device_online.(key));
     end
+    % Read real hold timer (seconds remaining; missing key = 0/unblocked).
+    if isfield(hs,'hold_timers') && isstruct(hs.hold_timers) && isfield(hs.hold_timers, key)
+        hv = hs.hold_timers.(key);
+        if isnumeric(hv) && isscalar(hv) && isfinite(hv)
+            hold_timers(k) = hv;
+        else
+            runtime_context_malformed = true;
+        end
+    end
+    % Read real lockout timer (absolute unlock time; missing key = -inf/unblocked).
+    if isfield(hs,'lockouts') && isstruct(hs.lockouts) && isfield(hs.lockouts, key)
+        lv = hs.lockouts.(key);
+        if isnumeric(lv) && isscalar(lv) && isfinite(lv)
+            lockout_timers(k) = lv;
+        else
+            runtime_context_malformed = true;
+        end
+    end
 end
-hold_timers = zeros(1, n);
-lockout_timers = -inf(1, n);
 eligible = false(1, n);
 for k = 1:n
     if ~device_online(k), continue; end
@@ -1250,7 +1334,8 @@ for k = 1:n
 end
 rc = struct('device_modes',{device_modes},'device_online',device_online, ...
     'hold_timers',hold_timers,'lockout_timers',lockout_timers, ...
-    'event_time',0,'eligible_mask',eligible);
+    'event_time',0,'eligible_mask',eligible, ...
+    'runtime_context_malformed',runtime_context_malformed);
 end
 
 function Y = canonical_ybus_from_mpc(mpc)

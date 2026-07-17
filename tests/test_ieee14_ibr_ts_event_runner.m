@@ -14,6 +14,21 @@ eq=stability.mixed_equilibrium_solve(s.case_data,struct('devices',devices),struc
 tc.assertTrue(eq.converged,eq.failure_reason);
 dae=stability.composite_dae(s.case_data,eq.devices,struct('load_model','cz_p_cz_q'));
 tc.TestData.scenario=s; tc.TestData.eq=eq; tc.TestData.dae=dae;
+% Two pinned authenticated tables (manual_override) built ONCE for reuse.
+% table_4gfm: SG_OFF n_gfm_required=4, ref=2 (candidate [2 3 4 5]).
+% table_1gfm: SG_OFF n_gfm_required=1, ref=2 (single-GFM right-limit oracle).
+% SG_ON pinned to n_gfm_required=0 (collapses to one candidate, fast).
+tc.TestData.table_4gfm=build_pinned_table(s,4,2);
+tc.TestData.table_1gfm=build_pinned_table(s,1,2);
+end
+
+function table = build_pinned_table(s, n_gfm, ref)
+% Build a pinned authenticated selector_table mirroring run_hybrid_case's
+% mode-dependent pinning: SG_OFF pinned to the manual tuple, SG_ON n=0.
+table_opt=struct();
+table_opt.sg_off=struct('n_gfm_required',n_gfm,'reference_resource_index',ref);
+table_opt.sg_on=struct('n_gfm_required',0);
+table=stability.ibr_selector_table(s.case_data,s.resources,s,table_opt);
 end
 
 function test_event_disabled_is_canonical_bit_identical(tc)
@@ -24,7 +39,7 @@ tc.verifyEqual(b.y_traj,a.y_traj,'AbsTol',0);
 end
 
 function test_prefix_before_fault_is_canonical_bit_identical(tc)
-r=event_run(tc.TestData,2:5,2,struct());
+r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 o=base_opt(tc.TestData.eq,0.02,0.01);
 [base,~]=stability.ts_simulate_composite(tc.TestData.scenario.case_data, ...
@@ -36,7 +51,7 @@ tc.verifyEqual(r.y_traj(:,1:left),base.y_traj,'AbsTol',0);
 end
 
 function test_events_have_exact_left_right_and_finite_kcl(tc)
-r=event_run(tc.TestData,2:5,2,struct());
+r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 for te=[0.02 0.03 0.04 0.06]
     tc.verifyEqual(sum(abs(r.t-te)<1e-12),2, ...
@@ -52,7 +67,7 @@ tc.verifyEqual(r.topology_history{right_clear},'post');
 end
 
 function test_trip_commits_modes_partition_and_zero_sg_current(tc)
-r=event_run(tc.TestData,2:5,2,struct());
+r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 j=find(abs(r.t-0.04)<1e-12 & strcmp(r.sample_side,'right'),1);
 tc.assertNotEmpty(j);
@@ -79,13 +94,23 @@ end
 end
 
 function test_one_gfm_configuration_fails_closed_and_rolls_back(tc)
-r=event_run(tc.TestData,2,2,struct());
+% IEEE14 single-GFM (n=1) is PHYSICALLY INFEASIBLE under the frozen
+% SCR/equilibrium/SSSA gates: the real selector marks it NO_FEASIBLE_CANDIDATE,
+% so the authenticated candidate is not ready_to_commit. The transaction must
+% therefore fail closed with the validator's candidateNotReady failure ID,
+% commit NO candidate, publish NO right-limit sample at sg_trip, and mutate NO
+% hybrid-state metadata (atomic rollback). The core property is identical to a
+% right-limit failure: the rejected transaction is not partially published.
+r=event_run_with_table(tc.TestData,2,2,struct(),tc.TestData.table_1gfm);
 tc.verifyFalse(r.converged);
-tc.verifyEqual(r.failure_id,'ts_simulate_ibr_hybrid:rightLimit');
+tc.verifyEqual(r.failure_id,'stability:gfm_selection:candidateNotReady', ...
+    'An infeasible single-GFM candidate must be rejected by the validator before the right-limit solve.');
 trip=find(strcmp({r.event_log.type},'sg_trip'),1);
 tc.assertNotEmpty(trip); tc.verifyFalse(r.event_log(trip).applied);
 tc.verifyEqual(r.event_log(trip).right_kcl_norm,inf);
 tc.verifyFalse(any(abs(r.t-0.04)<1e-12 & strcmp(r.sample_side,'right')));
+tc.verifyEqual(r.device_modes_history(:,end),{'sg';'gfl';'gfl';'gfl';'gfl'}, ...
+    'A rejected transaction must not mutate IBR modes.');
 tc.verifySize(r.bus_voltage_magnitude,[14 numel(r.t)], ...
     'A failed transition must retain diagnostic voltage for accepted samples.');
 tc.verifySize(r.device_P_MW,[5 numel(r.t)], ...
@@ -99,6 +124,7 @@ c.dispatch_contract.post_trip.post_trip_Pg_MW=rmfield( ...
 ev=event_spec(2:5,2);
 sched=stability.ibr_event_schedule(c,tc.TestData.eq.devices,ev,0.10,0.01);
 o=base_opt(tc.TestData.eq,0.10,0.01); o.ibr_event_schedule=sched;
+o.selector_table=tc.TestData.table_4gfm;
 [r,~]=stability.ts_simulate_ibr_hybrid(c,tc.TestData.eq.devices, ...
     tc.TestData.eq.x0,tc.TestData.eq.y0,o);
 tc.verifyFalse(r.converged);
@@ -128,7 +154,7 @@ function test_reclose_requires_dwell_and_preserves_sg_state(tc)
 over=struct('synchronism_overrides',struct('dV_max',10,'df_max',10,'dtheta_max',180), ...
     'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0.01,'timeout_s',0.04), ...
     't_end',0.07);
-r=event_run(tc.TestData,2:5,2,over);
+r=event_run_with_table(tc.TestData,2:5,2,over,tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 tc.verifyEqual(r.reclose_status,'SUCCESS');
 tc.verifyEqual(r.actual_reclose_time,0.07,'AbsTol',1e-12);
@@ -159,21 +185,24 @@ if isfield(r,'gfm_reference_resource_indices') && ~isempty(r.gfm_reference_resou
     tc.verifyTrue(isnan(r.gfm_reference_resource_indices(1)), ...
         'gfm_reference_resource_indices must be empty while SG owns reference.');
 end
-% Phase 2 reselection is PENDING at t_end=0.07 (T_down not yet elapsed).
+% Phase 2 reselection is evaluated before t_end=0.07: the authenticated SG_ON
+% table has no feasible candidate under the frozen gates, so the honest
+% runtime outcome is NO_FEASIBLE_SG_ON (not PENDING/SUCCESS). No Phase-2 mode
+% reselection actually occurs, so actual_mode_reselection_time stays NaN.
 if isfield(r,'reselection_status')
-    tc.verifyEqual(r.reselection_status,'PENDING', ...
-        'Phase 2 reselection must remain PENDING when T_down has not elapsed.');
+    tc.verifyEqual(r.reselection_status,'NO_FEASIBLE_SG_ON', ...
+        'IEEE14 SG_ON is physically infeasible under frozen gates; the authenticated outcome must be NO_FEASIBLE_SG_ON.');
 end
 if isfield(r,'actual_mode_reselection_time')
     tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...
-        'actual_mode_reselection_time must be NaN while reselection is pending.');
+        'actual_mode_reselection_time must be NaN when no Phase-2 reselection occurs.');
 end
 end
 
 function test_reclose_timeout_stays_offline(tc)
 over=struct('synchronism_overrides',struct('dV_max',1e-12,'df_max',1e-12,'dtheta_max',1e-9), ...
     'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0.01,'timeout_s',0.02));
-r=event_run(tc.TestData,2:5,2,over);
+r=event_run_with_table(tc.TestData,2:5,2,over,tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 tc.verifyEqual(r.reclose_status,'SYNC_TIMEOUT');
 tc.verifyTrue(isnan(r.actual_reclose_time));
@@ -187,7 +216,7 @@ tc.verifyError(@() stability.ibr_event_schedule(tc.TestData.scenario.case_data, 
 end
 
 function test_plots_use_audited_data_and_create_exactly_two_png(tc)
-r=event_run(tc.TestData,2:5,2,struct()); tc.assertTrue(r.converged,r.failure_reason);
+r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm); tc.assertTrue(r.converged,r.failure_reason);
 out=fullfile(tempdir,'ibr_ts_plot_gate'); if ~isfolder(out),mkdir(out);end
 p=stability.plot_ibr_ts_results(r,struct('output_dir',out,'prefix','gate','visible',false));
 tc.verifyTrue(isfile(p.freq_plot)); tc.verifyTrue(isfile(p.power_plot));
@@ -197,6 +226,33 @@ tc.verifyTrue(any(isfinite(r.device_current_limit_sys(2,:))));
 src=fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))),'+stability','plot_ibr_ts_results.m'));
 tc.verifyFalse(contains(src,'yline(1.5'));
 tc.verifyFalse(contains(src,'row = tb'));
+end
+
+function test_missing_selector_table_fails_closed_with_canonical_id(tc)
+% No table injected (event_run does NOT inject one): the automatic path must
+% fail closed with the shared canonical failure ID
+% stability:gfm_selection:missingTable, commit NO candidate, publish NO right
+% sample at sg_trip, and mutate NO hybrid-state metadata.
+r=event_run(tc.TestData,2:5,2,struct());
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id,'stability:gfm_selection:missingTable');
+trip=find(strcmp({r.event_log.type},'sg_trip'),1);
+tc.assertNotEmpty(trip); tc.verifyFalse(r.event_log(trip).applied);
+tc.verifyEqual(r.event_log(trip).right_kcl_norm,inf);
+tc.verifyFalse(any(abs(r.t-0.04)<1e-12 & strcmp(r.sample_side,'right')));
+tc.verifyEqual(r.device_modes_history(:,end),{'sg';'gfl';'gfl';'gfl';'gfl'}, ...
+    'A missing-table failure must not mutate IBR modes.');
+end
+
+function test_missing_selector_table_leaves_selector_fingerprint_empty(tc)
+% On a missing-table failure, no candidate commit occurs and the result must
+% not carry a selector_table_fingerprint (no table was authenticated).
+r=event_run(tc.TestData,2:5,2,struct());
+tc.verifyFalse(r.converged);
+if isfield(r,'selector_table_fingerprint')
+    tc.verifyEmpty(r.selector_table_fingerprint, ...
+        'Missing-table failure must not publish a selector_table_fingerprint.');
+end
 end
 
 function test_hybrid_runner_contains_no_duplicate_integrator(tc)
@@ -225,6 +281,19 @@ ev=event_spec(selected,ref);
 tend=0.10; if isfield(extra,'t_end'),tend=extra.t_end;end
 sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,tend,0.01);
 o=base_opt(data.eq,tend,0.01); o.ibr_event_schedule=sched;
+names=fieldnames(extra); for k=1:numel(names),o.(names{k})=extra.(names{k});end
+[r,~]=stability.ts_simulate_ibr_hybrid(data.scenario.case_data,data.eq.devices, ...
+    data.eq.x0,data.eq.y0,o);
+end
+
+function r=event_run_with_table(data,selected,ref,extra,table)
+% Authenticated-trip variant: injects the pinned authenticated selector_table
+% so the manual_override tuple has an exact authenticated candidate to match.
+% TABLE must be the pinned table matching (selected,ref) — see setupOnce.
+ev=event_spec(selected,ref);
+tend=0.10; if isfield(extra,'t_end'),tend=extra.t_end;end
+sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,tend,0.01);
+o=base_opt(data.eq,tend,0.01); o.ibr_event_schedule=sched; o.selector_table=table;
 names=fieldnames(extra); for k=1:numel(names),o.(names{k})=extra.(names{k});end
 [r,~]=stability.ts_simulate_ibr_hybrid(data.scenario.case_data,data.eq.devices, ...
     data.eq.x0,data.eq.y0,o);

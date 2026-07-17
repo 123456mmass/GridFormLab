@@ -122,6 +122,48 @@ if ~isempty(sel) && table.sg_off.sssa_evaluated
 end
 end
 
+function test_unpinned_automatic_sg_off_integration(tc)
+% UNPINNED automatic SG_OFF integration (Step 8). Build a real IEEE14 table
+% with NO pin (full feasible-count band, N<=4). The request carries no
+% subset/count/ref. Assert the table authenticates and the runtime-selected
+% candidate + provenance come from the table (not from schedule literals),
+% and SG_ON reports zero feasible (IEEE14 SG_ON is physically infeasible
+% under frozen gates). This does NOT claim readiness beyond NOT_READY.
+s = tc.TestData.scenario;
+resources = s.resources;
+scenario_cfg = struct('selector', struct('gamma_req', selector_gamma_req(s)), ...
+    'config', struct('resource_ids', {resource_ids_of(resources)}));
+% NO sg_off pin -> full-band enumeration (N_exhaustive_max=4 guard applies).
+table_opt = struct('sg_on', struct('n_gfm_required', 0));
+table = stability.ibr_selector_table(s.case_data, resources, scenario_cfg, table_opt);
+% The table must carry the 3-layer fingerprint + schema version.
+tc.verifyTrue(isfield(table, 'selector_table_fingerprint') && ~isempty(table.selector_table_fingerprint));
+tc.verifyEqual(table.selector_schema_version, 'selector_table_v2');
+tc.verifyTrue(isfield(table, 'selector_auth_inputs') && isstruct(table.selector_auth_inputs));
+% The SG_OFF selected config must come from the cached candidate universe
+% (provenance = table-ranked, not schedule literals). If the frozen gates find
+% no feasible SG_OFF candidate, that is an honest outcome (not a test failure).
+if ~isempty(table.sg_off.selected_gfm_indices)
+    tc.verifyTrue(table.sg_off.ready_to_commit);
+    matched = false;
+    for k = 1:numel(table.sg_off.configurations)
+        if isequal(sort(table.sg_off.configurations(k).selected_gfm_indices), ...
+                sort(table.sg_off.selected_gfm_indices))
+            matched = true; break;
+        end
+    end
+    tc.verifyTrue(matched, 'Automatic SG_OFF selected config must be in the cached universe.');
+else
+    tc.verifyTrue(ismember(table.sg_off.selection_status, ...
+        {'NO_FEASIBLE_CANDIDATE', 'NO_STRUCTURAL_CANDIDATE'}), ...
+        sprintf('Honest selection_status required; got %s.', table.sg_off.selection_status));
+end
+% SG_ON is physically infeasible under frozen gates -> honest zero-feasible.
+tc.verifyFalse(table.sg_on.ready_to_commit);
+tc.verifyTrue(ismember(table.sg_on.selection_status, ...
+    {'NO_FEASIBLE_CANDIDATE', 'NO_STRUCTURAL_CANDIDATE'}));
+end
+
 % =========================================================================
 % C-natural honest timeout (physical evidence)
 % =========================================================================

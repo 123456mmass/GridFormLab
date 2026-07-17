@@ -54,7 +54,10 @@ if isfield(opt,'t_end') && ~isempty(opt.t_end), t_end = opt.t_end; end
 dt = 0.01;
 if isfield(opt,'dt') && ~isempty(opt.dt), dt = opt.dt; end
 
-% Common event defaults (IEEE14 demo defaults).
+% Common event defaults (IEEE14 demo defaults). The post-trip GFM set is pinned
+% to [2 3 4 5] (manual_override) so the comparison isolates delay/synchronism
+% behavior across scenarios rather than re-running the automatic selector.
+% Automatic selection is exercised by the dedicated integration test.
 common_events = struct('enabled',true,'fault_bus',4,'Zf',1i*0.1, ...
     'fault_on',3.0,'fault_clear',3.1,'sg_trip',5.0,'sg_on',8.0, ...
     'selected_gfm_indices',2:5,'reference_resource_index',2);

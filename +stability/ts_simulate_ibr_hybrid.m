@@ -165,14 +165,25 @@ while t < settings.t_end-settings.event_tol
             end
             [ok,x_new,y_new,u_new,ec_new,active_new,handler_log,reason, ...
                 right_norm,stage,dispatch_after] = trip_transaction( ...
-                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm);
+                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm,opt);
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
             log.input_before = u;
             log.input_after = u_new;
             log.dispatch_after_pu = dispatch_after;
-            log.selected_gfm_indices = sched.selected_gfm_indices;
-            log.reference_resource_index = sched.reference_resource_index;
+            % Log the ACTUAL committed candidate (from the authenticated table
+            % via handler_log), not the schedule literals — so the audit trail
+            % reflects what was published, not what was requested (F2/advisor).
+            if isfield(handler_log, 'selected_gfm_indices')
+                log.selected_gfm_indices = handler_log.selected_gfm_indices;
+            else
+                log.selected_gfm_indices = [];
+            end
+            if isfield(handler_log, 'reference_resource_index')
+                log.reference_resource_index = handler_log.reference_resource_index;
+            else
+                log.reference_resource_index = [];
+            end
             if ok
                 x=x_new; y=y_new; u=u_new; ec=ec_new; active=active_new;
                 log.applied=true; log.details=handler_log.details;
@@ -181,7 +192,15 @@ while t < settings.t_end-settings.event_tol
                 % Inline failure handling (preserve log struct fields + copy
                 % candidate metadata from handler_log per F2 audit contract).
                 converged = false;
-                failure_id = ['ts_simulate_ibr_hybrid:' stage];
+                % Preserve the structured failure_id from the handler when one
+                % is present (e.g. missingAuthenticatedSelectorTable,
+                % manualCandidateNotInTable, candidateNotReady) instead of
+                % collapsing to a generic stage ID (advisor #6).
+                if isfield(handler_log, 'failure_id') && ~isempty(handler_log.failure_id)
+                    failure_id = handler_log.failure_id;
+                else
+                    failure_id = ['ts_simulate_ibr_hybrid:' stage];
+                end
                 failure_reason = reason;
                 log.failure_id = failure_id;
                 log.details = failure_reason;
@@ -519,10 +538,14 @@ end
 end
 
 function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] = ...
-    trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol,automatic_gfm_switching)
+    trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol,automatic_gfm_switching,opt)
 %TRIP_TRANSACTION  SG breaker trip + optional GFM commitment (C3/F2).
-%   When automatic_gfm_switching=true: open the SG breaker, select/commit the
-%   SG_OFF GFM configuration, apply transfer maps, solve one right limit.
+%   When automatic_gfm_switching=true: open the SG breaker, then commit the
+%   SG_OFF GFM configuration read from the AUTHENTICATED precomputed selector
+%   table (opt.selector_table.sg_off.selected_config) — NOT from schedule
+%   literals. Verifies table presence + ready_to_commit before any candidate
+%   state is published (mirrors reselection_transaction). Apply transfer
+%   maps, solve one right limit.
 %   When automatic_gfm_switching=false: open the SG breaker normally, do NOT
 %   invoke the GFM selector, do NOT change IBR modes; run an explicit per-
 %   island voltage-forming-source check BEFORE Newton; if no online voltage-
@@ -530,14 +553,41 @@ function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] =
 %   NO right-limit sample, commit NO candidate hybrid state, and end the
 %   accepted trajectory at the event-left sample (F2).
 if nargin < 11, automatic_gfm_switching = true; end
+if nargin < 12, opt = struct(); end
 ok=false; xr=x; yr=y; ur=u; ecr=ec; active=[]; reason='';
 right_norm=inf; stage='tripTransaction'; dispatch=struct();
 if automatic_gfm_switching
     % --- sg_breaker_trip + optional_gfm_commit (full automatic path) ---
+    % Authenticate the SG_OFF candidate from the precomputed selector table.
+    % The committed_selection is built from the TABLE, never from sched.*
+    % (closes the fixed-IEEE14-index defect). Fail closed before any
+    % candidate publication. Branches on selection_request.mode:
+    %   automatic       -> table.sg_off.selected_config (ranked winner)
+    %   manual_override -> EXACT unique match against table.sg_off.configurations
+    % Missing table / no match / not ready -> structured failure_id, no right
+    % sample, no candidate publication (advisor #3, #6).
+    req = struct('mode','automatic');
+    if isfield(sched,'selection_request') && isstruct(sched.selection_request) && ...
+            isfield(sched.selection_request,'mode')
+        req = sched.selection_request;
+    end
+    if ~isfield(opt,'selector_table') || ~isstruct(opt.selector_table)
+        handler_log = auth_fail_log('ts_simulate_ibr_hybrid:missingAuthenticatedSelectorTable', ...
+            'automatic SG_OFF requires opt.selector_table (no table injected).');
+        reason = handler_log.details; return;
+    end
+    [auth_ok, auth_fid, auth_msg, ~, cand] = ...
+        stability.validate_runtime_candidate_compatibility( ...
+        opt.selector_table, req, dae, sched, 'sg_off');
+    if ~auth_ok
+        % Preserve the structured ID from the validator (advisor #6).
+        handler_log = auth_fail_log(['ts_simulate_ibr_hybrid:' auth_fid], auth_msg);
+        reason = auth_msg; return;
+    end
     event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
-        'committed_selection',struct('selected_gfm_indices',sched.selected_gfm_indices, ...
-        'n_gfm_required',sched.n_gfm_required, ...
-        'reference_resource_index',sched.reference_resource_index));
+        'committed_selection',struct('selected_gfm_indices',cand.selected_gfm_indices, ...
+        'n_gfm_required',cand.n_gfm_required, ...
+        'reference_resource_index',cand.reference_resource_index));
     [hs_candidate,handler_log]=stability.sg_event_handler(ec.hybrid_state,event,dae.devices,struct());
     if ~handler_log.applied
         reason=sprintf('%s: %s',handler_log.failure_id,handler_log.details); return;
@@ -734,6 +784,20 @@ elseif contains(reason, 'omega', 'IgnoreCase', true)
 else
     status = 'NO_FEASIBLE_SG_ON';
 end
+end
+
+function hl = auth_fail_log(failure_id, details)
+%AUTH_FAIL_LOG  Uniform handler_log for an authentication failure that must
+%   publish NO right sample and commit NO candidate. Preserves the
+%   structured failure_id from the validator (advisor #6) instead of
+%   collapsing to a generic sgOffSelectorNotReady.
+hl = struct('applied', false, ...
+    'failure_id', failure_id, ...
+    'details', details, ...
+    'candidate_committed', false, 'candidate_sg_online', false, ...
+    'candidate_modes', struct(), 'failing_island_ids', [], ...
+    'n_failing_islands', 0, 'selected_gfm_indices', [], ...
+    'n_gfm_required', [], 'reference_resource_index', []);
 end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...

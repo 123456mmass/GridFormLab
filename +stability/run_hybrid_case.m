@@ -274,8 +274,35 @@ try
     if isfield(opt,'gamma_req') && ~isempty(opt.gamma_req)
         table_opt.gamma_req = opt.gamma_req;
     end
-    table_opt.sg_off = struct('n_gfm_required', sched.n_gfm_required, ...
-        'reference_resource_index', sched.reference_resource_index);
+    % SG_OFF table pinning is MODE-DEPENDENT (advisor #2 / root cause):
+    %   automatic       -> NO pin; the table enumerates the full feasible
+    %                       count band and the frozen policy picks the winner.
+    %                       (Pinning from sched.* here was the defect that
+    %                       kept automatic committing the caller's count.)
+    %   manual_override -> pin to the manual_candidate tuple so the table
+    %                       contains that exact candidate for authenticated
+    %                       exact-match lookup at trip time.
+    %   off              -> no SG_OFF candidate evidence required.
+    if isfield(sched,'selection_request')
+        req = sched.selection_request;
+    else
+        req = struct('mode','automatic');
+    end
+    if strcmp(req.mode,'manual_override') && isfield(req,'manual_candidate') && ...
+            ~isempty(req.manual_candidate)
+        mc = req.manual_candidate;
+        table_opt.sg_off = struct('n_gfm_required', mc.n_gfm_required, ...
+            'reference_resource_index', mc.reference_resource_index);
+    elseif strcmp(req.mode,'off')
+        % Firmware off: no GFM is committed, so the SG_OFF context is the
+        % all-GFL candidate (n_gfm_required=0). Pin to 0 to avoid a full-band
+        % enumeration that would attempt SCR/equilibrium/SSSA on candidates
+        % the runtime will never commit (and may throw on structural-only
+        % paths). This matches the pre-refactor behavior.
+        table_opt.sg_off = struct('n_gfm_required', 0);
+    else
+        % automatic: no sg_off pin -> full-band enumeration.
+    end
     % SG_ON context: SG owns the reference, so n_gfm_required may be 0
     % (all-GFL) or more, determined by the selector. The pre_fault dispatch
     % is the SG_ON contract (C2: pre_event_input is authoritative, so the
@@ -293,6 +320,8 @@ catch me
     result.metadata.failure = 'run_hybrid_case:selectorTableBuild';
     result.metadata.error = me.message;
     result.metadata.error_id = me.identifier;
+    result.failure_id = 'run_hybrid_case:selectorTableBuild';
+    result.failure_reason = me.message;
     result.converged = false;
     return;
 end

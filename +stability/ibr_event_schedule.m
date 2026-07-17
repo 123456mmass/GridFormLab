@@ -73,25 +73,78 @@ if ~enabled
     return;
 end
 
-% automatic_gfm_switching (C3/F2): when false, the SG breaker trip still
-% occurs but no GFM is committed and IBR modes remain unchanged. In that
-% mode selected_gfm_indices/reference_resource_index are not required.
-automatic_gfm_switching = true;
+% Normalize ibr_events FIRST to determine selection_request.mode, THEN decide
+% which fields are required based on that mode. This closes the defect where
+% automatic mode could not enter the schedule without a manual tuple.
+% (Single normalization point: normalize_gfm_selection_request.)
+norm_opt = struct('automatic_gfm_switching', true);
 if isfield(ibr_events,'automatic_gfm_switching') && ...
         ~isempty(ibr_events.automatic_gfm_switching)
-    automatic_gfm_switching = logical(ibr_events.automatic_gfm_switching);
+    norm_opt.automatic_gfm_switching = logical(ibr_events.automatic_gfm_switching);
 end
-if automatic_gfm_switching
-    required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on',...
-        'selected_gfm_indices','reference_resource_index'};
-else
-    required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on'};
+% Pass raw manual fields if present (normalizer handles legacy mapping).
+if isfield(ibr_events,'selected_gfm_indices') && ~isempty(ibr_events.selected_gfm_indices)
+    norm_opt.selected_gfm_indices = ibr_events.selected_gfm_indices;
+end
+if isfield(ibr_events,'n_gfm_required') && ~isempty(ibr_events.n_gfm_required)
+    norm_opt.n_gfm_required = ibr_events.n_gfm_required;
+end
+if isfield(ibr_events,'reference_resource_index') && ~isempty(ibr_events.reference_resource_index)
+    norm_opt.reference_resource_index = ibr_events.reference_resource_index;
+end
+selection_request = stability.normalize_gfm_selection_request(norm_opt, devices, true);
+
+% Required fields depend on selection_request.mode, NOT on automatic_gfm_switching flag.
+% NOTE: for manual_override the input needs only selected_gfm_indices +
+% reference_resource_index; n_gfm_required is DERIVED by the normalizer from
+% numel(selected_gfm_indices) (2-field legacy mapping in
+% normalize_gfm_selection_request). Requiring n_gfm_required as an input
+% field here would reject the legitimate 2-field manual tuple (regression
+% caught 2026-07-17: test_solve_case_ibr_logs_trip_counts_and_work). The
+% post-normalization integrity check below verifies the derived request is
+% complete.
+required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on'};
+switch selection_request.mode
+    case 'manual_override'
+        required = [required, {'selected_gfm_indices','reference_resource_index'}];
+    case 'automatic'
+        % NO manual tuple required for automatic mode.
+    case 'off'
+        % No selection fields for firmware-off mode.
+    otherwise
+        error('stability:ibr_event_schedule:badMode', ...
+            'selection_request.mode must be automatic/manual_override/off (got %s).', ...
+            selection_request.mode);
 end
 for k=1:numel(required)
     if ~isfield(ibr_events,required{k}) || isempty(ibr_events.(required{k}))
         error('stability:ibr_event_schedule:missingField', ...
-            'ibr_events.%s missing (required when enabled).', required{k});
+            'ibr_events.%s missing (required for mode=%s).', required{k}, selection_request.mode);
     end
+end
+
+% Post-normalization integrity check: the NORMALIZED selection_request must
+% be complete for its mode (distinct from the raw-input check above, since
+% the normalizer derives fields like n_gfm_required). This is the binding
+% contract: input tuple must be derivable; normalized request must be whole.
+switch selection_request.mode
+    case 'manual_override'
+        if ~isfield(selection_request,'manual_candidate') || ...
+                ~isstruct(selection_request.manual_candidate) || ...
+                isempty(selection_request.manual_candidate)
+            error('stability:ibr_event_schedule:incompleteManualRequest', ...
+                'manual_override selection_request lacks a complete manual_candidate after normalization.');
+        end
+        mc = selection_request.manual_candidate;
+        if isempty(mc.selected_gfm_indices) || isempty(mc.n_gfm_required) || ...
+                isempty(mc.reference_resource_index)
+            error('stability:ibr_event_schedule:incompleteManualRequest', ...
+                'manual_candidate tuple incomplete after normalization (selected/n_gfm_required/ref).');
+        end
+    case 'automatic'
+        % automatic: no manual tuple; selector table owns the choice.
+    case 'off'
+        % off: firmware disabled; no selection fields.
 end
 
 fault_bus = ibr_events.fault_bus;
@@ -102,9 +155,17 @@ sg_trip = ibr_events.sg_trip;
 sg_on = ibr_events.sg_on;
 selected = [];
 ref_idx = [];
-if automatic_gfm_switching
-    selected = ibr_events.selected_gfm_indices;
-    ref_idx = ibr_events.reference_resource_index;
+n_req = [];
+if strcmp(selection_request.mode,'manual_override')
+    % Read the DERIVED manual tuple from the normalized selection_request,
+    % NOT from raw ibr_events (which may be a 2-field legacy tuple without
+    % n_gfm_required -- the normalizer derives n_gfm_required from
+    % numel(selected_gfm_indices)). Reading ibr_events.n_gfm_required here
+    % would throw nonExistentField on the legitimate 2-field tuple.
+    mc = selection_request.manual_candidate;
+    selected = mc.selected_gfm_indices;
+    ref_idx = mc.reference_resource_index;
+    n_req = mc.n_gfm_required;
 end
 
 % --- fault_bus -------------------------------------------------------------
@@ -189,8 +250,11 @@ if nd < 2
         'Need at least SG + IBR devices.');
 end
 
-% --- selected_gfm_indices (required only when automatic_gfm_switching) -----
-if automatic_gfm_switching
+% --- selected_gfm_indices content validation (manual_override only) -----
+% These content checks (finite/duplicate/range/eligibility) apply to the
+% manual tuple. Guard by selection_request.mode (the normalized authority),
+% NOT the legacy automatic_gfm_switching variable (removed in Step 1).
+if strcmp(selection_request.mode,'manual_override')
 if ~isnumeric(selected) || isempty(selected) || any(~isfinite(selected)) || ...
         any(selected ~= fix(selected))
     error('stability:ibr_event_schedule:badSelectedIndices', ...
@@ -223,12 +287,15 @@ for k = selected
         end
     end
 end
-end  % close automatic_gfm_switching validation block
+end  % close manual_override content-validation block
 
-n_req = numel(selected);
+% n_req is derived by the normalizer (selection_request.manual_candidate.n_gfm_required)
+% and read above; do NOT recompute numel(selected) here (would overwrite the
+% authenticated derived value and could disagree if the normalizer applied a
+% legacy mapping).
 
-% --- reference_resource_index (required only when automatic_gfm_switching) -
-if automatic_gfm_switching
+% --- reference_resource_index content validation (manual_override only) -
+if strcmp(selection_request.mode,'manual_override')
 if ~isnumeric(ref_idx) || ~isscalar(ref_idx) || ~isfinite(ref_idx) || ref_idx ~= fix(ref_idx)
     error('stability:ibr_event_schedule:badReferenceIndex', ...
         'reference_resource_index must be finite integer scalar.');
@@ -293,12 +360,22 @@ sched.fault_on = fault_on;
 sched.fault_clear = fault_clear;
 sched.sg_trip = sg_trip;
 sched.sg_on = sg_on;
-sched.selected_gfm_indices = selected;
-sched.reference_resource_index = ref_idx;
-sched.n_gfm_required = n_req;
 sched.sg_id = sg_id;
-sched.automatic_gfm_switching = automatic_gfm_switching;
+sched.automatic_gfm_switching = norm_opt.automatic_gfm_switching;
 sched.events = ev;
 sched.tol = tol;
-sched.provenance = struct('source','ibr_event_schedule validation','fault','Yfault(fb,fb)+=1/Zf SOURCE_DEFINED','ordering','CASE_DEFINED');
+% --- selection_request (single normalization point) ---
+% The schedule owns timing/routing + the canonical selection_request ONLY.
+% It does NOT publish physical-selection fields at top level (closes the
+% ownership-confusion defect: consumers must read the authenticated selector
+% table, not sched.*). selection_request was normalized BEFORE the required-
+% field check above, so automatic mode does not need a manual tuple.
+sched.selection_request = selection_request;
+% Audit-only legacy input (NOT a compatibility field; do not read for commit).
+sched.audit = struct('legacy_selected_gfm_indices', selected, ...
+    'legacy_reference_resource_index', ref_idx, ...
+    'legacy_n_gfm_required', n_req);
+sched.provenance = struct('source','ibr_event_schedule validation',...
+    'fault','Yfault(fb,fb)+=1/Zf SOURCE_DEFINED','ordering','CASE_DEFINED',...
+    'selection_mode', selection_request.mode);
 end

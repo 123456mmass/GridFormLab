@@ -36,7 +36,7 @@ function test_sg_on_request_does_not_close_with_strict_guard(tc)
 over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
     'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
     't_end', 0.10);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % SG (device 1) must remain offline at the end.
 tc.verifyFalse(r.device_online_history(1, end));
@@ -49,7 +49,7 @@ function test_strict_diagnostic_guard_times_out_fail_closed(tc)
 over = struct('synchronism_overrides', struct('dV_max', 1e-12, 'df_max', 1e-12, 'dtheta_max', 1e-9), ...
     'delays_overrides', struct('T_sg_min_off_s', 0, 'dwell_s', 0.01, 'timeout_s', 0.02), ...
     't_end', 0.10);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyEqual(r.reclose_status, 'SYNC_TIMEOUT');
 tc.verifyFalse(r.device_online_history(1, end));
@@ -65,7 +65,7 @@ function test_phase1_reclose_returns_reference_to_sg(tc)
 % points to the reclosed SG (index 1); gfm_reference_resource_indices is empty
 % (NaN) for that island; IBR modes UNCHANGED.
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyEqual(r.reclose_status, 'SUCCESS');
 tc.verifyEqual(r.actual_reclose_time, 0.07, 'AbsTol', 1e-12);
@@ -81,7 +81,7 @@ function test_phase1_preserves_sg_state_and_restores_pre_event_input(tc)
 % SG rotor angle/speed must be continuous across the breaker close; u_history
 % at the reclose right sample must equal the pre-event input (C2).
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 left = find(abs(r.t - 0.07) < 1e-12 & ~strcmp(r.sample_side, 'right'), 1, 'last');
 right = find(abs(r.t - 0.07) < 1e-12 & strcmp(r.sample_side, 'right'), 1, 'last');
@@ -98,7 +98,7 @@ function test_phase1_updates_committed_config_fingerprint_only(tc)
 % Phase 1 updates committed_config_fingerprint ONLY; selector_table_fingerprint
 % and pre_event_input_fingerprint are immutable (F1).
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % committed_config_fingerprint must be present and reflect the reclose (if the
 % field is propagated to the result).
@@ -106,11 +106,13 @@ tc.verifyTrue(isfield(r, 'committed_config_fingerprint'));
 tc.verifyFalse(isempty(r.committed_config_fingerprint));
 tc.verifyTrue(contains(r.committed_config_fingerprint, 'sg_on_reclose'), ...
     'committed_config_fingerprint must reflect the Phase-1 reclose.');
-% event_run calls the TS driver directly without a selector table, so the
-% public field is intentionally empty.  The pre-event input fingerprint is
-% always owned by the driver and must be populated.
+% event_run_with_table injects an authenticated selector_table, so the
+% public selector_table_fingerprint must be populated and immutable across
+% the Phase-1 reclose (F1). The pre-event input fingerprint is always owned
+% by the driver and must be populated.
 tc.verifyTrue(isfield(r, 'selector_table_fingerprint'));
-tc.verifyEmpty(r.selector_table_fingerprint);
+tc.verifyFalse(isempty(r.selector_table_fingerprint), ...
+    'selector_table_fingerprint must authenticate the injected table.');
 tc.verifyTrue(isfield(r, 'pre_event_input_fingerprint'));
 tc.verifyFalse(isempty(r.pre_event_input_fingerprint), ...
     'pre_event_input_fingerprint must authenticate the restored input.');
@@ -119,7 +121,7 @@ end
 function test_phase1_exactly_one_right_limit_sample(tc)
 % Exactly ONE right-limit solve and ONE right sample at the reclose time.
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 right_samples = find(abs(r.t - 0.07) < 1e-12 & strcmp(r.sample_side, 'right'));
 tc.verifyEqual(numel(right_samples), 1, 'Exactly one right-limit sample at reclose.');
@@ -139,47 +141,52 @@ end
 % =========================================================================
 
 function test_phase2_reselection_pending_within_short_horizon(tc)
-% T_down may exceed the short horizon -> reselection_status PENDING honestly.
-% Ends at the reclose (t_end=reclose_t) so post-reclose dynamics instability
-% does not mask the reselection-status contract.
+% IEEE14 SG_ON reselection is PHYSICALLY INFEASIBLE under frozen gates
+% (exhaustive 16-subset enumeration 2026-07-17: zero feasible candidates --
+% weakGrid for GFL-at-IBR8 subsets, equilibrium-limit violations, and
+% insufficientMargin omega~=0 for equilibrium-feasible GFM subsets). The
+% honest runtime outcome is NO_FEASIBLE_SG_ON, NOT PENDING/SUCCESS. Phase-1
+% (reclose) remains committed; Phase-2 fails closed without rolling back.
+% This is a case/model limitation, not a software defect; no physical gate
+% is relaxed. (advisor direction: deterministic real-IEEE14 assertion.)
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyEqual(r.reclose_status, 'SUCCESS');
 % reselection_status is always published (default 'NOT_REQUESTED'); assert it.
 tc.verifyTrue(isfield(r, 'reselection_status'), ...
     'reselection_status must be published.');
-% PENDING or NO_MODE_CHANGE_REQUIRED or SUCCESS depending on T_down.
-tc.verifyTrue(ismember(r.reselection_status, ...
-    {'PENDING', 'NO_MODE_CHANGE_REQUIRED', 'SUCCESS'}), ...
+% IEEE14 SG_ON is infeasible -> runtime must publish NO_FEASIBLE_SG_ON.
+tc.verifyEqual(r.reselection_status, 'NO_FEASIBLE_SG_ON', ...
     sprintf('Unexpected reselection_status: %s', r.reselection_status));
 end
 
 function test_phase2_no_mode_change_when_sg_on_keeps_gfm_set(tc)
-% When the SG_ON table selects the same GFM set already active, no mode change
-% is required (F5): no transfer, no right-limit solve, no duplicate sample.
-% Ends at the reclose; the reselection decision is recorded in reselection_status.
+% IEEE14 SG_ON reselection is PHYSICALLY INFEASIBLE (exhaustive enumeration
+% 2026-07-17: zero feasible candidates across all 16 subsets). Even with
+% hold/guard/lockout delays zeroed, the runtime cannot select a feasible
+% SG_ON candidate, so the deterministic outcome is NO_FEASIBLE_SG_ON (not
+% NO_MODE_CHANGE_REQUIRED, which would require a feasible candidate whose
+% mode vector matches the current committed set). Phase-1 stays committed;
+% no Phase-2 transfer/right-limit/sample occurs. The no-mode-change (F5)
+% branch is exercised separately by a synthetic feasible-fixture test (Test
+% B), not by the real IEEE14 case which has no feasible SG_ON candidate.
 over = diagnostic_overrides(0.07);
 over.delays_overrides.T_minimum_hold_s = 0;
 over.delays_overrides.T_guard_s = 0;
 over.delays_overrides.T_lockout_s = 0;
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
-% reselection_status must be published and one of the known outcomes.
+% reselection_status must be published.
 tc.verifyTrue(isfield(r, 'reselection_status'), ...
     'reselection_status must be published.');
-tc.verifyTrue(ismember(r.reselection_status, ...
-    {'PENDING', 'NO_MODE_CHANGE_REQUIRED', 'SUCCESS'}), ...
+% IEEE14 SG_ON is infeasible -> runtime must publish NO_FEASIBLE_SG_ON,
+% deterministically (independent of hold/guard/lockout timing).
+tc.verifyEqual(r.reselection_status, 'NO_FEASIBLE_SG_ON', ...
     sprintf('Unexpected reselection_status: %s', r.reselection_status));
-if strcmp(r.reselection_status, 'NO_MODE_CHANGE_REQUIRED')
-    % No duplicate right sample at the reselection time.
-    if isfinite(r.actual_mode_reselection_time)
-        reselection_right = find(abs(r.t - r.actual_mode_reselection_time) < 1e-12 & ...
-            strcmp(r.sample_side, 'right'));
-        % NO_MODE_CHANGE publishes no right-limit sample.
-        tc.verifyEmpty(reselection_right);
-    end
-end
+% No Phase-2 mode transition occurs (no feasible candidate to commit).
+tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...
+    'No Phase-2 mode reselection should occur when SG_ON is infeasible.');
 end
 
 function test_phase2_failure_retains_phase1(tc)
@@ -190,7 +197,7 @@ over = diagnostic_overrides(0.07);
 over.delays_overrides.T_minimum_hold_s = 0;
 over.delays_overrides.T_guard_s = 0;
 over.delays_overrides.T_lockout_s = 0;
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % SG must be online after Phase 1 regardless of Phase-2 outcome.
 tc.verifyTrue(r.device_online_history(1, end), 'Phase 1 must keep SG online.');
@@ -213,7 +220,7 @@ function test_sample_keys_unique_per_transaction(tc)
 % at most one left + one right per committed transaction; NO duplicate
 % complete sample keys. The result exposes every key component.
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 tc.verifyTrue(isfield(r,'transaction_id'));
 tc.verifySize(r.transaction_id,size(r.t));
@@ -242,7 +249,7 @@ function test_no_bare_unique_t_assertion(tc)
 % require globally unique timestamps. Verify that duplicate t exists at the
 % reclose event (left + right share t).
 over = diagnostic_overrides(0.07);
-r = event_run(tc.TestData, 2:5, 2, over);
+r = event_run_with_table(tc.TestData, 2:5, 2, over);
 tc.assertTrue(r.converged, r.failure_reason);
 % At the reclose time there must be both a left and a right sample (same t).
 left = find(abs(r.t - 0.07) < 1e-12 & ~strcmp(r.sample_side, 'right'));
@@ -376,6 +383,29 @@ ev = event_spec(selected, ref);
 tend = 0.10; if isfield(extra, 't_end'), tend = extra.t_end; end
 sched = stability.ibr_event_schedule(data.scenario.case_data, data.eq.devices, ev, tend, 0.01);
 o = base_opt(data.eq, tend, 0.01); o.ibr_event_schedule = sched;
+names = fieldnames(extra);
+for k = 1:numel(names), o.(names{k}) = extra.(names{k}); end
+[r, ~] = stability.ts_simulate_ibr_hybrid(data.scenario.case_data, data.eq.devices, ...
+    data.eq.x0, data.eq.y0, o);
+end
+
+function r = event_run_with_table(data, selected, ref, extra)
+% Successful-trip variant: builds the authenticated selector_table (mirroring
+% run_hybrid_case's mode-dependent pinning) and injects it into opt, so the
+% manual_override tuple has an exact authenticated candidate to match. The
+% independent oracle is the binding Mission-B contract, not the old behavior.
+ev = event_spec(selected, ref);
+tend = 0.10; if isfield(extra, 't_end'), tend = extra.t_end; end
+sched = stability.ibr_event_schedule(data.scenario.case_data, data.eq.devices, ev, tend, 0.01);
+o = base_opt(data.eq, tend, 0.01); o.ibr_event_schedule = sched;
+% Build the table the same way run_hybrid_case does: pin SG_OFF to the
+% manual_candidate tuple (manual_override mode), SG_ON n_gfm_required=0.
+table_opt = struct();
+table_opt.sg_off = struct('n_gfm_required', numel(selected), ...
+    'reference_resource_index', ref);
+table_opt.sg_on = struct('n_gfm_required', 0);
+o.selector_table = stability.ibr_selector_table(data.scenario.case_data, ...
+    data.scenario.resources, data.scenario, table_opt);
 names = fieldnames(extra);
 for k = 1:numel(names), o.(names{k}) = extra.(names{k}); end
 [r, ~] = stability.ts_simulate_ibr_hybrid(data.scenario.case_data, data.eq.devices, ...

@@ -9,7 +9,14 @@ for reading the imported instructions.
 Before any task that may modify files, tests, cases, documentation, reports,
 artifacts, Git history, external state, or numerical behavior:
 
-1. Call `EnterPlanMode` before performing any mutation.
+1. Normally call `EnterPlanMode` before performing any mutation. If the user
+   has explicitly requested `implement`, `finish`, `do it`, `auto`,
+   `run unattended`, `follow the plan`, or an equivalent
+   finish-to-completion mandate, do not enter Plan Mode merely to obtain another
+   confirmation. Perform the same read-only inspection and reviewed planning
+   workflow in the active execution mode, publish the compact plan as a progress
+   update, and continue automatically. If an approved plan already exists,
+   execute it directly after refreshing repository evidence and ownership.
 2. Read `docs/project/TRACK_COORDINATION.md`, the current handoff, and the
    relevant track plan from disk.
 3. Use the global read-only `Explore` agent defined at
@@ -36,16 +43,70 @@ artifacts, Git history, external state, or numerical behavior:
    any disagreement retained with its evidence. Never paste an agent response
    into the plan without independent judgment.
 7. Present the reviewed implementation plan through `ExitPlanMode` for
-   explicit user approval.
-8. Do not treat `auto`, `acceptEdits`, `bypassPermissions`, or
-   `--dangerously-skip-permissions` as permission to skip planning.
-9. After approval, implement only the approved file allowlist and stop for
-   renewed approval if the scope, mathematical contract, validation criteria,
-   ownership, or current `main` changes.
+   explicit user approval when no unattended mandate exists. With an explicit
+   unattended/follow-the-plan mandate, publish the reviewed plan as a progress
+   update and continue automatically; do not stop merely to ask Claude to begin.
+8. `auto`, `acceptEdits`, `bypassPermissions`, or
+   `--dangerously-skip-permissions` never permit Claude to skip inspection,
+   planning, source review, numerical-integrity gates, ownership checks, or
+   fail-closed behavior. An explicit user auto/unattended mandate removes the
+   extra conversational approval pause only; it does not broaden scope or weaken
+   safety and mathematical contracts.
+9. After approval, implement only the approved file allowlist. During an
+   unattended run, if scope, mathematical contract, validation criteria,
+   ownership, or current `main` changes, do not repeatedly interrupt the user:
+   defer the affected step fail-closed, continue all unaffected plan steps, and
+   consolidate the exact required decision in the final report.
 
-Read-only investigation and status reporting may be performed while planning,
-but no edit, commit, amend, merge, rebase, push, generated artifact, or other
-state-changing command may occur before the plan is approved.
+Read-only investigation and status reporting may be performed while planning.
+No edit, commit, amend, merge, rebase, push, generated artifact, or other
+state-changing command may occur before the plan is approved, except that an
+explicit user unattended/follow-the-plan mandate counts as approval for the
+inspected in-scope plan. It never approves a later material change in scope,
+equations, bases, schema meaning, ownership, or acceptance criteria.
+
+## Automatic unattended execution
+
+When an explicit unattended/auto/follow-the-plan mandate is active, Claude must
+behave as a persistent implementation agent until the plan reaches a terminal
+outcome:
+
+- Continue through inspection, reviewed planning, implementation, proportional
+  diagnosis, targeted gates, the required final regression, documentation,
+  commit, and fast-forward push without asking routine continuation questions.
+- Follow every executable step in the approved plan. Do not stop after a partial
+  implementation, the first passing targeted test, the first failed test, a
+  quiet wait interval, documentation generation, or a local commit while later
+  approved steps remain.
+- Do not ask whether to read files, search code, run tests, diagnose or repair an
+  in-scope failure, rerun the relevant gate, create approved documentation,
+  commit passing work, or fast-forward push it.
+- Resolve routine choices from repository evidence using the least expansive
+  compatible assumption. Record assumptions and evidence in the final handoff.
+- Treat the first failed test as diagnostic evidence, not as a reason to stop.
+  Investigate and repair the proven in-scope cause, then rerun the smallest
+  relevant gate. Continue the diagnose-repair-verify loop while it remains
+  inside the approved plan and contracts.
+- If one planned step is genuinely blocked, mark it fail-closed, preserve the
+  evidence, and continue every later independent in-scope step. Do not ask a
+  mid-plan question. Report completed work and the residual blocker together
+  after exhausting the plan.
+- Never ask generic questions such as `should I continue?`, `should I fix it?`,
+  or `do you want me to run the tests?` while meaningful authorized work
+  remains.
+- A real authority/material-decision blocker includes conflicting ownership,
+  remote divergence or merge conflict, destructive or published-history action,
+  credentials/access, missing authoritative physics that would require
+  invention, changed equations/bases/state order/schema/acceptance gates, scope
+  expansion, or an unexplained gate failure after reasonable diagnosis. Defer
+  only the affected step, continue the rest, and consolidate any indispensable
+  question at the terminal report.
+- Keep concise progress updates flowing during long operations. Updates inform
+  the user; they are not requests for approval. Continue monitoring long tests
+  instead of ending because one wait interval was quiet.
+- Never fabricate equations, parameters, results, or PASS evidence to avoid a
+  blocker. Automatic execution remains subject to every rule imported from
+  `AGENTS.md`.
 
 ## Required agent roles and advisor escalation
 

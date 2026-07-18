@@ -57,24 +57,41 @@ tc.verifySubstring(s,"Post-trip indices must be unique eligible resources and in
 end
 
 function test_programmatic_path_remains_noninteractive(tc)
-txt = launcher_source();
-tc.verifyNotEmpty(regexp(txt, ...
-    'if\s+case_selection_interactive\s*\r?\n\s*\[ibr_opt,accepted\]=prompt_ibr_options', ...
-    'once'));
-tc.verifySubstring(txt,"ibr_opt=merge_options(entry.options,user_opt)");
+% After the Extract+delegate refactor, solve_case.m's programmatic path
+% (analysis + case both given) goes straight to wizard.dispatch_analysis
+% without opening the IBR settings dialog. The dialog lives in
+% +wizard/ibr_settings_dialog.m and is reachable only via the wizard UI path.
+txt = launcher_source_solve_case();
+% Programmatic path must NOT embed the IBR dialog inline.
+tc.verifyFalse(contains(txt, 'prompt_ibr_options'));
+% Programmatic path delegates to wizard.build_request / dispatch_analysis.
+tc.verifySubstring(txt, 'wizard.build_request');
+tc.verifySubstring(txt, 'wizard.dispatch_analysis');
+% The IBR dialog source carries the merge_options ABI.
+dlg = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+    '+wizard', 'ibr_settings_dialog.m'));
+tc.verifySubstring(dlg, "ibr_events");
+end
+
+function txt = launcher_source_solve_case()
+repo = fileparts(fileparts(mfilename('fullpath')));
+txt = fileread(fullfile(repo, 'solve_case.m'));
 end
 
 function s = prompt_section()
+% The IBR settings dialog was moved verbatim from solve_case.m into
+% +wizard/ibr_settings_dialog.m during the Extract+delegate refactor. The
+% base-MATLAB three-column contract is unchanged; only the source location
+% moved. Read it from its new home.
 txt = launcher_source();
-i1 = strfind(txt,'function [opt,accepted]=prompt_ibr_options');
-i2 = strfind(txt,'function [opt,accepted]=prompt_pf_options');
-assert(numel(i1)==1 && numel(i2)==1 && i2>i1, ...
+i1 = strfind(txt, 'function [opt, accepted] = ibr_settings_dialog');
+assert(numel(i1) == 1, ...
     'test_ibr_launcher_settings_ui:sourceLayout', ...
-    'Could not isolate the IBR settings section in solve_case.m.');
-s = string(txt(i1:i2-1));
+    'Could not find the IBR settings dialog in +wizard/ibr_settings_dialog.m.');
+s = string(txt(i1:end));
 end
 
 function txt = launcher_source()
 repo = fileparts(fileparts(mfilename('fullpath')));
-txt = fileread(fullfile(repo,'solve_case.m'));
+txt = fileread(fullfile(repo, '+wizard', 'ibr_settings_dialog.m'));
 end

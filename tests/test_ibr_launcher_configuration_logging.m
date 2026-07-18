@@ -105,10 +105,16 @@ tc.verifyError(@() stability.ibr_event_schedule(s.case_data,d,ev,.1,.01), ...
 end
 
 function test_launcher_source_has_case_driven_ibr_controls(tc)
-src=fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))),'solve_case.m'));
+% After the refactor, the IBR controls live in +wizard/ibr_settings_dialog.m
+% and the production IBR runtime call (stability.run_hybrid_case) lives in
+% +wizard/dispatch_analysis.m. solve_case.m delegates to those.
+repo = fileparts(fileparts(mfilename('fullpath')));
+dlg = fileread(fullfile(repo, '+wizard', 'ibr_settings_dialog.m'));
+disp_src = fileread(fullfile(repo, '+wizard', 'dispatch_analysis.m'));
 for token={'Initial GFM count','Fault bus (valid external IDs','fault_on (s)', ...
-        'Post-trip GFM indices','stability.run_hybrid_case'}
-    tc.verifyTrue(contains(src,token{1}));
+        'Post-trip GFM indices'}
+    tc.verifyTrue(contains(dlg, token{1}));
 end
-tc.verifyFalse(contains(src,'W=inv(V)'));
+tc.verifyTrue(contains(disp_src, 'stability.run_hybrid_case'));
+tc.verifyFalse(contains(disp_src, 'W=inv(V)'));
 end

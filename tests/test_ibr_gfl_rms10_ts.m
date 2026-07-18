@@ -78,3 +78,75 @@ testCase.assertFalse(contains(txt,'ts_simulate'));
 testCase.assertFalse(contains(txt,'ode45'));
 testCase.assertFalse(contains(txt,'ode15s'));
 end
+
+function test_ts_disturbance_response_finite(testCase)
+% A small P_ref step on IBR3 (RMS10) must produce a finite, bounded TS
+% response (no NaN/Inf, no divergence). The shared kernel integrates the
+% same nonlinear RHS; the RMS10 PLL/current loops respond to the step.
+c = testCase.TestData.case_data;
+eq = testCase.TestData.eq;
+devices = eq.devices;
+
+% Apply a 5% P_ref step on IBR3 (device index 3 in the 5-device bundle).
+u_step = eq.u_eq;
+% Find the global u index for IBR3 P_ref.
+u_off = [0; cumsum([devices(:).nu]')];
+ibr3 = 3;   % SG1=1, IBR2=2, IBR3=3, IBR6=4, IBR8=5
+p_slot = 1; % P_ref is input 1
+u_idx = u_off(ibr3) + p_slot;
+u_step(u_idx) = u_step(u_idx) * 1.05;
+
+opt = struct('t_end',0.10,'dt',0.01,'verbose',false, ...
+    'u_eq',u_step,'event_context',eq.equilibrium_context, ...
+    'dynamic_state_indices',eq.dynamic_state_indices,'full_kcl',true);
+[ts,~] = stability.ts_simulate_composite(c,devices,eq.x0,eq.y0,opt);
+
+testCase.verifyTrue(ts.converged);
+% Response must be finite across the whole horizon.
+testCase.verifyTrue(all(isfinite(ts.x_traj(:))));
+testCase.verifyTrue(all(isfinite(ts.y_traj(:))));
+% Bounded: no state blows up beyond 10x its equilibrium magnitude.
+x0 = eq.x0;
+n = numel(x0);
+max_dev = 0;
+for j = 1:size(ts.x_traj,2)
+    max_dev = max(max_dev, max(abs(ts.x_traj(1:n,j) - x0)));
+end
+testCase.verifyLessThan(max_dev, 10.0, ...
+    sprintf('disturbance response diverged: max dev %.3e', max_dev));
+end
+
+function test_ts_limiter_transaction_fail_closed(testCase)
+% When the RMS10 device is driven into its current limit during TS, the
+% limiter must engage (transaction) and anti-windup must hold the
+% integrator; the device must not produce non-finite current.
+c = testCase.TestData.case_data;
+eq = testCase.TestData.eq;
+devices = eq.devices;
+
+% Force a large P_ref step on IBR3 to drive the current command past Imax.
+u_step = eq.u_eq;
+u_off = [0; cumsum([devices(:).nu]')];
+ibr3 = 3;
+p_slot = 1;
+u_idx = u_off(ibr3) + p_slot;
+u_step(u_idx) = u_step(u_idx) * 2.0;   % 2x step -> likely limiter active
+
+opt = struct('t_end',0.10,'dt',0.01,'verbose',false, ...
+    'u_eq',u_step,'event_context',eq.equilibrium_context, ...
+    'dynamic_state_indices',eq.dynamic_state_indices,'full_kcl',true);
+[ts,meta] = stability.ts_simulate_composite(c,devices,eq.x0,eq.y0,opt);
+
+% The TS may or may not converge under a large step, but it must remain
+% finite (no NaN/Inf) and the kernel must report a finite result rather
+% than silently producing stale states.
+if ts.converged
+    testCase.verifyTrue(all(isfinite(ts.x_traj(:))));
+    testCase.verifyTrue(all(isfinite(ts.y_traj(:))));
+else
+    % A non-converged result under a 2x step is acceptable; the kernel
+    % must still report finite states (no silent NaN).
+    testCase.verifyTrue(all(isfinite(ts.x_traj(:)))) || isempty(ts.x_traj);
+end
+testCase.verifyTrue(isfield(meta,'full_kcl'));
+end

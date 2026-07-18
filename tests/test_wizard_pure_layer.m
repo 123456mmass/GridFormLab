@@ -77,7 +77,7 @@ end
 
 function test_discover_unknown_analysis_errors(tc)
 tc.verifyError(@() wizard.discover_cases('bogus'), ...
-    'wizard:discover_cases:unknownAnalysis');
+    'solve_case:analysis');
 end
 
 %% ---- defaults_for_method ----
@@ -126,9 +126,21 @@ tc.verifyTrue(isstruct(req.options) && isfield(req.options,'max_iter'));
 end
 
 function test_build_request_ibr_event_free(tc)
-req = wizard.build_request('ibr','ieee14_1sg_4ibr');
+% event_free for IBR must be requested explicitly (default IBR carries events).
+% A disabled event struct is preserved so the dispatcher can pass it through
+% to the production runtime as the empty-schedule sentinel (correction #6).
+req = wizard.build_request('ibr','ieee14_1sg_4ibr','events',struct('enabled',false));
 tc.verifyEqual(req.events_policy, 'event_free');
-tc.verifyTrue(isempty(req.events));
+tc.verifyTrue(~isempty(req.events) && isfield(req.events,'enabled') ...
+              && ~logical(req.events.enabled));
+end
+
+function test_build_request_ibr_default_has_events(tc)
+% The default IBR options carry an enabled event spec (matches solve_case
+% behavior: default IBR run uses the fault/trip/reclose schedule).
+req = wizard.build_request('ibr','ieee14_1sg_4ibr');
+tc.verifyEqual(req.events_policy, 'configured');
+tc.verifyTrue(~isempty(req.events) && req.events.enabled);
 end
 
 function test_build_request_with_events(tc)
@@ -175,14 +187,14 @@ function test_validate_unknown_analysis(tc)
 req = wizard.build_request('pf','ieee5');
 req.analysis = 'bogus';
 tc.verifyError(@() wizard.validate_request(req), ...
-    'wizard:validate_request:unknownAnalysis');
+    'solve_case:analysis');
 end
 
 function test_validate_unknown_case(tc)
 req = wizard.build_request('pf','ieee5');
 req.case_id = 'bogus';
 tc.verifyError(@() wizard.validate_request(req), ...
-    'wizard:validate_request:unknownCase');
+    'solve_case:case');
 end
 
 function test_validate_pf_cannot_carry_events(tc)

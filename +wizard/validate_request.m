@@ -47,16 +47,16 @@ end
 registry = wizard.analysis_registry();
 aidx = find(strcmp(req.analysis, {registry.id}), 1);
 if isempty(aidx)
-    error('wizard:validate_request:unknownAnalysis', ...
-        'Unknown analysis ID %s.', req.analysis);
+    % Preserve the original solve_case error identifier (characterization gate).
+    error('solve_case:analysis', 'Unknown analysis %s.', req.analysis);
 end
 analysis_meta = registry(aidx);
 
 % --- case ID ---
 entries = wizard.discover_cases(req.analysis);
 if ~any(strcmp(req.case_id, {entries.id}))
-    error('wizard:validate_request:unknownCase', ...
-        'Case %s not supported for analysis %s.', req.case_id, req.analysis);
+    % Preserve the original solve_case error identifier (characterization gate).
+    error('solve_case:case', 'Case %s not supported for %s.', req.case_id, req.analysis);
 end
 
 % --- events policy vs analysis applicability ---
@@ -75,10 +75,16 @@ switch req.events_policy
             error('wizard:validate_request:eventsNotApplicable', ...
                 'Analysis %s does not support events; use not_applicable.', req.analysis);
         end
-        % event_free => events MUST be empty (no hidden canonical events).
+        % event_free => events must carry no enabled/hidden canonical events.
+        % A disabled event struct is allowed: it reaches the production
+        % runtime as the empty-schedule sentinel (correction #6). An empty
+        % events value is also allowed (TS path; no event fields attached).
         if ~isempty(req.events)
-            error('wizard:validate_request:badEventStruct', ...
-                'event_free policy requires an empty event struct.');
+            if ~(isstruct(req.events) && isfield(req.events, 'enabled') ...
+                    && ~logical(req.events.enabled))
+                error('wizard:validate_request:badEventStruct', ...
+                    'event_free policy requires an empty or disabled event struct.');
+            end
         end
     case 'configured'
         if ~analysis_meta.events_applicable

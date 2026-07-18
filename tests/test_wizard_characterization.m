@@ -133,16 +133,15 @@ end
 %% ---- Stable analysis IDs ----
 function test_stable_analysis_ids(tc)
 % The four canonical analysis IDs (correction: ibr means mixed-resource TS;
-% ibr_ts is NOT a separate ID).
-ids = {'pf','sssa','ts','ibr'};
-src = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))),'solve_case.m'));
-for k = 1:numel(ids)
-    tc.verifyTrue(contains(src, sprintf('''%s''', ids{k})), ...
-        sprintf('analysis ID %s not found in solve_case.m', ids{k}));
-end
+% ibr_ts is NOT a separate ID). After the Extract+delegate refactor, the IDs
+% live in +wizard/analysis_registry.m and are dispatched through
+% +wizard/dispatch_analysis.m; solve_case.m delegates to that path.
+reg = wizard.analysis_registry();
+tc.verifyEqual({reg.id}.', {'pf';'sssa';'ts';'ibr'});
 % Confirm no 'ibr_ts' analysis is introduced.
-tc.verifyFalse(contains(src,'''ibr_ts'''));
-% Smoke: each analysis ID runs.
+tc.verifyFalse(any(strcmp({reg.id}, 'ibr_ts')));
+% Smoke: each analysis ID runs through solve_case (the public entry point).
+ids = {'pf','sssa','ts','ibr'};
 for k = 1:numel(ids)
     switch ids{k}
         case 'pf',  [~,~] = run_pf();
@@ -318,8 +317,10 @@ end
 
 %% ---- Dispatch is single-source (correction: no duplicate dispatch) ----
 function test_dispatch_uses_project_solver_entries(tc)
-% PF dispatch must route through pfsolver.pf_resolve_method + pf_method_strategy.
-src = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))),'solve_case.m'));
+% After the refactor, dispatch lives in +wizard/dispatch_analysis.m (the
+% SINGLE shared dispatcher used by both the wizard UI and the programmatic
+% path). The production solver entry points must be referenced there.
+src = fileread('+wizard/dispatch_analysis.m');
 tc.verifyTrue(contains(src,'pfsolver.pf_resolve_method'));
 tc.verifyTrue(contains(src,'pfsolver.pf_method_strategy'));
 tc.verifyTrue(contains(src,'stability.multicase_sssa'));

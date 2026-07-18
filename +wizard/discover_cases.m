@@ -31,8 +31,8 @@ analysis_id = lower(char(analysis_id));
 registry = wizard.analysis_registry();
 idx = find(strcmp(analysis_id, {registry.id}), 1);
 if isempty(idx)
-    error('wizard:discover_cases:unknownAnalysis', ...
-        'Unknown analysis ID %s.', analysis_id);
+    % Preserve the original solve_case error identifier (characterization gate).
+    error('solve_case:analysis', 'Unknown analysis %s.', analysis_id);
 end
 entry = registry(idx);
 option_field = entry.option_field;

@@ -43,10 +43,25 @@ registry = wizard.analysis_registry();
 aidx = find(strcmp(analysis_id, {registry.id}), 1);
 events_applicable = registry(aidx).events_applicable;
 ev = p.Results.events;
+% For IBR, the legacy launcher carries events inside options.ibr_events
+% (nested). Extract it into the request's events field so the dispatcher
+% attaches it correctly (correction #6: events must reach the production
+% runtime; do not hide them inside options for one analysis only).
+if events_applicable && isempty(ev) && isfield(opt, 'ibr_events') ...
+        && isstruct(opt.ibr_events) && ~isempty(opt.ibr_events)
+    ev = opt.ibr_events;
+    opt = rmfield(opt, 'ibr_events');
+end
 if ~events_applicable
     events_policy = 'not_applicable';
     ev = [];
 elseif isempty(ev)
+    events_policy = 'event_free';
+elseif isstruct(ev) && isfield(ev, 'enabled') && ~logical(ev.enabled)
+    % An explicit disabled event struct reaches the runtime as an empty
+    % schedule (correction #6). Treat it as event_free for the request
+    % policy, but KEEP the disabled struct so the dispatcher can pass it
+    % through to the production runtime as the empty-schedule sentinel.
     events_policy = 'event_free';
 else
     events_policy = 'configured';

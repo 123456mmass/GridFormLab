@@ -45,10 +45,10 @@ end
 %% ---- dispatch: IBR events=false (event_free reaches production) ----
 function test_dispatch_ibr_event_free(tc)
 % Correction #6: events=false must reach production as an ACTUALLY empty
-% schedule. The dispatch passes ibr_events.enabled=false through; the result
-% must have the slim empty-schedule schema (empty events, zero transactions).
+% schedule. event_free must be requested explicitly (default IBR carries events).
 req = wizard.build_request('ibr','ieee14_1sg_4ibr', ...
-    'options',struct('t_end',.1,'dt',.01,'plot_results',false));
+    'options',struct('t_end',.1,'dt',.01,'plot_results',false), ...
+    'events',struct('enabled',false));
 r = wizard.dispatch_analysis(req);
 tc.verifyTrue(r.converged);
 tc.verifyEqual(size(r.events), [0 0]);
@@ -73,7 +73,7 @@ function test_dispatch_unknown_case(tc)
 req = wizard.build_request('pf','bogus');
 req.case_id = 'bogus';
 tc.verifyError(@() wizard.dispatch_analysis(req), ...
-    'wizard:validate_request:unknownCase');
+    'solve_case:case');
 end
 
 %% ---- adapt_result: 12 sections ----
@@ -105,7 +105,8 @@ end
 
 function test_adapt_result_ibr_event_free(tc)
 req = wizard.build_request('ibr','ieee14_1sg_4ibr', ...
-    'options',struct('t_end',.1,'dt',.01,'plot_results',false));
+    'options',struct('t_end',.1,'dt',.01,'plot_results',false), ...
+    'events',struct('enabled',false));
 r = wizard.dispatch_analysis(req);
 view = wizard.adapt_result(r, req);
 tc.verifyEqual(view.sections(8).status, 'ok');

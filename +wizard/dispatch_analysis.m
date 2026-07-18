@@ -62,15 +62,18 @@ switch analysis
         result = pf_strat.solve(case_data, opt);
         result = enrich_pf_metadata(result, pf_method_name, ...
             pf_selection_source, pf_strat);
+        print_pf_checks(result, opt);
     case 'sssa'
         result = stability.multicase_sssa(case_data, opt);
         result = annotate_sssa_result(result, opt);
+        print_sssa_checks(result);
     case 'ts'
         result = stability.ts_simulate(case_data, opt);
         if ~isfield(opt, 'plot_results') || opt.plot_results
             [fig, png] = plot_ts_result(result, entry.label, root, case_id);
             result.figure = fig; result.figure_file = png;
         end
+        print_ts_checks(result);
     case 'ibr'
         result = run_ibr_analysis(case_data, opt, entry.label, root, case_id);
     otherwise
@@ -79,6 +82,9 @@ switch analysis
 end
 
 result = annotate_launcher_execution(analysis, result);
+if ~strcmp(analysis, 'ibr')
+    print_launcher_execution(result.execution_summary);
+end
 result.launcher = struct('analysis', analysis, 'case_id', case_id, ...
     'case_label', entry.label, 'log_file', logfile);
 
@@ -317,4 +323,75 @@ end
 function value = option_value(s, name, default)
 value = default;
 if isfield(s, name) && ~isempty(s.(name)), value = s.(name); end
+end
+
+function print_pf_checks(r, opt)
+fprintf('\n---------------- PF VERIFICATION ----------------\n');
+fprintf('Converged       : %d\n', r.converged);
+if isfield(r, 'iterations'), fprintf('Iterations      : %d\n', r.iterations); end
+if isfield(r, 'max_mismatch'), fprintf('Max mismatch    : %.3e pu\n', r.max_mismatch); end
+if isfield(r, 'metadata')
+    if isfield(r.metadata, 'method_executed')
+        fprintf('Method executed : %s\n', r.metadata.method_executed);
+    end
+    if isfield(r.metadata, 'dispatch_requested')
+        fprintf('Dispatch req    : %s\n', r.metadata.dispatch_requested);
+    end
+end
+fprintf('Voltage range   : %.6f .. %.6f pu\n', min(r.bus_voltage), max(r.bus_voltage));
+fprintf('Angle range     : %.6f .. %.6f deg\n', min(r.bus_angle_deg), max(r.bus_angle_deg));
+fprintf('Tolerance       : %.3e\n', opt.tolerance);
+if ~r.converged
+    msg = 'Power flow did not converge.';
+    if isfield(r, 'reason'), msg = sprintf('%s\n  reason: %s', msg, r.reason); end
+    error('solve_case:pf', msg);
+end
+end
+
+function print_sssa_checks(r)
+fprintf('\n---------------- SSSA VERIFICATION --------------\n');
+fprintf('Dynamic states  : %d\n', numel(r.state_names));
+fprintf('Stability status: %s\n', r.stability_status);
+fprintf('Decision tol.   : %.3e 1/s\n', r.stability_tolerance);
+if isfield(r, 'reduced_eigenvalues') && ...
+        numel(r.reduced_eigenvalues) < numel(r.eigenvalues)
+    fprintf('Decision basis  : COI-relative set (%d roots)\n', ...
+        numel(r.reduced_eigenvalues));
+else
+    fprintf('Decision basis  : full state eigenvalue set (%d roots)\n', ...
+        numel(r.eigenvalues));
+end
+fprintf('Root counts     : stable=%d, marginal=%d, unstable=%d\n', ...
+    r.root_counts.stable, r.root_counts.marginal, r.root_counts.unstable);
+if isfield(r, 'newton_residual'), fprintf('DAE residual    : %.3e\n', r.newton_residual); end
+end
+
+function print_ts_checks(r)
+fprintf('\n---------------- TS VERIFICATION ----------------\n');
+fprintf('Samples         : %d\n', numel(r.t));
+fprintf('Time range      : %.4f .. %.4f s\n', r.t(1), r.t(end));
+fprintf('Minimum voltage : %.6f pu\n', min(r.Vbus, [], 'all'));
+if isfield(r, 'omega_is_deviation') && r.omega_is_deviation
+    wd = r.omega;
+else
+    wd = r.omega - 1;
+end
+fprintf('Max |Delta w|   : %.6e pu\n', max(abs(wd), [], 'all'));
+if isfield(r, 'integrator'), fprintf('Integrator      : %s\n', r.integrator); end
+end
+
+function print_launcher_execution(q)
+fprintf('\n---------------- LAUNCHER WORK COUNTS --------------------\n');
+fprintf('PF / SSSA / TS invocations : %d / %d / %d\n', ...
+    q.pf_invocations, q.sssa_invocations, q.ts_invocations);
+if isfield(q, 'solver_iterations')
+    fprintf('Solver iterations          : %d\n', q.solver_iterations);
+end
+if isfield(q, 'linearized_state_count')
+    fprintf('Linearized states / roots  : %d / %d\n', ...
+        q.linearized_state_count, q.eigenvalue_count);
+end
+if isfield(q, 'ts_step_count')
+    fprintf('TS accepted steps          : %d\n', q.ts_step_count);
+end
 end

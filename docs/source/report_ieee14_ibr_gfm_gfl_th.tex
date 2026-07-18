@@ -26,6 +26,7 @@
 \lhead{IEEE 14-bus: SG/GFM/GFL --- PF, SSSA และ TS}
 \rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\Urlmuskip=0mu plus 1mu
 \renewcommand{\arraystretch}{1.16}
 \captionsetup[table]{skip=6pt}
 \emergencystretch=2em
@@ -80,7 +81,7 @@ Yazdani--Iravani, Teodorescu--Liserre--Rodríguez และ Bacha--Munteanu--Bra
 ได้อย่างชัดเจน โมเดล GFM ปัจจุบันคือ REGFM\_B1 จำนวน 13 states ส่วนโมเดล GFL
 production ปัจจุบันคือ WECC REGC\_A/REEC\_A จำนวน 7 states ซึ่งไม่มี explicit PLL
 รายงานฉบับนี้จึงแยกอย่างเคร่งครัดระหว่างโมเดล WECC production กับแบบจำลอง
-PLL-resolved GFL ที่เสนอจากตำรา แบบจำลองใหม่นี้มี ODE, state order, frame,
+PLL-resolved GFL--RMS10 ที่เสนอจากตำรา แบบจำลองใหม่นี้มี ODE สิบ state, state order, frame,
 current injection และ equilibrium map ครบในระดับออกแบบ แต่จะไม่กล่าวอ้าง
 GFL PLL participation หรือผล production จนกว่าจะ implement และผ่าน Phase 4--5
 \end{abstract}
@@ -117,7 +118,7 @@ ASSUMED\_DIAGNOSTIC & สมมติฐานเพื่อวินิจฉ�
 GFM REGFM\_B1 & 13-state production model & มี VSG, PLL, filters และ dynamic angle bounds \\
 GFL WECC REGC\_A/REEC\_A & 7-state production model & ไม่มี explicit PLL state \\
 Modal analysis & standalone consumer ของ $A$ & ไม่แก้ $A_{\rm red}$ หรือ physical quotient construction \\
-PLL-resolved nonlinear GFL & \designonly & source set ปิด core ODE gap; ยังไม่เข้า production routing \\
+PLL-resolved GFL--RMS10 & \designonly & source set ปิด core ODE gap; ยังไม่เข้า production routing \\
 ผล PF/SSSA/TS ในรายงานนี้ & \pending & ต้องสร้างจาก fingerprint เดียวกันหลัง Phase 4--5 \\
 Readiness & NOT\_READY & ห้ามกล่าวอ้าง PRODUCTION\_READY/VALIDATED \\
 \bottomrule
@@ -130,6 +131,9 @@ Readiness & NOT\_READY & ห้ามกล่าวอ้าง PRODUCTION\_REA
 แต่ละ source ก่อนสร้างแบบจำลอง ตาราง~\ref{tab:model-sources} คือ source hierarchy
 ที่ใช้จริง ส่วนบทความเปรียบเทียบ transient, predictive control และ LCL digital-delay
 ใช้สำหรับอภิปรายผลเท่านั้น ไม่ใช่ผู้กำหนด production ODE
+ไฟล์ต้นฉบับทั้งหมดเก็บใต้
+\nolinkurl{C:/Users/User/Desktop/Power-flow/docs/text/};
+path ในตารางและข้อความต่อไปนี้จึงตรวจย้อนกลับได้จาก repository โดยตรง
 
 \begin{longtable}{p{.20\textwidth}p{.26\textwidth}p{.37\textwidth}}
 \caption{Source hierarchy สำหรับ dynamic equations}\label{tab:model-sources}\\
@@ -284,7 +288,81 @@ Equilibrium ต้องผ่านทั้ง
 state ที่ frozen ต้องเก็บค่า anchor และไม่ถูกแอบนำเข้า $A_{red}$ ส่วน active bounds
 ต้องรายงาน regime เป็น interior/upper/lower ก่อน linearisation
 
+สำหรับ device ลำดับที่ $i$ สามารถแยกสมการเป็น
+\begin{equation}
+\dot x_i=f_i(x_i,V_R,V_I,u_i,p_i,r_i),\qquad
+I_i=h_i(x_i,V_R,V_I,u_i,p_i,r_i),
+\label{eq:device-dae}
+\end{equation}
+โดย $p_i$ คือพารามิเตอร์ และ $r_i$ คือ fixed active regime เช่น interior,
+current-limited หรือ integrator-hold กระแส $I_i$ จาก SG/GFM/GFL ทุกตัวถูกนำไปประกอบ
+ใน $g=0$ ชุดเดียวกัน จึงไม่ได้มี ``network equation ของ GFM'' และ ``network equation
+ของ GFL'' คนละระบบ ความแตกต่างอยู่ที่ $f_i$ และ $h_i$ ของ device เท่านั้น
+
+\begin{table}[H]\centering
+\caption{ตัวแปรใน composite DAE}\label{tab:dae-symbols}
+\begin{tabularx}{\textwidth}{p{.13\textwidth}p{.18\textwidth}X}
+\toprule
+สัญลักษณ์ & ชนิด & ความหมาย \\ \midrule
+$x$ & differential & state จริงของ SG/GFM/GFL ที่ต้องมี initial condition \\
+$y$ & algebraic & $V_R,V_I$ ของทุก bus และ algebraic quantities ตาม project ABI \\
+$u$ & input & $T_m,E_{fd},P_{ref},Q_{ref},V_{ref}$ ตามชื่อ input ของแต่ละ device \\
+$e$ & discrete context & online/mode/topology/event/active-limit state \\
+$f$ & differential residual & ODE ของ device ทั้งหมด \\
+$g$ & algebraic residual & full physical KCL ของ network \\
+$h_i$ & current interface & แปลง state และ terminal voltage เป็น current injection ของ device $i$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{SG เป็นฐานเปรียบเทียบทางกายภาพ}
+
+ก่อนเปรียบเทียบ IBR ให้ใช้ SG production ของโครงการเป็นฐาน ไม่ใช่บังคับให้
+จำนวน state เท่ากัน แกน electromechanical ของ SG เขียนเชิงโครงสร้างได้เป็น
+\begin{align}
+\dot\delta_{SG}&=\omega_b\Delta\omega_{SG},\\
+2H_{SG}\dot{\Delta\omega}_{SG}
+&=P_m-P_e-D_{SG}\Delta\omega_{SG},
+\label{eq:sg-swing}
+\end{align}
+โดยรูป torque หรือ power ที่ใช้จริงต้องตรงกับ base ของ production SG
+$\delta_{SG}$ คือมุม rotor ทางไฟฟ้าจริง, $\Delta\omega_{SG}$ คือความเร็ว rotor เบี่ยงเบน,
+$H_{SG}$ คือพลังงานจลน์จริงต่อ rating, $P_m$ มาจาก prime mover และ $P_e$ คือกำลัง
+air-gap ที่ส่งออกสู่ network สมการ~\eqref{eq:sg-swing} จึงเป็นกฎกลศาสตร์ของ rotor
+ไม่ใช่ controller ที่เขียนเลียนแบบ
+
+Operational EMF6 ของโครงการเพิ่ม electromagnetic flux/EMF states ตามไฟล์
+\begin{quote}\small
+\nolinkurl{+stability/emf6_dae.m}\\
+\nolinkurl{+stability/synchronous_emf6_ssa.m}
+\end{quote}
+เพื่อสร้าง current injection จาก internal EMF และ stator/transient impedance
+input สำคัญคือ mechanical input $T_m$ หรือ $P_m$ และ field voltage $E_{fd}$
+ซึ่งต่างจาก GFM $[P_{ref},V_{ref}]$ และ GFL $[P_{ref},Q_{ref}]$ อย่างมีนัยสำคัญ
+ห้ามเทียบ input จากตำแหน่ง array เพียงอย่างเดียว
+
+\begin{table}[H]\centering
+\caption{ฐานเปรียบเทียบ SG กับ IBR ก่อนลงรายละเอียด}\label{tab:sg-base-compare}
+\begin{tabularx}{\textwidth}{p{.20\textwidth}XXX}
+\toprule
+หน้าที่ & SG & GFM--VSG & GFL--PLL \\ \midrule
+มุมหลัก & physical rotor angle & controlled VSM angle & estimated grid angle \\
+ความถี่ & physical rotor speed & programmed virtual speed & PLL frequency estimate \\
+กำลังจริง & prime-mover torque/power & $P_{ref}-P_{meas}$ เข้า virtual swing & P-loop สร้าง $i_d^*$ \\
+แรงดัน/VAR & field/excitation และ EMF & $V/Q$ controller สร้าง $E_{VSM}$ & Q-loop สร้าง $i_q^*$ \\
+interface & EMF หลัง machine impedance & voltage หลัง virtual impedance & current ผ่าน L-filter \\
+inertia & kinetic energy จริง & virtual coefficient & ไม่มี swing inertiaใน RMS10 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
 \section{GFM--VSG: REGFM\_B1 จำนวน 13 States}
+
+แหล่งหลักคือ Du et al., NREL/TP-5D00-90260 ซึ่งเก็บใน
+\nolinkurl{C:/Users/User/Desktop/Power-flow/docs/text/90260.pdf};
+สมการ production ที่แปลงเข้า project ABI อยู่ใน
+\nolinkurl{+ibr/regfm_b1_vsg_model.m} การอธิบายต่อไปนี้ยึด state order และ limiter
+semantics ของไฟล์ production พร้อม trace กลับไปยังรูป/สมการในเอกสาร NREL
 
 \subsection{State และ input order}
 
@@ -301,6 +379,10 @@ P_f&I_{d,f}&Q_f&V_f&I_{q,f}&\delta_{IT}^{max}&\delta_{IT}^{min}
 \kappa=\frac{S_{base}}{M_{base}},\qquad
 P_{ref,inv}=\kappa P_{ref,sys}.
 \end{equation}
+$\kappa$ แปลงกำลังและกระแสระหว่าง system base กับ inverter base;
+$S_{base}$ คือ base ของ network และ $M_{base}$ คือ rating ของ converter
+state order คือ application binary interface: local state ลำดับที่ $k$ ต้องหมายถึง
+สมการเดิมใน equilibrium, SSSA และ TS ห้ามเรียงใหม่เพื่อความสวยของตาราง
 
 \subsection{Reference frame และ current injection}
 
@@ -320,6 +402,12 @@ I_{unc},& |I_{unc}|\le I_{maxF}/\kappa,\\
 \dfrac{I_{maxF}}{\kappa}\dfrac{I_{unc}}{|I_{unc}|},& |I_{unc}|>I_{maxF}/\kappa.
 \end{cases}
 \end{align}
+
+สมการ $I_{unc}$ คือ voltage-behind-impedance relation: phasor ภายใน
+$E_{VSM}e^{j\delta_{VSM}}$ ผลักกระแสผ่าน virtual impedance $R_e+jX_L$
+เข้าสู่ terminal voltage $V$ จึงใกล้เคียงเชิงหน้าที่กับ internal EMF หลัง reactance ของ SG
+แต่ current limiter แบบวงกลมเป็นข้อจำกัดของ semiconductor/converter ไม่ใช่ swing หรือ
+stator-flux equation ของ SG ค่า $I$ เป็น algebraic output $h_{gfm}$ ไม่ใช่ state เพิ่ม
 
 \subsection{PLL, VSG, voltage controller และ filters}
 
@@ -373,30 +461,63 @@ k_I(-K_eI_{d,max}^{SS}-I_{d,f}),-\delta_{max},0),
 \end{align}
 เมื่อ $ESFlag=1$ โดย $\delta_{max}=\sin^{-1}(X_LI_{maxSS})$
 
+ความหมายของ control chain คือ $P_{ref,inv}-P_f$ เร่งหรือหน่วง virtual rotor,
+$x_w$ สร้าง damping ที่ขึ้นกับความถี่, $x_E$ สะสม voltage error,
+PLL สร้าง measurement frame และ filters ป้องกัน controller ตอบสนองต่อค่าทันที
+เร็วเกินไป แม้ GFM มี PLL แต่ผู้กำหนดแรงดันคือ $E_{VSM},\delta_{VSM}$ จึงยังเป็น
+grid-forming ไม่ใช่ grid-following
+
 \subsection{State inventory และ source mapping}
 
-\begin{longtable}{r p{.13\textwidth} p{.25\textwidth} p{.12\textwidth} p{.22\textwidth}}
+\small
+\begin{longtable}{r p{.08\textwidth} p{.20\textwidth} p{.12\textwidth} p{.16\textwidth} p{.18\textwidth}}
 \caption{REGFM\_B1 13-state order}\label{tab:gfm-states}\\
 \toprule
-Local & State & Governing relation & Unit & Source/classification \\\midrule
+Local & State & หน้าที่/ODE & Equilibrium & เทียบ SG & Source/classification \\\midrule
 \endfirsthead
-\toprule Local & State & Governing relation & Unit & Source/classification \\\midrule
+\toprule Local & State & หน้าที่/ODE & Equilibrium & เทียบ SG & Source/classification \\\midrule
 \endhead
-1 & $\omega_m$ & VSG swing equation & pu speed deviation & REGFM\_B1 Fig.2; SOURCE\_TRANSFORMED \\
-2 & $\delta_{IT}$ & PLL-relative inertial angle with bound hold & rad & Fig.2/Fig.6; PROJECT\_DERIVED hold \\
-3 & $x_w$ & damping washout & pu & Fig.2; SOURCE\_TRANSFORMED \\
-4 & $x_E$ & voltage PI integral & pu-s & Fig.3; conditional hold PROJECT\_DERIVED \\
-5 & $\delta_{PLL}$ & PLL angle & rad & Fig.4; SOURCE\_TRANSFORMED \\
-6 & $\xi_{PLL}$ & PLL integrator & pu-s & Fig.4; SOURCE\_TRANSFORMED \\
-7 & $P_f$ & active-power filter & pu inverter base & Eq.(1) \\
-8 & $I_{d,f}$ & active-current filter & pu inverter base & Eq.(2) \\
-9 & $Q_f$ & reactive-power filter & pu inverter base & Eq.(3) \\
-10 & $V_f$ & voltage-magnitude filter & pu & Eq.(4) \\
-11 & $I_{q,f}$ & reactive-current filter & pu inverter base & Eq.(5) \\
-12 & $\delta_{IT}^{max}$ & positive dynamic angle bound & rad & Fig.6; active bound \\
-13 & $\delta_{IT}^{min}$ & negative dynamic angle bound & rad & Fig.6; active when $ESFlag=1$ \\
+1 & $\omega_m$ & virtual swing speed & $0$ & $\Delta\omega_{SG}$ แต่เป็น software & REGFM\_B1 Fig.2; SOURCE\_TRANSFORMED \\
+2 & $\delta_{IT}$ & inertial angle เทียบ PLL พร้อม hold & solve จาก internal angle & ส่วนของ rotor-angle analogy & Fig.2/Fig.6; PROJECT\_DERIVED hold \\
+3 & $x_w$ & damping washout ODE & $0$ & stabilizer/filter state & Fig.2; SOURCE\_TRANSFORMED \\
+4 & $x_E$ & voltage PI integral & solve ให้ $E_{raw}=E_{VSM,0}$ & AVR/exciter integrator & Fig.3; PROJECT\_DERIVED hold \\
+5 & $\delta_{PLL}$ & terminal-angle estimate & $\angle V_0$ & ไม่มีใน rotor physics & Fig.4; SOURCE\_TRANSFORMED \\
+6 & $\xi_{PLL}$ & สะสม $V_q$ error & โดยทั่วไป $0$ ที่ lock & measurement controller & Fig.4; SOURCE\_TRANSFORMED \\
+7 & $P_f$ & filtered active power & $\kappa P_0$ & power transducer & Eq.(1) \\
+8 & $I_{d,f}$ & filtered d-current & $\kappa I_{d0}$ & current transducer & Eq.(2) \\
+9 & $Q_f$ & filtered reactive power & $\kappa Q_0$ & VAR transducer & Eq.(3) \\
+10 & $V_f$ & filtered terminal magnitude & $|V_0|$ & voltage transducer & Eq.(4) \\
+11 & $I_{q,f}$ & filtered q-current & $\kappa I_{q0}$ & current transducer & Eq.(5) \\
+12 & $\delta_{IT}^{max}$ & moving upper bound & active-set dependent & limiter state & Fig.6; active bound \\
+13 & $\delta_{IT}^{min}$ & moving lower bound & active-set dependent & limiter state & Fig.6; active when $ESFlag=1$ \\
 \bottomrule
 \end{longtable}
+\normalsize
+
+\paragraph{การใช้สมการ GFM ในแต่ละ analysis.}
+PF ให้ $V_0,P_0,Q_0$ แต่ไม่ integrate 13 states; equilibrium หา $x_{gfm,0}$ ให้
+ODE ทั้ง active states เป็นศูนย์และ current interface ตรง KCL; SSSA หาอนุพันธ์ของ
+VSG/PLL/filter/limiter equations ที่ fixed regime; TS integrate ODE 13 ตัวเดิมและ
+คำนวณ $I=h_{gfm}$ ใหม่ทุก corrector iteration ไม่มี GFM state-space คนละชุดสำหรับ SSSA
+
+\begin{table}[H]\centering\small
+\caption{พารามิเตอร์หลักของ REGFM\_B1 และหน้าที่}\label{tab:gfm-params}
+\begin{tabularx}{\textwidth}{p{.20\textwidth}p{.18\textwidth}X}
+\toprule
+พารามิเตอร์ & หน่วย/base & หน้าที่ \\ \midrule
+$H$ & s, inverter base & virtual inertia ใน swing controller \\
+$m_p,m_q$ & droop coefficients & active-frequency และ reactive-voltage droop \\
+$D_1,D_2,\omega_D$ & pu, rad/s & direct damping, washout damping และ filter bandwidth \\
+$k_{p,PLL},k_{i,PLL}$ & PLL gains & แปลง $V_q$ error เป็น estimated frequency/angle \\
+$k_{pv},k_{iv}$ & voltage PI gains & สร้าง $E_{VSM}$ จาก terminal-voltage error \\
+$T_{pf},T_{Qf},T_{If},T_{Vf}$ & s & measurement-filter time constants \\
+$R_e,X_L$ & pu inverter base & virtual/interface impedance \\
+$I_{maxF},I_{maxSS}$ & pu inverter current & transient และ steady-state current capability \\
+$k_I,K_e,\delta_{max}$ & limiter parameters & การเคลื่อนของ dynamic angle bounds \\
+$V_{PLLfrz}$ & pu voltage & threshold ของ source-defined PLL freeze profile \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \paragraph{ข้อควรระวังเรื่อง angle identity.}
 สมการ $\dot\delta_{VSM}=\omega_0\omega_m$ เป็นจริงเฉพาะ interior unclamped regime
@@ -483,232 +604,259 @@ model ปัจจุบัน อย่างไรก็ตาม algebraic or
 ทั้งเจ็ด couple กับ network angle ได้ จึงห้ามสรุปเชิงโครงสร้างว่า eigenvalues ทุกตัว
 ต้องเป็น real poles
 
-\section{PLL-resolved Nonlinear GFL ที่เสนอ}
+\section{PLL-resolved Nonlinear GFL--RMS10 ที่เสนอ}
 \label{sec:proposed-gfl}
 
 \begin{center}
 \fcolorbox{purple!70!black}{purple!3}{\parbox{.91\textwidth}{
 \centering\designonly\par
-ส่วนนี้เป็น source-traceable mathematical design ไม่ใช่ production implementation
-และไม่เปลี่ยนความหมายของ WECC 7-state model เดิม แบบจำลองใหม่ต้องเป็น opt-in
-device คนละชื่อและต้องผ่าน equilibrium, Jacobian, SSSA, TS, limiter และ regression gates
-ก่อนนำผลไปอ้างเป็นหลักฐานทางกายภาพ}}
+RMS10 เป็น source-traceable mathematical design ไม่ใช่ production implementation
+และไม่เปลี่ยน WECC 7-state เดิม ต้องสร้างเป็น opt-in device คนละชื่อและผ่าน
+equilibrium, Jacobian, SSSA, TS, limiter และ regression gates ก่อนใช้ผลเชิงกายภาพ}}
 \end{center}
 
-\subsection{ขอบเขตและเหตุผลของ model order}
+\subsection{Model boundary และ state order}
 
-สำหรับ balanced positive-sequence electromechanical simulation รายงานเลือก
-\textbf{GFL--RMS6} เป็นแกนขั้นต่ำที่มี state จริงทุกตัว:
+ขอบเขตคือ balanced positive-sequence RMS ฝั่ง AC โดยถือ DC source เป็น stiff:
+$V_{dc}=V_{dc0}$ จึงไม่สร้าง DC-link state, switching/PWM, semiconductor,
+negative-sequence หรือ LCL-resonance states โมเดลหลักมี
 \begin{equation}
-x_{gfl6}=\begin{bmatrix}
-\delta_{PLL}&\xi_{PLL}&\xi_{id}&\xi_{iq}&i_d&i_q
-\end{bmatrix}^{T}.
-\label{eq:gfl6-order}
-\end{equation}
-สอง state แรกเป็น SRF--PLL, สอง state ถัดมาเป็น PI current-controller integrators
-และสอง stateสุดท้ายเป็นกระแสจริงของ L-filter ไม่ใช่ measurement states ที่ตั้งชื่อใหม่
-DC source ถือว่า stiff และ $P^*,Q^*$ ถูกแปลงเป็น current reference แบบ algebraic
-ตาม Teodorescu (8.43)--(8.44) การตัด switching ripple, negative sequence และ LCL resonance
-ออกเป็น \derived{} positive-sequence RMS reduction ตามกรอบ averaged model ของ Bacha
-
-หากต้องศึกษาพลังงาน DC และ outer power-control dynamics ให้ใช้
-\textbf{GFL--RMS11}:
-\begin{equation}
-x_{gfl11}=\begin{bmatrix}
+x_{gfl10}=\begin{bmatrix}
 \delta_{PLL}&\xi_{PLL}&P_f&Q_f&\xi_P&\xi_Q&
-\xi_{id}&\xi_{iq}&i_d&i_q&V_{dc}
-\end{bmatrix}^{T}.
-\label{eq:gfl11-order}
+\xi_{id}&\xi_{iq}&i_d&i_q
+\end{bmatrix}^{T},
+\qquad u_{gfl10}=\begin{bmatrix}P_{ref}&Q_{ref}\end{bmatrix}^{T}.
+\label{eq:gfl10-order}
 \end{equation}
-RMS11 เป็น extension ที่ต้องมี case data เพิ่ม จึงไม่ใช้แทน RMS6 โดยปริยาย
-ส่วน explicit 12-state realization ของ Alassaf et al. ประกอบด้วย PLL realization
-หก state, feed-forward สอง state, feedback compensator สอง state และกระแส
-$i_d,i_q$ สอง state ใช้เป็น independent structural cross-check แต่ไม่ถูกเลือกเป็น
-canonical order เพราะ PLL compensator ลำดับสูงและพารามิเตอร์เป็น study-specific
+order 10 หมายถึง differential states อิสระสิบตัว ไม่ได้หมายความว่าต้องเท่ากับ
+GFM 13 states การเพิ่ม dummy states เพื่อให้เลขเท่ากันเป็นสิ่งต้องห้าม
 
-\subsection{Frame, base, power และ network injection}
+\subsection{Frame, base, power และ current injection}
 
-ให้ network phasor $V=V_R+jV_I$ อยู่บน system base และให้ PLL angle เป็นมุมสัมพัทธ์
-กับ synchronous network frame โดย $\theta_{PLL}=\omega_b t+\delta_{PLL}$
-การแปลงไป PLL--dq frameคือ
+ให้ $V=V_R+jV_I$ อยู่บน system base และ
+$\theta_{PLL}=\omega_bt+\delta_{PLL}$ การแปลง network frame ไป PLL--dq คือ
 \begin{align}
 v_d&=V_R\cos\delta_{PLL}+V_I\sin\delta_{PLL},\\
 v_q&=-V_R\sin\delta_{PLL}+V_I\cos\delta_{PLL},\\
 I_{net}&=\frac{(i_d+ji_q)e^{j\delta_{PLL}}}{\kappa},
 \qquad \kappa=\frac{S_{base}}{M_{base}}.
-\label{eq:gfl-injection}
+\label{eq:gfl10-injection}
 \end{align}
-ด้วย generator convention $S=V\overline I$ จะได้กำลังบน inverter base
+$v_d,v_q$ และ $i_d,i_q$ อยู่ใน local PLL frame ส่วน $I_{net}$ กลับมาอยู่ใน
+common network frame เพื่อเข้า KCL ด้วย generator convention $S=V\overline I$
+กำลังบน inverter base คือ
 \begin{align}
 P&=v_di_d+v_qi_q,\\
 Q&=v_qi_d-v_di_q.
-\label{eq:gfl-pq}
+\label{eq:gfl10-pq}
 \end{align}
-ดังนั้นเมื่อ PLL lock และ $v_q=0$ การฉีด reactive power บวกต้องมี $i_q<0$
-เครื่องหมายนี้ต้องถูกทดสอบตรงกับ network KCL ห้ามสลับตามความเคยชินของ load convention
+เมื่อ PLL lock, $v_q=0$ จึงได้ $P=v_di_d$ และ $Q=-v_di_q$ กล่าวคือ positive
+reactive injection ใช้ $i_q<0$ ตาม convention นี้ เครื่องหมายต้องพิสูจน์ด้วย KCL test
 
-\subsection{Nonlinear SRF--PLL ODE}
+\subsection{States 1--2: nonlinear SRF--PLL}
 
-Teodorescu Fig.~8.11 และ Yazdani (8.18)--(8.25) ให้ PI phase detector ที่ regulate
-$v_q\rightarrow0$ สำหรับ positive-sequence RMS กำหนด
+จาก Teodorescu Fig.~8.11 และ Yazdani Sec.~8.2 กำหนด
 \begin{align}
-e_{PLL}&=v_q,\\
-\dot\xi_{PLL}&=e_{PLL},\\
-\Delta\omega_{PLL}&=k_{p,PLL}e_{PLL}+k_{i,PLL}\xi_{PLL},\\
+e_{PLL}&=v_q, & \dot\xi_{PLL}&=e_{PLL},\\
+\Delta\omega_{PLL}&=k_{p,PLL}e_{PLL}+k_{i,PLL}\xi_{PLL},&
 \dot\delta_{PLL}&=\omega_b\Delta\omega_{PLL},\\
 \omega_{PLL}&=\omega_b(1+\Delta\omega_{PLL}).
-\label{eq:gfl-pll}
+\label{eq:gfl10-pll}
 \end{align}
-$\delta_{PLL}$ เป็น unwrapped integration state; ค่า wrap mod $2\pi$ ใช้แสดงผลเท่านั้น
-และไม่มีสิทธิ์สร้าง discontinuity ใน state หรือ Jacobian ค่า gain ต้องมาจาก case หรือ
-ออกแบบจาก bandwidth/damping ก่อนดูผล ไม่ยืมค่าจาก GFM REGFM\_B1 โดยเงียบ ๆ
+$\delta_{PLL}$ คือมุม grid ที่ controller ประมาณ ไม่ใช่มุม rotor และเป็น unwrapped state;
+$\xi_{PLL}$ คือความจำของ phase error; $\Delta\omega_{PLL}$ เป็น algebraic controller
+output ไม่ใช่ state เพิ่ม GFL ต้องพึ่ง PLL เพื่อ orient current ส่วน GFM ใช้ PLL เป็น
+measurement frame แต่สร้างแรงดันจาก VSM angle และ SG มี rotor angle จริงโดยไม่ต้องใช้ PLL
 
-เมื่อ $|V|<V_{PLL,min}$ ตำราบอกข้อจำกัดของ PLL แต่ไม่กำหนด positive-sequence
-LVRT semantics เดียวกัน รายงานจึงกำหนดให้ initialization/transaction \emph{fail closed}
-จนกว่า low-voltage freeze/recovery profile จะถูกอนุมัติ การ fail closed นี้เป็น
-project safety semantics ไม่ใช่สมการที่อ้างว่า source กำหนด
+หาก $|V|<V_{PLL,min}$ และ source/case ยังไม่ freeze LVRT semantics ให้ fail closed
+ห้ามยืม freeze gain หรือ threshold จาก REGFM\_B1 โดยไม่ประกาศ mapping
 
-\subsection{P/Q-to-current reference และ current-priority limit}
+\subsection{States 3--4: power measurement dynamics}
 
-Teodorescu (8.43)--(8.44) ให้ $i_d^*=P^*/v_d$ และ $i_q^*=-Q^*/v_d$ เมื่อ
-$v_q=0$ รูปทั่วไปที่ได้จากการกลับเมทริกซ์ของสมการ~\eqref{eq:gfl-pq} คือ
+\begin{equation}
+T_P\dot P_f=P-P_f,\qquad T_Q\dot Q_f=Q-Q_f.
+\label{eq:gfl10-pfilters}
+\end{equation}
+$P_f,Q_f$ คือค่าที่ outer controller มองเห็น ไม่ใช่ network outputs ใหม่
+ที่ equilibrium มี $P_{f0}=P_0,Q_{f0}=Q_0$ GFM มี filters คล้ายกันแต่ป้อน virtual
+swing/voltage controller ส่วน SG analog คือ measurement transducer ไม่ใช่ flux state
+
+\subsection{States 5--6: outer P/Q control และ current reference}
+
+กำหนด power errors และ conditional integrators
+\begin{align}
+e_P&=P_{ref}-P_f,&\dot\xi_P&=\mathcal A_P(e_P),\\
+e_Q&=Q_{ref}-Q_f,&\dot\xi_Q&=\mathcal A_Q(e_Q),\\
+P_{cmd}&=P_{ref}+k_{pP}e_P+k_{iP}\xi_P,\\
+Q_{cmd}&=Q_{ref}+k_{pQ}e_Q+k_{iQ}\xi_Q.
+\label{eq:gfl10-outer}
+\end{align}
+$\xi_P,\xi_Q$ ทำให้ P/Q control เป็น dynamic states จริง ไม่ใช่เพียง algebraic
+mapping การกลับเมทริกซ์ของ~\eqref{eq:gfl10-pq} ให้
 \begin{align}
 D_V&=v_d^2+v_q^2,\\
-i_{d,raw}^*&=\frac{v_dP^*+v_qQ^*}{D_V},\\
-i_{q,raw}^*&=\frac{v_qP^*-v_dQ^*}{D_V}.
-\label{eq:gfl-iref}
+i_{d,raw}^*&=\frac{v_dP_{cmd}+v_qQ_{cmd}}{D_V},\\
+i_{q,raw}^*&=\frac{v_qP_{cmd}-v_dQ_{cmd}}{D_V}.
+\label{eq:gfl10-iref}
 \end{align}
-การกลับเมทริกซ์นี้เป็น \derived{} และอนุญาตเมื่อ $D_V\ge V_{div,min}^2$ เท่านั้น
-หากต่ำกว่านั้นต้องเข้าสู่ low-voltage failure/approved ride-through route ห้ามใช้
-division floor แล้วกล่าวอ้างว่าเป็นพฤติกรรมทางกายภาพ
+เมื่อ $v_q=0$: $i_d^*=P_{cmd}/v_d$ และ $i_q^*=-Q_{cmd}/v_d$
+ถ้า $D_V<V_{div,min}^2$ ต้องใช้ approved ride-through หรือ fail closed ห้าม floor
+แรงดันแล้วอ้างว่าเป็น physics
 
-สำหรับ P-priority circular current limit:
+P-priority circular current limit คือ
 \begin{align}
 i_d^*&=\clamp(i_{d,raw}^*,-I_{max},I_{max}),\\
-i_{q,max}&=\sqrt{\max(I_{max}^2-(i_d^*)^2,0)},\\
-i_q^*&=\clamp(i_{q,raw}^*,-i_{q,max},i_{q,max}).
-\label{eq:gfl-current-limit}
+i_{q,avail}&=\sqrt{\max(I_{max}^2-(i_d^*)^2,0)},\\
+i_q^*&=\clamp(i_{q,raw}^*,-i_{q,avail},i_{q,avail}).
+\label{eq:gfl10-ilimit}
 \end{align}
-Q-priority เป็นคนละ case profile และต้องสลับลำดับอย่างชัดเจน ไม่อนุญาตให้เลือกตามผล
+GFL จึงควบคุมกำลังผ่าน current reference ต่างจาก SG ที่ $P_m,E_{fd}$ กระทำผ่าน
+rotor/flux equations และต่างจาก GFM ที่กำหนด internal voltage หลัง virtual impedance
 
-\subsection{Current-controller states, converter voltage และ plant ODE}
+\subsection{States 7--8: inner current PI และ anti-windup}
 
-กำหนด $R_t=R+R_{on}$ และ current errors
-\begin{equation}
-e_d=i_d^*-i_d,\qquad e_q=i_q^*-i_q.
-\end{equation}
-PI states และ raw decoupled commands คือ
 \begin{align}
-\dot\xi_{id}&=\mathcal A_d(e_d),&u_d&=k_{p,i}e_d+k_{i,i}\xi_{id},\\
-\dot\xi_{iq}&=\mathcal A_q(e_q),&u_q&=k_{p,i}e_q+k_{i,i}\xi_{iq},\\
-v_{td}^{raw}&=v_d-L\omega_{PLL}i_q+u_d,\\
-v_{tq}^{raw}&=v_q+L\omega_{PLL}i_d+u_q.
-\label{eq:gfl-controller}
+e_d&=i_d^*-i_d,&\dot\xi_{id}&=\mathcal A_{id}(e_d),\\
+e_q&=i_q^*-i_q,&\dot\xi_{iq}&=\mathcal A_{iq}(e_q),\\
+u_d&=k_{p,i}e_d+k_{i,i}\xi_{id},&
+u_q&=k_{p,i}e_q+k_{i,i}\xi_{iq},\\
+v_{td}^{raw}&=v_d+R_ti_d-L\omega_{PLL}i_q+u_d,\\
+v_{tq}^{raw}&=v_q+R_ti_q+L\omega_{PLL}i_d+u_q.
+\label{eq:gfl10-current-controller}
 \end{align}
-สมการนี้ตรงกับ decoupling ของ Yazdani (8.49)--(8.52) ก่อนใช้กับ converter
-ต้องจำกัด modulation vector:
+$R_ti$ ชดเชย resistive drop, $\pm L\omega i$ ชดเชย rotating-frame coupling
+และ $u_d,u_q$ คือ PI corrections ก่อนนำไปใช้ต้องจำกัด modulation vector
 \begin{equation}
 \begin{bmatrix}v_{td}\\v_{tq}\end{bmatrix}
 =\operatorname{vector\_clamp}
 \left(\begin{bmatrix}v_{td}^{raw}\\v_{tq}^{raw}\end{bmatrix},V_{t,max}\right),
-\qquad V_{t,max}=m_{max}\frac{V_{dc}}{2}.
-\label{eq:gfl-voltage-limit}
+\qquad V_{t,max}=m_{max}\frac{V_{dc0}}{2},
+\label{eq:gfl10-vlimit}
 \end{equation}
-Bacha ระบุว่าต้องมี anti-windup เมื่อ control input ชน limit รายงานใช้
-conditional-integration operator
+โดย factor ระหว่าง modulation กับ RMS ต้องตรวจจาก source profile ก่อน freeze
+
+operator $\mathcal A$ ใช้ one-sided anti-windup:
 \begin{equation}
-\mathcal A(e)=
-\begin{cases}
-0,&\text{output saturated และ }e\text{ ผลักออกจาก feasible set},\\
+\mathcal A(e)=\begin{cases}
+0,&\text{command ชน limit และ }e\text{ ผลักออกจาก feasible set},\\
 e,&\text{interior หรือ }e\text{ ผลักกลับเข้า feasible set}.
 \end{cases}
-\label{eq:gfl-aw}
+\label{eq:gfl10-aw}
 \end{equation}
-การทดสอบต้องครอบคลุม entry, outward hold, inward release และ opposite-direction recovery
+จึงต้องทดสอบ entry, outward hold, inward release และ opposite-direction recovery
 
-L-filter plant ใช้ nonlinear dq equations ของ Yazdani (8.20)--(8.21):
+\subsection{States 9--10: physical L-filter current ODE}
+
+จาก Yazdani (8.20)--(8.21) และ Bacha averaged model:
 \begin{align}
 L\dot i_d&=L\omega_{PLL}i_q-R_ti_d+v_{td}-v_d,\\
 L\dot i_q&=-L\omega_{PLL}i_d-R_ti_q+v_{tq}-v_q.
-\label{eq:gfl-current-ode}
+\label{eq:gfl10-current-ode}
 \end{align}
-เมื่อ voltage command ไม่ saturated การแทน~\eqref{eq:gfl-controller} ลงใน
-\eqref{eq:gfl-current-ode} ให้
-$L\dot i_d=-R_ti_d+u_d$ และ $L\dot i_q=-R_ti_q+u_q$
-แต่ production TS ต้อง integrate สมการเดิมพร้อม actual limited voltage ห้ามใช้รูป decoupled
-หลัง saturation เพราะจะซ่อน limiter dynamics
+$i_d,i_q$ เป็น physical averaged AC current states; $v_{td},v_{tq}$ เป็น converter-side
+voltage หลัง limiter; $v_d,v_q$ เป็น terminal voltage; $R_t,L$ คือ series plant
+สมการนี้ทำให้ GFL-RMS10 มี dynamic current จริง ต่างจาก WECC ที่ orient current
+algebraically ด้วย $\angle V$ และต่างจาก GFM ที่คำนวณ current จาก voltage-behind-impedance
+production TS ต้อง integrate สมการเต็มหลัง limiter ห้ามใช้ decoupled cancellation
+เมื่อ voltage command saturated
 
-\begin{longtable}{r p{.15\textwidth}p{.30\textwidth}p{.27\textwidth}}
-\caption{GFL--RMS6 state order และ equation ownership}\label{tab:gfl6-states}\\
+\subsection{State inventory, equilibrium และ source ownership}
+
+\small
+\begin{longtable}{r p{.08\textwidth} p{.19\textwidth} p{.12\textwidth} p{.16\textwidth} p{.19\textwidth}}
+\caption{GFL--RMS10 state order และความหมาย}\label{tab:gfl10-states}\\
 \toprule
-Local & State & ODE/meaning & Source/classification \\\midrule
+Local & State & หน้าที่/ODE & Equilibrium & เทียบ SG/GFM & Source \\\midrule
 \endfirsthead
-\toprule Local & State & ODE/meaning & Source/classification \\\midrule
+\toprule Local & State & หน้าที่/ODE & Equilibrium & เทียบ SG/GFM & Source \\\midrule
 \endhead
-1 & $\delta_{PLL}$ & relative PLL angle, $\dot\delta_{PLL}=\omega_b\Delta\omega_{PLL}$ & Teodorescu Fig.~8.11; Yazdani (8.22)--(8.25); RMS map \derived \\
-2 & $\xi_{PLL}$ & PI phase-detector integral & SRF--PLL \src \\
-3 & $\xi_{id}$ & d-current PI integral with anti-windup & Yazdani (8.53); Bacha Ch.~9 AW requirement \\
-4 & $\xi_{iq}$ & q-current PI integral with anti-windup & same source family \\
-5 & $i_d$ & physical L-filter d-current & Yazdani (8.20), Bacha (9.3) \\
-6 & $i_q$ & physical L-filter q-current & Yazdani (8.21), Bacha (9.3) \\
+1 & $\delta_{PLL}$ & grid-angle estimate & $\angle V_0$ & ไม่ใช่ rotor/VSM angle & Teodorescu Fig.8.11; Yazdani 8.22--8.25 \\
+2 & $\xi_{PLL}$ & phase-error integral & โดยทั่วไป $0$ & PLL controller memory & same source family \\
+3 & $P_f$ & active-power filter & $P_0$ & GFM $P_f$/SG transducer & Teodorescu/Bacha control structure \\
+4 & $Q_f$ & reactive-power filter & $Q_0$ & GFM $Q_f$/SG transducer & same source family \\
+5 & $\xi_P$ & outer P integral & solve controller bias & ไม่มี swing inertia & Chs. grid-current/PQ control; \derived \\
+6 & $\xi_Q$ & outer Q integral & solve controller bias & ไม่ใช่ exciter flux & same source family; \derived \\
+7 & $\xi_{id}$ & d-current PI integral & solve $v_{td0}$ & converter inner loop & Yazdani 8.45--8.57; Bacha AW \\
+8 & $\xi_{iq}$ & q-current PI integral & solve $v_{tq0}$ & converter inner loop & same source family \\
+9 & $i_d$ & physical d-current ODE & $P_0/v_{d0}$ at lock & GFM current algebraic & Yazdani 8.20; Bacha 9.3 \\
+10 & $i_q$ & physical q-current ODE & $-Q_0/v_{d0}$ at lock & GFM current algebraic & Yazdani 8.21; Bacha 9.3 \\
 \bottomrule
 \end{longtable}
+\normalsize
 
-\subsection{RMS11 outer loops และ DC-link extension}
-
-สำหรับ state order~\eqref{eq:gfl11-order} เพิ่ม
-\begin{align}
-T_P\dot P_f&=P-P_f,&T_Q\dot Q_f&=Q-Q_f,\\
-e_P&=P^*-P_f,&e_Q&=Q^*-Q_f,\\
-\dot\xi_P&=\mathcal A_P(e_P),&
-\dot\xi_Q&=\mathcal A_Q(e_Q),\\
-i_{d,raw}^*&=i_{d,ff}+k_{pP}e_P+k_{iP}\xi_P,\\
-i_{q,raw}^*&=i_{q,ff}-k_{pQ}e_Q-k_{iQ}\xi_Q,
-\label{eq:gfl-outer}
-\end{align}
-โดย $(i_{d,ff},i_{q,ff})$ มาจาก~\eqref{eq:gfl-iref} และเครื่องหมายลบใน q-loop
-มาจาก generator reactive-power convention สมการ DC energy balance คือ
-\begin{equation}
-C_{dc}V_{dc}\dot V_{dc}=P_{dc}-(v_{td}i_d+v_{tq}i_q)-P_{sw,loss}.
-\label{eq:gfl-dc}
-\end{equation}
-ค่า $T_P,T_Q,k_{pP},k_{iP},k_{pQ},k_{iQ},C_{dc}$ และ loss law ต้องเป็น
-\caseval{} หรือ source-mapped ก่อนใช้ RMS11 หากไม่มี data ให้ใช้ RMS6 และรายงานว่า
-DC/outer-loop dynamics เป็น NOT\_MODELED ห้ามใส่ค่าจำลองเพื่อให้ eigenvalue ดูดี
-
-\subsection{Equilibrium initialization}
-
-จาก PF solution $(V_0,P_0,Q_0)$ ให้
+จาก PF solution $(V_0,P_0,Q_0)$ เริ่มด้วย
 \begin{align}
 \delta_{PLL,0}&=\angle V_0,&v_{q0}&=0,&v_{d0}&=|V_0|,\\
-i_{d0}&=\frac{P_0}{v_{d0}},&i_{q0}&=-\frac{Q_0}{v_{d0}},\\
-\xi_{PLL,0}&=0,&e_{d0}&=0,&e_{q0}&=0,\\
-u_{d0}&=R_ti_{d0},&u_{q0}&=R_ti_{q0},\\
-\xi_{id,0}&=\frac{u_{d0}}{k_{i,i}},&
-\xi_{iq,0}&=\frac{u_{q0}}{k_{i,i}}.
-\label{eq:gfl-init}
+P_{f0}&=P_0,&Q_{f0}&=Q_0,\\
+i_{d0}&=P_0/v_{d0},&i_{q0}&=-Q_0/v_{d0}.
+\label{eq:gfl10-init-a}
 \end{align}
-ก่อนใช้ต้องแปลง $P_0,Q_0$ เป็น inverter base ด้วย $\kappa$ และตรวจย้อนกลับว่า
-$I_{net,0}$ จาก~\eqref{eq:gfl-injection} ให้ $V_0\overline I_{net,0}$ ตรง PF injection
-หาก voltage command ต้องเกิน $V_{t,max}$, current limit bind หรือ residual ใดไม่ finite
-ให้ equilibrium fail closed ไม่ project state เข้า feasible set แบบเงียบ ๆ
+จากนั้น solve $\xi_P,\xi_Q,\xi_{id},\xi_{iq}$ จาก controller/plant equations
+ที่ $e_P=e_Q=e_d=e_q=0$ และ $\dot x=0$ ไม่สมมติ integral states เป็นศูนย์หาก
+equilibrium bias ต้องไม่เป็นศูนย์ ตรวจย้อนกลับว่า
+$V_0\overline I_{net,0}=P_0+jQ_0$ บน base ที่ถูกต้องและ current/voltage limits feasible
+ไม่เช่นนั้น fail closed
 
-สำหรับ RMS11 เพิ่ม $P_{f0}=P_0$, $Q_{f0}=Q_0$, $V_{dc0}=V_{dc}^*$,
-$\xi_{P0}=\xi_{Q0}=0$ เมื่อใช้ feed-forward และต้องมี
-$P_{dc0}=v_{td0}i_{d0}+v_{tq0}i_{q0}+P_{sw,loss,0}$
+\paragraph{Source files ในโครงการ.}
+ไฟล์อยู่ใต้ \nolinkurl{docs/text/} โดยใช้
+\begin{itemize}
+\item \nolinkurl{6739364.pdf} --- nonlinear plant, PLL และ current control;
+\item \nolinkurl{grid-converters-for-photovoltaic-and-wind-power-systems.pdf}
+--- SRF--PLL และ grid-current control;
+\item \nolinkurl{978-1-4471-5478-5.pdf} --- averaged state-space และ anti-windup;
+\item \nolinkurl{sustainability-15-08400.pdf} และ
+\nolinkurl{1-s2.0-S2096511723000531-main.pdf} --- structural/linear cross-check.
+\end{itemize}
+การประกอบเป็น RMS10 รวมทั้ง base, network interface และ project failure semantics
+จัดเป็น \derived{}
 
-\subsection{สมการเดียวกันใน PF, SSSA และ TS}
+\begin{table}[H]\centering\small
+\caption{พารามิเตอร์ GFL--RMS10 ที่ต้อง source-map ก่อน implementation}\label{tab:gfl10-params}
+\begin{tabularx}{\textwidth}{p{.18\textwidth}p{.17\textwidth}X}
+\toprule
+พารามิเตอร์ & หน่วย/base & หน้าที่ \\ \midrule
+$k_{p,PLL},k_{i,PLL}$ & PLL gains & bandwidth/damping ของ SRF--PLL \\
+$T_P,T_Q$ & s & active/reactive measurement filters \\
+$k_{pP},k_{iP}$ & outer P gains & แปลง active-power error เป็น $P_{cmd}$ correction \\
+$k_{pQ},k_{iQ}$ & outer Q gains & แปลง reactive-power error เป็น $Q_{cmd}$ correction \\
+$k_{p,i},k_{i,i}$ & current PI gains & สร้าง converter-voltage correction $u_d,u_q$ \\
+$R_t,L$ & pu/$\Omega$, H ตาม base contract & averaged AC-side series plant \\
+$I_{max}$ & pu inverter current & circular current-reference capability \\
+$V_{div,min}$ & pu voltage & fail-closed/ride-through boundary ของ P/Q inversion \\
+$V_{dc0},m_{max}$ & stiff DC voltage, modulation & กำหนด $V_{t,max}$; ไม่เป็น dynamic states \\
+$\omega_b,\kappa$ & rad/s, base ratio & synchronous frequency และ system/inverter conversion \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-PF กำหนด $(V_0,P_0,Q_0)$ แต่ไม่ integrate states; equilibrium ใช้
-\eqref{eq:gfl-pll}--\eqref{eq:gfl-current-ode} และ~\eqref{eq:gfl-init}
-แก้ $f=0,g=0$ พร้อมกัน SSSA differentiate RHS/current injection ชุดเดียวกันใน fixed
-active regime ส่วน TS integrate ODE ชุดเดียวกันและใช้ atomic transaction เมื่อ mode,
-limit regime หรือ topology เปลี่ยน ไม่มีการสร้าง $A_{GFL}$ แยกขึ้นมาเพื่อรายงาน
+\paragraph{การใช้สมการ RMS10.}
+PF ให้ $(V_0,P_0,Q_0)$; equilibrium แก้ ODE สิบตัวและ KCL ให้เป็นศูนย์;
+SSSA differentiate PLL/filter/outer-loop/current-controller/plant equations ชุดนี้ที่
+fixed active regime; TS integrate ODE ชุดเดียวกันและประเมิน $I_{net}$ ทุก step
+เมื่อ online และ interior RMS10 ต้องเพิ่ม state owners สิบตัวใน full-state inventory
+โดยไม่มีการลบ pole ที่ดูไม่สวย
 
-ที่ interior unsaturated equilibrium จำนวน GFL--RMS6 eigenvalues ที่เป็นเจ้าของโดย device
-เท่ากับหก และ participation ของ $\delta_{PLL},\xi_{PLL},i_d,i_q$ ต้อง trace กลับมายัง
-ตาราง~\ref{tab:gfl6-states} ได้ หากใช้ RMS11 จำนวน state เพิ่มเป็นสิบเอ็ดตาม
-\eqref{eq:gfl11-order} โดยไม่มีการลบ pole ที่ดูไม่สวย
+\subsection{Equation traceability register}
+
+\begin{longtable}{p{.12\textwidth}p{.18\textwidth}p{.31\textwidth}p{.23\textwidth}}
+\caption{สมการ, source และการใช้ข้าม analysis}\label{tab:equation-trace}\\
+\toprule
+Model/block & States/output & Source ใน \nolinkurl{docs/text/} & PF--equilibrium--SSSA--TS use \\\midrule
+\endfirsthead
+\toprule Model/block & States/output & Source & Analysis use \\\midrule
+\endhead
+GFM VSG & $\omega_m,\delta_{IT},x_w$ & \nolinkurl{90260.pdf}, Figs.2,6; production transform ใน \nolinkurl{+ibr/regfm_b1_vsg_model.m} & PF supplies $P,V$; equilibrium $\dot x=0$; SSSA derivative; TS integrate \\
+GFM voltage & $x_E,E_{VSM}$ & \nolinkurl{90260.pdf}, Fig.3 & same RHS; fixed saturation regime in SSSA \\
+GFM PLL & $\delta_{PLL},\xi_{PLL}$ & \nolinkurl{90260.pdf}, Fig.4 & initialize lock; linearise/freeze by regime; integrate in TS \\
+GFM filters/bounds & states 7--13 & \nolinkurl{90260.pdf}, Eqs.1--5 and Fig.6 & equilibrium anchors; active/frozen inventory; nonlinear holds \\
+GFL PLL & states 1--2 & \nolinkurl{6739364.pdf}, Sec.8.2; Teodorescu full book Fig.8.11 & initialize $v_q=0$; Jacobian of PI--VCO; integrate angle/error \\
+GFL P/Q filters & states 3--4 & Teodorescu Chs.10--12; Bacha averaged/control framework & PF $P_0,Q_0$ seed filters; SSSA/TS use same lags \\
+GFL outer control & states 5--6 & Teodorescu P/Q-to-current structure; \derived{} RMS10 realization & equilibrium controller bias; fixed limiter derivative; nonlinear AW \\
+GFL current PI & states 7--8 & \nolinkurl{6739364.pdf}, Eqs.8.45--8.57; \nolinkurl{978-1-4471-5478-5.pdf}, Ch.9 AW & solve steady voltage; linearise controller; integrate with limiter \\
+GFL L-filter & states 9--10 & \nolinkurl{6739364.pdf}, Eqs.8.20--8.21; Bacha Eq.9.3 & current reconstructs PF power; physical plant Jacobian; nonlinear TS \\
+GFL structural check & state ownership & Alassaf Eqs.25--26; Li et al. full-order SSSA (filenames ระบุใน source list) & cross-check only; ไม่ป้อน parameter/result เข้า production \\
+\bottomrule
+\end{longtable}
 
 \section{Fu \texorpdfstring{[P,Q]--[$\omega$,V]}{[P,Q]-[omega,V]} Port Model}
 
@@ -827,6 +975,84 @@ symbol, unit, absolute/relative reference และ online/mode interval กร�
 Phase 5 ได้แก่ absolute frequency, fault-bus voltage, device $P/Q$, current magnitude
 เทียบ current limit, VSG/PLL angle และ event markers
 
+\section{PF, Equilibrium, SSSA และ TS ใช้สมการต่างกันหรือไม่}
+
+คำตอบคือ physical device equations ไม่เปลี่ยนระหว่าง equilibrium, SSSA และ TS;
+สิ่งที่ต่างคือ operation ทางคณิตศาสตร์ PF แก้ static network operating point,
+equilibrium หา initial dynamic state, SSSA หา local derivatives และ TS integrate
+nonlinear DAE ตามเวลา
+
+\subsection{PF: static algebraic solve}
+
+PF แก้ $F_{PF}(z)=0$ ด้วย Newton จาก bus-type constraints และ power balance
+unknown หลักคือ bus voltage/angle หรือ rectangular equivalents ไม่มี $\dot x$
+ผล $V_0,P_0,Q_0$ เป็น producer ให้ device initializers แต่ยังไม่กำหนด controller
+integrator states ทุกตัว
+
+\subsection{Equilibrium: nonlinear steady state}
+
+equilibrium แก้
+\begin{equation}
+f_{active}(x_0,y_0,u_0,e_0)=0,\qquad
+g(x_0,y_0,u_0,e_0;Y_0)=0.
+\label{eq:equilibrium-full}
+\end{equation}
+ตัวอย่าง SG ต้องมี $P_m=P_e$ ตาม base, GFM ต้องให้ virtual swing/PLL/filters
+stationary และ GFL-RMS10 ต้องมี PLL, P/Q, current errors และ L-filter derivatives
+เป็นศูนย์ state ที่ frozen คง anchor และทุก active limit ต้องระบุ regime
+
+\subsection{SSSA: derivative ของสมการเดียวกัน}
+
+รอบ equilibrium เขียน perturbation DAE เป็น
+\begin{align}
+\Delta\dot x&=f_x\Delta x+f_y\Delta y+f_u\Delta u,\\
+0&=g_x\Delta x+g_y\Delta y+g_u\Delta u.
+\end{align}
+สำหรับ autonomous modal analysis ให้ $\Delta u=0$ และ eliminate $\Delta y$ ด้วย
+linear solve ไม่ใช้ \code{inv}/\code{pinv}:
+\begin{equation}
+A_{full}=f_x-f_y(g_y\backslash g_x),\qquad
+A_{red}=A_{full}(\mathcal I_a,\mathcal I_a).
+\end{equation}
+SSSA จึงไม่เดินเวลา แต่ถามว่าการรบกวนเล็กใกล้ $x_0,y_0$ โตหรือดับตาม
+$Av_i=\lambda_i v_i$ โดย
+\begin{equation}
+f_i=\frac{|\Im\lambda_i|}{2\pi},\qquad
+\zeta_i=-\frac{\Re\lambda_i}{|\lambda_i|}.
+\end{equation}
+
+\subsection{TS: nonlinear time stepping}
+
+TS ใช้ $f,g$ เดิมแต่หา $x_{n+1},y_{n+1}$ ซ้ำทุก step สำหรับ trapezoidal residual
+\begin{align}
+0&=x_{n+1}-x_n-\frac{h}{2}(f_n+f_{n+1}),\\
+0&=g(x_{n+1},y_{n+1},u_{n+1},e_{n+1};Y_{n+1}).
+\end{align}
+จึงต้อง Newton-correct nonlinear differential และ algebraic residual พร้อมกัน
+event เปลี่ยน $Y,u,e$ แบบ atomic และสร้าง left/right samples ไม่ใช่เปลี่ยน ODE
+อย่างลับ ๆ
+
+\begin{table}[H]\centering\small
+\caption{ความแตกต่างของการ solve โดยยังใช้ physical contract เดียวกัน}
+\begin{tabularx}{\textwidth}{p{.12\textwidth}p{.20\textwidth}p{.23\textwidth}p{.19\textwidth}X}
+\toprule
+Analysis & Unknowns & Equations/operation & Events & Output \\ \midrule
+PF & bus voltages และ solved bus quantities & static power balance; Newton & ไม่มี & $V_0,P_0,Q_0$, mismatch \\
+Equilibrium & active $x_0$ และ $y_0$ & $f_{active}=0,g=0$ & ไม่มี & initialized states, KCL, active regime \\
+SSSA & perturbations/eigenvectors & Jacobian, Schur elimination, \code{eig} & ไม่มี; fixed regime & eigenvalues, modes, participation \\
+TS & $x_{n+1},y_{n+1}$ ทุก step & implicit integration + nonlinear KCL correction & atomic transactions & trajectories, event logs \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+ดังนั้น chain ที่ถูกต้องคือ
+\begin{equation}
+\text{PF}\longrightarrow(V_0,P_0,Q_0)
+\longrightarrow\text{equilibrium }(x_0,y_0)
+\longrightarrow\begin{cases}\text{SSSA: linearise},\\\text{TS: nonlinear integrate}.\end{cases}
+\end{equation}
+ห้ามสร้าง report-only GFL $A$ ที่ไม่ได้มาจาก RHS/current injection เดียวกับ TS
+
 \section{ผลลัพธ์ที่ต้องสร้างหลัง Phase 4--5}
 
 \begin{table}[H]\centering
@@ -865,17 +1091,17 @@ hardening ถูกส่งมอบแล้ว targeted suites รายง�
 commit \code{80568cf} รายงาน 1024 passed, 0 failed, 4 incomplete โดย incomplete
 ทั้งหมดเป็น external PGAz validation assumptions ข้อมูลนี้เป็น provenance จาก handoff
 ไม่ใช่การ rerun ใหม่เพื่อสร้างรายงานฉบับนี้ และไม่ใช่หลักฐาน verification ของ
-GFL--RMS6/RMS11 ที่เสนอในรายงานฉบับนี้
+GFL--RMS10 ที่เสนอในรายงานฉบับนี้
 
 \section{ข้อจำกัดและงานถัดไป}
 
 \begin{enumerate}
 \item GFL WECC ปัจจุบันมี dynamic states จริง แต่ไม่มี explicit PLL state
 \item Fu model ใช้อธิบาย linear port behavior ได้ แต่ใช้แทน nonlinear PF/TS model ไม่ได้
-\item source set ใหม่ปิด core equation gap สำหรับ GFL--RMS6 ในระดับ \designonly{}
+\item source set ใหม่ปิด core equation gap สำหรับ GFL--RMS10 ในระดับ \designonly{}
 แต่ low-voltage recovery, parameter profile และ positive-sequence limiter semantics
 ยังต้อง freeze ก่อน production mutation
-\item Phase 4 ต้องสร้าง GFL--RMS6 ใหม่เป็น opt-in model โดยไม่ mutate WECC semantics
+\item Phase 4 ต้องสร้าง GFL--RMS10 ใหม่เป็น opt-in model โดยไม่ mutate WECC semantics
 \item Phase 5 จึงเชื่อม model เดียวกันเข้าสู่ equilibrium, SSSA และ TS
 \item หลัง final gates ผ่าน scripts ต้องสร้าง tables/figures โดยอัตโนมัติและเติมส่วนผลลัพธ์
 ของรายงานนี้โดยไม่พิมพ์ตัวเลขด้วยมือ
@@ -884,10 +1110,10 @@ GFL--RMS6/RMS11 ที่เสนอในรายงานฉบับนี�
 \section{สรุป}
 
 โครงรายงานและสมการที่ตรวจสอบย้อนกลับได้สำหรับ GFM REGFM\_B1, GFL WECC,
-GFL--RMS6/RMS11 ที่เสนอ, PF/equilibrium, full-state SSSA และ TS ถูกจัดวางแล้ว
+GFL--RMS10 ที่เสนอ, PF/equilibrium, full-state SSSA และ TS ถูกจัดวางแล้ว
 ในระดับเดียวกับรายงาน Padiyar ชุดตำรา Yazdani, Teodorescu และ Bacha ทำให้สามารถ
 ระบุ state order และ nonlinear ODE ของ PLL-resolved GFL ได้โดยไม่แต่ง $A$ matrix
-อย่างไรก็ตาม GFL--RMS6/RMS11 ยังเป็น mathematical design ไม่ใช่ production result
+อย่างไรก็ตาม GFL--RMS10 ยังเป็น mathematical design ไม่ใช่ production result
 จนกว่า implementation และ Phase 4--5 gates จะผ่าน จึงยังไม่มีการกล่าวอ้าง numerical
 GFL PLL mode หรือผล PF/SSSA/TS ของโมเดลใหม่
 

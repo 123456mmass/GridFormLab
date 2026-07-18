@@ -42,7 +42,7 @@ numbers below are the reference values used in tests and provenance.
 | 12 | `L` | L on inverter Z_base/ω_b | pu | SI 100 µH (Ex.8.2) | inverter pu | A Ex.8.2 L=100µH; ω_b·L is the pu coupling reactance | SOURCE_DEFINED (A Ex.8.2); base-converted at construction |
 | 13 | `Imax` | 1.20 | pu | inverter pu | inverter pu | A p.371 footnote "saturation 10-20% higher than rated" | SOURCE_DEFINED (A p.371 footnote) |
 | 14 | `Vdc0` | 1.0 | pu (AC base) | SI 1250 V (Ex.8.2) | inverter pu (AC base; /2 absorbed) | A Ex.8.2 + Appendix B Table B.2 | SOURCE_DEFINED (A Ex.8.2 + App.B) |
-| 15 | `m_max` | 1.10 | pu | pu | pu | PROJECT_DERIVED 10% overmodulation headroom; A eq 8.47-8.48 | PROJECT_DERIVED |
+| 15 | `m_max` | 1.30 | pu | pu | pu | PROJECT_DERIVED 30% overmodulation headroom (clamp inactive in normal op); A eq 8.47-8.48 | PROJECT_DERIVED |
 | 16 | `V_valid_min` | 0.50 | pu | system pu | system pu | CASE_DEFINED validity threshold (IEEE14 normal ~0.95-1.06 pu) | CASE_DEFINED |
 | 17 | `V_div_min` | 0.10 | pu | device pu | device pu | CASE_DEFINED division floor (v_d²+v_q² threshold) | CASE_DEFINED |
 | 18 | `aw_tol` | 1e-6 | scaled residual | — | — | NUMERICAL_METHOD anti-windup tolerance | NUMERICAL_METHOD |

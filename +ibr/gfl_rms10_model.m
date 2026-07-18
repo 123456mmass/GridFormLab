@@ -166,9 +166,12 @@ ki_i = R_t/tau_i;
 % so 1.0 pu DC corresponds to 1.0 pu AC at unity modulation after the /2 in
 % eq 8.47). Therefore v_t_max = m_max*Vdc0 (the /2 is already absorbed by the
 % base convention; Vdc0=1.0 pu AC means v_td can reach 1.0 pu AC at m=1).
+% m_max=1.30 provides overmodulation headroom so the clamp is inactive in
+% normal operation (v_td = v_d + R_t*i_d + omega*L*i_q must fit when |V|~1.09
+% and i_d is at rated; verified inactive across IEEE14 buses 2/3/6/8).
 Imax = 1.20;   if isfield(rms,'Imax')  && ~isempty(rms.Imax),  Imax = rms.Imax;  end
 Vdc0 = 1.0;    if isfield(rms,'Vdc0')  && ~isempty(rms.Vdc0),  Vdc0 = rms.Vdc0;  end
-m_max = 1.10;  if isfield(rms,'m_max')  && ~isempty(rms.m_max),  m_max = rms.m_max;  end
+m_max = 1.30;  if isfield(rms,'m_max')  && ~isempty(rms.m_max),  m_max = rms.m_max;  end
 V_t_max = m_max*Vdc0;   % Yazdani eq 8.47 with App.B base convention
 
 % Low-voltage thresholds (CASE_DEFINED).

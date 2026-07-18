@@ -107,8 +107,14 @@ r.provenance = struct( ...
 end
 
 % =========================================================================
-function r = ibr_entry(rid, bus, Mbase, initial_mode)
+function r = ibr_entry(rid, bus, Mbase, initial_mode, gfl_family)
 %IBR_ENTRY  Build one dual-mode IBR resource table entry (uniform provenance).
+%   Optional GFL_FAMILY (5th arg) selects the GFL branch at construction:
+%     '' | 'wecc_regca_reeca'  -> WECC 7-state (default, 20-state dual)
+%     'rms10'                  -> GFL-RMS10 10-state (23-state dual)
+%   The family flows through r.dynamic_params.gfl_family into the generic
+%   builder and dual_mode_ibr_model. Omitting the arg keeps WECC default.
+if nargin < 5, gfl_family = ''; end
 r = struct();
 r.resource_id = rid;
 r.bus_id = bus;
@@ -131,7 +137,11 @@ r.limits = struct( ...
 r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, 'default_P_MW', 0.0);
 % dynamic_params: Mbase is shared at the system/device boundary. WECC and
 % REGFM_B1 parameters otherwise remain owned by their source-model defaults.
+% An optional gfl_family selects the RMS10 opt-in branch (construction-time).
 r.dynamic_params = struct('Mbase', Mbase);
+if ~isempty(gfl_family)
+    r.dynamic_params.gfl_family = gfl_family;
+end
 r.provenance = struct( ...
     'model', 'regfm_b1_dual', ...
     'source', 'WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM', ...

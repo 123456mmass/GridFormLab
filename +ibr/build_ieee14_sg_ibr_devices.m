@@ -34,14 +34,23 @@ end
 
 % --- Translate legacy signature into a scenario_opt -------------------------
 % device_modes applies to IBRs only (SG1 is always "synchronous" online here).
+% An optional device_modes(k).gfl_family ('rms10') selects the GFL-RMS10
+% branch for that IBR; it flows into the resource dynamic_params and on into
+% dual_mode_ibr_model. Omitting it keeps the WECC default.
 scenario_opt = struct();
 scenario_opt.dispatch = dispatch_MW;
 scenario_opt.initial_modes = device_modes;
+gfl_families = struct();
+for k = 1:numel(device_modes)
+    if isfield(device_modes(k),'gfl_family') && ~isempty(device_modes(k).gfl_family)
+        gfl_families.(device_modes(k).device_id) = char(device_modes(k).gfl_family);
+    end
+end
 
 % --- Build the IEEE14 resource table via the scenario profile ---------------
 % The profile confines IEEE14 IDs/buses; resource_table validates + freezes.
 [resources, ~] = stability.resource_table(case_data, ...
-    ieee14_resource_spec(), scenario_opt);
+    ieee14_resource_spec(gfl_families), scenario_opt);
 
 % --- Dispatch the generic builder (uniform schema) --------------------------
 [devices, dev_meta] = stability.build_mixed_resource_devices( ...
@@ -49,10 +58,13 @@ scenario_opt.initial_modes = device_modes;
 end
 
 % =========================================================================
-function spec = ieee14_resource_spec()
+function spec = ieee14_resource_spec(gfl_families)
 %IEEE14_RESOURCE_SPEC  IEEE14 resource table (IDs/buses confined HERE ONLY).
 %   Mirrors +cases/scenario_ieee14_1sg_4ibr but as a local spec so this wrapper
 %   stays self-contained for legacy callers that pass their own case_data.
+%   Optional GFL_FAMILIES struct (fielded by IBR id) selects the RMS10 branch
+%   for that IBR via dynamic_params.gfl_family.
+if nargin < 1, gfl_families = struct(); end
 Sbase = 100.0;
 sg1 = struct( ...
     'resource_id','SG1','bus_id',1,'resource_type','sg','model_id','sg_emf6', ...
@@ -74,8 +86,18 @@ buses = [2,3,6,8];
 mbases = [140,100,100,100];
 spec = sg1;
 for k = 1:numel(ibr_ids)
+    rid = ibr_ids{k};
+    dyn_params = struct('Mbase',mbases(k));
+    details = sprintf('20-state superset (GFM13+GFL7); Mbase=%.0f MVA',mbases(k));
+    if isfield(gfl_families, rid)
+        fam = gfl_families.(rid);
+        dyn_params.gfl_family = fam;
+        if strcmpi(strtrim(fam),'rms10')
+            details = sprintf('23-state superset (GFM13+GFL-RMS10); Mbase=%.0f MVA',mbases(k));
+        end
+    end
     r = struct( ...
-        'resource_id',ibr_ids{k},'bus_id',buses(k),'resource_type','ibr', ...
+        'resource_id',rid,'bus_id',buses(k),'resource_type','ibr', ...
         'model_id','regfm_b1_dual', ...
         'supported_modes',["gfl","gfm","tripped"], ...
         'voltage_forming_modes',"gfm", ...
@@ -85,11 +107,11 @@ for k = 1:numel(ibr_ids)
         'limits',struct('ImaxSS',1.0,'ImaxF',1.5,'Pmax_MW',mbases(k), ...
         'Qmax_MVAr',mbases(k),'Emax',1.2,'Emin',0.8), ...
         'ratings',struct('Mbase',mbases(k),'Sbase',Sbase,'default_P_MW',0.0), ...
-        'dynamic_params',struct('Mbase',mbases(k)), ...
+        'dynamic_params',dyn_params, ...
         'provenance',struct('model','regfm_b1_dual', ...
         'source','WECC REGC_A/REEC_A GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM', ...
         'classification','Mbase=CASE_DEFINED nameplate proxy; controllers=SOURCE_DEFINED/SOURCE_MAPPED', ...
-        'details',sprintf('20-state superset (GFM13+GFL7); Mbase=%.0f MVA',mbases(k))));
+        'details',details));
     spec(end+1) = r; %#ok<AGROW>
 end
 end

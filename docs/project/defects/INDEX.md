@@ -10,6 +10,8 @@ whole directory into agent context.
 | IBR-2026-07-18-01 | RESOLVED | IBR Section H reporting + stability modal analysis | struct() constructor collapsed cell-of-structs to a 1x1 struct; parentheses-on-cell indexing in modal_analysis mis-read participation status | [Cell-array collapse and indexing](2026-07-18-cell-array-collapse-and-indexing.md) |
 | UI-2026-07-19-01 | RESOLVED | Analysis Wizard | Analysis could be highlighted but footer was missing; initial case was not committed; TS/IBR Events page was skipped | [Wizard footer, selection, and navigation](2026-07-19-wizard-footer-selection-navigation.md) |
 | UI-2026-07-19-02 | RESOLVED_TEST_CONTRACT | IBR launcher defaults | Tests encoded the retired implicit four-WECC launcher default and required an out-of-scope RMS10 fault to converge | [IBR launcher default-profile test contract](2026-07-19-ibr-launcher-default-profile-test-contract.md) |
+| IBR-2026-07-19-02 | RESOLVED | RMS10 reduced equilibrium initialization | Registered `ibr_dual_mode_rms10` devices were rejected by a legacy-only device-identity gate although they implement the required equilibrium ABI | [RMS10 reduced initializer device type](2026-07-19-rms10-reduced-initializer-device-type.md) |
+| IBR-2026-07-19-03 | RESOLVED_PENDING_FINAL_REGRESSION | GFL-RMS10 balanced-fault TS | Runtime `V_valid_min` gate blocked the sourced FRT domain; fault-on rolled back near 0.377 pu | [RMS10 runtime low-voltage domain](2026-07-19-rms10-runtime-low-voltage-domain.md) |
 
 New records use `YYYY-MM-DD-short-slug.md` and contain: status, observed
 symptom, deterministic reproduction, affected tree/environment, evidence-backed

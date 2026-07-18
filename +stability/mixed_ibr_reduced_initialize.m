@@ -69,7 +69,14 @@ if isempty(online_idx)
     init.failure_reason = 'The reduced initializer requires online IBR devices.';
     return;
 end
-if any(~strcmpi(string({dae.devices(online_idx).device_type}), "ibr_dual_mode"))
+% Both registered dual-mode layouts implement the same equilibrium ABI.
+% The RMS10 family differs only in its GFL branch/state count; rejecting its
+% device_type here made the otherwise generic SG-off initializer silently
+% legacy-only.  Keep the allowlist explicit so an unknown future device still
+% fails closed rather than entering this initializer by name similarity.
+online_types = lower(string({dae.devices(online_idx).device_type}));
+supported_dual_types = ["ibr_dual_mode","ibr_dual_mode_rms10"];
+if any(~ismember(online_types, supported_dual_types))
     % This helper is deliberately not a fallback for an online SG or an
     % unknown future device. The caller retains its ordinary warm start.
     init.failure_id = 'mixed_ibr_reduced_initialize:notPureIBRIsland';

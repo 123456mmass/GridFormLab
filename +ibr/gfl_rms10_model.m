@@ -75,12 +75,15 @@ function dev = gfl_rms10_model(device_id, bus_id, bus_position, ...
 %       I_net = (I_dq_inv * exp(1i*delta_PLL)) / kappa   (system base, xy frame)
 %       P = real(V_bus*conj(I_net)); Q = imag(V_bus*conj(I_net))
 %
-%   Low-voltage policy (FROZEN, fail-closed, NO PLL freeze):
-%     Before evaluating PLL/PQ-inversion/current-control, require:
-%       |V| >= V_valid_min  AND  D_V = v_d^2 + v_q^2 >= V_div_min^2
-%     If either fails: error ibr:gfl_rms10_model:voltageOutsideValidityDomain
-%       or ibr:gfl_rms10_model:lowVoltagePowerInversion. No freeze, no division
-%       floor, no stale states, no REGFM_B1 copying.
+%   Balanced positive-sequence LVRT policy (FROZEN; NO PLL freeze):
+%     V_valid_min applies to equilibrium initialization. During a balanced
+%     positive-sequence fault, the SRF-PLL continues while |V|>=V_div_min;
+%     the current command switches below Vdip to voltage-dependent active
+%     current and reactive-current priority (Teodorescu Ch.7 pp.162-163,
+%     mapped to the WECC REGC_A/REEC_A example parameters). At or below the
+%     division floor the model fails closed with
+%     ibr:gfl_rms10_model:lowVoltagePowerInversion. Unbalanced-fault and
+%     zero-voltage behavior remain outside this positive-sequence slice.
 %
 %   Classification: see IEEE14_IBR_GFL_RMS10_PROVENANCE.md (6 SOURCE_DEFINED +
 %   4 PROJECT_DERIVED states) and IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md.
@@ -178,6 +181,21 @@ V_t_max = m_max*Vdc0;   % Yazdani eq 8.47 with App.B base convention
 V_valid_min = 0.50;  if isfield(rms,'V_valid_min')  && ~isempty(rms.V_valid_min),  V_valid_min = rms.V_valid_min;  end
 V_div_min   = 0.10;  if isfield(rms,'V_div_min')    && ~isempty(rms.V_div_min),    V_div_min   = rms.V_div_min;    end
 
+% Balanced positive-sequence LVRT mapping.  Vdip/Kqv/deadband/current limits
+% are the official WECC REGC_A/REEC_A conversion-example values already
+% source-frozen in wecc_regca_reeca_model.m.  The voltage-dependent active
+% current and reactive-priority policy follow Teodorescu Ch.7 pp.162-163.
+Vdip=0.90;  Kqv=2.0;  dbd=0.10;  Iqh1=1.0;
+Zerox=0.40; Brkpt=0.90; Lvpl1=1.22;
+if isfield(rms,'Vdip')&&~isempty(rms.Vdip), Vdip=rms.Vdip; end
+if isfield(rms,'Kqv')&&~isempty(rms.Kqv), Kqv=rms.Kqv; end
+if isfield(rms,'lvrt_deadband')&&~isempty(rms.lvrt_deadband), dbd=rms.lvrt_deadband; end
+if isfield(rms,'Iqh1')&&~isempty(rms.Iqh1), Iqh1=rms.Iqh1; end
+if isfield(rms,'Zerox')&&~isempty(rms.Zerox), Zerox=rms.Zerox; end
+if isfield(rms,'Brkpt')&&~isempty(rms.Brkpt), Brkpt=rms.Brkpt; end
+if isfield(rms,'Lvpl1')&&~isempty(rms.Lvpl1), Lvpl1=rms.Lvpl1; end
+validate_lvrt_params(Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1,V_div_min);
+
 % Anti-windup tolerance (NUMERICAL_METHOD).
 aw_tol = 1.0e-6;  if isfield(rms,'aw_tol')  && ~isempty(rms.aw_tol),  aw_tol = rms.aw_tol;  end
 
@@ -213,12 +231,13 @@ bp = bus_position;
 
 % --- Closures (generic ABI; same signature as WECC + REGFM_B1) -------------
 f = @(t,x,y,u,ec) model_f(x,y,u,bp,kappa,omega_b,kp_PLL,ki_PLL,T_P,T_Q, ...
-    kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,V_valid_min,V_div_min,aw_tol,Vdc0);
+    kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,V_valid_min,V_div_min,aw_tol,Vdc0, ...
+    V0_mag,Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1);
 current_injection = @(t,x,y,u,ec) model_current(x,y,bp,kappa,V_valid_min,V_div_min);
 electrical_power  = @(t,x,y,u,ec) model_power(x,y,bp,kappa,V_valid_min,V_div_min);
 reconstruct = @(t,x,y,u,ec) model_reconstruct(x,y,u,bp,kappa,omega_b,kp_PLL,ki_PLL, ...
     T_P,T_Q,kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,Vdc0,m_max, ...
-    V_valid_min,V_div_min,aw_tol,Sbase,Mbase);
+    V_valid_min,V_div_min,aw_tol,Sbase,Mbase,V0_mag,Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1);
 equilibrium_initialize = @(V,P,Q,ec) initialize_equilibrium(V,P,Q,kappa, ...
     V_valid_min,Imax);
 
@@ -252,15 +271,17 @@ dev.provenance = struct( ...
         'SOURCE_DEFINED_NONLINEAR_CORE_CLOSED=YES 6of10 states; FULL_SOURCE_DEFINED_GFL_MODEL=NO; APPROVED_PROJECT_DERIVED_RMS10_SLICE=YES', ...
     'state_register','see docs/project/IEEE14_IBR_GFL_RMS10_PROVENANCE.md', ...
     'parameter_manifest','see docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md', ...
-    'control_option','SRF-PLL + dq current control + P/Q outer loops; P-priority current limit', ...
+    'control_option','SRF-PLL + dq current control + P/Q outer loops; normal P-priority; balanced-fault LVRT Q-priority', ...
     'pu_base_contract','internal=inverter base; external=system base; kappa=Sbase/Mbase', ...
-    'low_voltage_policy','FAIL-CLOSED (no PLL freeze); valid domain |V|>=V_valid_min AND D_V>=V_div_min^2', ...
+    'low_voltage_policy','BALANCED_POSITIVE_SEQUENCE_LVRT for V_div_min<=|V|<Vdip; zero/near-zero and unbalanced faults remain fail-closed', ...
     'params',struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',omega_b, ...
         'kp_PLL',kp_PLL,'ki_PLL',ki_PLL,'ts_pll',ts_pll, ...
         'T_P',T_P,'T_Q',T_Q,'kp_P',kp_P,'ki_P',ki_P,'kp_Q',kp_Q,'ki_Q',ki_Q, ...
         'kp_i',kp_i,'ki_i',ki_i,'tau_i',tau_i, ...
         'R_t',R_t,'L',L,'Imax',Imax,'Vdc0',Vdc0,'m_max',m_max, ...
         'V_t_max',V_t_max,'V_valid_min',V_valid_min,'V_div_min',V_div_min, ...
+        'Vdip',Vdip,'Kqv',Kqv,'lvrt_deadband',dbd,'Iqh1',Iqh1, ...
+        'Zerox',Zerox,'Brkpt',Brkpt,'Lvpl1',Lvpl1, ...
         'aw_tol',aw_tol,'kappa',kappa), ...
     'readiness','SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES');
 end
@@ -273,16 +294,19 @@ end
 
 % =========================================================================
 function dx = model_f(x,y,u,bp,kappa,omega_b,kp_PLL,ki_PLL,T_P,T_Q, ...
-    kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,V_valid_min,V_div_min,aw_tol,Vdc0)
+    kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,V_valid_min,V_div_min,aw_tol,Vdc0, ...
+    Vref0,Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1)
 check_state_input(x,u);
 V = bus_voltage(y,bp);
 Vmag = abs(V);
 
-% --- Low-voltage fail-closed gate (NO PLL freeze) ---------------------------
-if Vmag < V_valid_min
-    error('ibr:gfl_rms10_model:voltageOutsideValidityDomain', ...
-        '|V|=%.6g < V_valid_min=%.6g; fail-closed (no PLL freeze, no stale states).', ...
-        Vmag, V_valid_min);
+% Runtime LVRT is valid for balanced positive-sequence voltage down to the
+% frozen division floor. Equilibrium initialization still requires
+% V_valid_min. No PLL freeze or stale-state continuation is introduced.
+if Vmag < V_div_min
+    error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
+        '|V|=%.6g < V_div_min=%.6g; balanced LVRT cannot define the PLL frame.', ...
+        Vmag,V_div_min);
 end
 
 delta_PLL = x(1);
@@ -332,11 +356,15 @@ d_Q_f = (Q_inv_meas - Q_f)/T_Q;
 % --- Outer loops (user §5.4; feedforward P_ref/|V| makes zero eq exact) ---
 e_P = P_ref_inv - P_f;
 e_Q = Q_ref_inv - Q_f;
-i_d_ref_raw = kp_P*e_P + ki_P*xi_P + P_ref_inv/v_d;
-i_q_ref_raw = -(kp_Q*e_Q + ki_Q*xi_Q + Q_ref_inv/v_d);
+i_d_ff=(v_d*P_ref_inv+v_q*Q_ref_inv)/D_V;
+i_q_ff=(v_q*P_ref_inv-v_d*Q_ref_inv)/D_V;
+i_d_ref_raw = kp_P*e_P + ki_P*xi_P + i_d_ff;
+i_q_ref_raw = -(kp_Q*e_Q + ki_Q*xi_Q) + i_q_ff;
 
 % --- Current-priority limit (user §5.5; P-priority default) ---------------
-[i_d_ref, i_q_ref, limiter_active] = current_priority_limit(i_d_ref_raw, i_q_ref_raw, Imax);
+[i_d_ref,i_q_ref,limiter_active,~] = lvrt_or_normal_limit( ...
+    i_d_ref_raw,i_q_ref_raw,Vmag,Vref0,Vdip,Kqv,dbd,Iqh1, ...
+    Zerox,Brkpt,Lvpl1,Imax);
 
 % P/Q limiter P/Q outputs at the limit (for anti-windup directional test).
 P_lim = v_d*i_d_ref + v_q*i_q_ref;
@@ -392,9 +420,10 @@ if numel(x) ~= 10 || any(~isfinite(x))
 end
 V = bus_voltage(y,bp);
 Vmag = abs(V);
-if Vmag < V_valid_min
-    error('ibr:gfl_rms10_model:voltageOutsideValidityDomain', ...
-        '|V|=%.6g < V_valid_min=%.6g; current injection fail-closed.', Vmag, V_valid_min);
+if Vmag < V_div_min
+    error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
+        '|V|=%.6g < V_div_min=%.6g; current injection outside balanced-LVRT domain.', ...
+        Vmag,V_div_min);
 end
 delta_PLL = x(1);
 i_d = x(9);
@@ -421,16 +450,26 @@ end
 % =========================================================================
 function out = model_reconstruct(x,y,u,bp,kappa,omega_b,kp_PLL,ki_PLL, ...
     T_P,T_Q,kp_P,ki_P,kp_Q,ki_Q,kp_i,ki_i,R_t,L,Imax,V_t_max,Vdc0,m_max, ...
-    V_valid_min,V_div_min,aw_tol,Sbase,Mbase)
+    V_valid_min,V_div_min,aw_tol,Sbase,Mbase,Vref0,Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1)
 check_state_input(x,u);
 V = bus_voltage(y,bp);
 Vmag = abs(V);
+if Vmag < V_div_min
+    error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
+        '|V|=%.6g < V_div_min=%.6g; reconstruction outside balanced-LVRT domain.', ...
+        Vmag,V_div_min);
+end
 delta_PLL = x(1);  xi_PLL = x(2);
 P_f = x(3);  Q_f = x(4);  xi_P = x(5);  xi_Q = x(6);
 xi_id = x(7);  xi_iq = x(8);  i_d = x(9);  i_q = x(10);
 Vdq = V * exp(-1i*delta_PLL);
 v_d =  real(Vdq);  v_q = -imag(Vdq);
 D_V = v_d^2 + v_q^2;
+if D_V < V_div_min^2
+    error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
+        'D_V=%.6g < V_div_min^2=%.6g; reconstruction fail-closed.', ...
+        D_V,V_div_min^2);
+end
 I_dq_inv = complex(i_d, i_q);
 I = (I_dq_inv * exp(1i*delta_PLL)) / kappa;
 S = V*conj(I);
@@ -438,9 +477,13 @@ P_ref_inv = kappa*u(1);
 Q_ref_inv = kappa*u(2);
 e_P = P_ref_inv - P_f;
 e_Q = Q_ref_inv - Q_f;
-i_d_ref_raw = kp_P*e_P + ki_P*xi_P + P_ref_inv/v_d;
-i_q_ref_raw = -(kp_Q*e_Q + ki_Q*xi_Q + Q_ref_inv/v_d);
-[i_d_ref, i_q_ref, limiter_active] = current_priority_limit(i_d_ref_raw, i_q_ref_raw, Imax);
+i_d_ff=(v_d*P_ref_inv+v_q*Q_ref_inv)/D_V;
+i_q_ff=(v_q*P_ref_inv-v_d*Q_ref_inv)/D_V;
+i_d_ref_raw = kp_P*e_P + ki_P*xi_P + i_d_ff;
+i_q_ref_raw = -(kp_Q*e_Q + ki_Q*xi_Q) + i_q_ff;
+[i_d_ref,i_q_ref,limiter_active,lvrt_active] = lvrt_or_normal_limit( ...
+    i_d_ref_raw,i_q_ref_raw,Vmag,Vref0,Vdip,Kqv,dbd,Iqh1, ...
+    Zerox,Brkpt,Lvpl1,Imax);
 e_d = i_d_ref - i_d;
 e_q = i_q_ref - i_q;
 omega_PLL_pu = 1.0 + (kp_PLL*v_q + ki_PLL*xi_PLL);
@@ -463,11 +506,13 @@ out = struct( ...
     'i_d_ref_raw', i_d_ref_raw, 'i_q_ref_raw', i_q_ref_raw, ...
     'Imax', Imax, 'Imax_inv', Imax, ...
     'Iabs_inv', kappa*abs(I), 'limiter_active', limiter_active, ...
+    'lvrt_active',lvrt_active,'lvrt_profile','BALANCED_POSITIVE_SEQUENCE', ...
     'voltage_clamped', voltage_clamped, ...
     'V_t_max', V_t_max, 'Vdc0', Vdc0, 'm_max', m_max, ...
     'omega_PLL', omega_PLL, 'D_V', D_V, ...
     'V_valid_min', V_valid_min, 'V_div_min', V_div_min, 'aw_tol', aw_tol, ...
-    'in_valid_domain', Vmag >= V_valid_min && D_V >= V_div_min^2);
+    'in_valid_domain', D_V >= V_div_min^2, ...
+    'normal_equilibrium_domain',Vmag>=V_valid_min);
 end
 
 % =========================================================================
@@ -515,6 +560,37 @@ else
     active = false;
     i_d_ref = i_d_raw;
     i_q_ref = i_q_raw;
+end
+end
+
+function [id,iq,active,lvrt] = lvrt_or_normal_limit(id_raw,iq_raw,V,Vref, ...
+        Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1,Imax)
+lvrt=V<Vdip;
+if ~lvrt
+    [id,iq,active]=current_priority_limit(id_raw,iq_raw,Imax);
+    return;
+end
+% Teodorescu Ch.7: voltage-triggered positive-sequence reactive-current
+% support with reactive-current priority. Sign is converted to this model's
+% generator convention Q=v_q*i_d-v_d*i_q (positive injection => negative iq).
+verr=max(Vref-V-dbd,0);
+iq_support=min(Kqv*verr,Iqh1);
+iq_cmd=iq_raw-iq_support;
+iq=min(max(iq_cmd,-Imax),Imax);
+id_room=sqrt(max(Imax^2-iq^2,0));
+id_lvpl=piecewise_lvpl(V,Zerox,Brkpt,Lvpl1);
+id_cap=min(id_room,id_lvpl);
+id=min(max(id_raw,-id_cap),id_cap);
+active=hypot(id-id_raw,iq-iq_raw)>64*eps(max(1,Imax));
+end
+
+function value=piecewise_lvpl(V,zero_x,breakpoint,lvpl1)
+if V<=zero_x
+    value=0;
+elseif V>=breakpoint
+    value=lvpl1;
+else
+    value=lvpl1*(V-zero_x)/(breakpoint-zero_x);
 end
 end
 
@@ -607,6 +683,7 @@ for k = 1:numel(names)
             'Parameter %s must be a finite scalar.', names{k});
     end
 end
+
 positive = {'Sbase','Mbase','fbase','omega_b','T_P','T_Q','R_t','L','Imax', ...
     'Vdc0','m_max','V_valid_min','V_div_min','kp_PLL','ki_PLL','kp_i','ki_i'};
 pvals = struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',omega_b, ...
@@ -617,6 +694,30 @@ for k = 1:numel(positive)
     if pvals.(positive{k}) <= 0
         error('ibr:gfl_rms10_model:badParam', ...
             'Parameter %s must be positive.', positive{k});
+    end
+end
+end
+
+% =========================================================================
+function validate_lvrt_params(Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1,V_div_min)
+names = {'Vdip','Kqv','lvrt_deadband','Iqh1','Zerox','Brkpt','Lvpl1','V_div_min'};
+vals = [Vdip,Kqv,dbd,Iqh1,Zerox,Brkpt,Lvpl1,V_div_min];
+if any(~isfinite(vals)) || any(~isreal(vals))
+    error('ibr:gfl_rms10_model:badLvrtParam', ...
+        'All balanced-LVRT parameters must be finite real scalars.');
+end
+if Vdip <= V_div_min || Vdip > 1.5 || Kqv < 0 || dbd < 0 || ...
+        Iqh1 <= 0 || Zerox < V_div_min || Brkpt <= Zerox || ...
+        Lvpl1 <= 0
+    error('ibr:gfl_rms10_model:badLvrtParam', ...
+        ['Invalid balanced-LVRT parameter ordering/value. Require ' ...
+         'V_div_min<Vdip<=1.5, Kqv>=0, deadband>=0, Iqh1>0, ' ...
+         'V_div_min<=Zerox<Brkpt, and Lvpl1>0.']);
+end
+for k = 1:numel(names)
+    if ~isscalar(vals(k))
+        error('ibr:gfl_rms10_model:badLvrtParam', ...
+            'Parameter %s must be scalar.',names{k});
     end
 end
 end

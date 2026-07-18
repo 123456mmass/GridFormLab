@@ -1,0 +1,3 @@
+event_index,type,requested_time_s,actual_time_s,applied,pre_kcl_norm,right_kcl_norm
+1,fault_on,NaN,NaN,1,5.21804821573824e-15,8.55819568101879e-07
+2,fault_clear,NaN,NaN,1,2.22044604925031e-15,7.66337304725084e-09

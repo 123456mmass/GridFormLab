@@ -77,17 +77,15 @@ switch analysis
         % The launcher is bound to RMS10-capable containers. The initial
         % GFM/GFL mix remains editable; Profile B (1 GFM + 3 GFL) is default.
         opt.ibr_profile = 'rms10_profile_b';
-        opt.initial_gfm_count = 1;
-        opt.initial_gfl_count = 3;
-        opt.initial_gfm_indices = 2;
-        opt.initial_reference_resource_index = 2;
-        sub_ids = {'pf','sssa','ts','full'};
+        sub_ids = {'pf','pf_compare','sssa','sssa_compare','ts','full'};
         sub_labels = { ...
             'Power Flow - network operating point', ...
+            'Power Flow Comparison - SG pre-trip / tripped / returned', ...
             'Small-Signal Stability - mixed SG/GFM/GFL full-state model', ...
+            'SSSA Comparison - SG pre-trip / tripped / returned', ...
             'Time-Domain Simulation (TS) - mixed-resource time simulation', ...
             'Full Analysis - PF + equilibrium + SSSA + TS'};
-        current = 3;
+        current = 5;
         if isfield(opt, 'ibr_analysis')
             found = find(strcmp(sub_ids, lower(char(opt.ibr_analysis))), 1);
             if ~isempty(found), current = found; end
@@ -96,6 +94,33 @@ switch analysis
             sub_labels, sub_ids, current, [560 180]);
         if isempty(selected), result = []; return; end
         opt.ibr_analysis = selected;
+        if strcmp(selected,'full')
+            link_choice=choose_one('Full Analysis IBR mode configuration', ...
+                {'Use one GFM/GFL device map for PF, SSSA and TS', ...
+                 'Configure PF, SSSA and TS device maps separately'}, ...
+                {'linked','separate'},1,[570 120]);
+            if isempty(link_choice), result=[]; return; end
+            if strcmp(link_choice,'linked')
+                [opt,mode_ok]=choose_ibr_device_modes(opt,'PF / SSSA / TS');
+                if ~mode_ok, result=[]; return; end
+                cfg=mode_config(opt);
+                opt.ibr_method_modes=struct('linked',true,'pf',cfg,'sssa',cfg,'ts',cfg);
+            else
+                cfgs=struct('linked',false);
+                names={'pf','sssa','ts'};
+                working=opt;
+                for km=1:numel(names)
+                    [working,mode_ok]=choose_ibr_device_modes(working,upper(names{km}));
+                    if ~mode_ok, result=[]; return; end
+                    cfgs.(names{km})=mode_config(working);
+                end
+                opt.ibr_method_modes=cfgs;
+                opt=apply_mode_config(opt,cfgs.ts);
+            end
+        else
+            [opt,mode_ok]=choose_ibr_device_modes(opt,upper(strrep(selected,'_',' ')));
+            if ~mode_ok, result=[]; return; end
+        end
         case_data = entry.loader();
         if strcmp(selected, 'ts')
             % The mixed-resource TS uses the same canonical fixed-step
@@ -105,34 +130,57 @@ switch analysis
             opt.integrator = 'trapezoidal';
             event_mode = choose_one('IBR Time-Domain Simulation events', ...
                 {'No events - normal event-free simulation', ...
-                 'Configure fault / SG trip / reclose schedule'}, ...
-                {'off','on'}, 1, [560 120]);
+                 'Fault only - fail-closed diagnostic (RMS10 LVRT not ready)', ...
+                 'SG trip/reclose only - no network fault', ...
+                 'Combined - fault + SG trip/reclose'}, ...
+                {'off','fault_only','sg_cycle','combined'}, 1, [560 150]);
             if isempty(event_mode), result = []; return; end
-            if strcmp(event_mode, 'on')
-                [opt, accepted] = wizard.ibr_settings_dialog(case_data, opt, entry.label);
+            if ~strcmp(event_mode, 'off')
+                opt.ibr_events.event_profile = event_mode;
+                [opt, accepted] = wizard.ibr_settings_dialog( ...
+                    case_data, opt, entry.label, event_mode);
             else
                 opt.ibr_events = struct('enabled', false);
                 [opt, accepted] = edit_options(opt, ...
                     sprintf('%s - Time-Domain Simulation (event-free)', entry.label), ...
                     {'ibr_events','ibr_analysis','ibr_profile', ...
-                     'initial_gfl_count', ...
                      'initial_gfm_indices','initial_reference_resource_index', ...
                      'automatic_gfm_switching'});
             end
         elseif strcmp(selected, 'full')
-            [opt, accepted] = wizard.ibr_settings_dialog(case_data, opt, entry.label);
+            event_mode = choose_one('IBR Full Analysis events', ...
+                {'No events - PF + equilibrium + SSSA + event-free TS (default)', ...
+                 'Fault only - fail-closed diagnostic (RMS10 LVRT not ready)', ...
+                 'SG trip/reclose only - no network fault', ...
+                 'Combined - fault + SG trip/reclose'}, ...
+                {'off','fault_only','sg_cycle','combined'},1,[610 150]);
+            if isempty(event_mode), result=[]; return; end
+            if strcmp(event_mode,'off')
+                opt.ibr_events=struct('enabled',false);
+                [opt,accepted]=edit_options(opt, ...
+                    sprintf('%s - Full Analysis (event-free)',entry.label), ...
+                    {'ibr_events','ibr_analysis','ibr_profile', ...
+                     'initial_gfm_indices', ...
+                     'initial_reference_resource_index','automatic_gfm_switching'});
+            else
+                opt.ibr_events.event_profile=event_mode;
+                [opt,accepted]=wizard.ibr_settings_dialog( ...
+                    case_data,opt,entry.label,event_mode);
+            end
         else
             % PF/SSSA have no event transaction.  Keep the compact editable
             % settings dialog and explicitly disable the nested event route.
             opt.ibr_events = struct('enabled', false);
+            comparison_name = upper(strrep(selected,'_',' '));
             [opt, accepted] = edit_options(opt, ...
-                sprintf('%s - %s', entry.label, upper(selected)), ...
-                {'ibr_events','initial_gfl_count','initial_gfm_indices', ...
+                sprintf('%s - %s', entry.label, comparison_name), ...
+                {'ibr_events','initial_gfm_indices', ...
                  'initial_reference_resource_index'});
         end
     otherwise
         error('solve_case:analysis', 'Unknown analysis %s.', analysis);
 end
+
 if ~accepted, result = []; return; end
 if strcmp(analysis, 'ibr')
     opt = wizard.normalize_ibr_mode_selection(opt);
@@ -166,6 +214,51 @@ if isfield(result, 'launcher') && isfield(result.launcher, 'log_file')
 end
 msgbox(sprintf('%s\n%s\n\nLog:\n%s', status, entry.label, log_file), ...
     'solve_case', 'modal');
+end
+
+function [opt,accepted]=choose_ibr_device_modes(opt,method_label)
+labels={'NONE - all four IBRs use GFL-RMS10', ...
+    'IBR2 @ Bus 2  -> GFM-13', ...
+    'IBR3 @ Bus 3  -> GFM-13', ...
+    'IBR6 @ Bus 6  -> GFM-13', ...
+    'IBR8 @ Bus 8  -> GFM-13'};
+eligible=2:5;
+initial=opt.initial_gfm_indices(:).';
+if isempty(initial), initial=1; end
+accepted=false;
+while true
+    [k,ok]=listdlg('PromptString',sprintf([ ...
+        '%s: select every device that shall operate as GFM.\n' ...
+        'Unselected devices operate as GFL-RMS10.'],method_label), ...
+        'SelectionMode','multiple','ListString',labels, ...
+        'InitialValue',initial,'ListSize',[470 180]);
+    if ~ok, return; end
+    if ismember(1,k) && numel(k)>1
+        errordlg('Select NONE alone, or select one or more IBR devices.','Invalid mode map','modal');
+        initial=k;
+        continue;
+    end
+    if isequal(k,1), idx=[]; else, idx=eligible(k(k>1)-1); end
+    opt.initial_gfm_count=numel(idx);
+    opt.initial_gfl_count=numel(eligible)-numel(idx);
+    opt.initial_gfm_indices=idx;
+    opt.initial_reference_resource_index=[];
+    opt=wizard.normalize_ibr_mode_selection(opt);
+    accepted=true;
+    return;
+end
+end
+
+function cfg=mode_config(opt)
+cfg=struct('initial_gfm_count',opt.initial_gfm_count, ...
+    'initial_gfl_count',opt.initial_gfl_count, ...
+    'initial_gfm_indices',opt.initial_gfm_indices, ...
+    'initial_reference_resource_index',opt.initial_reference_resource_index);
+end
+
+function opt=apply_mode_config(opt,cfg)
+names=fieldnames(cfg);
+for k=1:numel(names), opt.(names{k})=cfg.(names{k}); end
 end
 
 function value = choose_one(prompt, labels, ids, initial, list_size)

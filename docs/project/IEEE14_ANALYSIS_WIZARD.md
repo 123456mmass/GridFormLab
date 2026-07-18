@@ -26,9 +26,10 @@ The six-page wizard remains an explicit non-default UI, while its pure request,
 validation, dispatch, and result-adapter layers remain the shared backend.
 
 The IBR entry now has a second, compact analysis selector after the case is
-chosen: Power Flow, SSSA, Time-Domain Simulation (TS), or Full Analysis. These are
-orchestration products over the existing project-owned kernels; no independent
-SSSA A matrix, GFL-specific solver, or loaded solution was introduced.
+chosen: Power Flow, Power Flow Comparison, SSSA, SSSA Comparison,
+Time-Domain Simulation (TS), or Full Analysis. These are orchestration products
+over the existing project-owned kernels; no independent SSSA A matrix,
+GFL-specific solver, or loaded solution was introduced.
 
 ## Architecture
 
@@ -60,11 +61,12 @@ wizard UI and the programmatic path. No duplicate dispatch exists anywhere.
 | `pf`  | Power Flow                        | NOT_APPLICABLE   | no                   |
 | `sssa`| Small-Signal Stability           | NOT_APPLICABLE   | yes                  |
 | `ts`  | Time-Domain Simulation (TS)       | optional         | yes                  |
-| `ibr` | IBR mixed-resource family; submenu `pf/sssa/ts/full` | TS/full only | depends on submenu |
+| `ibr` | IBR mixed-resource family; submenu `pf/pf_compare/sssa/sssa_compare/ts/full` | TS/full only | depends on submenu |
 
 The stable public ID remains `ibr`; a separate `ibr_ts` ID is not introduced.
-The additive option `options.ibr_analysis` selects `pf`, `sssa`, `ts`, or
-`full`.  `ts` remains the schema-compatible time-domain product, while the
+The additive option `options.ibr_analysis` selects `pf`, `pf_compare`, `sssa`,
+`sssa_compare`, `ts`, or `full`.  `ts` remains the schema-compatible
+time-domain product, while the
 interactive compact launcher defaults the IEEE14 case to the approved RMS10
 Profile B. The user may change the GFM count; the UI reconciles explicit
 indices, the complementary GFL count, and the reference index.
@@ -75,7 +77,12 @@ The compact path is:
 
 ```
 IBR -> IEEE14 1-SG + 4-IBR
-    -> Power Flow | SSSA | Time-Domain Simulation (TS) | Full Analysis
+    -> Power Flow
+     | Power Flow Comparison - SG pre-trip / tripped / returned
+     | SSSA
+     | SSSA Comparison - SG pre-trip / tripped / returned
+     | Time-Domain Simulation (TS)
+     | Full Analysis
 ```
 
 The default production launcher profile is `rms10_profile_b`: SG1 online, IBR2 in
@@ -97,6 +104,31 @@ Results are explicit rather than inferred from warm-start counters:
   products: device angle, frequency, power/current, and bus voltage.
 - Full publishes `result.pf`, `result.equilibrium`, `result.sssa`, and
   `result.ts`; SSSA and TS share the exact same equilibrium arrays.
+
+The two comparison products are additive and leave the original products
+unchanged. They independently solve three stationary operating points with the
+same device equations and generic composite equilibrium/SSSA kernels:
+
+1. `PRE_TRIP`: SG1 online; the selected GFM/GFL mix is retained.
+2. `SG_TRIPPED`: SG1 offline; the four RMS10 IBRs form the island in GFM mode
+   using the case-defined post-trip dispatch.
+3. `SG_RETURNED`: SG1 is online and is the reference again; the post-trip IBR
+   dispatch and GFM modes are retained.
+
+`SG_RETURNED` is a solved post-return operating point, not a simulated breaker
+transaction or physical reclose-acceptance claim. The comparison does not
+simulate fault-on/fault-clear intervals. For each point it publishes the
+resource/device/bus mapping, operating mode, online status, active-state order,
+P, Q, terminal voltage, and residuals. The grouped comparison figure contains
+three panels (P in MW, Q in MVAr, and terminal voltage in pu), with series named
+by stable resource and bus identity such as `SG1@Bus1` and `IBR2@Bus2`.
+
+SSSA comparison publishes every point's full spectrum and state inventory.
+Because the active dimensions and physical modes change between the three
+points, spectrum rows use independent deterministic display indices and are
+explicitly marked `NOT_MODE_MATCHED`; equal row numbers across points do not
+assert modal continuation. The observed active dimensions for Profile B are
+48 (pre-trip), 52 (SG tripped), and 57 (SG returned).
 
 PF and SSSA reject configured events.  RMS10 low-voltage ride-through remains
 outside the approved first slice, so an unsupported fault fails closed rather

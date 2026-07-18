@@ -236,6 +236,27 @@ catch me
     return;
 end
 
+% SG-on all-GFL uses P/Q-controlled buses, whereas the original network PF
+% warm start retains the source PV labels.  Seed the coupled Newton with a
+% project-owned mode-aware PQ PF and exact GFL branch states.  This is only an
+% initializer; the full DAE/KCL residual below remains the acceptance test.
+sg_on_gfl_init = struct('applicable',false,'converged',false, ...
+    'failure_id','','failure_reason','');
+if use_sg_slack
+    sg_on_gfl_init = stability.mixed_ibr_sg_on_gfl_initialize( ...
+        case_data, dae, eq_context, struct());
+    if sg_on_gfl_init.applicable
+        if ~sg_on_gfl_init.converged
+            result.failure_id = sg_on_gfl_init.failure_id;
+            result.failure_reason = sg_on_gfl_init.failure_reason;
+            return;
+        end
+        dae.x0 = sg_on_gfl_init.x0;
+        dae.y0 = sg_on_gfl_init.y0;
+        dae.u0 = sg_on_gfl_init.u0;
+    end
+end
+
 % --- Equilibrium-local active/frozen partition ------------------------------
 % Physical frozen states (e.g. SG Edp at Tpq0=0) are excluded first.
 frozen_x_indices = [];   % global indices into x vector
@@ -529,6 +550,7 @@ result.partition = struct('nx_total',nx_total,'nx_active',nx_active, ...
     'ny_free',ny_free,'slack_input_unknowns',numel(slack_u_index), ...
     'newton_dimension',numel(z0),'residual_rows',numel(r_initial));
 result.equilibrium_context = eq_context;
+result.initialization = struct('sg_on_all_gfl',sg_on_gfl_init);
 result.active_bound_outer_iterations = ab_outer;
 result.active_bound_regime_history   = ab_regime_hist;
 

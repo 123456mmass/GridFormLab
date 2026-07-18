@@ -9,6 +9,27 @@ provenance but do not override this runtime status.
 
 ## 2026-07-19 — IBR PF/SSSA/TS/Full launcher products
 
+### SG trip-return PF/SSSA comparisons
+
+The compact IBR submenu now also offers additive `Power Flow Comparison` and
+`SSSA Comparison` products. Each solves and indexes three stationary points:
+`PRE_TRIP`, `SG_TRIPPED`, and `SG_RETURNED`. They publish resource/device/bus
+indices, online/mode status, active-state mappings, P/Q/terminal-voltage tables,
+and a grouped P/Q/V figure. SSSA spectra are complete per point and explicitly
+`NOT_MODE_MATCHED` across operating points. This is distinct from Full Analysis:
+it is an operating-point comparison, not a fault/reclose trajectory or physical
+acceptance claim.
+
+The RMS10 registered dual-device type was also added to the explicit allowlist
+in `mixed_ibr_reduced_initialize`; unknown device types remain fail-closed. No
+ODE, state order, parameter, limiter, Jacobian, or numerical tolerance changed.
+Targeted evidence on MATLAB R2025a: 14/14 comparison and RMS10 SG-off
+equilibrium tests passed. Active dimensions were 48/52/57 and equilibrium KCL
+infinity norms were respectively 5.218e-15, 4.582e-11, and 1.465e-14. The SSSA
+classification was UNSTABLE at all three points and is retained as a physical
+result rather than tuned away. Final broader regression evidence is recorded in
+the delivery commit/test record.
+
 The compact `solve_case` flow now selects IBR, the IEEE14 1-SG + 4-IBR case,
 then Power Flow / SSSA / Time-Domain Simulation (TS) / Full Analysis. The
 interactive IBR launcher defaults to RMS10 Profile B (IBR2 GFM13,

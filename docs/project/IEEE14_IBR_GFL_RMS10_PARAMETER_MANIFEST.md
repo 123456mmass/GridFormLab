@@ -50,6 +50,13 @@ numbers below are the reference values used in tests and provenance.
 | 20 | `Mbase` | 100.0 (140 IBR2) | MVA | inverter | inverter | CASE_DEFINED unity-PF nameplate proxy | CASE_DEFINED |
 | 21 | `omega_b` | 376.9911 | rad/s | rad/s | rad/s | 2·π·60, case fbase=60 Hz | CASE_DEFINED |
 | 22 | `fbase` | 60.0 | Hz | Hz | Hz | case data | CASE_DEFINED |
+| 23 | `Vdip` | 0.90 | pu | positive-sequence terminal voltage | system pu | WECC REGC_A/REEC_A official conversion example, already frozen in `+ibr/wecc_regca_reeca_model.m` | SOURCE_DEFINED / PROJECT_MAPPED |
+| 24 | `Kqv` | 2.0 | pu current / pu voltage | positive-sequence | inverter pu | WECC REEC_A example; Teodorescu Ch.7 pp.162-163 FRT pattern | SOURCE_DEFINED / PROJECT_MAPPED |
+| 25 | `lvrt_deadband` | 0.10 | pu voltage | positive-sequence | system pu | WECC REEC_A deadband magnitude mapped to undervoltage error | SOURCE_DEFINED / PROJECT_MAPPED |
+| 26 | `Iqh1` | 1.0 | pu current | inverter current base | inverter pu | WECC REEC_A conversion example | SOURCE_DEFINED / PROJECT_MAPPED |
+| 27 | `Zerox` | 0.40 | pu voltage | positive-sequence | system pu | WECC REGC_A LVPL conversion example | SOURCE_DEFINED / PROJECT_MAPPED |
+| 28 | `Brkpt` | 0.90 | pu voltage | positive-sequence | system pu | WECC REGC_A LVPL conversion example | SOURCE_DEFINED / PROJECT_MAPPED |
+| 29 | `Lvpl1` | 1.22 | pu active current | inverter current base | inverter pu | WECC REGC_A LVPL conversion example | SOURCE_DEFINED / PROJECT_MAPPED |
 
 ## Base conversion notes (must be exact, not fitted)
 
@@ -118,13 +125,21 @@ Production code must recompute the per-unit values from `L_pu`, `R_t_pu`, `τi`,
 `ts`, `Mbase`, `Vbase` at construction time so base conversions are exact; the
 frozen NUMBERS above are the reference values used in tests and provenance.
 
-## Low-voltage policy (frozen, separate from parameter table)
+## Balanced positive-sequence LVRT policy (frozen)
 
-GFL-RMS10 has NO PLL freeze. Before evaluating PLL/PQ-inversion/current-control,
-require `|V| >= V_valid_min` AND `D_V = v_d²+v_q² >= V_div_min²`. Else fail-closed
-with `ibr:gfl_rms10_model:voltageOutsideValidityDomain` /
-`ibr:gfl_rms10_model:lowVoltagePowerInversion`. `V_PLLfrz` is NOT a GFL-RMS10
-parameter. Fault/LVRT TS is outside this production slice.
+`V_valid_min` remains the equilibrium-initialization threshold. During a balanced
+positive-sequence fault, the SRF-PLL is not frozen and the same ten ODEs continue
+while `|V| >= V_div_min`. Below `Vdip`, current limiting changes from normal
+P-priority to voltage-dependent active-current capability plus reactive-current
+priority (Teodorescu Ch.7 pp.162-163). Numeric values are mapped from the frozen
+WECC REGC_A/REEC_A conversion example. At `|V| < V_div_min` the model still fails
+closed with `ibr:gfl_rms10_model:lowVoltagePowerInversion`; no division floor,
+stale state, or PLL freeze is introduced. Unbalanced/negative-sequence and
+zero-voltage ride-through remain outside this positive-sequence RMS slice.
+
+The public/output TS step remains `dt=0.01 s`. A failed logical step may be
+bisected internally at most four levels; this is `NUMERICAL_METHOD`, preserves
+event landing times, and does not alter the published sample grid.
 
 ## Anti-windup tolerance
 

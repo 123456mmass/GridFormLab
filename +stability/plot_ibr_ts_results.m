@@ -49,6 +49,9 @@ ylabel(ax_f,'Frequency (Hz)');
 title(ax_f,['Absolute device frequency: online SG and active GFM' status_suffix]);
 add_event_lines(ax_f,events,true);
 legend(ax_f,'Location','best','Interpreter','none');
+minimum_axis_span(ax_f,0.10);
+xlim(ax_f,time_limits(t));
+add_failure_annotation(ax_f,result);
 
 ax_v = nexttile(tl1,2); hold(ax_v,'on'); grid(ax_v,'on');
 set(ax_v,'Tag','ibr_voltage_axes');
@@ -62,6 +65,8 @@ xlabel(ax_v,'Time (s)'); ylabel(ax_v,'|V_{bus}| (pu)');
 title(ax_v,[sprintf('Fault-bus voltage magnitude (bus %g)',selected_bus_ids) status_suffix]);
 add_event_lines(ax_v,events,false);
 legend(ax_v,'Location','best','Interpreter','none');
+xlim(ax_v,time_limits(t));
+add_failure_annotation(ax_v,result);
 
 freq_path = fullfile(output_dir,[prefix 'ieee14_ibr_frequency_speed.png']);
 saveas(fig1,freq_path);
@@ -159,6 +164,11 @@ else
     freq_handle = []; power_handle = [];
 end
 
+group_plots.sg = plot_resource_group(result,t,bus_ids,device_ids,device_bus_ids, ...
+    strcmpi(resource_types(result,numel(device_ids)),'sg'),'SG',output_dir,prefix,vis,events,status_suffix);
+group_plots.ibr = plot_resource_group(result,t,bus_ids,device_ids,device_bus_ids, ...
+    ~strcmpi(resource_types(result,numel(device_ids)),'sg'),'IBR',output_dir,prefix,vis,events,status_suffix);
+
 event_times = marker_time_struct(events);
 reclose_status = 'UNKNOWN';
 if isfield(result,'reclose_status') && ~isempty(result.reclose_status)
@@ -169,7 +179,8 @@ plot_paths = struct('freq_plot',freq_path,'power_plot',power_path, ...
     'freq_fig',freq_handle,'power_fig',power_handle,'output_dir',output_dir, ...
     'angle_fig',angle_handle,'voltage_fig',voltage_handle, ...
     'event_markers',events,'event_times',event_times, ...
-    'reclose_status',reclose_status,'voltage_bus_ids',selected_bus_ids);
+    'reclose_status',reclose_status,'voltage_bus_ids',selected_bus_ids, ...
+    'group_plots',group_plots);
 end
 
 % =========================================================================
@@ -249,18 +260,120 @@ prefix = '';
 if isfield(opt,'prefix') && ~isempty(opt.prefix)
     prefix = [char(string(opt.prefix)) '_'];
 end
-if ~isfield(result,'sched') || ~isstruct(result.sched) || ...
-        ~isfield(result.sched,'fault_bus')
-    error('plot_ibr_ts_results:missingFaultBus', ...
-        'RESULT.sched.fault_bus is required as the voltage-plot bus owner.');
+selected = NaN;
+if isfield(result,'sched') && isstruct(result.sched) && ...
+        isfield(result.sched,'fault_bus')
+    selected = result.sched.fault_bus;
 end
-selected = result.sched.fault_bus;
+if (~isnumeric(selected) || ~isscalar(selected) || ~isreal(selected) || ...
+        ~isfinite(selected) || ~ismember(selected,bus_ids)) && ...
+        isfield(result,'plot_voltage_bus_id')
+    selected=result.plot_voltage_bus_id;
+end
 if ~isnumeric(selected) || ~isscalar(selected) || ~isreal(selected) || ...
         ~isfinite(selected) || ~ismember(selected,bus_ids)
     error('plot_ibr_ts_results:badFaultBus', ...
         'RESULT.sched.fault_bus must be one external ID in RESULT.bus_ids.');
 end
 labels = {sprintf('|V| fault bus %g',selected)};
+end
+
+function types=resource_types(result,nd)
+types=repmat({'ibr'},1,nd);
+if isfield(result,'device_resource_types') && numel(result.device_resource_types)==nd
+    types=cellstr(string(result.device_resource_types));
+elseif isfield(result,'device_ids') && numel(result.device_ids)==nd
+    ids=cellstr(string(result.device_ids));
+    types(startsWith(upper(string(ids)),'SG'))={'sg'};
+end
+end
+
+function paths=plot_resource_group(result,t,bus_ids,device_ids,device_bus_ids,mask, ...
+        group_name,output_dir,prefix,vis,events,status_suffix)
+paths=struct('angle','','frequency','','power','','voltage','');
+idx=find(mask);
+if isempty(idx), return; end
+labels=arrayfun(@(k) sprintf('%s@Bus%g',device_ids{k},device_bus_ids(k)), ...
+    idx,'UniformOutput',false);
+angle_data=nan(numel(device_ids),numel(t));
+if isfield(result,'device_angle_deg') && ...
+        isequal(size(result.device_angle_deg),size(angle_data))
+    angle_data=result.device_angle_deg;
+end
+frequency_data=result.device_frequency_Hz;
+frequency_unit='Frequency (Hz)';
+frequency_title='Speed / synchronization frequency';
+if isfield(result,'base_frequency_Hz') && isscalar(result.base_frequency_Hz) && ...
+        isfinite(result.base_frequency_Hz) && result.base_frequency_Hz>0
+    frequency_data=frequency_data/result.base_frequency_Hz;
+    frequency_unit='\omega (pu)';
+    frequency_title='Speed / synchronization frequency (pu)';
+end
+signals={angle_data,frequency_data,result.device_P_MW};
+names={'angle','frequency','power'};
+ylabs={'Electrical angle (deg)',frequency_unit,'P_e (MW)'};
+titles={'Angle: SG rotor / IBR VSM or PLL',frequency_title,'Electrical active power'};
+for q=1:3
+    if ~any(isfinite(signals{q}(idx,:)),'all'), continue; end
+    fig=figure('Visible',vis,'Name',sprintf('%s TS %s',group_name,names{q}), ...
+        'Units','pixels','Position',[120+30*q 100+20*q 1180 680]);
+    ax=axes(fig); hold(ax,'on'); grid(ax,'on');
+    for j=1:numel(idx)
+        plot(ax,t,signals{q}(idx(j),:),'LineWidth',1.2,'DisplayName',labels{j});
+    end
+    xlabel(ax,'Time (s)'); ylabel(ax,ylabs{q});
+    title(ax,[group_name ' ' titles{q} status_suffix]);
+    add_event_lines(ax,events,true); legend(ax,'Location','best','Interpreter','none');
+    if q==2, minimum_axis_span(ax,0.01); end
+    xlim(ax,time_limits(t)); add_failure_annotation(ax,result);
+    path=fullfile(output_dir,sprintf('%s%s_%s.png',prefix,lower(group_name),names{q}));
+    saveas(fig,path); paths.(names{q})=path;
+    if strcmp(vis,'off'), close(fig); end
+end
+fig=figure('Visible',vis,'Name',sprintf('%s TS terminal voltage',group_name), ...
+    'Units','pixels','Position',[240 160 1180 680]);
+ax=axes(fig); hold(ax,'on'); grid(ax,'on');
+for j=1:numel(idx)
+    row=find(bus_ids==device_bus_ids(idx(j)),1);
+    plot(ax,t,result.bus_voltage_magnitude(row,:),'LineWidth',1.2, ...
+        'DisplayName',labels{j});
+end
+xlabel(ax,'Time (s)'); ylabel(ax,'Terminal |V| (pu)');
+title(ax,[group_name ' terminal-bus voltage' status_suffix]);
+add_event_lines(ax,events,true); legend(ax,'Location','best','Interpreter','none');
+xlim(ax,time_limits(t)); add_failure_annotation(ax,result);
+path=fullfile(output_dir,sprintf('%s%s_voltage.png',prefix,lower(group_name)));
+saveas(fig,path); paths.voltage=path;
+if strcmp(vis,'off'), close(fig); end
+end
+
+function lim=time_limits(t)
+if numel(t)>1 && t(end)>t(1)
+    lim=[t(1) t(end)];
+else
+    lim=[t(1) t(1)+max(1e-6,eps(max(1,abs(t(1))))*10)];
+end
+end
+
+function minimum_axis_span(ax,min_span)
+yl=ylim(ax); span=diff(yl);
+if isfinite(span) && span<min_span
+    center=mean(yl); ylim(ax,center+[-.5 .5]*min_span);
+end
+end
+
+function add_failure_annotation(ax,result)
+if ~isfield(result,'converged') || logical(result.converged), return; end
+reason='Simulation stopped fail-closed.';
+if isfield(result,'failure_reason') && ~isempty(result.failure_reason)
+    reason=char(string(result.failure_reason));
+elseif isfield(result,'failure_id') && ~isempty(result.failure_id)
+    reason=char(string(result.failure_id));
+end
+if strlength(string(reason))>120, reason=[reason(1:117) '...']; end
+text(ax,0.01,0.02,['FAIL-CLOSED: ' reason],'Units','normalized', ...
+    'Color',[0.75 0 0],'BackgroundColor','w','Interpreter','none', ...
+    'VerticalAlignment','bottom','FontWeight','bold');
 end
 
 function events = event_markers(result)

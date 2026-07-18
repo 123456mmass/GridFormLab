@@ -168,10 +168,17 @@ end
 
 function result = run_ibr_analysis(case_data, opt, label, root, case_id)
 ibr_analysis = lower(char(option_value(opt, 'ibr_analysis', 'ts')));
+if strcmp(ibr_analysis,'full') && isfield(opt,'ibr_method_modes') && ...
+        isstruct(opt.ibr_method_modes) && isfield(opt.ibr_method_modes,'linked') && ...
+        ~logical(opt.ibr_method_modes.linked)
+    result=run_ibr_full_separate(case_data,opt,label,root,case_id);
+    return;
+end
 scenario_opt = struct();
 if isfield(opt, 'ibr_profile') && ~isempty(opt.ibr_profile)
     scenario_opt.ibr_profile = opt.ibr_profile;
 end
+
 if isfield(opt, 'ibr_dispatch') && ~isempty(opt.ibr_dispatch)
     scenario_opt.dispatch = opt.ibr_dispatch;
 end
@@ -193,6 +200,12 @@ switch ibr_analysis
         print_pf_checks(result.pf, struct('tolerance', 1e-10));
         print_resource_injections(case_data, result.pf, opt, true);
         print_ibr_product_summary(result);
+    case 'pf_compare'
+        result = wizard.ibr_sg_cycle_comparison(case_data, scenario, ...
+            selection, opt, false, root, case_id);
+    case 'sssa_compare'
+        result = wizard.ibr_sg_cycle_comparison(case_data, scenario, ...
+            selection, opt, true, root, case_id);
     case 'sssa'
         result = run_ibr_sssa(case_data, scenario, selection, opt);
         print_ibr_product_summary(result);
@@ -232,6 +245,10 @@ if plot_requested && isfield(plot_result,'t') && ~isempty(plot_result.t) && ...
         'visible', logical(option_value(opt, 'plot_visible', false)), ...
         'prefix', case_id));
     files = {p.angle_plot, p.freq_plot, p.power_plot, p.voltage_plot};
+    if isfield(p,'group_plots')
+        files = [files, struct2cell(p.group_plots.sg).', ...
+            struct2cell(p.group_plots.ibr).'];
+    end
     if strcmp(ibr_analysis, 'full')
         result.ts = plot_result;
     else
@@ -248,6 +265,92 @@ if plot_requested && isfield(plot_result,'t') && ~isempty(plot_result.t) && ...
     fprintf('  omega  : %s\n', p.freq_plot);
     fprintf('  power  : %s\n', p.power_plot);
     fprintf('  voltage: %s\n', p.voltage_plot);
+end
+end
+
+function result=run_ibr_full_separate(case_data,opt,label,root,case_id)
+% Execute PF, SSSA and TS with independently selected IBR device-mode maps.
+% Each product is an honest independent operating point; no cross-method
+% equilibrium identity is claimed when the maps differ.
+required={'pf','sssa','ts'};
+for k=1:numel(required)
+    if ~isfield(opt.ibr_method_modes,required{k})
+        error('wizard:dispatch_analysis:missingMethodModeConfig', ...
+            'Full Analysis separate mode requires ibr_method_modes.%s.',required{k});
+    end
+end
+
+stage=struct();
+for k=1:numel(required)
+    name=required{k};
+    stage_opt=apply_method_mode_config(opt,opt.ibr_method_modes.(name));
+    stage_opt=rmfield(stage_opt,'ibr_method_modes');
+    stage_opt.ibr_analysis=name;
+    if ~strcmp(name,'ts')
+        stage_opt.plot_results=false;
+        stage_opt.ibr_events=struct('enabled',false);
+    end
+    stage.(name)=run_ibr_analysis(case_data,stage_opt,label,root,case_id);
+end
+
+result=struct();
+result.ibr_analysis='full';
+result.converged=logical(stage.pf.converged) && ...
+    logical(stage.sssa.converged) && logical(stage.ts.converged);
+result.failure_id=''; result.failure_reason='';
+if ~result.converged
+    result.failure_id='wizard:dispatch_analysis:fullStageFailed';
+    result.failure_reason='At least one independently configured Full Analysis stage failed.';
+end
+result.pf=stage.pf.pf;
+result.equilibrium=stage.sssa.equilibrium;
+result.sssa=stage.sssa.sssa;
+result.ts=stage.ts;
+result.separate_stage_results=stage;
+result.ibr_method_modes=opt.ibr_method_modes;
+result.cross_analysis_identity='INDEPENDENT_MODE_CONFIGURATIONS';
+if isequal(opt.ibr_method_modes.pf,opt.ibr_method_modes.sssa) && ...
+        isequal(opt.ibr_method_modes.pf,opt.ibr_method_modes.ts)
+    result.cross_analysis_identity='SAME_MODE_MAP_INDEPENDENT_EXECUTIONS';
+end
+if isfield(stage.ts,'figure_files'), result.figure_files=stage.ts.figure_files; end
+result.execution_summary=sum_stage_summaries(stage);
+fprintf('\nFULL ANALYSIS MODE CONFIGURATION: %s\n',result.cross_analysis_identity);
+fprintf('  PF   GFM indices: %s\n',mat2str(opt.ibr_method_modes.pf.initial_gfm_indices));
+fprintf('  SSSA GFM indices: %s\n',mat2str(opt.ibr_method_modes.sssa.initial_gfm_indices));
+fprintf('  TS   GFM indices: %s\n',mat2str(opt.ibr_method_modes.ts.initial_gfm_indices));
+end
+
+function opt=apply_method_mode_config(opt,cfg)
+names={'initial_gfm_count','initial_gfl_count','initial_gfm_indices', ...
+    'initial_reference_resource_index'};
+for k=1:numel(names)
+    if ~isfield(cfg,names{k})
+        error('wizard:dispatch_analysis:badMethodModeConfig', ...
+            'Method mode configuration lacks %s.',names{k});
+    end
+    opt.(names{k})=cfg.(names{k});
+end
+opt=wizard.normalize_ibr_mode_selection(opt);
+end
+
+function summary=sum_stage_summaries(stage)
+summary=struct('pf_invocations',0,'equilibrium_invocations',0, ...
+    'sssa_invocations',0,'ts_invocations',0,'ts_steps_attempted',0, ...
+    'ts_steps_accepted',0,'ts_newton_iterations',0, ...
+    'event_transactions',0,'selector_candidate_evaluations',0);
+names=fieldnames(stage);
+for j=1:numel(names)
+    r=stage.(names{j});
+    if ~isfield(r,'execution_summary'), continue; end
+    s=r.execution_summary;
+    fields=fieldnames(summary);
+    for k=1:numel(fields)
+        f=fields{k};
+        if isfield(s,f) && isnumeric(s.(f)) && isscalar(s.(f)) && isfinite(s.(f))
+            summary.(f)=summary.(f)+s.(f);
+        end
+    end
 end
 end
 
@@ -301,8 +404,21 @@ r.device_P_pu=P; r.device_Q_pu=Q;
 r.device_P_MW=P*case_data.mpc.baseMVA; r.device_Q_MVAr=Q*case_data.mpc.baseMVA;
 r.device_current_magnitude=Imag; r.device_current_limit_sys=lim;
 r.device_frequency_Hz=freq; r.device_angle_deg=angle_deg;
+r.base_frequency_Hz=case_data.base_values.frequency_Hz;
 r.device_online_history=online;
-if ~isfield(r,'sched') || ~isstruct(r.sched) || ~isfield(r.sched,'fault_bus')
+types=cell(1,nd);
+for k=1:nd
+    types{k}='ibr';
+    if isfield(devices(k),'capabilities') && ...
+            isfield(devices(k).capabilities,'resource_type')
+        types{k}=lower(char(devices(k).capabilities.resource_type));
+    elseif startsWith(upper(char(devices(k).device_id)),'SG')
+        types{k}='sg';
+    end
+end
+r.device_resource_types=types;
+r.plot_voltage_bus_id=option_value(opt,'fault_bus',4);
+if ~isfield(r,'sched') || ~isstruct(r.sched)
     r.sched=struct('fault_bus',option_value(opt,'fault_bus',4));
 end
 end
@@ -346,6 +462,8 @@ end
 
 function result = assemble_ibr_full(case_data, scenario, selection, opt, ts_result)
 result = empty_ibr_product('full', selection);
+result.failure_id = '';
+result.failure_reason = '';
 result.pf = run_ibr_pf(case_data, selection, opt).pf;
 result.ts = ts_result;
 if isfield(ts_result, 'equilibrium'), result.equilibrium = ts_result.equilibrium; end

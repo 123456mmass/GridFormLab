@@ -1,0 +1,17 @@
+generated_at=2026-07-19 05:16:05 *
+branch=main
+commit=5dbc9b94069d42f638dd31fdf443540efe96120c
+case_id=ieee14_1sg_4ibr
+profile=rms10_profile_b
+normal_gfm_indices=2
+normal_gfl_indices=[3 4 5]
+fault_converged=true
+fault_failure_id=
+fault_failure_reason=
+sg_cycle_converged=true
+sg_cycle_reclose_status=PENDING_SYNC_FAIL
+sssa_status=UNSTABLE
+sssa_max_real=355339.0945811527
+normal_active_states=48
+comparison_active_states=[48 52 57]
+output_directory=C:\Users\User\Desktop\Power-flow\docs\source\figures\ieee14_ibr_pf_sssa_ts

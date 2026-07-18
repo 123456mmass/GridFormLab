@@ -215,17 +215,86 @@ tc.verifyError(@() stability.ibr_event_schedule(tc.TestData.scenario.case_data, 
     tc.TestData.eq.devices,ev,0.10,0.01),'stability:ibr_event_schedule:badOrdering');
 end
 
-function test_plots_use_audited_data_and_create_exactly_two_png(tc)
+function test_plots_preserve_legacy_and_add_resource_group_png(tc)
+% The former test required exactly two plots. That contract became stale when
+% the approved UI added SG- and IBR-separated angle/frequency/P/V figures.
+% The independent oracle is the audited result mapping: one SG row and four
+% IBR rows, each mapped by device_bus_ids to terminal-voltage rows.
 r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm); tc.assertTrue(r.converged,r.failure_reason);
 out=fullfile(tempdir,'ibr_ts_plot_gate'); if ~isfolder(out),mkdir(out);end
 p=stability.plot_ibr_ts_results(r,struct('output_dir',out,'prefix','gate','visible',false));
 tc.verifyTrue(isfile(p.freq_plot)); tc.verifyTrue(isfile(p.power_plot));
+group_files=[struct2cell(p.group_plots.sg);struct2cell(p.group_plots.ibr)];
+tc.verifyEqual(numel(group_files),8);
+available=group_files(~cellfun(@isempty,group_files));
+tc.verifyTrue(all(cellfun(@isfile,available)));
+if ~isfield(r,'device_angle_deg')
+    tc.verifyEmpty(p.group_plots.sg.angle);
+    tc.verifyEmpty(p.group_plots.ibr.angle);
+end
 tc.verifyGreaterThan(dir(p.freq_plot).bytes,1000); tc.verifyGreaterThan(dir(p.power_plot).bytes,1000);
 tc.verifyTrue(any(isfinite(r.device_frequency_Hz(2,:))));
 tc.verifyTrue(any(isfinite(r.device_current_limit_sys(2,:))));
 src=fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))),'+stability','plot_ibr_ts_results.m'));
 tc.verifyFalse(contains(src,'yline(1.5'));
 tc.verifyFalse(contains(src,'row = tb'));
+end
+
+function test_fault_only_schedule_contains_no_sg_transaction(tc)
+ev=event_spec(2:5,2); ev.event_profile='fault_only';
+s=stability.ibr_event_schedule(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,ev,0.10,0.01);
+tc.verifyEqual({s.events.type},{'fault_on','fault_clear'});
+tc.verifyTrue(s.has_fault); tc.verifyFalse(s.has_sg_cycle);
+tc.verifyTrue(isnan(s.sg_trip)); tc.verifyTrue(isnan(s.sg_on));
+end
+
+function test_sg_cycle_schedule_contains_no_fault_transaction(tc)
+ev=event_spec(2:5,2); ev.event_profile='sg_cycle';
+s=stability.ibr_event_schedule(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,ev,0.10,0.01);
+tc.verifyEqual({s.events.type},{'sg_trip','sg_on'});
+tc.verifyFalse(s.has_fault); tc.verifyTrue(s.has_sg_cycle);
+tc.verifyTrue(isnan(s.fault_bus)); tc.verifyTrue(isnan(s.Zf));
+end
+
+function test_sg_cycle_without_manual_tuple_requests_automatic_switching(tc)
+ev=event_spec(2:5,2);
+ev.event_profile='sg_cycle';
+ev.automatic_gfm_switching=true;
+ev=rmfield(ev,{'selected_gfm_indices','reference_resource_index'});
+s=stability.ibr_event_schedule(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,ev,0.10,0.01);
+tc.verifyEqual(s.selection_request.mode,'automatic');
+tc.verifyTrue(s.automatic_gfm_switching);
+tc.verifyEmpty(s.audit.legacy_selected_gfm_indices);
+tc.verifyEmpty(s.audit.legacy_reference_resource_index);
+end
+
+function test_fault_only_runtime_applies_only_fault_transactions(tc)
+ev=event_spec(2:5,2); ev.event_profile='fault_only';
+s=stability.ibr_event_schedule(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,ev,0.05,0.01);
+o=base_opt(tc.TestData.eq,0.05,0.01); o.ibr_event_schedule=s;
+[r,~]=stability.ts_simulate_ibr_hybrid(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,tc.TestData.eq.x0,tc.TestData.eq.y0,o);
+tc.verifyTrue(r.converged,r.failure_reason);
+tc.verifyEqual({r.event_log.type},{'fault_on','fault_clear'});
+tc.verifyTrue(all([r.event_log.applied]));
+tc.verifyFalse(any(strcmp({r.event_log.type},'sg_trip')));
+end
+
+function test_sg_cycle_runtime_applies_no_fault_transaction(tc)
+ev=event_spec(2:5,2); ev.event_profile='sg_cycle';
+s=stability.ibr_event_schedule(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,ev,0.10,0.01);
+o=base_opt(tc.TestData.eq,0.10,0.01); o.ibr_event_schedule=s;
+o.selector_table=tc.TestData.table_4gfm;
+[r,~]=stability.ts_simulate_ibr_hybrid(tc.TestData.scenario.case_data, ...
+    tc.TestData.eq.devices,tc.TestData.eq.x0,tc.TestData.eq.y0,o);
+tc.verifyTrue(r.converged,r.failure_reason);
+tc.verifyFalse(any(ismember({r.event_log.type},{'fault_on','fault_clear'})));
+tc.verifyTrue(any(strcmp({r.event_log.type},'sg_trip')));
 end
 
 function test_missing_selector_table_fails_closed_with_canonical_id(tc)

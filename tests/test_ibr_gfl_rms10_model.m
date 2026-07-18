@@ -37,7 +37,12 @@ testCase.verifyTrue(contains(d.provenance.source,'6739364.pdf'));
 testCase.verifyTrue(contains(d.provenance.source,'grid-converters'));
 testCase.verifyTrue(contains(d.provenance.source,'978-1-4471-5478-5'));
 testCase.verifyEqual(d.provenance.readiness,'SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES');
-testCase.verifyTrue(contains(d.provenance.low_voltage_policy,'FAIL-CLOSED'));
+testCase.verifyTrue(contains(d.provenance.low_voltage_policy, ...
+    'BALANCED_POSITIVE_SEQUENCE_LVRT'));
+testCase.verifyEqual(d.provenance.params.Vdip,0.90,'AbsTol',0);
+testCase.verifyEqual(d.provenance.params.Kqv,2.0,'AbsTol',0);
+testCase.verifyEqual(d.provenance.params.Zerox,0.40,'AbsTol',0);
+testCase.verifyEqual(d.provenance.params.Brkpt,0.90,'AbsTol',0);
 end
 
 % ===================== equilibrium residual ==============================
@@ -241,15 +246,38 @@ else
 end
 end
 
-% ===================== low-voltage fail-closed ===========================
-function test_low_voltage_fail_closed_no_freeze(testCase)
-d = make_dev(struct('gfl_rms10',struct('V_valid_min',0.7)),0.4,0.0);
-V = 0.5;  % below V_valid_min
+% ===================== balanced positive-sequence LVRT ==================
+function test_balanced_low_voltage_uses_q_priority_lvrt(testCase)
+% Contract correction (2026-07-19): the former test required every runtime
+% sample below V_valid_min to fail. That contradicted the approved sourced
+% FRT domain (Teodorescu Ch.7 pp.162-163 and WECC REGC_A/REEC_A mapping).
+% V_valid_min remains an equilibrium gate; runtime remains defined down to
+% V_div_min and must use reactive-current priority without a PLL freeze.
+d = make_dev(struct('gfl_rms10',struct( ...
+    'V_valid_min',0.7,'V_div_min',0.1)),0.4,0.0);
+V = 0.5;
 y = y_for(V,bus_pos());
+dx = d.f(0,d.x0,y,[0.4;0],struct());
+r = reconstruct(d,d.x0,y,[0.4;0],struct());
+I = d.current_injection(0,d.x0,y,[0.4;0],struct());
+testCase.verifyTrue(all(isfinite(dx)));
+testCase.verifyTrue(isfinite(I));
+testCase.verifyTrue(r.lvrt_active);
+testCase.verifyLessThan(r.i_q_ref,0, ...
+    'positive reactive injection uses negative iq in the frozen sign convention');
+testCase.verifyLessThanOrEqual(hypot(r.i_d_ref,r.i_q_ref), ...
+    d.provenance.params.Imax+1e-12);
+end
+
+function test_near_zero_voltage_still_fails_closed(testCase)
+d = make_dev(struct('gfl_rms10',struct('V_div_min',0.1)),0.4,0.0);
+y = y_for(0.05,bus_pos());
 testCase.verifyError(@() d.f(0,d.x0,y,[0.4;0],struct()), ...
-    'ibr:gfl_rms10_model:voltageOutsideValidityDomain');
+    'ibr:gfl_rms10_model:lowVoltagePowerInversion');
 testCase.verifyError(@() d.current_injection(0,d.x0,y,[0.4;0],struct()), ...
-    'ibr:gfl_rms10_model:voltageOutsideValidityDomain');
+    'ibr:gfl_rms10_model:lowVoltagePowerInversion');
+testCase.verifyError(@() reconstruct(d,d.x0,y,[0.4;0],struct()), ...
+    'ibr:gfl_rms10_model:lowVoltagePowerInversion');
 end
 
 function test_equilibrium_low_voltage_fails_closed(testCase)

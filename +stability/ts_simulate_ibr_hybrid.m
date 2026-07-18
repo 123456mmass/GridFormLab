@@ -32,7 +32,7 @@ end
 
 Ypre = dae.Ynet;
 Yfault = Ypre;
-if sched.enabled
+if sched.enabled && sched.has_fault
     fp = sched.fault_bus_position;
     Yfault(fp,fp) = Yfault(fp,fp)+1/sched.Zf;
 end
@@ -78,6 +78,7 @@ step_iterations = [];
 step_residuals = [];
 step_attempts = 0;
 accepted_steps = 0;
+internal_substeps = 0;
 % --- Phase-1 read-only resynchronization diagnostics (Mission C) -------------
 % Per-sample record of the synchronism state during the offline coast. These
 % accumulators are written but never read by the integration logic, so they do
@@ -108,8 +109,10 @@ while t < settings.t_end-settings.event_tol
         step_opt = struct('newton_tol',settings.newton_tol, ...
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
             'verbose',settings.verbose,'full_kcl',true,'t_now',t);
-        step = stability.ts_step_composite(x,y,h,dae,Ycurr,u,ec,active,step_opt);
-        step_attempts=step_attempts+1;
+        [step,retry_stats] = advance_with_subdivision( ...
+            x,y,t,h,dae,Ycurr,u,ec,active,step_opt,settings,0);
+        step_attempts=step_attempts+retry_stats.attempts;
+        internal_substeps=internal_substeps+retry_stats.accepted_leaf_steps;
         total_iterations = total_iterations+step.iterations;
         max_residual = max(max_residual,step.residual_norm);
         step_iterations(end+1)=step.iterations; %#ok<AGROW>
@@ -536,6 +539,7 @@ res.iter_per_step=step_iterations;
 res.residual_per_step=step_residuals;
 res.step_attempts=step_attempts;
 res.accepted_steps=accepted_steps;
+res.internal_substeps=internal_substeps;
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
@@ -586,6 +590,7 @@ meta.iterations=total_iterations;
 meta.max_step_residual=max_residual;
 meta.sample_count=numel(res.t);
 meta.event_count=numel(event_log);
+meta.internal_substeps=internal_substeps;
 meta.failure_id=failure_id;
 meta.failure_reason=failure_reason;
 end
@@ -614,6 +619,7 @@ if ~isfield(sched,'enabled'), error('ts_simulate_ibr_hybrid:badSchedule','Schedu
 s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
     'verbose',logical(option(opt,'verbose',false)),'newton_tol',1e-8, ...
     'max_iter',50,'fd_eps',3e-6,'kcl_tol',1e-6,'event_tol',1e-12, ...
+    'max_step_subdivisions',4, ...
     'sync_dwell',case_data.synchronism.dwell_s, ...
     'sync_timeout',case_data.synchronism.timeout_s, ...
     'min_off',case_data.delays.T_sg_min_off_s,'sync_overrides',struct(), ...
@@ -635,6 +641,44 @@ vals=[s.t_end,s.dt,s.sync_dwell,s.sync_timeout,s.min_off];
 if any(~isfinite(vals)) || s.t_end<=0 || s.dt<=0 || any(vals(3:5)<0)
     error('ts_simulate_ibr_hybrid:badOptions','Time-step and delay settings are invalid.');
 end
+end
+
+function [step,stats] = advance_with_subdivision(x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s,depth)
+%ADVANCE_WITH_SUBDIVISION Retry a failed logical output step with two
+% coupled-trapezoidal half steps. The public/output grid remains s.dt; only
+% the internal numerical landing points are refined. This is a
+% NUMERICAL_METHOD safeguard for millisecond converter loops, not a change
+% to device equations, event times, or the published sample contract.
+step_opt.t_now=t0;
+trial=stability.ts_step_composite(x0,y0,h,dae,Ynet,u,ec,active,step_opt);
+stats=struct('attempts',1,'accepted_leaf_steps',double(trial.converged&&trial.finite));
+if trial.converged && trial.finite
+    step=trial;
+    return;
+end
+if depth>=s.max_step_subdivisions
+    step=trial;
+    return;
+end
+
+h2=h/2;
+[left,left_stats]=advance_with_subdivision( ...
+    x0,y0,t0,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
+stats.attempts=stats.attempts+left_stats.attempts;
+stats.accepted_leaf_steps=left_stats.accepted_leaf_steps;
+if ~left.converged || ~left.finite
+    step=left;
+    step.iterations=trial.iterations+left.iterations;
+    step.residual_norm=max(trial.residual_norm,left.residual_norm);
+    return;
+end
+[right,right_stats]=advance_with_subdivision( ...
+    left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
+stats.attempts=stats.attempts+right_stats.attempts;
+stats.accepted_leaf_steps=left_stats.accepted_leaf_steps+right_stats.accepted_leaf_steps;
+step=right;
+step.iterations=trial.iterations+left.iterations+right.iterations;
+step.residual_norm=max([trial.residual_norm,left.residual_norm,right.residual_norm]);
 end
 
 function events=schedule_events(sched)

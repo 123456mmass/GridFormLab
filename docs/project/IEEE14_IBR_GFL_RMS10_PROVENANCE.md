@@ -42,7 +42,8 @@ No Vision agent was used for identity claims.
 
 **Count: 6 SOURCE_DEFINED / 4 PROJECT_DERIVED.**
 
-No PLL freeze state (LV is fail-closed — see plan §"Low-voltage policy").
+No PLL-freeze state is added. Balanced positive-sequence LVRT continues the
+same PLL/current ODEs down to the frozen division floor.
 
 ## Frame, base, and dimensional contract
 
@@ -83,7 +84,7 @@ No PLL freeze state (LV is fail-closed — see plan §"Low-voltage policy").
 | Anti-windup AW_id, AW_iq | `AW_id(e_d)=0` when voltage clamped AND `dot(r_v,[ki_i·e_d;0]) > aw_tol` | same |
 | v_t vector clamp | `[v_td; v_tq]` scaled radially to `m_max·V_dc0/2` when exceeded | User §5.6; A eq 8.47-8.48 |
 | Equilibrium init | `delta_PLL0=angle(V0)`, `xi_PLL0=0`, `v_d0=\|V0\|`, `v_q0=0`, `P_f0=P_ref_inv`, `Q_f0=Q_ref_inv`, `xi_P0=xi_Q0=0`, `i_d0=P_ref_inv/v_d0`, `i_q0=-Q_ref_inv/v_d0`, `xi_id0=xi_iq0=0` | PROJECT_DERIVED from ODEs set to zero (feedforward makes zero integrators exact) |
-| Low-voltage | NO PLL freeze. Require `\|V\| >= V_valid_min` AND `D_V = v_d²+v_q² >= V_div_min²` before evaluating PLL/PQ-inversion/current-control; else fail-closed `ibr:gfl_rms10_model:voltageOutsideValidityDomain` / `lowVoltagePowerInversion` | User decision (unsourced in all 3 texts); LV freeze explicitly REJECTED |
+| Balanced positive-sequence LVRT | Below `Vdip`, voltage-dependent active current plus reactive-current priority; PLL continues without freeze while `\|V\|>=V_div_min`; near-zero remains fail-closed | Teodorescu Ch.7 pp.162-163 FRT structure + WECC REGC_A/REEC_A conversion-example values frozen in `wecc_regca_reeca_model.m`; exact dq/sign/base mapping PROJECT_DERIVED |
 
 `aw_tol` is a frozen NUMERICAL_METHOD comparison tolerance (not tuning).
 
@@ -106,7 +107,8 @@ mirrors `wecc_regca_reeca_model.m:11-14` and `regfm_b1_vsg_model.m:33-39` exactl
   against Teodorescu §4.2.2 / §9.
 - `FULL_SOURCE_DEFINED_GFL_MODEL = NO` — P/Q filters (P_f, Q_f), outer-loop
   realization (xi_P, xi_Q), all limiters, anti-windup directional logic, LV
-  fail-closed, and equilibrium init remain PROJECT_DERIVED (user-authorized).
+  balanced-LVRT mapping, near-zero fail-closed boundary, and equilibrium init
+  remain PROJECT_DERIVED (user-authorized).
 - `APPROVED_PROJECT_DERIVED_RMS10_SLICE = YES` — user approved the composite.
 - `NUMERICAL_PARAMETER_PROFILE_FROZEN = NOT_YET` — see PARAMETER_MANIFEST.
   Production routing to `build_ieee14_ibr_devices` / `dual_mode_ibr_model` stays

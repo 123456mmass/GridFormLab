@@ -1,0 +1,4 @@
+point,active_states,max_real_1_per_s,stable_roots,marginal_roots,unstable_roots
+PRE-TRIP,48,355339.094581153,43,1,4
+SG-TRIPPED,52,1.29119692099525e-05,47,4,1
+SG-RETURNED,57,1.27195674140501e-05,52,4,1

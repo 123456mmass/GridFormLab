@@ -1,4 +1,4 @@
-function [opt, accepted] = ibr_settings_dialog(case_data, opt, case_label)
+function [opt, accepted] = ibr_settings_dialog(case_data, opt, case_label, event_profile)
 %IBR_SETTINGS_DIALOG  Base-MATLAB three-column IBR settings editor.
 %   [OPT, ACCEPTED] = wizard.ibr_settings_dialog(CASE_DATA, OPT, CASE_LABEL)
 %   opens the IBR settings dialog (three-column base-MATLAB uipanel/uicontrol)
@@ -13,6 +13,10 @@ function [opt, accepted] = ibr_settings_dialog(case_data, opt, case_label)
 %   path goes through wizard.build_request -> wizard.dispatch_analysis instead.
 
 base = cases.scenario_ieee14_1sg_4ibr();
+if nargin < 4 || isempty(event_profile)
+    event_profile = option_value(opt.ibr_events,'event_profile','combined');
+end
+event_profile = validatestring(char(event_profile),{'combined','fault_only','sg_cycle'});
 ids = {base.resources.resource_id};
 eligible = find(strcmp({base.resources.resource_type}, 'ibr'));
 bus_text = format_bus_ids(case_bus_ids(case_data));
@@ -29,7 +33,8 @@ defaults = {num_text(opt.t_end), num_text(opt.dt), logical_text(opt.plot_results
     num_text(delay.timeout_s)};
 accepted = false;
 while true
-    [dlg, fields] = create_ibr_settings_dialog(case_label, bus_text, eligible, ids, defaults);
+    [dlg, fields] = create_ibr_settings_dialog( ...
+        case_label, bus_text, eligible, ids, defaults, event_profile);
     uiwait(dlg);
     if ~isgraphics(dlg), return; end
     submitted = getappdata(dlg, 'submitted');
@@ -37,13 +42,14 @@ while true
     answer = cellfun(@(h) get(h, 'String'), fields, 'UniformOutput', false);
     delete(dlg);
     if isempty(answer), return; end
-    [candidate, message] = parse_ibr_dialog(opt, answer, case_bus_ids(case_data), eligible, ids);
+    [candidate, message] = parse_ibr_dialog( ...
+        opt, answer, case_bus_ids(case_data), eligible, ids, event_profile);
     if isempty(message), opt = candidate; accepted = true; return; end
     errordlg(message, 'Invalid IBR settings', 'modal'); defaults = answer;
 end
 end
 
-function [opt, message] = parse_ibr_dialog(opt, a, bus_ids, eligible, resource_ids)
+function [opt, message] = parse_ibr_dialog(opt, a, bus_ids, eligible, resource_ids, event_profile)
 message = '';
 nums = cellfun(@str2double, a([1 2 6 7 11:17 19:21]));
 if any(~isfinite(nums)), message = 'All required numeric IBR settings must be finite.'; return; end
@@ -56,25 +62,45 @@ opt.initial_gfm_count = nums(3); opt.initial_gfl_count = nums(4);
 [enabled, ok_e] = parse_logical_text(a{10});
 ev = struct('enabled', enabled, 'fault_bus', nums(5), 'Zf', nums(6) + 1i*nums(7), ...
     'fault_on', nums(8), 'fault_clear', nums(9), 'sg_trip', nums(10), ...
-    'sg_on', nums(11), 'reference_resource_index', nums(12));
+    'sg_on', nums(11), 'reference_resource_index', nums(12), ...
+    'event_profile',event_profile);
 [post, ok_p] = parse_index_text(a{18}); ev.selected_gfm_indices = post;
+if any(strcmp(event_profile,{'combined','sg_cycle'}))
+    % SG trip always delegates the post-trip GFM set and reference ownership
+    % to the authenticated automatic selector. UI indices are display-only;
+    % no stale manual tuple may override the automatic transaction.
+    ev.automatic_gfm_switching=true;
+    ev.selected_gfm_indices=[];
+    ev.reference_resource_index=[];
+    opt.automatic_gfm_switching=true;
+    post=[]; ok_p=true;
+end
 dwell_s = nums(13); timeout_s = nums(14);
 if opt.t_end <= 0 || opt.dt <= 0 || opt.dt > opt.t_end
     message = 'Require 0 < dt <= t_end.';
 elseif opt.initial_gfm_count < 0 || opt.initial_gfm_count ~= fix(opt.initial_gfm_count) || ...
         opt.initial_gfm_count > numel(eligible), message = 'Initial GFM count is out of range.';
+elseif opt.initial_gfl_count < 0 || opt.initial_gfl_count ~= fix(opt.initial_gfl_count) || ...
+        opt.initial_gfl_count > numel(eligible) || ...
+        opt.initial_gfm_count + opt.initial_gfl_count ~= numel(eligible)
+    message = 'Initial GFM count plus Initial GFL count must equal four.';
 elseif ~ok_e || ~ok_plot || ~ok_vis || ~ok_verbose
     message = 'Logical settings must be true/false.';
 elseif dwell_s < 0 || timeout_s < 0 || dwell_s > timeout_s
     message = 'Require 0 <= synchronism dwell <= synchronism timeout.';
-elseif enabled && (~ismember(ev.fault_bus, bus_ids) || abs(ev.Zf) < eps)
+elseif enabled && any(strcmp(event_profile,{'combined','fault_only'})) && ...
+        (~ismember(ev.fault_bus, bus_ids) || abs(ev.Zf) < eps)
     message = 'Fault bus must be a valid external ID and Zf must be nonzero.';
-elseif enabled && ~(ev.fault_on < ev.fault_clear && ev.fault_clear <= ev.sg_trip && ...
+elseif enabled && strcmp(event_profile,'fault_only') && ...
+        ~(ev.fault_on < ev.fault_clear && ev.fault_clear <= opt.t_end)
+    message = 'Require fault_on < fault_clear <= t_end.';
+elseif enabled && strcmp(event_profile,'sg_cycle') && ...
+        ~(ev.sg_trip < ev.sg_on && ev.sg_on <= opt.t_end)
+    message = 'Require sg_trip < sg_on <= t_end.';
+elseif enabled && strcmp(event_profile,'combined') && ...
+        ~(ev.fault_on < ev.fault_clear && ev.fault_clear <= ev.sg_trip && ...
         ev.sg_trip < ev.sg_on && ev.sg_on <= opt.t_end)
     message = 'Require fault_on < fault_clear <= sg_trip < sg_on <= t_end.';
-elseif enabled && (~ok_p || isempty(post) || any(~ismember(post, eligible)) || ...
-        numel(unique(post)) ~= numel(post) || ~ismember(ev.reference_resource_index, post))
-    message = 'Post-trip indices must be unique eligible resources and include the reference.';
 end
 if ~isempty(message), return; end
 opt.initial_gfm_indices=initial;
@@ -104,7 +130,7 @@ if isfield(opt, 'delays_overrides') && isstruct(opt.delays_overrides)
 end
 end
 
-function [dlg,fields]=create_ibr_settings_dialog(case_label,bus_text,eligible,resource_ids,defaults)
+function [dlg,fields]=create_ibr_settings_dialog(case_label,bus_text,eligible,resource_ids,defaults,event_profile)
 % CREATE_IBR_SETTINGS_DIALOG Base-MATLAB three-column IBR settings editor.
 dlg=dialog('Name',sprintf('IBR settings - %s',case_label), ...
     'Units','pixels','Position',[80 80 1240 720],'Resize','on', ...
@@ -137,7 +163,20 @@ event_labels={'Enable fault/trip/reclose events (true/false)', ...
 fields=[add_ibr_dialog_fields(panels{1},sim_labels,defaults(1:5)); ...
     add_ibr_dialog_fields(panels{2},initial_labels,defaults(6:9)); ...
     add_ibr_dialog_fields(panels{3},event_labels,defaults(10:21))];
-set([fields{7:9}], 'Enable', 'off', 'BackgroundColor', [0.92 0.92 0.92]);
+% Counts are user selections for PF, SSSA, and TS.  Device indices and the
+% reference are derived deterministically after acceptance.
+set([fields{8:9}], 'Enable', 'off', 'BackgroundColor', [0.92 0.92 0.92]);
+set(panels{3},'Title',sprintf('Events - %s',strrep(event_profile,'_',' ')));
+if strcmp(event_profile,'fault_only')
+    disabled=16:21;
+elseif strcmp(event_profile,'sg_cycle')
+    disabled=[11:15 18:19];
+else
+    disabled=18:19;
+end
+if ~isempty(disabled)
+    set([fields{disabled}], 'Enable','off','BackgroundColor',[0.92 0.92 0.92]);
+end
 uicontrol('Parent',dlg,'Style','pushbutton','String','Run', ...
     'Units','normalized','Position',[0.40 0.025 0.09 0.05], ...
     'FontWeight','bold','Callback',@(src,~)finish_ibr_dialog(ancestor(src,'figure'),true));

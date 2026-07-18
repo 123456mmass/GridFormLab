@@ -143,6 +143,11 @@ dev.f = f;
 dev.current_injection = current_injection;
 dev.electrical_power = electrical_power;
 dev.reconstruct = reconstruct;
+% Exact stationary seed used only by the mixed-equilibrium warm-start.
+% It applies the same EMF6 stator/frame equations as sg_f/sg_current to a
+% supplied terminal V and P+jQ; the coupled DAE remains the acceptance gate.
+dev.equilibrium_initialize = @(V_bus,P_terminal_pu,Q_terminal_pu,~) ...
+    sg_equilibrium_initialize(V_bus,P_terminal_pu,Q_terminal_pu,machine,units);
 dev.provenance = struct( ...
     'model','sg_emf6_composite_phaseB_structural_only', ...
     'source','synchronous_emf6_ssa (Kundur/GENTPJ 6th-order) wrapped to 5-arg ABI', ...
@@ -161,6 +166,50 @@ dev.active_state_indices = active_state_indices;
 % flux/coast equations implemented by dev.f.
 dev.dynamic_state_indices_for_context = @(~) active_state_indices;
 dev.frozen_state_classification = 'SOURCE_DEFINED singular limit';
+end
+
+% =========================================================================
+function x_eq = sg_equilibrium_initialize(V, P, Q, machine, units)
+%SG_EQUILIBRIUM_INITIALIZE Construct the EMF6 stationary state at one port.
+% The angle condition is the source-model stator constraint Vd+Ra Id-Xq Iq=0.
+% This is the single-machine form of synchronous_emf6_ssa.initialize_equilibrium.
+if ~isscalar(V) || ~isfinite(real(V)) || ~isfinite(imag(V)) || abs(V)<=0 || ...
+        ~isscalar(P) || ~isscalar(Q) || ~isfinite(P) || ~isfinite(Q)
+    error('stability:sg_composite_device:badEquilibriumPort', ...
+        'SG equilibrium initialization requires finite nonzero V and finite P,Q.');
+end
+I = conj((P + 1i*Q)/V);
+delta = angle(V + (machine.Ra(1) + 1i*machine.Xq(1))*I);
+for it = 1:30
+    r0 = angle_constraint(delta,V,I,machine);
+    if abs(r0) <= 1e-12, break; end
+    h = 1e-6;
+    dr = (angle_constraint(delta+h,V,I,machine) - ...
+          angle_constraint(delta-h,V,I,machine))/(2*h);
+    if ~isfinite(dr) || abs(dr) < 1e-12
+        error('stability:sg_composite_device:equilibriumAngleJacobian', ...
+            'SG equilibrium angle constraint has a singular derivative.');
+    end
+    delta = delta - r0/dr;
+end
+if abs(angle_constraint(delta,V,I,machine)) > 1e-9
+    error('stability:sg_composite_device:equilibriumAngle', ...
+        'SG equilibrium angle initialization did not converge.');
+end
+[Id,Iq] = stability.kundur_book_dq(I,delta);
+[Vd,Vq] = stability.kundur_book_dq(V,delta);
+Eqpp = Vq + machine.Ra(1)*Iq + machine.Xdpp(1)*Id;
+Edpp = Vd + machine.Ra(1)*Id - machine.Xqpp(1)*Iq;
+Eqp = Eqpp + (machine.Xdp(1)-machine.Xdpp(1))*Id;
+Edp = Edpp - (machine.Xqp(1)-machine.Xqpp(1))*Iq;
+if machine.Tpq0(1) == 0, Edp = 0; end
+x_eq = [delta; 0; Eqp; Edp; Eqpp; Edpp];
+end
+
+function r = angle_constraint(delta,V,I,machine)
+[Id,Iq] = stability.kundur_book_dq(I,delta);
+[Vd,~] = stability.kundur_book_dq(V,delta);
+r = Vd + machine.Ra(1)*Id - machine.Xq(1)*Iq;
 end
 
 % =========================================================================

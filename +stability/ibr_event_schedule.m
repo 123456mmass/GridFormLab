@@ -73,6 +73,18 @@ if ~enabled
     return;
 end
 
+event_profile = 'combined';
+if isfield(ibr_events,'event_profile') && ~isempty(ibr_events.event_profile)
+    if ~(ischar(ibr_events.event_profile) || isstring(ibr_events.event_profile))
+        error('stability:ibr_event_schedule:badEventProfile', ...
+            'event_profile must be combined, fault_only, or sg_cycle.');
+    end
+    event_profile = validatestring(char(ibr_events.event_profile), ...
+        {'combined','fault_only','sg_cycle'});
+end
+has_fault = any(strcmp(event_profile,{'combined','fault_only'}));
+has_sg_cycle = any(strcmp(event_profile,{'combined','sg_cycle'}));
+
 % Normalize ibr_events FIRST to determine selection_request.mode, THEN decide
 % which fields are required based on that mode. This closes the defect where
 % automatic mode could not enter the schedule without a manual tuple.
@@ -103,10 +115,18 @@ selection_request = stability.normalize_gfm_selection_request(norm_opt, devices,
 % caught 2026-07-17: test_solve_case_ibr_logs_trip_counts_and_work). The
 % post-normalization integrity check below verifies the derived request is
 % complete.
-required = {'fault_bus','Zf','fault_on','fault_clear','sg_trip','sg_on'};
+required = {};
+if has_fault
+    required = [required, {'fault_bus','Zf','fault_on','fault_clear'}];
+end
+if has_sg_cycle
+    required = [required, {'sg_trip','sg_on'}];
+end
 switch selection_request.mode
     case 'manual_override'
-        required = [required, {'selected_gfm_indices','reference_resource_index'}];
+        if has_sg_cycle
+            required = [required, {'selected_gfm_indices','reference_resource_index'}];
+        end
     case 'automatic'
         % NO manual tuple required for automatic mode.
     case 'off'
@@ -147,12 +167,15 @@ switch selection_request.mode
         % off: firmware disabled; no selection fields.
 end
 
-fault_bus = ibr_events.fault_bus;
-Zf = ibr_events.Zf;
-fault_on = ibr_events.fault_on;
-fault_clear = ibr_events.fault_clear;
-sg_trip = ibr_events.sg_trip;
-sg_on = ibr_events.sg_on;
+fault_bus = NaN; Zf = NaN; fault_on = NaN; fault_clear = NaN;
+sg_trip = NaN; sg_on = NaN;
+if has_fault
+    fault_bus = ibr_events.fault_bus; Zf = ibr_events.Zf;
+    fault_on = ibr_events.fault_on; fault_clear = ibr_events.fault_clear;
+end
+if has_sg_cycle
+    sg_trip = ibr_events.sg_trip; sg_on = ibr_events.sg_on;
+end
 selected = [];
 ref_idx = [];
 n_req = [];
@@ -169,27 +192,36 @@ if strcmp(selection_request.mode,'manual_override')
 end
 
 % --- fault_bus -------------------------------------------------------------
-if ~isnumeric(fault_bus) || ~isscalar(fault_bus) || ~isfinite(fault_bus) || ...
-        fault_bus ~= fix(fault_bus)
+if has_fault && (~isnumeric(fault_bus) || ~isscalar(fault_bus) || ~isfinite(fault_bus) || ...
+        fault_bus ~= fix(fault_bus))
     error('stability:ibr_event_schedule:badFaultBus', ...
         'fault_bus must be finite integer external bus ID.');
 end
-if ~any(bus_ids == fault_bus)
+if has_fault && ~any(bus_ids == fault_bus)
     error('stability:ibr_event_schedule:badFaultBus', ...
         'fault_bus %d not found in case bus list.', fault_bus);
 end
 fb_pos = find(bus_ids == fault_bus,1);
+if isempty(fb_pos), fb_pos = NaN; end
 
 % --- Zf --------------------------------------------------------------------
-if ~isnumeric(Zf) || ~isscalar(Zf) || ~isfinite(Zf) || abs(Zf) < eps
+if has_fault && (~isnumeric(Zf) || ~isscalar(Zf) || ~isfinite(Zf) || abs(Zf) < eps)
     error('stability:ibr_event_schedule:badZf', ...
         'Zf must be finite non-zero complex (got %.3g%+.3gj).', real(Zf), imag(Zf));
 end
 
 % --- times -----------------------------------------------------------------
-times.fields = {'fault_on','fault_clear','sg_trip','sg_on'};
-times.values = [fault_on, fault_clear, sg_trip, sg_on];
-for k=1:4
+times.fields = {};
+times.values = [];
+if has_fault
+    times.fields = [times.fields, {'fault_on','fault_clear'}];
+    times.values = [times.values, fault_on, fault_clear];
+end
+if has_sg_cycle
+    times.fields = [times.fields, {'sg_trip','sg_on'}];
+    times.values = [times.values, sg_trip, sg_on];
+end
+for k=1:numel(times.values)
     v = times.values(k);
     if ~isnumeric(v) || ~isscalar(v) || ~isfinite(v) || ~isreal(v)
         error('stability:ibr_event_schedule:badTime', ...
@@ -201,31 +233,28 @@ for k=1:4
     end
 end
 
-% Ordering: fault_on < fault_clear <= sg_trip < sg_on <= t_end
-if ~(fault_on + tol < fault_clear)
+% Ordering within each selected event family; combined additionally requires
+% fault clearing no later than SG trip.
+if has_fault && ~(fault_on + tol < fault_clear && fault_clear <= t_end + tol)
     error('stability:ibr_event_schedule:badOrdering', ...
-        'Require fault_on < fault_clear (%.15g < %.15g).', fault_on, fault_clear);
+        'Require fault_on < fault_clear <= t_end.');
 end
-if ~(fault_clear <= sg_trip + tol)
+if has_sg_cycle && ~(sg_trip + tol < sg_on && sg_on <= t_end + tol)
     error('stability:ibr_event_schedule:badOrdering', ...
-        'Require fault_clear <= sg_trip (%.15g <= %.15g).', fault_clear, sg_trip);
+        'Require sg_trip < sg_on <= t_end.');
 end
-if ~(sg_trip + tol < sg_on)
+if strcmp(event_profile,'combined') && ~(fault_clear <= sg_trip + tol)
     error('stability:ibr_event_schedule:badOrdering', ...
-        'Require sg_trip < sg_on (%.15g < %.15g).', sg_trip, sg_on);
-end
-if ~(sg_on <= t_end + tol)
-    error('stability:ibr_event_schedule:badOrdering', ...
-        'Require sg_on <= t_end (%.15g <= %.15g).', sg_on, t_end);
+        'Require fault_clear <= sg_trip for the combined profile.');
 end
 
 % Duplicate / coincident ambiguous (except fault_clear==sg_trip allowed)
 % Check all pairs except (fault_clear, sg_trip) with distance < tol
-vals = [fault_on, fault_clear, sg_trip, sg_on];
-names = {'fault_on','fault_clear','sg_trip','sg_on'};
-for i=1:4
-    for j=i+1:4
-        if i==2 && j==3  % allowed equality fault_clear==sg_trip
+vals = times.values;
+names = times.fields;
+for i=1:numel(vals)
+    for j=i+1:numel(vals)
+        if strcmp(names{i},'fault_clear') && strcmp(names{j},'sg_trip')
             continue;
         end
         if abs(vals(i)-vals(j)) < tol
@@ -309,7 +338,7 @@ end
 
 % --- Optional sg_id ---------------------------------------------------------
 sg_id = '';
-if isfield(ibr_events,'sg_id') && ~isempty(ibr_events.sg_id)
+if has_sg_cycle && isfield(ibr_events,'sg_id') && ~isempty(ibr_events.sg_id)
     if ~(ischar(ibr_events.sg_id) || isstring(ibr_events.sg_id))
         error('stability:ibr_event_schedule:badSgId', 'sg_id must be string.');
     end
@@ -318,7 +347,7 @@ if isfield(ibr_events,'sg_id') && ~isempty(ibr_events.sg_id)
     if ~any(strcmp(dev_ids, sg_id))
         error('stability:ibr_event_schedule:badSgId', 'sg_id %s not found.', sg_id);
     end
-else
+elseif has_sg_cycle
     % A unique SG capability may supply the default. Device order and a
     % familiar name are never accepted as identity fallbacks.
     sg_candidates = [];
@@ -338,11 +367,15 @@ else
 end
 
 % --- Build schedule struct -------------------------------------------------
-ev(4) = struct('type','','t',0,'index',0);
-ev(1) = struct('type','fault_on','t',fault_on,'index',1);
-ev(2) = struct('type','fault_clear','t',fault_clear,'index',2);
-ev(3) = struct('type','sg_trip','t',sg_trip,'index',3);
-ev(4) = struct('type','sg_on','t',sg_on,'index',4);
+ev = repmat(struct('type','','t',0,'index',0),0,1);
+if has_fault
+    ev(end+1) = struct('type','fault_on','t',fault_on,'index',numel(ev)+1); %#ok<AGROW>
+    ev(end+1) = struct('type','fault_clear','t',fault_clear,'index',numel(ev)+1); %#ok<AGROW>
+end
+if has_sg_cycle
+    ev(end+1) = struct('type','sg_trip','t',sg_trip,'index',numel(ev)+1); %#ok<AGROW>
+    ev(end+1) = struct('type','sg_on','t',sg_on,'index',numel(ev)+1); %#ok<AGROW>
+end
 % Already ordered per validation, but sort to be safe (stable for allowed equality)
 [~,order] = sort([ev.t]);
 % Preserve logical order for allowed equality: fault_clear before sg_trip when equal
@@ -351,6 +384,9 @@ ev = ev(order);
 
 sched = struct();
 sched.enabled = true;
+sched.event_profile = event_profile;
+sched.has_fault = has_fault;
+sched.has_sg_cycle = has_sg_cycle;
 sched.t_end = t_end;
 sched.dt = dt;
 sched.fault_bus = fault_bus;

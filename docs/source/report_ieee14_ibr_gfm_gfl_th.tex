@@ -1,0 +1,655 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip = 0pt plus 1pt
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[
+  Path={fonts/TH Sarabun PSK V-1/},
+  Extension=.ttf,
+  UprightFont={*},
+  BoldFont={* Bold},
+  ItalicFont={* Italic},
+  BoldItalicFont={* BoldItalic}
+]{THSarabun}
+\setmonofont{Latin Modern Mono}
+
+\usepackage{amsmath,amssymb,mathtools}
+\setcounter{MaxMatrixCols}{24}
+\usepackage{graphicx,float,caption,subcaption,xcolor,hyperref,fancyhdr}
+\usepackage{geometry,booktabs,array,tabularx,longtable,pdflscape}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,shapes.geometric}
+\geometry{margin=0.82in}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}\fancyhf{}
+\lhead{IEEE 14-bus: SG/GFM/GFL --- PF, SSSA และ TS}
+\rhead{\thepage}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\renewcommand{\arraystretch}{1.16}
+\captionsetup[table]{skip=6pt}
+\emergencystretch=2em
+\linespread{1.12}
+\renewcommand{\abstractname}{บทคัดย่อ}
+\renewcommand{\contentsname}{สารบัญ}
+\renewcommand{\figurename}{รูปที่}
+\renewcommand{\tablename}{ตารางที่}
+\renewcommand{\refname}{เอกสารอ้างอิง}
+
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\src}{\textcolor{blue!65!black}{\textbf{SOURCE\_DEFINED}}}
+\newcommand{\caseval}{\textcolor{violet!70!black}{\textbf{CASE\_DEFINED}}}
+\newcommand{\derived}{\textcolor{teal!70!black}{\textbf{PROJECT\_DERIVED}}}
+\newcommand{\numeric}{\textcolor{orange!80!black}{\textbf{NUMERICAL\_METHOD}}}
+\newcommand{\pending}{\textcolor{red!75!black}{\textbf{PENDING PHASE 0B--5}}}
+\newcommand{\notapp}{\textcolor{gray!75!black}{\textbf{NOT APPLICABLE}}}
+\newcommand{\clamp}{\operatorname{clamp}}
+\newcommand{\hold}{\operatorname{conditional\_hold}}
+
+\title{\textbf{ระบบ IEEE 14-bus แบบผสม SG/GFM/GFL}\\
+\large สมการไดนามิก, Power Flow, Full-State SSSA และ Time-Domain Simulation\\[2mm]
+\normalsize รายงานฉบับร่างที่ยึด Source และ Index Traceability}
+\author{In-house Power-flow Project}
+\date{18 กรกฎาคม 2569}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\fcolorbox{red!70!black}{red!4}{%
+\begin{minipage}{0.91\textwidth}
+\centering
+\textbf{สถานะเอกสาร: SOURCE-CLOSED DRAFT}\par
+รายงานนี้ใส่เฉพาะสมการและสัญญาที่ตรวจสอบย้อนกลับได้แล้วสำหรับ SG,
+GFM REGFM\_B1, GFL WECC, composite DAE, modal analysis และ TS
+ส่วน nonlinear PLL-resolved GFL ใหม่และผลเชิงตัวเลข PF/SSSA/TS
+ยังเป็น \pending{} และจะไม่ถูกแต่งขึ้นเพื่อให้รายงานดูสมบูรณ์
+\end{minipage}}
+\end{center}
+
+\begin{abstract}
+รายงานนี้วางโครงสร้างการวิเคราะห์ระบบ IEEE 14-bus ที่ประกอบด้วยเครื่องกำเนิดซิงโครนัส
+(SG), อินเวอร์เตอร์ grid-forming แบบ virtual synchronous machine (GFM--VSG)
+และอินเวอร์เตอร์ grid-following (GFL) โดยใช้สมการ production ชุดเดียวกันสำหรับ
+การสร้าง equilibrium, การ linearise แบบ full-KCL small-signal stability analysis
+(SSSA) และการ integrate แบบ time-domain simulation (TS) จุดสำคัญของรายงานคือ
+ทุกผลลัพธ์ต้องย้อนกลับไปยัง bus, device, local/global state index, สมการ และ source
+ได้อย่างชัดเจน โมเดล GFM ปัจจุบันคือ REGFM\_B1 จำนวน 13 states ส่วนโมเดล GFL
+production ปัจจุบันคือ WECC REGC\_A/REEC\_A จำนวน 7 states ซึ่งไม่มี explicit PLL
+ดังนั้นรายงานจะไม่กล่าวอ้าง GFL PLL participation จนกว่า Phase 0B จะพบ source
+nonlinear positive-sequence GFL ที่ครบถ้วนและ Phase 4--5 จะ implement และตรวจสอบผ่าน
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{ขอบเขต สถานะ และ Source Discipline}
+
+หลักการสำคัญคือ production PF, equilibrium, SSSA และ TS ใช้ project-owned
+base-MATLAB code ไม่ใช้ external nonlinear solver และไม่รับค่าจากโปรแกรมอ้างอิง
+กลับเข้าสู่ production state สมการหรือพารามิเตอร์ทุกตัวต้องจัดประเภทก่อนดูผล:
+
+\begin{table}[H]\centering
+\caption{การจำแนกข้อมูลและการตัดสินใจ}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{.24\textwidth}X}
+\toprule
+ประเภท & ความหมาย \\\midrule
+SOURCE\_DEFINED & สมการหรือค่าที่ถอดจาก primary source โดยตรง \\
+CASE\_DEFINED & ข้อมูลที่ระบุโดย IEEE14/resource configuration หรือ profile ที่ freeze ก่อนรัน \\
+PROJECT\_DERIVED & การแปลง base, initialization หรือ algebraic map ที่พิสูจน์จากสมการต้นทาง \\
+NUMERICAL\_METHOD & วิธีแก้สมการ, FD step, tolerance, ordering หรือ display convention \\
+ASSUMED\_DIAGNOSTIC & สมมติฐานเพื่อวินิจฉัยเท่านั้น ห้ามใช้รองรับ readiness claim \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]\centering
+\caption{สถานะส่วนประกอบ ณ source tree \code{7c72b94}}
+\begin{tabularx}{\textwidth}{p{.25\textwidth}p{.27\textwidth}X}
+\toprule
+ส่วนประกอบ & สถานะ & ข้อจำกัด \\\midrule
+GFM REGFM\_B1 & 13-state production model & มี VSG, PLL, filters และ dynamic angle bounds \\
+GFL WECC REGC\_A/REEC\_A & 7-state production model & ไม่มี explicit PLL state \\
+Modal analysis & standalone consumer ของ $A$ & ไม่แก้ $A_{\rm red}$ หรือ physical quotient construction \\
+PLL-resolved nonlinear GFL & \pending & Fu et al. รองรับ linear diagnostic เท่านั้น \\
+ผล PF/SSSA/TS ในรายงานนี้ & \pending & ต้องสร้างจาก fingerprint เดียวกันหลัง Phase 4--5 \\
+Readiness & NOT\_READY & ห้ามกล่าวอ้าง PRODUCTION\_READY/VALIDATED \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{คำอธิบายระบบและเส้นทางการคำนวณ}
+
+กรณีเป้าหมายคือ MATPOWER IEEE 14-bus บน $S_{base}=100$ MVA และ
+$f_{base}=60$ Hz โดย resource configuration อาจประกอบด้วย SG และ IBR ที่เลือก mode
+เป็น GFM หรือ GFL การกำหนดจำนวน GFM/GFL เป็น input ของ configuration ไม่ใช่ผลที่
+เดาจาก eigenvalue
+
+\begin{figure}[H]\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners,minimum width=3.05cm,minimum height=1.0cm,align=center,fill=blue!5},
+  arr/.style={-{Latex[length=2.4mm]},thick},node distance=1.25cm and 1.45cm]
+\node[box] (case) {Case + resource configuration\\bus/device/input maps};
+\node[box,right=of case] (pf) {Power Flow\\$V,\theta,P,Q$};
+\node[box,right=of pf] (eq) {Composite equilibrium\\$f=0,\ g=0$};
+\node[box,below right=1.3cm and -0.3cm of eq] (sssa) {Full-state SSSA\\$A=f_x-f_y(g_y\backslash g_x)$};
+\node[box,above right=1.3cm and -0.3cm of eq] (ts) {Full TS\\events + exact landing};
+\draw[arr] (case)--(pf); \draw[arr] (pf)--(eq);
+\draw[arr] (eq)--(sssa); \draw[arr] (eq)--(ts);
+\end{tikzpicture}
+\caption{PF, SSSA และ TS ใช้ equilibrium และ state contract ชุดเดียวกัน}
+\end{figure}
+
+PF และ SSSA เป็น event-free analysis ส่วน fault, fault clear, SG trip, mode transfer
+และ reclose ปรากฏเฉพาะ Full TS หากต้องการ SSSA ของสภาพหลัง trip ต้องสร้าง static
+post-trip configuration และหา equilibrium ใหม่ ไม่ใช้ transient sample เป็น equilibrium
+โดยไม่มี residual gate
+
+\section{Index และ Traceability Contract}
+
+คำว่า ``index'' ต้องระบุ index space เสมอ เพื่อไม่ให้ Mode No. ถูกตีความเป็น state index
+หรือนำ external bus ID ไปใช้เป็นตำแหน่ง array โดยตรง
+
+\subsection{Bus, device และ algebraic indices}
+
+สำหรับ internal bus position $k$,
+\begin{equation}
+y_{V_R}(k)=2k-1,\qquad y_{V_I}(k)=2k,
+\qquad V_k=y_{2k-1}+j y_{2k}.
+\end{equation}
+คู่ KCL rows ใช้ตำแหน่งเดียวกัน แต่ \code{bus_position} และ \code{bus_id}
+ต้องเก็บเป็นคนละ field เพราะ external bus IDs อาจไม่ต่อเนื่อง
+
+\begin{table}[H]\centering\small
+\caption{ตัวอย่าง schema ของ resource/device map (ค่าจริงสร้างจาก runtime)}
+\begin{tabularx}{\textwidth}{rrrrlrrll}
+\toprule
+Resource & Device & ID & Bus pos & Bus ID & $x_{start}$ & $x_{end}$ & Type & Mode \\\midrule
+-- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{State, input และ modal indices}
+
+หนึ่ง state ต้องมีอย่างน้อย local state index, global state index,
+active-state position และ reduced-state index ใน $A$ หากถูกตัดออกเพราะ inactive,
+frozen, fixed active bound หรือ gauge quotient ต้องคงอยู่ใน inventory พร้อมเหตุผล
+
+\begin{table}[H]\centering\scriptsize
+\caption{State inventory schema}
+\begin{tabularx}{\textwidth}{rrrrllXll}
+\toprule
+Global $x$ & Active pos & $A$ row & Local $x$ & Device & State & Equation/source & Status & Unit \\\midrule
+-- & -- & -- & -- & -- & -- & สร้างจาก metadata registry & -- & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+สำหรับ SSSA ต้องแยก field ต่อไปนี้ออกจากกัน:
+\begin{center}\small
+\code{raw_eigen_index}\quad \code{display_mode_number}\\
+\code{conjugate_pair_id}\quad \code{eigenvalue_index}
+\end{center}
+การ sort เพื่อแสดงผลไม่มีสิทธิ์เปลี่ยน association ระหว่าง eigenvector กับ state
+
+\section{Power Flow}
+
+Power flow ใช้ effective bus semantics: REF กำหนด $|V|,\theta$, PV กำหนด $P,|V|$
+และ PQ กำหนด $P,Q$ สำหรับ $Y=G+jB$,
+\begin{align}
+P_i &= |V_i|\sum_{j=1}^{n}|V_j|
+\left(G_{ij}\cos\theta_{ij}+B_{ij}\sin\theta_{ij}\right),\\
+Q_i &= |V_i|\sum_{j=1}^{n}|V_j|
+\left(G_{ij}\sin\theta_{ij}-B_{ij}\cos\theta_{ij}\right),
+\end{align}
+โดย $\theta_{ij}=\theta_i-\theta_j$ และ Newton step คือ
+\begin{equation}
+\begin{bmatrix}H&N\\M&L\end{bmatrix}
+\begin{bmatrix}\Delta\theta\\\Delta|V|\end{bmatrix}
+=\begin{bmatrix}\Delta P\\\Delta Q\end{bmatrix}.
+\end{equation}
+
+PF ไม่ได้ integrate dynamic states แต่ให้ operating voltage และ net injection สำหรับ
+device equilibrium initializer ตาราง final ต้องแสดงทั้ง specified และ solved quantities,
+bus/device indices, mismatch history และ convergence gate
+
+\begin{table}[H]\centering\small
+\caption{PF result table --- รอสร้างจาก final operating-point fingerprint}
+\begin{tabularx}{\textwidth}{rrlrrrrrrX}
+\toprule
+Bus pos & Bus ID & Type & $|V|$ & $\theta$ & $P_{spec}$ & $Q_{spec}$ & $P_{sol}$ & $Q_{sol}$ & Status \\\midrule
+-- & -- & -- & -- & -- & -- & -- & -- & -- & \pending \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Composite DAE และ Equilibrium}
+
+ระบบ production เขียนในรูป input-driven DAE
+\begin{equation}
+\dot x=f(t,x,y,u,e),\qquad 0=g(t,x,y,u,e;Y),
+\label{eq:composite-dae}
+\end{equation}
+โดย $x$ คือ concatenated device states, $y=[V_R^T,V_I^T]^T$ ตาม interleaved
+project ABI, $u$ คือ concatenated named inputs และ $e$ คือ event context
+KCL ใช้ generator convention
+\begin{equation}
+S_i=V_i I_i^*,\qquad P_i=\Re(S_i),\quad Q_i=\Im(S_i),
+\end{equation}
+โดย $I_i>0$ หมายถึง current injection จาก device เข้าสู่ network
+
+Equilibrium ต้องผ่านทั้ง
+\begin{equation}
+\|f_{active}(x_0,y_0,u_0,e_0)\|_\infty\le\varepsilon_f,
+\qquad
+\|g(x_0,y_0,u_0,e_0)\|_\infty\le\varepsilon_g.
+\end{equation}
+state ที่ frozen ต้องเก็บค่า anchor และไม่ถูกแอบนำเข้า $A_{red}$ ส่วน active bounds
+ต้องรายงาน regime เป็น interior/upper/lower ก่อน linearisation
+
+\section{GFM--VSG: REGFM\_B1 จำนวน 13 States}
+
+\subsection{State และ input order}
+
+production state order ที่ freeze แล้วคือ
+\begin{equation}
+x_{gfm}=\begin{bmatrix}
+\omega_m&\delta_{IT}&x_w&x_E&\delta_{PLL}&\xi_{PLL}&
+P_f&I_{d,f}&Q_f&V_f&I_{q,f}&\delta_{IT}^{max}&\delta_{IT}^{min}
+\end{bmatrix}^{T},
+\end{equation}
+และ input order คือ $u_{gfm}=[P_{ref},V_{ref}]^T$ บน system base
+กำหนด
+\begin{equation}
+\kappa=\frac{S_{base}}{M_{base}},\qquad
+P_{ref,inv}=\kappa P_{ref,sys}.
+\end{equation}
+
+\subsection{Reference frame และ current injection}
+
+ใช้ PLL angle แปลง network $xy$ ไป device $dq$:
+\begin{align}
+I_d&=I_x\cos\delta_{PLL}+I_y\sin\delta_{PLL},&
+I_q&=-I_x\sin\delta_{PLL}+I_y\cos\delta_{PLL},\\
+V_d&=V_x\cos\delta_{PLL}+V_y\sin\delta_{PLL},&
+V_q&=-V_x\sin\delta_{PLL}+V_y\cos\delta_{PLL}.
+\end{align}
+VSM angle และ voltage-behind-impedance interface คือ
+\begin{align}
+\delta_{VSM}&=\delta_{PLL}+\clamp(\delta_{IT},\delta_{IT}^{min},\delta_{IT}^{max}),\\
+I_{unc}&=\frac{E_{VSM}e^{j\delta_{VSM}}-V}{\kappa(R_e+jX_L)},\\
+I&=\begin{cases}
+I_{unc},& |I_{unc}|\le I_{maxF}/\kappa,\\
+\dfrac{I_{maxF}}{\kappa}\dfrac{I_{unc}}{|I_{unc}|},& |I_{unc}|>I_{maxF}/\kappa.
+\end{cases}
+\end{align}
+
+\subsection{PLL, VSG, voltage controller และ filters}
+
+เมื่อ $|V|\ge V_{PLLfrz}$,
+\begin{align}
+\dot\xi_{PLL}&=V_q,\\
+\dot\delta_{PLL}&=\omega_0(k_{p,PLL}V_q+k_{i,PLL}\xi_{PLL}),
+\end{align}
+แต่เมื่อ $|V|<V_{PLLfrz}$ derivatives ทั้งสองถูก freeze เป็นศูนย์
+VSG equations ภายใต้ frozen flag profile คือ
+\begin{align}
+2H\dot\omega_m &= P_{ref,inv}-P_f-\left(\frac{1}{m_p}+D_1\right)\omega_m
+-D_2(\omega_m-x_w),\\
+\dot x_w&=\omega_D(\omega_m-x_w),\\
+\dot\delta_{IT}^{raw}&=\omega_0\omega_m-\dot\delta_{PLL},\\
+\dot\delta_{IT}&=\hold(\delta_{IT},\dot\delta_{IT}^{raw},
+\delta_{IT}^{min},\delta_{IT}^{max}).
+\end{align}
+
+Voltage controller และ measurement filters คือ
+\begin{align}
+e_V&=V_{ref}-V_f, & \dot x_E&=e_V\quad\text{(conditional hold at outward saturation)},\\
+E_{raw}&=V_{ref}-m_qQ_f+k_{pv}e_V+k_{iv}x_E,
+&E_{VSM}&=\clamp(E_{raw},E_{min,iq},E_{max,iq}),\\
+T_{pf}\dot P_f&=\kappa P-P_f,&T_{If}\dot I_{d,f}&=\kappa I_d-I_{d,f},\\
+T_{Qf}\dot Q_f&=\kappa Q-Q_f,&T_{Vf}\dot V_f&=|V|-V_f,\\
+T_{If}\dot I_{q,f}&=\kappa I_q-I_{q,f}.&&
+\end{align}
+dynamic angle bounds ใช้
+\begin{align}
+\dot\delta_{IT}^{max}&=\hold(\delta_{IT}^{max},
+k_I(I_{d,max}^{SS}-I_{d,f}),0,\delta_{max}),\\
+\dot\delta_{IT}^{min}&=\hold(\delta_{IT}^{min},
+k_I(-K_eI_{d,max}^{SS}-I_{d,f}),-\delta_{max},0),
+\end{align}
+เมื่อ $ESFlag=1$ โดย $\delta_{max}=\sin^{-1}(X_LI_{maxSS})$
+
+\subsection{State inventory และ source mapping}
+
+\begin{longtable}{r p{.13\textwidth} p{.25\textwidth} p{.12\textwidth} p{.22\textwidth}}
+\caption{REGFM\_B1 13-state order}\label{tab:gfm-states}\\
+\toprule
+Local & State & Governing relation & Unit & Source/classification \\\midrule
+\endfirsthead
+\toprule Local & State & Governing relation & Unit & Source/classification \\\midrule
+\endhead
+1 & $\omega_m$ & VSG swing equation & pu speed deviation & REGFM\_B1 Fig.2; SOURCE\_TRANSFORMED \\
+2 & $\delta_{IT}$ & PLL-relative inertial angle with bound hold & rad & Fig.2/Fig.6; PROJECT\_DERIVED hold \\
+3 & $x_w$ & damping washout & pu & Fig.2; SOURCE\_TRANSFORMED \\
+4 & $x_E$ & voltage PI integral & pu-s & Fig.3; conditional hold PROJECT\_DERIVED \\
+5 & $\delta_{PLL}$ & PLL angle & rad & Fig.4; SOURCE\_TRANSFORMED \\
+6 & $\xi_{PLL}$ & PLL integrator & pu-s & Fig.4; SOURCE\_TRANSFORMED \\
+7 & $P_f$ & active-power filter & pu inverter base & Eq.(1) \\
+8 & $I_{d,f}$ & active-current filter & pu inverter base & Eq.(2) \\
+9 & $Q_f$ & reactive-power filter & pu inverter base & Eq.(3) \\
+10 & $V_f$ & voltage-magnitude filter & pu & Eq.(4) \\
+11 & $I_{q,f}$ & reactive-current filter & pu inverter base & Eq.(5) \\
+12 & $\delta_{IT}^{max}$ & positive dynamic angle bound & rad & Fig.6; active bound \\
+13 & $\delta_{IT}^{min}$ & negative dynamic angle bound & rad & Fig.6; active when $ESFlag=1$ \\
+\bottomrule
+\end{longtable}
+
+\paragraph{ข้อควรระวังเรื่อง angle identity.}
+สมการ $\dot\delta_{VSM}=\omega_0\omega_m$ เป็นจริงเฉพาะ interior unclamped regime
+เมื่อ $\delta_{IT}$ ถูก hold ที่ stationary bound จะได้
+$\dot\delta_{VSM}=\dot\delta_{PLL}$ และเมื่อ bound เคลื่อนที่ต้องวิเคราะห์ tangent
+ของ active regime นั้น ห้ามใช้ smooth identity เดียวครอบทุก regime
+
+\section{GFL ปัจจุบัน: WECC REGC\_A/REEC\_A จำนวน 7 States}
+
+\subsection{State order และ differential equations}
+
+โมเดล canonical GFL ปัจจุบันมี
+\begin{equation}
+x_{gfl}=\begin{bmatrix}V_{t,f}&P_f&I_{q,cmd,f}&P_{ord}&V_{lvpl,f}&I_{p,reg}&I_{q,reg}\end{bmatrix}^{T},
+\quad u_{gfl}=\begin{bmatrix}P_{ref}&Q_{ref}\end{bmatrix}^{T}.
+\end{equation}
+ODE production คือ
+\begin{align}
+\dot V_{t,f}&=\frac{|V|-V_{t,f}}{T_{rv}},\\
+\dot P_f&=\frac{\kappa P-P_f}{T_p},\\
+\dot I_{q,cmd,f}&=\frac{I_{q,cmd}-I_{q,cmd,f}}{T_{iq}},\\
+\dot P_{ord}&=\operatorname{rate\_limit}\!\left(
+\frac{\clamp(\kappa P_{ref},P_{min},P_{max})-P_{ord}}{T_{pord}},
+dP_{min},dP_{max}\right),\\
+\dot V_{lvpl,f}&=\frac{|V|-V_{lvpl,f}}{T_{fltr}},\\
+\dot I_{p,reg}&=\min\!\left(\frac{I_{p,target}-I_{p,reg}}{T_g},r_{rpwr}\right),\\
+\dot I_{q,reg}&=\frac{I_{q,cmd,f}-I_{q,reg}}{T_g},
+\end{align}
+พร้อม directional reactive-current ramp limit ตามเครื่องหมายของ $Q_{ref}$
+
+\subsection{Command, limits และ network current}
+
+กำหนด $V_{div}=\max(V_{t,f},0.01)$ ซึ่งเป็น division guard แบบ
+\numeric{} และ
+\begin{equation}
+I_{p0}=\frac{P_{ord}}{V_{div}},\qquad
+I_{q0}=\frac{\kappa Q_{ref}}{V_{div}}+I_{q,inj}.
+\end{equation}
+เมื่อแรงดันอยู่นอก $[V_{dip},V_{up}]$ จะมี deadband reactive injection
+\begin{equation}
+I_{q,inj}=\clamp\!\left[K_{qv}\operatorname{deadband}(V_{ref0}-V_{t,f}),
+I_{ql1},I_{qh1}\right].
+\end{equation}
+สำหรับ $PQFlag=1$ ใช้ P-priority circular current limit:
+\begin{align}
+I_p&=\clamp(I_{p0},0,I_{max}),\\
+I_{q,lim}&=\sqrt{\max(I_{max}^2-I_p^2,0)},\\
+I_q&=\clamp(I_{q0},-I_{q,lim},I_{q,lim}).
+\end{align}
+network injection เป็น
+\begin{equation}
+I=\frac{(I_p-jI_q)e^{j\angle V}}{\kappa}.
+\label{eq:wecc-current}
+\end{equation}
+
+\begin{longtable}{r p{.16\textwidth} p{.27\textwidth} p{.12\textwidth} p{.2\textwidth}}
+\caption{WECC GFL 7-state order}\label{tab:gfl-states}\\
+\toprule Local & State & Meaning & Unit & Source/category \\\midrule
+\endfirsthead
+\toprule Local & State & Meaning & Unit & Source/category \\\midrule
+\endhead
+1 & $V_{t,f}$ & filtered terminal voltage & pu & REEC\_A measurement filter \\
+2 & $P_f$ & filtered electrical active power & pu inverter base & REEC\_A filter \\
+3 & $I_{q,cmd,f}$ & reactive-current command lag & pu current & REEC\_A command state \\
+4 & $P_{ord}$ & active-power order/rate state & pu inverter base & REEC\_A order state \\
+5 & $V_{lvpl,f}$ & LVPL voltage filter & pu & REGC\_A filter \\
+6 & $I_{p,reg}$ & active-current regulator state & pu current & REGC\_A regulator \\
+7 & $I_{q,reg}$ & reactive-current regulator state & pu current & REGC\_A regulator \\
+\bottomrule
+\end{longtable}
+
+\paragraph{ข้อจำกัดที่ต้องเขียนตรงไปตรงมา.}
+โมเดลนี้ไม่มี $\delta_{PLL}$, PLL integrator, frequency-error integration หรือ
+PLL freeze/reset ดังนั้น ``GFL PLL participation'' คือ \notapp{} สำหรับ production
+model ปัจจุบัน อย่างไรก็ตาม algebraic orientation $e^{j\angle V}$ ยังทำให้ state
+ทั้งเจ็ด couple กับ network angle ได้ จึงห้ามสรุปเชิงโครงสร้างว่า eigenvalues ทุกตัว
+ต้องเป็น real poles
+
+\section{PLL-resolved Nonlinear GFL ใหม่}
+
+\begin{center}
+\fcolorbox{red!70!black}{red!3}{\parbox{.9\textwidth}{
+\centering\pending\par
+Fu et al. ให้ small-signal transfer functions แต่ไม่ให้ nonlinear PLL/PQ/current
+ODEs, saturation, anti-windup, equilibrium initialization และ large-disturbance
+validity ที่ครบถ้วน จึงยัง freeze state order ใหม่ไม่ได้}}
+\end{center}
+
+source ที่จะปลดบล็อกส่วนนี้ต้องให้ครบ: nonlinear SRF-PLL, gains/base/freeze/limits,
+P/Q measurements และ outer loops, current dynamics, dq/network transform,
+current priority, anti-windup, equilibrium, low-voltage behavior, parameter table
+และ positive-sequence validity domain โมเดลใหม่ต้องเป็นไฟล์ใหม่และ opt-in โดยไม่เปลี่ยน
+ความหมายของ WECC model เดิม
+
+\begin{table}[H]\centering\small
+\caption{Candidate state checklist --- ไม่ใช่ state order ที่อนุมัติแล้ว}
+\begin{tabularx}{\textwidth}{p{.22\textwidth}Xl}
+\toprule
+Candidate state/block & สิ่งที่ source ต้องกำหนด & สถานะ \\\midrule
+$\delta_{PLL},\xi_{PLL}$ & phase detector, ODE, gains, wrap/freeze/limits/init & \pending \\
+$P_f,Q_f$ & measurement definition, base และ time constants & \pending \\
+$\xi_P,\xi_Q$ & outer-loop error, gains, saturation/anti-windup & \pending \\
+$I_d,I_q$ หรือ current-loop states & current-command dynamics และ network injection & \pending \\
+Mode-transfer initialization & physical continuity และ exact state initialization & \pending \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Fu \texorpdfstring{[P,Q]--[$\omega$,V]}{[P,Q]-[omega,V]} Port Model}
+
+Fu et al. ใช้สำหรับ low/medium-frequency linear diagnostic โดย GFM เขียนเป็น
+\begin{equation}
+\widetilde v_p=G_b(s)\widetilde v_i^*-Z_b(s)\widetilde S,
+\end{equation}
+และ GFL เขียนเป็น
+\begin{equation}
+\widetilde S=G_a(s)\widetilde S^*-Y_a(s)\widetilde v_p.
+\end{equation}
+PLL closed-loop transfer ใน paper มีรูป
+\begin{equation}
+G_p(s)=\frac{(k_{p,l}s+k_{i,l})V_{0}}
+{s^2+(k_{p,l}s+k_{i,l})V_{0}}.
+\end{equation}
+realization ของ rational transfer matrix ไม่ unique จึงอาจสร้างได้เฉพาะ
+\derived{} + LINEAR\_DIAGNOSTIC\_ONLY และ perturbation states เหล่านั้นห้ามถูก
+นำไปเรียกว่า nonlinear production states
+
+นอกจากนี้ Fu ใช้ dynamic RL line/load ใน $Y_{line}(s)$ แต่ production composite DAE
+ใช้ algebraic network ดังนั้น whole-system eigenvalues ของ Fu เป็น REFERENCE\_ONLY
+การเปรียบเทียบเชิงตัวเลขอนุญาตเฉพาะ converter port ที่ operating point, base, frame
+และ network assumption เหมือนกัน
+
+\section{Full-State Small-Signal Stability Analysis}
+
+\subsection{Linearisation และ Schur complement}
+
+ที่ equilibrium $(x_0,y_0,u_0,e_0)$ และ fixed active regime,
+\begin{equation}
+\begin{bmatrix}\Delta\dot x\\0\end{bmatrix}=
+\begin{bmatrix}f_x&f_y\\g_x&g_y\end{bmatrix}
+\begin{bmatrix}\Delta x\\\Delta y\end{bmatrix},\qquad \Delta u=0.
+\end{equation}
+หาก $g_y$ nonsingular,
+\begin{equation}
+\Delta y=-g_y\backslash(g_x\Delta x),\qquad
+A_{full}=f_x-f_y(g_y\backslash g_x).
+\end{equation}
+จากนั้น project เฉพาะ approved active states:
+\begin{equation}
+A=A_{full}(\mathcal I_a,\mathcal I_a),\qquad
+\#\lambda(A)=|\mathcal I_a|.
+\end{equation}
+ไม่มีการลบ eigenvalue หลังเรียก \code{eig}
+
+\subsection{Raw domain และ physical decision domain}
+
+\code{sssa.A} คือ full active-state modal domain ส่วน \code{sssa.physical_A}
+เป็นอีก domain ที่อาจผ่าน fixed-bound tangent elimination และ common-GFM-PLL gauge
+quotient ทั้งสองตารางต้องแสดงพร้อมกันและห้ามเรียก physical-coordinate participation
+ว่า original global-state participation จนกว่าจะ lift ผ่าน transformation maps ครบ
+
+\subsection{Eigenvectors และ participation factors}
+
+ให้
+\begin{equation}
+AV=V\Lambda,\qquad A^HU=U\Lambda^*,
+\end{equation}
+จับคู่ซ้าย/ขวาแบบ deterministic และ normalize $u_i^Hv_i=1$ จะได้ signed participation
+\begin{equation}
+p_{ki}=\overline{u_{ki}}v_{ki},\qquad \sum_kp_{ki}\approx1,
+\end{equation}
+ส่วน nonnegative display ranking คือ
+\begin{equation}
+\rho_{ki}=\frac{|p_{ki}|}{\sum_j|p_{ji}|}.
+\end{equation}
+ห้ามเรียก $\rho$ ว่า signed participation หาก repeated/defective cluster ทำให้ individual
+participation ไม่ unique ต้องรายงาน UNAVAILABLE\_ILL\_CONDITIONED หรือ subspace-level
+result แทนการแต่ง dominant state
+
+\begin{table}[H]\centering\scriptsize
+\caption{FULL STATE EIGENVALUES --- schema; ทุก active-state root ต้องปรากฏ}
+\begin{tabularx}{\textwidth}{rrr r r r l r r l r r r}
+\toprule
+No. & Pair & $\Re\lambda$ & $\Im\lambda$ & Hz & $\zeta$ & Device & Global & Local & State & SG\% & GFM\% & GFL\% \\\midrule
+-- & -- & \multicolumn{2}{c}{\pending} & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+display ใช้รูปแบบสองหลักเชิงวิทยาศาสตร์ เช่น
+$-7.55\mathrm{e}{-01}+7.32\mathrm{e}{+00}j$ แต่ stored values ต้องคง machine precision
+และ Mode No. เป็นเพียง deterministic display number ไม่ใช่ state index
+
+\section{Time-Domain Simulation}
+
+TS integrate สมการเดียวกับ equilibrium และ SSSA ระหว่าง event transactions
+สำหรับ implicit trapezoidal,
+\begin{equation}
+x_{n+1}=x_n+\frac{h}{2}
+\left[f(t_n,x_n,y_n,u_n,e_n)+f(t_{n+1},x_{n+1},y_{n+1},u_{n+1},e_{n+1})\right],
+\end{equation}
+พร้อม endpoint algebraic constraint
+\begin{equation}
+g(t_{n+1},x_{n+1},y_{n+1},u_{n+1},e_{n+1};Y_{n+1})=0.
+\end{equation}
+
+fault on, fault clear, SG trip, GFL/GFM mode transfer และ reclose เป็น atomic
+transactions มี left/right samples, transaction ID, pre/right KCL norms และ fail-closed
+rollback การลงจอดที่ event time ต้อง exact ไม่ interpolate ข้าม topology discontinuity
+
+\begin{table}[H]\centering\small
+\caption{TS event transaction schema}
+\begin{tabularx}{\textwidth}{rrlrrrX}
+\toprule
+Event & Tx & Type & Requested $t$ & Actual $t$ & Bus/device & Status/KCL \\\midrule
+-- & -- & -- & -- & -- & -- & \pending \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+ทุก plot series ต้องมี signal metadata เช่น device ID, bus ID, local/global state index,
+symbol, unit, absolute/relative reference และ online/mode interval กราฟที่จะสร้างหลัง
+Phase 5 ได้แก่ absolute frequency, fault-bus voltage, device $P/Q$, current magnitude
+เทียบ current limit, VSG/PLL angle และ event markers
+
+\section{ผลลัพธ์ที่ต้องสร้างหลัง Phase 4--5}
+
+\begin{table}[H]\centering
+\caption{ผลที่ยังไม่ควรถูกเติมด้วยมือ}
+\begin{tabularx}{\textwidth}{p{.3\textwidth}Xl}
+\toprule
+ผลลัพธ์ & หลักฐานที่ต้องมี & สถานะ \\\midrule
+PF & case/config fingerprint, iterations, mismatch, bus/branch tables & \pending \\
+Equilibrium & active/frozen maps, $\|f\|_\infty$, full KCL, active bounds & \pending \\
+Full-state SSSA & $A$ hash/domain, full roots, eigen residuals, participation & \pending \\
+Physical spectrum & quotient/tangent maps และ lifted participation & \pending \\
+TS & event schedule, accepted steps, residuals, event logs, signal map & \pending \\
+Cross-analysis identity & PF/equilibrium fingerprint เดียวกับ SSSA และ TS & \pending \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Verification Gates}
+
+\begin{enumerate}
+\item ทุก active-state derivative finite และ equilibrium/KCL residual ต่ำกว่า tolerance ที่ freeze ไว้
+\item $A_{full}=f_x-f_y(g_y\backslash g_x)$ และ $A$ ตรงกับ approved active projection
+\item eigen residual ซ้าย/ขวา, biorthogonality และ participation-sum gates ผ่าน
+\item state inventory cardinality ตรงกับ device states และทุก reduced row มี owner เดียว
+\item permutation test รักษา eigenvalue multiset และ aggregate device participation
+\item PF, SSSA และ TS ใช้ state/input/base/frame/fingerprint เดียวกัน
+\item limit tests ครอบคลุม entry, hold, inward release และ opposite-direction recovery
+\item ไม่มี \code{inv}, \code{pinv}, external solver หรือ loaded numerical solution ใน production
+\item full regression รันหนึ่งครั้งบน final unchanged production tree หลัง Phase 4--5
+\end{enumerate}
+
+\section{สถานะหลักฐานปัจจุบัน}
+
+ตาม canonical handoff ณ commit \code{7c72b94}, Phases 0A/1/2/3 และ modal/report
+hardening ถูกส่งมอบแล้ว targeted suites รายงาน 77/77 ผ่าน และ full regression ที่
+commit \code{80568cf} รายงาน 1024 passed, 0 failed, 4 incomplete โดย incomplete
+ทั้งหมดเป็น external PGAz validation assumptions ข้อมูลนี้เป็น provenance จาก handoff
+ไม่ใช่การ rerun ใหม่เพื่อสร้างรายงานฉบับนี้ และไม่เปลี่ยนสถานะ nonlinear GFL source gap
+
+\section{ข้อจำกัดและงานถัดไป}
+
+\begin{enumerate}
+\item GFL WECC ปัจจุบันมี dynamic states จริง แต่ไม่มี explicit PLL state
+\item Fu model ใช้อธิบาย linear port behavior ได้ แต่ใช้แทน nonlinear PF/TS model ไม่ได้
+\item ต้องปิด Phase 0B source checklist ก่อน freeze state order ของ PLL-resolved GFL
+\item Phase 4 ต้องสร้าง GFL ใหม่เป็น opt-in model โดยไม่ mutate WECC semantics
+\item Phase 5 จึงเชื่อม model เดียวกันเข้าสู่ equilibrium, SSSA และ TS
+\item หลัง final gates ผ่าน scripts ต้องสร้าง tables/figures โดยอัตโนมัติและเติมส่วนผลลัพธ์
+ของรายงานนี้โดยไม่พิมพ์ตัวเลขด้วยมือ
+\end{enumerate}
+
+\section{สรุป}
+
+โครงรายงานและสมการที่ตรวจสอบย้อนกลับได้สำหรับ GFM REGFM\_B1, GFL WECC,
+PF/equilibrium, full-state SSSA และ TS ถูกจัดวางแล้วในระดับเดียวกับรายงาน Padiyar
+สิ่งที่ตั้งใจเว้นว่างไม่ใช่ข้อมูลตกหล่น แต่เป็น fail-closed boundary ต่อ source gap:
+จนกว่าจะมี nonlinear PLL-resolved GFL source และ implementation ที่ผ่าน Phase 4--5
+จะไม่มีการกล่าวอ้าง GFL PLL mode, state order หรือผล PF/SSSA/TS ของโมเดลใหม่
+
+\begin{thebibliography}{9}
+\bibitem{regfm}
+Du et al., \emph{Grid-Forming Inverter Model Specification: REGFM\_B1},
+NREL/TP-5D00-90260, 2024.
+
+\bibitem{wecc2g}
+WECC, \emph{Specification of the Second Generation Generic Models for Wind
+Turbine Generators}, 2014, REGC\_A and REEC\_A sections.
+
+\bibitem{weccguide}
+WECC, \emph{Wind Plant Dynamic Modeling Guidelines}, 2014.
+
+\bibitem{fu2024}
+Fu et al., ``A General [P,Q]--[$\omega$,V] Model of Hybrid GFM/GFL Multi-VSC
+Systems: Power Oscillation Analysis and Suppression Method,'' IEEE Journal of
+Emerging and Selected Topics in Industrial Electronics, 2024.
+
+\bibitem{contract}
+Power-flow Project, \emph{IEEE14 IBR Dynamic Equation Contract},
+\path{docs/project/IEEE14_IBR_DYNAMIC_EQUATION_CONTRACT.md}, 2026.
+\end{thebibliography}
+
+\end{document}

@@ -106,13 +106,25 @@ cross-MATLAB-version canonicalization audit.
 
 ### Remaining BLOCKED phases
 
-- **Phase 0B** (pending, user/source decision): locate an authoritative
-  nonlinear positive-sequence GFL source covering the ten checklist items
-  (PLL angle+integrator ODE; PLL gains/base/freeze/limits; P/Q measurement+
-  controller; current command/dynamics; dq/network transforms; current
-  limit/priority/anti-windup; equilibrium init; low-voltage behavior;
-  parameter table; valid timescale/domain). Then approve that source OR
-  explicitly freeze Fu usage as linear-SSSA-only.
+- **Phase 0B** — **SOURCE_GAP_BLOCKED (2026-07-18).** The bounded
+  authoritative search is complete. No authoritative nonlinear
+  positive-sequence PLL-resolved GFL source or compatible authoritative
+  source set was found that jointly supplies the frozen 10-item checklist.
+  All 8 candidates audited and FAIL/REJECT as sole source; full evidence
+  in `docs/project/IEEE14_IBR_PHASE0B_SOURCE_AUDIT.md`. The strongest
+  candidate, Yazdani & Iravani 2010 (textbook), supplies the nonlinear
+  SRF-PLL + dq-frame converter/current-control + network injection
+  (4 PASS) but is missing P/Q measurement LPF, I_max+P/Q priority,
+  anti-windup, equilibrium init, and LV freeze (4 NOT FOUND). WECC
+  REGC_A/REEC_A cannot close the gap because it is PLL-less and
+  frame-incompatible with Yazdani's PLL-angle convention; a Yazdani+WECC
+  composite would require a new PROJECT_DERIVED interface, not a
+  source-defined composite. Final status:
+  `PHASE_0B_SOURCE_DECISION = NO_SOURCE_APPROVED`,
+  `PHASE_0B_STATUS = SOURCE_GAP_BLOCKED`. Reopening requires a
+  user-supplied equation-level positive-sequence RMS PLL-resolved GFL
+  specification covering the complete 10-item checklist, OR a separately
+  authorized PROJECT_DERIVED composite/EMT-to-RMS reduction plan.
 - **Phase 4** (BLOCKED on 0B): explicit-state nonlinear GFL — new model
   file (do not mutate WECC semantics); freeze model family, equations,
   state order, parameters, bases, limits, init.

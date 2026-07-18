@@ -36,11 +36,17 @@ tbl = struct('status','AVAILABLE','rows',rows,'summary',struct('n',3));
 % element ('a',1) — the other two are lost.
 ```
 
-The `struct()` constructor expands a cell-array value into a struct array
-*field-by-field* when every cell element is a struct with identical fields.
-When the cell is stored as the value of a single struct field via
-`struct('rows',rows,...)`, MATLAB creates a struct array whose `rows` field
-takes only the first cell element, collapsing the rest.
+The `struct()` constructor treats a cell-array value as a comma-separated
+list and builds a struct array whose size is the broadcast of all field-value
+sizes. When one field value is a [14x1] cell of identical-field structs and
+the other field values (`'AVAILABLE'`, `struct('n',3)`) are scalars, MATLAB
+broadcasts the scalars against the [14x1] cell and would normally produce a
+[14x1] struct array — BUT the cell elements are themselves structs with
+identical fields, so the constructor interprets the cell as a
+comma-separated list of struct-array *components* and collapses the outer
+struct to a [1x1] whose `rows` field holds only the first cell element.
+Wrapping the cell in another cell (`{rows}`) forces the constructor to treat
+it as a single scalar value, preserving the full 14-element cell.
 
 ### Defect 2 (parentheses on cell array)
 

@@ -703,12 +703,17 @@ else
 end
 end
 
-% --- Canonical serialization (deterministic, MATLAB-version-independent) -
+% --- Canonical serialization (deterministic within a MATLAB version) ----
 function s = canonical_serialize(x)
-% Recursive canonical serialization to a UTF-8 string.
+% Recursive canonical serialization to a string.
 % Sorts struct fields, encodes class/dims/values explicitly. Rejects
-% function handles and Java objects. The caller (sha256_str) does the
-% UTF-8 encoding.
+% function handles, Java objects, and any unsupported type by erroring
+% fail-closed (a fingerprint that silently drops a value would be
+% misleading). The caller (sha256_str) does the UTF-8 encoding.
+% NOTE: this is a change-detection fingerprint, NOT a cross-version
+% canonical form; mat2str/num2str formatting can vary across MATLAB
+% releases. Stability is asserted only for identical input on the same
+% MATLAB version (covered by test_fingerprint_stable_identical_input).
 s = serialize_value(x);
 end
 
@@ -737,7 +742,9 @@ elseif isnumeric(x)
 elseif islogical(x)
     s = ['L', num2str(x)];
 else
-    s = 'X';   % unsupported type — stable placeholder
+    error('ibr:section_h_report:unsupportedType', ...
+        'canonical_serialize: unsupported type %s; cannot compute a faithful fingerprint.', ...
+        class(x));
 end
 end
 
@@ -751,7 +758,7 @@ try
     h = lower(reshape(dec2hex(typecast(digest,'uint8'),2).',1,[]));
 catch
     error('ibr:section_h_report:sha256Unavailable', ...
-        'Java SHA-256 unavailable; cannot compute durable fingerprint.');
+        'Java SHA-256 unavailable; cannot compute change-detection fingerprint.');
 end
 end
 

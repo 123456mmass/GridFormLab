@@ -269,6 +269,43 @@ testCase.assertEqual(numel(rows), 1);
 testCase.assertEqual(rows{1}.analysis, 'EQUILIBRIUM');
 end
 
+function test_fingerprint_unsupported_type_fails_closed(testCase)
+% Fail-closed guard: an unsupported type in the fingerprint payload must
+% error rather than silently produce a placeholder hash.
+inputs = minimal_inputs();
+% Attach a function handle (unsupported by canonical_serialize) to a
+% field that feeds the fingerprint.
+inputs.resource_map = struct('resource_index',1,'device_index',1, ...
+    'device_id','IBR1','bus_position',2,'bus_id',2, ...
+    'device_type','ibr_gfm','online',true, ...
+    'bad_field', @sin);
+testCase.assertError(@() ibr.section_h_report(inputs), ...
+    'ibr:section_h_report:unsupportedType');
+end
+
+function test_spectrum_rows_is_cell_when_available(testCase)
+% Shape guard: full_state_eigenvalues.rows must be a cell array, not a
+% struct array collapsed by the struct() constructor.
+inputs = inputs_with_sssa();
+r = ibr.section_h_report(inputs);
+testCase.assertEqual(r.full_state_eigenvalues.status, 'AVAILABLE');
+rows = r.full_state_eigenvalues.rows;
+testCase.assertTrue(iscell(rows), ...
+    'full_state_eigenvalues.rows must be a cell array');
+testCase.assertEqual(numel(rows), 4);
+end
+
+function test_participation_rows_is_cell_when_available(testCase)
+% Shape guard: participation.rows must be a cell array.
+inputs = inputs_with_sssa();
+r = ibr.section_h_report(inputs);
+testCase.assertEqual(r.participation.status, 'AVAILABLE');
+rows = r.participation.rows;
+testCase.assertTrue(iscell(rows), ...
+    'participation.rows must be a cell array');
+testCase.assertEqual(numel(rows), 4);
+end
+
 % ===================== resource map =====================================
 function test_resource_map_not_inferred_when_absent(testCase)
 inputs = minimal_inputs();

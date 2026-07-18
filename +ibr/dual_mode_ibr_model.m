@@ -75,17 +75,49 @@ end
 
 % --- Build internal standalone devices (single source of truth) -------------
 % GFL device: u=[P_ref;Q_ref]. GFM device: u=[P_ref;V_ref].
-gfl_dev = ibr.gfl_model(device_id, bus_id, bus_position, bus_ids, V0, params, P_ref_pu, Q_ref_pu);
+% Construction-time GFL family selection (params.gfl_family): 'wecc_regca_reeca'
+% (default, 7-state) or 'rms10' (10-state). The output device_type encodes the
+% family so the metadata registry can dispatch exactly (no variable nx under
+% one device_type).
+gfl_family = 'wecc_regca_reeca';
+if isfield(params,'gfl_family') && ~isempty(params.gfl_family)
+    gfl_family = char(params.gfl_family);
+end
+switch lower(strtrim(gfl_family))
+case 'wecc_regca_reeca'
+    % Forward params (minus gfl_family) so the WECC default sees its overrides.
+    gfl_params = rmfield_if(params, 'gfl_family');
+    gfl_dev = ibr.gfl_model(device_id, bus_id, bus_position, bus_ids, V0, ...
+        gfl_params, P_ref_pu, Q_ref_pu);
+    device_type_tag = 'ibr_dual_mode';
+    contract_nx = 20;
+case 'rms10'
+    gfl_params = params;
+    gfl_params.gfl_family = 'rms10';
+    gfl_dev = ibr.gfl_model(device_id, bus_id, bus_position, bus_ids, V0, ...
+        gfl_params, P_ref_pu, Q_ref_pu);
+    device_type_tag = 'ibr_dual_mode_rms10';
+    contract_nx = 23;
+otherwise
+    error('ibr:dual_mode_ibr_model:unknownFamily', ...
+        'Unknown GFL family "%s" for dual-mode device. Supported: wecc_regca_reeca (default), rms10.', gfl_family);
+end
 gfm_dev = ibr.regfm_b1_vsg_model(device_id, bus_id, bus_position, bus_ids, V0, params, P_ref_pu, V_ref_pu);
 
 % --- Superset state layout: separate source-model branches ----------------
 % WECC REGC_A/REEC_A is voltage-angle aligned algebraically and has no PLL
 % state.  REGFM_B1 owns its PLL and relative inertial angle.  The two state
 % vectors are therefore concatenated without artificial shared coordinates.
+% GFL-RMS10 owns its own SRF-PLL; still concatenated without shared coordinates.
 state_names = [strcat('gfm_',gfm_dev.state_names), ...
                strcat('gfl_',gfl_dev.state_names)];
 nx = gfm_dev.nx+gfl_dev.nx;
 nu = 3;
+if nx ~= contract_nx
+    error('ibr:dual_mode_ibr_model:layoutMismatch', ...
+        'Dual-mode layout nx=%d does not match the %s contract nx=%d.', ...
+        nx, device_type_tag, contract_nx);
+end
 
 x0 = [gfm_dev.x0(:);gfl_dev.x0(:)];
 
@@ -149,7 +181,7 @@ dev.device_id = char(device_id);
 dev.bus_id = bus_id;
 dev.bus_position = bus_position;
 dev.bus_ids = bus_ids(:).';
-dev.device_type = 'ibr_dual_mode';
+dev.device_type = device_type_tag;
 dev.mode = char(mode);
 dev.initial_mode = char(mode);
 dev.initial_online = true;
@@ -190,8 +222,9 @@ dev.frozen_state_values  = [];
 dev.frozen_state_source  = '';
 dev.frozen_state_classification = '';
 dev.provenance = struct( ...
-    'model','dual_mode_wecc_gfl_regfm_b1_g2', ...
-    'source','Reuses WECC REGC_A/REEC_A GFL + REGFM_B1 G2 as single source of truth', ...
+    'model', sprintf('dual_mode_%s_gfl_regfm_b1_g2', gfl_family), ...
+    'source',['Reuses ', gfl_family, ' GFL + REGFM_B1 G2 as single source of truth'], ...
+    'gfl_family', gfl_family, ...
     'superset_nx', nx, ...
     'shared_states', {{}}, ...
     'gfm_unique_states', {gfm_dev.state_names}, ...
@@ -678,4 +711,12 @@ info = struct('Vbus',Vbus,'I_left',I_left,'I_right',I_right, ...
     'tol',tol,'source_mode',char(src_mode),'target_mode',char(target), ...
     'gfm_idx',gfm_idx,'gfl_idx',gfl_idx);
 
+end
+
+% =========================================================================
+function s = rmfield_if(s, name)
+%RMFIELD_IF  Remove a field if present; otherwise return the struct unchanged.
+if isfield(s, name)
+    s = rmfield(s, name);
+end
 end

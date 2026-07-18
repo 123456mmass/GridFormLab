@@ -26,9 +26,12 @@ function report = section_h_report(inputs, opt)
 %     inputs.versions        (optional, caller-supplied version numbers)
 %     inputs.full_state_ownership (optional, SG state ownership rows)
 %
-%   GFL_PLL_PARTICIPATION is always reported as
-%   'NOT APPLICABLE TO CURRENT PRODUCTION MODEL' until an explicit-state
-%   GFL source is approved (Phase 0B/4).
+%   GFL_PLL_PARTICIPATION is derived from the state inventory: a production
+%   WECC-only inventory reports 'NOT APPLICABLE TO CURRENT PRODUCTION MODEL'
+%   (WECC GFL has no explicit PLL state); an inventory that includes an active
+%   GFL-RMS10 device (delta_PLL/xi_PLL state rows present and active) reports
+%   'APPLICABLE_EXPLICIT_GFL_PLL_STATES'. This is a pure read of the state
+%   inventory; no production equation or Ared change.
 %
 %   See: docs/project/IEEE14_IBR_DYNAMIC_EQUATION_CONTRACT.md (Section H).
 %   Status: SOURCE_IMPLEMENTED_PENDING_INTEGRATION_GATES. Read-only
@@ -66,7 +69,7 @@ end
 report = struct();
 report.schema_version = schema_version;
 report.status = 'AVAILABLE';
-report.gfl_pll_participation = 'NOT APPLICABLE TO CURRENT PRODUCTION MODEL';
+report.gfl_pll_participation = gfl_pll_applicability(inputs);
 
 % --- Assemble 12 sections in frozen order -------------------------------
 sections = repmat(section_template(), 1, 12);
@@ -303,7 +306,7 @@ s.summary = struct('biorthogonality_residual',bio_res, ...
     'n_available_modes',sum(avail), ...
     'n_unavailable_modes',sum(~avail), ...
     'participation_sum_tol',part_sum_tol, ...
-    'gfl_pll_participation','NOT APPLICABLE TO CURRENT PRODUCTION MODEL');
+    'gfl_pll_participation',gfl_pll_applicability(inputs));
 end
 
 % --- Section 9: TS EVENT TRANSACTIONS -----------------------------------
@@ -446,7 +449,7 @@ end
 tbl.status = 'AVAILABLE';
 tbl.rows = rows;
 tbl.summary = struct('n_modes', n, 'participation_sum_tol', part_sum_tol, ...
-    'gfl_pll_participation', 'NOT APPLICABLE TO CURRENT PRODUCTION MODEL');
+    'gfl_pll_participation', gfl_pll_applicability(inputs));
 end
 
 % --- TS tables -----------------------------------------------------------
@@ -553,7 +556,7 @@ if isfield(report,'full_state_eigenvalues') && isfield(report.full_state_eigenva
 end
 v.cardinality_check = (v.full_state_eigenvalues_count == v.size_Ared);
 v.participation_sum_tol = part_sum_tol;
-v.gfl_pll_participation = 'NOT APPLICABLE TO CURRENT PRODUCTION MODEL';
+v.gfl_pll_participation = gfl_pll_applicability(inputs);
 end
 
 % --- analysis_fingerprint ----------------------------------------------
@@ -626,6 +629,45 @@ if ~isfield(inputs,'inventory') || ~isfield(inputs.inventory,'input_rows')
     return;
 end
 h = sha256_str(canonical_serialize(inputs.inventory.input_rows));
+end
+
+function s = gfl_pll_applicability(inputs)
+%GFL_PLL_APPLICABILITY  Derive GFL-PLL participation applicability from state inventory.
+%   The production WECC GFL has no explicit PLL state (current aligns to angle(V)
+%   algebraically), so GFL-PLL participation is NOT APPLICABLE. The GFL-RMS10
+%   device owns explicit SRF-PLL states (delta_PLL, xi_PLL); when any active
+%   state row carries such a name, applicability becomes APPLICABLE_EXPLICIT.
+%   This is a pure read of inputs.inventory.state_rows; no production equation
+%   or Ared change. WECC-only inventories retain the legacy NOT APPLICABLE.
+not_applicable = 'NOT APPLICABLE TO CURRENT PRODUCTION MODEL';
+applicable = 'APPLICABLE_EXPLICIT_GFL_PLL_STATES';
+s = not_applicable;
+if ~isfield(inputs,'inventory') || ~isstruct(inputs.inventory) ...
+        || ~isfield(inputs.inventory,'state_rows')
+    return;
+end
+rows = inputs.inventory.state_rows;
+if isempty(rows)
+    return;
+end
+% state_rows may be a struct array (1xN) or a cell of structs; normalize.
+if iscell(rows)
+    names = cellfun(@(r) char(r.state_name), rows, 'UniformOutput', false);
+    statuses = cellfun(@(r) char(r.state_status), rows, 'UniformOutput', false);
+else
+    names = arrayfun(@(r) char(r.state_name), rows, 'UniformOutput', false);
+    statuses = arrayfun(@(r) char(r.state_status), rows, 'UniformOutput', false);
+end
+pll_names = {'delta_PLL','xi_PLL','gfl_delta_PLL','gfl_xi_PLL'};
+for k = 1:numel(names)
+    if any(strcmp(names{k}, pll_names)) && ...
+            (strcmp(statuses{k},'ACTIVE_IN_ARED') || ...
+             strcmp(statuses{k},'ACTIVE') || ...
+             strcmp(statuses{k},'ACTIVE_IN_FULL'))
+        s = applicable;
+        return;
+    end
+end
 end
 
 function h = hash_matrix(inputs, field, subfield)

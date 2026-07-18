@@ -65,8 +65,14 @@ V0_complex = pf.bus_voltage(:) .* exp(1i * deg2rad(pf.bus_angle_deg(:)));
 
 % --- Build device modes lookup --------------------------------------------
 mode_lookup = struct();
+family_lookup = struct();
 for k = 1:numel(device_modes)
     mode_lookup.(device_modes(k).device_id) = device_modes(k).mode;
+    if isfield(device_modes(k),'gfl_family') && ~isempty(device_modes(k).gfl_family)
+        family_lookup.(device_modes(k).device_id) = char(device_modes(k).gfl_family);
+    else
+        family_lookup.(device_modes(k).device_id) = '';
+    end
 end
 
 % --- Build the 4 real IBR devices ------------------------------------------
@@ -82,6 +88,10 @@ for k = 1:numel(ibr_ids)
     V0 = V0_complex(bp);
     Mbase = Mbase_map.(did);
     params = struct('Mbase', Mbase);
+    fam = family_lookup.(did);
+    if ~isempty(fam)
+        params.gfl_family = fam;   % construction-time GFL family selection
+    end
     P_ref_pu = dispatch_MW.(did) / Sbase;   % MW -> pu (system base)
     Q_ref_pu = 0.0;                          % unity PF default
     V_ref_pu = abs(V0);                      % voltage setpoint = PF magnitude

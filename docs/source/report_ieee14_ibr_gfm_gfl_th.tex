@@ -403,6 +403,47 @@ I_{unc},& |I_{unc}|\le I_{maxF}/\kappa,\\
 \end{cases}
 \end{align}
 
+\paragraph{ความหมายของ clamp ในมุม VSM.}
+operator $\clamp(z,\ell,h)$ บังคับค่า $z$ ให้อยู่ในช่วงปิด $[\ell,h]$:
+\begin{equation}
+\clamp(z,\ell,h)=\min\!\bigl(\max(z,\ell),h\bigr)
+=\begin{cases}
+\ell,&z<\ell,\\
+z,&\ell\le z\le h,\\
+h,&z>h.
+\end{cases}
+\label{eq:clamp-definition}
+\end{equation}
+ดังนั้นสมการมุมเขียนเต็มได้เป็น
+\begin{equation}
+\delta_{VSM}=\begin{cases}
+\delta_{PLL}+\delta_{IT}^{min},&\delta_{IT}<\delta_{IT}^{min},\\
+\delta_{PLL}+\delta_{IT},&\delta_{IT}^{min}\le\delta_{IT}\le\delta_{IT}^{max},\\
+\delta_{PLL}+\delta_{IT}^{max},&\delta_{IT}>\delta_{IT}^{max}.
+\end{cases}
+\label{eq:vsm-angle-piecewise}
+\end{equation}
+$\delta_{PLL}$ คือมุม terminal/grid ที่ PLL ประมาณและใช้เป็น measurement frame;
+$\delta_{IT}$ คือ virtual-inertial displacement เทียบกับ PLL; $\delta_{IT}^{min}$ และ
+$\delta_{IT}^{max}$ คือ dynamic lower/upper bounds; ส่วน $\delta_{VSM}$ คือมุมสุดท้าย
+ของ internal voltage phasor $E_{VSM}e^{j\delta_{VSM}}$ ที่ใช้คำนวณ current injection
+clamp นี้ไม่ใช่การ wrap มุมเข้า $[-\pi,\pi]$ และไม่ได้จำกัด $\delta_{PLL}$ โดยตรง
+
+ตัวอย่าง ถ้า $\delta_{PLL}=20^\circ$ และ bounds เท่ากับ $[-10^\circ,10^\circ]$:
+$\delta_{IT}=5^\circ$ ให้ $\delta_{VSM}=25^\circ$;
+$\delta_{IT}=15^\circ$ ถูก clamp เป็น $10^\circ$ จึงให้ $30^\circ$;
+และ $\delta_{IT}=-18^\circ$ ถูก clamp เป็น $-10^\circ$ จึงให้ $10^\circ$
+วัตถุประสงค์คือจำกัดความต่างมุมระหว่าง internal voltage กับ terminal voltage
+เพื่อไม่ให้ current demand จาก voltage-behind-impedance relation สูงเกิน converter capability
+
+ใน interior regime มี
+$\dot\delta_{VSM}=\dot\delta_{PLL}+\dot\delta_{IT}=\omega_0\omega_m$
+แต่เมื่อ clamp ทำงาน ถ้า bound หยุดนิ่งจะได้
+$\dot\delta_{VSM}=\dot\delta_{PLL}$; ถ้า bound เคลื่อนที่จะได้
+$\dot\delta_{VSM}=\dot\delta_{PLL}+\dot\delta_{IT}^{max}$ หรือ
+$\dot\delta_{PLL}+\dot\delta_{IT}^{min}$ ตามขอบที่ active
+จึงต้อง linearise ด้วย fixed active regime ไม่ใช้ smooth interior identity ครอบทุกกรณี
+
 สมการ $I_{unc}$ คือ voltage-behind-impedance relation: phasor ภายใน
 $E_{VSM}e^{j\delta_{VSM}}$ ผลักกระแสผ่าน virtual impedance $R_e+jX_L$
 เข้าสู่ terminal voltage $V$ จึงใกล้เคียงเชิงหน้าที่กับ internal EMF หลัง reactance ของ SG

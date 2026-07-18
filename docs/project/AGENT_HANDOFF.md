@@ -7,6 +7,80 @@ Tested working tree: `5373921` (GFL-RMS10 Phase 4: TS disturbance + limiter veri
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-07-19 — current continuation: all-GFL SSSA initialization (OPEN)
+
+**Current repository checkpoint:** `649e168` (`HEAD == origin/main` when this
+entry was written).  The next agent must start from a clean tree, re-read this
+section, `AGENTS.md`, and `TRACK_COORDINATION.md`, then treat the following as
+an unfinished numerical diagnosis—not a completed production capability.
+
+### User-visible symptom
+
+In the compact IBR launcher, choosing `SSSA` with `Initial GFM count = 0` and
+`Initial GFL count = 4` (SG1 remains online) fails closed before eigenanalysis:
+
+```matlab
+o = wizard.defaults_for_method('ibr','ieee14_1sg_4ibr');
+o.ibr_analysis = 'sssa';
+o.initial_gfm_count = 0; o.initial_gfl_count = 4;
+o.initial_gfm_indices = []; o.initial_reference_resource_index = [];
+o.ibr_events = struct('enabled',false); o.plot_results = false;
+r = solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',o);
+```
+
+Observed route: `wizard:dispatch_analysis:ibrEquilibrium` wrapping
+`mixed_equilibrium_solve:noConverge`.  It is correct that no eigenvalue/state
+table is printed without a converged equilibrium.  Do not fabricate a spectrum,
+silently convert a GFL to GFM, relax a tolerance, or alter any source/case
+parameter to make this pass.
+
+### What is currently being changed
+
+The in-progress helper `+stability/mixed_ibr_sg_on_gfl_initialize.m` is a
+`PROJECT_DERIVED` **warm-start only** for the narrow SG-on/all-online-GFL
+configuration. It changes each online GFL terminal bus from the inherited PF
+PV label to the effective PQ semantics implied by its actual `P_ref,Q_ref`,
+runs the existing in-house PF, and calls device-owned
+`equilibrium_initialize`. `+stability/sg_composite_device.m` now exposes an
+EMF6 stationary initializer based on the same stator equations and derives its
+constant `[Tm,Efd]` seed through the existing RHS. `mixed_equilibrium_solve`
+then still solves and verifies the unmodified full DAE/KCL system at the
+unchanged `1e-8` gate.
+
+This helper did **not** yet converge end-to-end. The last direct attempt still
+reported a coupled residual above tolerance. Its purpose is diagnostic; do not
+claim it is a correction until the gates below pass.
+
+### Required next work
+
+1. At the mode-aware seed, print/measure residual blocks separately: SG RHS,
+   every GFL RHS, and full KCL. Establish which block prevents Newton progress.
+2. Independently check the SG stationary initializer against the existing
+   `synchronous_emf6_ssa.initialize_equilibrium` equations for identical
+   terminal V and P+jQ. Do not accept merely because a test passes.
+3. Repair only the proven initializer/runtime defect. No ODE, state order,
+   source parameter, limiter, base/sign convention, or acceptance tolerance may
+   change without a new approved contract.
+4. Add a targeted all-GFL normal-operation equilibrium/SSSA test only once an
+   independent oracle establishes expected finite residual/KCL behavior. Then
+   run the changed launcher/UI tests and, after the runtime path is settled,
+   the required full regression.
+5. Update/create a defect record before delivery. No record exists yet for
+   this all-GFL symptom; use `docs/project/defects/2026-07-19-sg-on-all-gfl-equilibrium.md`
+   and add it to `INDEX.md`.
+
+### Scope already delivered and not to regress
+
+- IBR menu separates `Power Flow`, `SSSA`, `Time-Domain Simulation (TS)`, and
+  `Full Analysis`; do not collapse them again.
+- GFM/GFL count UI is intended to be available for PF/SSSA/TS, with GFL being
+  the complement of selected online IBRs and reference index automatic.
+- The report is `docs/source/report_ieee14_ibr_pf_sssa_ts_en.tex`; figures are
+  MATLAB-generated vector PDFs from
+  `scripts/reporting/render_ieee14_ibr_pf_sssa_ts_matlab_figures.m`.
+- Existing Profile B remains SG1 + IBR2 GFM13 + IBR3/6/8 GFL-RMS10, 48 active
+  states. Its existing results are not evidence for the new all-GFL route.
+
 ## 2026-07-19 — IBR PF/SSSA/TS/Full launcher products
 
 ### SG trip-return PF/SSSA comparisons

@@ -1,8 +1,8 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3
+Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4
 Branch: `main`
-Tested working tree: `80568cf` (IBR Phase 3 hardening: fail-closed fingerprint + shape guards)
+Tested working tree: `5373921` (GFL-RMS10 Phase 4: TS disturbance + limiter verification)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
@@ -104,33 +104,85 @@ cross-MATLAB-version canonicalization audit.
 - No production numerical equation, Ared, ABI, schema, or runtime contract
   changed. `IBR_PRODUCTION_INTEGRATION_READY` remains `NOT_READY`.
 
-### Remaining BLOCKED phases
+### GFL-RMS10 reopening + Phases 4/5/6 (2026-07-18/19)
 
-- **Phase 0B** — **SOURCE_GAP_BLOCKED (2026-07-18).** The bounded
-  authoritative search is complete. No authoritative nonlinear
-  positive-sequence PLL-resolved GFL source or compatible authoritative
-  source set was found that jointly supplies the frozen 10-item checklist.
-  All 8 candidates audited and FAIL/REJECT as sole source; full evidence
-  in `docs/project/IEEE14_IBR_PHASE0B_SOURCE_AUDIT.md`. The strongest
-  candidate, Yazdani & Iravani 2010 (textbook), supplies the nonlinear
-  SRF-PLL + dq-frame converter/current-control + network injection
-  (4 PASS) but is missing P/Q measurement LPF, I_max+P/Q priority,
-  anti-windup, equilibrium init, and LV freeze (4 NOT FOUND). WECC
-  REGC_A/REEC_A cannot close the gap because it is PLL-less and
-  frame-incompatible with Yazdani's PLL-angle convention; a Yazdani+WECC
-  composite would require a new PROJECT_DERIVED interface, not a
-  source-defined composite. Final status:
-  `PHASE_0B_SOURCE_DECISION = NO_SOURCE_APPROVED`,
-  `PHASE_0B_STATUS = SOURCE_GAP_BLOCKED`. Reopening requires a
-  user-supplied equation-level positive-sequence RMS PLL-resolved GFL
-  specification covering the complete 10-item checklist, OR a separately
-  authorized PROJECT_DERIVED composite/EMT-to-RMS reduction plan.
-- **Phase 4** (BLOCKED on 0B): explicit-state nonlinear GFL — new model
-  file (do not mutate WECC semantics); freeze model family, equations,
-  state order, parameters, bases, limits, init.
-- **Phase 5** (BLOCKED on 4; single-owner shared): PF/SSSA/TS routing of
-  the new GFL through the SAME equations; atomic switching/transfer if
-  approved; targeted + final regression.
+**Status:** Phase 0B reopened as a user-authorized PROJECT_DERIVED RMS10
+composite (NOT a complete source-defined GFL). Phases 4/5/6 complete for the
+normal-operation slice. Tested commits `7ce08ae` → `5373921`.
+
+The user supplied three textbooks (Yazdani 2010, Teodorescu 2011, Bacha 2014)
+that close the nonlinear PLL/current-controller/L-filter core (6 of 10 GFL
+states SOURCE_DEFINED). The remaining 4 states (P/Q filters, outer-loop
+integrators) and all limiters/anti-windup/LV semantics are APPROVED_PROJECT_DERIVED.
+Full provenance: `docs/project/IEEE14_IBR_GFL_RMS10_PROVENANCE.md`;
+frozen numerical parameter manifest:
+`docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md`.
+
+Final source verdict (honest):
+- `SOURCE_DEFINED_NONLINEAR_CORE_CLOSED = YES`
+- `FULL_SOURCE_DEFINED_GFL_MODEL = NO`
+- `APPROVED_PROJECT_DERIVED_RMS10_SLICE = YES`
+- `NUMERICAL_PARAMETER_PROFILE_FROZEN = YES`
+
+What was delivered (commits 7ce08ae → 5373921):
+
+1. **Phase 0** (`7ce08ae`): parameter manifest + provenance doc frozen BEFORE
+   production code (stop condition satisfied).
+2. **Phase 1** (`7ce08ae`): `+ibr/gfl_rms10_model.m` — 10-state device mirroring
+   the WECC/REGFM_B1 generic ABI. Equilibrium verified machine-zero residual
+   (~1e-15). LV fail-closed (no PLL freeze). Anti-windup one-sided conditional
+   hold. 25 device tests PASS.
+3. **Phase 2** (`7ce08ae`): `tests/test_ibr_gfl_rms10_model.m` — 25 falsification
+   tests (ABI, equilibrium, kappa, dq/sign, current-plant oracle, PLL ODE,
+   P/Q filters, current-priority limit, anti-windup hold/release, vector clamp,
+   LV fail-closed, Jacobian FD, no-external-solver grep, fail-closed IDs).
+4. **Phase 3** (`dd3af91`): opt-in routing via `params.gfl_family`
+   (construction-time). `gfl_model.m` dispatcher; `dual_mode_ibr_model.m`
+   23-state layout with distinct `device_type='ibr_dual_mode_rms10'`;
+   `device_contract_metadata.m` registers `ibr_gfl_rms10` (10/2) +
+   `ibr_dual_mode_rms10` (23-state); `build_ieee14_sg_ibr_devices.m` forwards
+   `device_modes(k).gfl_family`; `section_h_report.m` derives GFL-PLL
+   applicability from state inventory (APPLICABLE_EXPLICIT_GFL_PLL_STATES when
+   an active RMS10 delta_PLL/xi_PLL row is present). Legacy ibr_dual_mode
+   (20-state) unchanged (G15); REGFM_B1 GFM unchanged (G16).
+5. **Phase 3 tests + Phase 4** (`5373921`): routing/metadata/dual/sssa/ts
+   integration tests. Profile B (SG1 + GFM_IBR2 + 3xRMS10) equilibrium
+   converges (kcl=2.3e-14); full-KCL SSSA via shared `composite_sssa_model`
+   (48 active states, no hand-built A); event-free TS no-drift via shared
+   `ts_simulate_composite`; disturbance response finite; limiter transaction
+   fail-closed. 133 targeted tests PASS.
+6. **m_max fix** (`5373921`): default 1.10 → 1.30. At IEEE14 bus 8 (|V|=1.09)
+   the v_t feedforward reached 1.099 > V_t_max=1.10, triggering the vector
+   clamp and breaking equilibrium. 30% overmodulation headroom keeps the
+   clamp inactive across the normal-operation domain.
+
+Generic-ABI integration contract (user-mandated, FROZEN): GFL-RMS10 plugs
+into the existing composite-device ABI used by SG EMF6 and REGFM_B1. No
+GFL-specific PF/equilibrium/SSSA-A/TS solvers. PF→equilibrium→SSSA→TS reuse
+the shared project-owned kernels. Shared files (composite_dae, composite_sssa,
+ts_simulate_*) remain unchanged.
+
+### Remaining (NOT blocked)
+
+- **Phase 5 reporting**: this handoff + decision ledger D18 + frozen contract +
+  source matrix + Phase 0B audit reopen + Thai TeX report (GFL-RMS10 as
+  primary proposed model). In progress.
+- **Phase 6**: full regression `pf_init_paths; r=runtests('tests','IncludeSubfolders',true)`
+  once on the final tree (required: changes IBR equations + composite DAE
+  routing + equilibrium + SSSA + TS). Then commit + fast-forward push.
+- **Phase 3.1** (task #8, deferred): canonical serialization hardening.
+- **LVRT/fault TS** is OUT OF SCOPE for this slice. A future LVRT route
+  requires a separate authoritative source + approved contract.
+  `GFL_RMS10_LOW_VOLTAGE_RIDE_THROUGH_READY` remains false.
+
+### Historical Phase 0B BLOCKED record (superseded above)
+
+The original Phase 0B bounded search (2026-07-18) ended SOURCE_GAP_BLOCKED:
+no complete source-defined GFL was found. That remains true. The GFL-RMS10
+slice reopens Phase 0B by explicit user authorization of a PROJECT_DERIVED
+composite, NOT by discovery of a complete source. Full audit evidence stays in
+`docs/project/IEEE14_IBR_PHASE0B_SOURCE_AUDIT.md` (now annotated as reopened
+by the PROJECT_DERIVED path).
 
 ## Mission C — Characterization handoff (2026-07-17)
 

@@ -270,6 +270,58 @@ classes.
 3. **KCL/sign/per-unit conventions** = Track A composite canonical (YV-I,
    positive injection, system base) — consistent with all sources.
 
+## GFL-RMS10 opt-in PROJECT_DERIVED composite (2026-07-18/19, D18)
+
+A second GFL branch is now opt-in alongside the WECC default. Construction-time
+selection via `params.gfl_family`:
+
+- `'wecc_regca_reeca'` (default) → WECC 7-state `ibr_gfl_wecc_regca_reeca` /
+  `ibr_dual_mode` nx=20 (unchanged).
+- `'rms10'` → GFL-RMS10 10-state `ibr_gfl_rms10` / `ibr_dual_mode_rms10`
+  nx=23 (distinct device_type + metadata contract; no variable nx under one
+  device_type).
+
+State vector (frozen, 10 states, PROJECT_DERIVED order):
+`x = [delta_PLL, xi_PLL, P_f, Q_f, xi_P, xi_Q, xi_id, xi_iq, i_d, i_q]^T`.
+6 SOURCE_DEFINED states (delta_PLL, xi_PLL, xi_id, xi_iq, i_d, i_q) from
+Yazdani eq 8.22-8.25/8.45-8.46/8.53 + Teodorescu §4.2.2/§9; 4 PROJECT_DERIVED
+states (P_f, Q_f, xi_P, xi_Q) from REGFM_B1 Eq.1/3 filter pattern + user §5.4.
+
+PLL equation form (frozen, simple-PI ODE; Teodorescu eq 4.38):
+`d(xi_PLL)/dt = v_q`,
+`d(delta_PLL)/dt = omega_b*(kp_PLL*v_q + ki_PLL*xi_PLL)`,
+with `kp_PLL = 9.2/ts^2`, `ki_PLL = kp_PLL/(ts/4.6)`, `ts = 0.1 s`.
+NO PLL freeze (LV is fail-closed; see below).
+
+LV-PLL policy (user decision, FROZEN): FAIL-CLOSED. Before evaluating
+PLL/PQ-inversion/current-control, require `|V| >= V_valid_min` AND
+`D_V = v_d^2+v_q^2 >= V_div_min^2`; else error
+`ibr:gfl_rms10_model:voltageOutsideValidityDomain` /
+`lowVoltagePowerInversion`. No division floor, no stale states, no REGFM_B1
+copying. Fault/LVRT TS is OUT OF SCOPE.
+
+Parameters (frozen BEFORE results; see
+`docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md`): kp_PLL=920,
+ki_PLL=42320 (Teodorescu eq 4.38), kp_i=L/tau_i, ki_i=R_t/tau_i (Yazdani eq
+8.56/8.57, tau_i=2 ms), L=0.15 pu reactance, R_t=0.02 pu, Imax=1.20 pu
+(Yazdani p.371), Vdc0=1.0 pu, m_max=1.30 (PROJECT_DERIVED headroom), V_t_max
+= m_max*Vdc0, V_valid_min=0.50, V_div_min=0.10, aw_tol=1e-6.
+
+Generic-ABI integration (user-mandated, FROZEN): GFL-RMS10 plugs into the
+existing composite-device ABI used by SG EMF6 and REGFM_B1. No GFL-specific
+PF/equilibrium/SSSA-A/TS solvers. Shared kernels (composite_dae,
+composite_sssa, ts_simulate_*) unchanged.
+
+Verification (commit `5373921`): 133 targeted tests PASS. Profile B (SG1 +
+GFM_IBR2 + 3xRMS10) equilibrium converges (kcl=2.3e-14); full-KCL SSSA via
+shared kernel (48 active states); event-free TS no-drift; disturbance finite;
+limiter fail-closed. G15/G16 verified.
+
+```text
+GFL_RMS10_NORMAL_OPERATION_READY          = READY
+GFL_RMS10_LOW_VOLTAGE_RIDE_THROUGH_READY  = NOT_READY (out of scope)
+```
+
 ## Current readiness boundary
 
 The structural equilibrium/SSSA/fixed-step TS path, exact index-selected GFM

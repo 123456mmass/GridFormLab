@@ -144,6 +144,68 @@ PHASE_G2_LIMITER_READY           = IMPLEMENTED_PENDING_INTEGRATION_GATES
 IBR_PRODUCTION_INTEGRATION_READY = NOT_READY
 ```
 
+### D18 — GFL-RMS10 opt-in PROJECT_DERIVED composite (2026-07-18/19)
+
+The user authorized reopening Phase 0B by a PROJECT_DERIVED composite
+(GFL-RMS10), supplying three textbooks: Yazdani & Iravani 2010
+(`docs/text/6739364.pdf`, ISBN 978-0-470-52156-4), Teodorescu/Liserre/
+Rodríguez 2011 (`docs/text/grid-converters-for-photovoltaic-and-wind-power-systems.pdf`,
+ISBN 978-0-470-05751-3), and Bacha/Munteanu/Bratcu 2014
+(`docs/text/978-1-4471-5478-5.pdf`, DOI 10.1007/978-1-4471-5478-5).
+
+Source classification (honest):
+- `SOURCE_DEFINED_NONLINEAR_CORE_CLOSED = YES` — 6 of 10 GFL-RMS10 states
+  (delta_PLL, xi_PLL, xi_id, xi_iq, i_d, i_q) sourced from Yazdani eq
+  8.22-8.25/8.45-8.46/8.53 + Teodorescu §4.2.2/§9.
+- `FULL_SOURCE_DEFINED_GFL_MODEL = NO` — P/Q filters (P_f, Q_f), outer-loop
+  realization (xi_P, xi_Q), current-priority limit, anti-windup directional
+  logic, v_t vector clamp, equilibrium init, and LV fail-closed semantics
+  are APPROVED_PROJECT_DERIVED (follow sourced patterns; user §5.3-5.7 ODE
+  contract; REGFM_B1 conditional_hold for anti-windup).
+- `APPROVED_PROJECT_DERIVED_RMS10_SLICE = YES`
+- `NUMERICAL_PARAMETER_PROFILE_FROZEN = YES`
+  (`docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md`).
+
+Integration contract (user-mandated, FROZEN): GFL-RMS10 plugs into the
+existing generic composite-device ABI used by SG EMF6 and REGFM_B1. No
+GFL-specific PF/equilibrium/SSSA-A/TS solvers. The device supplies only
+`f`, `current_injection`, `electrical_power`, `reconstruct`,
+`equilibrium_initialize`, `state_names`, `input_names`, `nx`, `nu`,
+`active_state_indices`. PF→equilibrium→SSSA→TS reuse the shared project-owned
+kernels; shared files (composite_dae, composite_sssa, ts_simulate_*) unchanged.
+
+Construction-time family selection: `params.gfl_family` —
+`'wecc_regca_reeca'` (default, 7-state, `ibr_gfl_wecc_regca_reeca` /
+`ibr_dual_mode` nx=20) or `'rms10'` (10-state opt-in, `ibr_gfl_rms10` /
+`ibr_dual_mode_rms10` nx=23). Distinct device_type + metadata contract; no
+variable nx under one device_type. Runtime mode vocabulary stays
+{gfl,GFM,tripped}; not a new runtime mode.
+
+LV-PLL policy (user decision, FROZEN): FAIL-CLOSED. No PLL freeze/hold/reset/
+recovery. Within the valid-voltage domain (`|V| >= V_valid_min` AND
+`D_V >= V_div_min^2`), integrate the normal PLL equations; outside, fail closed
+with stable IDs `ibr:gfl_rms10_model:voltageOutsideValidityDomain` /
+`lowVoltagePowerInversion`. Fault/LVRT TS is OUT OF SCOPE for this slice;
+`GFL_RMS10_LOW_VOLTAGE_RIDE_THROUGH_READY` remains false.
+
+Two normal-operation profiles (frozen):
+- Profile A — canonical baseline: SG1 + IBR2 GFM + IBR3/6/8 WECC (unchanged).
+- Profile B — RMS10 integration: SG1 + IBR2 GFM + IBR3/6/8 GFL-RMS10.
+  48 active states (5 SG1 + 13 GFM + 30 RMS10).
+
+Verification (commit `5373921`): 133 targeted tests PASS (RMS10 device +
+routing + metadata + dual + SSSA + TS + section_h + WECC + GFM + dual + SG-off
+contracts). Profile B equilibrium converges (kcl=2.3e-14); full-KCL SSSA via
+shared kernel (48 active states, no hand-built A); event-free TS no-drift;
+disturbance response finite; limiter transaction fail-closed. G15 (WECC
+unchanged when not selected) and G16 (REGFM_B1 GFM unchanged) verified.
+
+```text
+GFL_RMS10_NORMAL_OPERATION_READY        = READY (Profile A+B; gates G0-G14,G17 passing)
+GFL_RMS10_LOW_VOLTAGE_RIDE_THROUGH_READY = NOT_READY (out of scope; separate source required)
+IBR_PRODUCTION_INTEGRATION_READY         = NOT_READY (full regression pending Phase 6)
+```
+
 ---
 
 ## Item 7 — IEEE14 SG1 dynamic data → CASE_DEFINED (designed from IEEE14 case + IEEE 1110-2002 typical-data clause)

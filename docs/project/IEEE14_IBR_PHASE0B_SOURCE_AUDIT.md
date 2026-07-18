@@ -1,11 +1,25 @@
 # IEEE14 IBR Phase 0B — GFL Source Audit Record
 
-Date: 2026-07-18
-Status: `PHASE_0B_SOURCE_DECISION = NO_SOURCE_APPROVED`
-       `PHASE_0B_STATUS = SOURCE_GAP_BLOCKED`
-       `PHASE_4_EXPLICIT_STATE_NONLINEAR_GFL = BLOCKED`
-       `PHASE_5_PF_SSSA_TS_ROUTING = BLOCKED`
+Date: 2026-07-18 (initial audit); 2026-07-18/19 reopened by PROJECT_DERIVED RMS10
+Status: `PHASE_0B_SOURCE_DECISION = NO_SOURCE_APPROVED (sole-source)`
+       `PHASE_0B_STATUS = SOURCE_GAP_BLOCKED (sole-source) -> REOPENED by user-authorized PROJECT_DERIVED composite`
+       `PHASE_4_EXPLICIT_STATE_NONLINEAR_GFL = UNBLOCKED (GFL-RMS10 PROJECT_DERIVED slice, normal-operation only)`
+       `PHASE_5_PF_SSSA_TS_ROUTING = UNBLOCKED (Profile B integration via shared kernels)`
 Branch: `main`
+
+## Reopening note (2026-07-18/19)
+
+The original bounded search below ended SOURCE_GAP_BLOCKED: no complete
+source-defined nonlinear GFL was found. That historical finding remains true.
+The user subsequently authorized a PROJECT_DERIVED RMS10 composite that closes
+the nonlinear PLL/current-controller/L-filter core (6 of 10 states) from three
+textbooks (Yazdani 2010, Teodorescu 2011, Bacha 2014) and supplies the
+remaining 4 states + limiters as APPROVED_PROJECT_DERIVED. This REOPENS Phase 0B
+by explicit user authorization, NOT by discovery of a complete source-defined
+GFL. Full provenance: `docs/project/IEEE14_IBR_GFL_RMS10_PROVENANCE.md`; frozen
+parameter manifest: `docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md`.
+The GFL-RMS10 device is implemented (`+ibr/gfl_rms10_model.m`) and integrated
+through the generic composite-device ABI (no GFL-specific solvers).
 
 This record documents the bounded authoritative search for a nonlinear
 positive-sequence/average-model GFL (grid-following inverter) source with

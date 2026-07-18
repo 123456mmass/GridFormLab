@@ -91,6 +91,40 @@ state which copy was inspected.
   strong-grid current-source model, so the integrated selector must reject a
   GFL assignment when the implemented SCR contract is not satisfied.
 
+#### Item 1b — GFL-RMS10 opt-in PROJECT_DERIVED composite (2026-07-18/19)
+
+- **Yazdani & Iravani 2010** (`docs/text/6739364.pdf`, ISBN 978-0-470-52156-4):
+  nonlinear SRF-PLL (eq 8.18-8.25, printed p.210-212), dq current plant
+  (eq 8.45-8.46, p.219), current PI compensator (eq 8.53, p.221), V_t
+  modulation (eq 8.47-8.48), per-unit bases (Appendix B Table B.1/B.2). Supplies
+  6 of 10 states SOURCE_DEFINED.
+- **Teodorescu, Liserre, Rodríguez 2011**
+  (`docs/text/grid-converters-for-photovoltaic-and-wind-power-systems.pdf`,
+  ISBN 978-0-470-05751-3): simple-PI SRF-PLL tuning (eq 4.37-4.38, §4.2.2);
+  L-filter dq model with cross-coupling (eq 9.8, §9.2.1).
+- **Bacha, Munteanu, Bratcu 2014** (`docs/text/978-1-4471-5478-5.pdf`,
+  DOI 10.1007/978-1-4471-5478-5): anti-windup concept (p.286 "disable
+  integrator during limitation").
+- **Implemented state order (10, opt-in via `params.gfl_family='rms10'`):**
+  `[delta_PLL, xi_PLL, P_f, Q_f, xi_P, xi_Q, xi_id, xi_iq, i_d, i_q]`.
+  6 SOURCE_DEFINED (delta_PLL, xi_PLL, xi_id, xi_iq, i_d, i_q) + 4
+  PROJECT_DERIVED (P_f, Q_f from REGFM_B1 Eq.1/3 filter pattern; xi_P, xi_Q
+  from user §5.4 ODE).
+- **LV policy (FROZEN, FAIL-CLOSED):** no PLL freeze. Require
+  `|V| >= V_valid_min` AND `D_V >= V_div_min^2`; else fail-closed
+  `ibr:gfl_rms10_model:voltageOutsideValidityDomain` /
+  `lowVoltagePowerInversion`.
+- **Generic-ABI integration:** plugs into the existing composite-device ABI
+  (same closures as WECC/REGFM_B1). No GFL-specific PF/equilibrium/SSSA-A/TS
+  solvers. `ibr_gfl_rms10` (10/2 standalone) + `ibr_dual_mode_rms10`
+  (23-state dual, distinct device_type from legacy `ibr_dual_mode` 20-state).
+- **Status:** `GFL_RMS10_NORMAL_OPERATION_READY = READY` (Profile B verified:
+  equilibrium kcl~1e-14, 48 active SSSA states, event-free TS no-drift).
+  `GFL_RMS10_LOW_VOLTAGE_RIDE_THROUGH_READY = NOT_READY` (fault/LVRT
+  out of scope; separate source required). Full provenance:
+  `docs/project/IEEE14_IBR_GFL_RMS10_PROVENANCE.md`; frozen parameter
+  manifest: `docs/project/IEEE14_IBR_GFL_RMS10_PARAMETER_MANIFEST.md`.
+
 ### Item 2 — VSG/VSM profile from REGFM_B1
 
 - **REGFM_B1 90260:** VSM swing-equation block (Figure 2, GRAPHICAL →

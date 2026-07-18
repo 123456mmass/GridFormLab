@@ -44,6 +44,7 @@
 \newcommand{\numeric}{\textcolor{orange!80!black}{\textbf{NUMERICAL\_METHOD}}}
 \newcommand{\pending}{\textcolor{red!75!black}{\textbf{PENDING IMPLEMENTATION/VERIFICATION}}}
 \newcommand{\designonly}{\textcolor{purple!75!black}{\textbf{DESIGN\_ONLY}}}
+\newcommand{\implemented}{\textcolor{green!50!black}{\textbf{IMPLEMENTED (normal op)}}}
 \newcommand{\notapp}{\textcolor{gray!75!black}{\textbf{NOT APPLICABLE}}}
 \newcommand{\clamp}{\operatorname{clamp}}
 \newcommand{\hold}{\operatorname{conditional\_hold}}
@@ -61,13 +62,15 @@
 \fcolorbox{red!70!black}{red!4}{%
 \begin{minipage}{0.91\textwidth}
 \centering
-\textbf{สถานะเอกสาร: SOURCE-TRACEABLE DESIGN DRAFT}\par
+\textbf{สถานะเอกสาร: SOURCE-TRACEABLE DESIGN + IMPLEMENTED (GFL-RMS10 normal operation)}\par
 รายงานนี้ใส่เฉพาะสมการและสัญญาที่ตรวจสอบย้อนกลับได้แล้วสำหรับ SG,
 GFM REGFM\_B1, GFL WECC, composite DAE, modal analysis และ TS
-พร้อมเสนอ nonlinear positive-sequence GFL ที่มี PLL และ current states จริงจาก
+พร้อมโมเดล nonlinear positive-sequence GFL--RMS10 ที่มี PLL และ current states จริงจาก
 Yazdani--Iravani, Teodorescu--Liserre--Rodríguez และ Bacha--Munteanu--Bratcu
-ส่วนโมเดล GFL ใหม่นี้ยังเป็น \designonly{} และผลเชิงตัวเลข PF/SSSA/TS
-ยังรอ implementation/verification โดยจะไม่ถูกแต่งขึ้นเพื่อให้รายงานดูสมบูรณ์
+โมเดล GFL--RMS10 ได้ implement และผ่าน Phase 4 แล้วสำหรับ normal-operation slice
+(PF/equilibrium/SSSA/TS ผ่าน shared kernels; Profile B = SG1 + GFM\_IBR2 + 3$\times$RMS10
+converge และ event-free TS no-drift) ส่วน fault/LVRT TS ยังอยู่นอกขอบเขต
+ผลเชิงตัวเลขจะไม่ถูกแต่งขึ้นเพื่อให้รายงานดูสมบูรณ์
 \end{minipage}}
 \end{center}
 
@@ -82,8 +85,11 @@ Yazdani--Iravani, Teodorescu--Liserre--Rodríguez และ Bacha--Munteanu--Bra
 production ปัจจุบันคือ WECC REGC\_A/REEC\_A จำนวน 7 states ซึ่งไม่มี explicit PLL
 รายงานฉบับนี้จึงแยกอย่างเคร่งครัดระหว่างโมเดล WECC production กับแบบจำลอง
 PLL-resolved GFL--RMS10 ที่เสนอจากตำรา แบบจำลองใหม่นี้มี ODE สิบ state, state order, frame,
-current injection และ equilibrium map ครบในระดับออกแบบ แต่จะไม่กล่าวอ้าง
-GFL PLL participation หรือผล production จนกว่าจะ implement และผ่าน Phase 4--5
+current injection และ equilibrium map ครบ และได้ implement เป็น
+\texttt{+ibr/gfl\_rms10\_model.m} ที่ plug เข้า generic composite-device ABI เดียวกับ
+SG EMF6 และ REGFM\_B1 โดยไม่มี GFL-specific solver ผล Profile B (SG1 + GFM\_IBR2 +
+3$\times$GFL--RMS10) ผ่าน equilibrium/SSSA/TS ผ่าน shared kernels แล้ว
+ส่วน fault/LVRT TS ยังอยู่นอกขอบเขตของ slice นี้
 \end{abstract}
 
 \newpage
@@ -118,9 +124,9 @@ ASSUMED\_DIAGNOSTIC & สมมติฐานเพื่อวินิจฉ�
 GFM REGFM\_B1 & 13-state production model & มี VSG, PLL, filters และ dynamic angle bounds \\
 GFL WECC REGC\_A/REEC\_A & 7-state production model & ไม่มี explicit PLL state \\
 Modal analysis & standalone consumer ของ $A$ & ไม่แก้ $A_{\rm red}$ หรือ physical quotient construction \\
-PLL-resolved GFL--RMS10 & \designonly & source set ปิด core ODE gap; ยังไม่เข้า production routing \\
-ผล PF/SSSA/TS ในรายงานนี้ & \pending & ต้องสร้างจาก fingerprint เดียวกันหลัง Phase 4--5 \\
-Readiness & NOT\_READY & ห้ามกล่าวอ้าง PRODUCTION\_READY/VALIDATED \\
+PLL-resolved GFL--RMS10 & \implemented & 10-state opt-in (\texttt{+ibr/gfl\_rms10\_model.m}); 6 SOURCE\_DEFINED + 4 PROJECT\_DERIVED states; Profile B ผ่าน PF/SSSA/TS ผ่าน shared kernels; fault/LVRT ยัง out-of-scope \\
+ผล PF/SSSA/TS ในรายงานนี้ & Profile B verified & equilibrium converge (kcl $\sim 10^{-14}$); 48 active states; event-free TS no-drift; disturbance finite \\
+Readiness & RMS10\_NORMAL\_OPERATION\_READY & fault/LVRT ยัง NOT\_READY; ห้ามกล่าวอ้าง LVRT จนกว่าจะมี source แยก \\
 \bottomrule
 \end{tabularx}
 \end{table}

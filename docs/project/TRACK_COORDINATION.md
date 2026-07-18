@@ -129,6 +129,13 @@ Only one active track may modify any of the following at a time:
 
 - `solve_case.m`;
 - `run_pf.m`, `run_ssa.m`, and `run_ts.m`;
+
+> **2026-07-19 Analysis Wizard note:** the Analysis Wizard refactor (Phases
+> 1-6) refactored `solve_case.m` into a thin wrapper delegating to `+wizard/*`.
+> That work is complete; `solve_case.m` is again available for single-owner
+> reassignment. The wizard's pure dispatcher is `wizard.dispatch_analysis`
+> (single shared dispatcher for both the UI and the programmatic path). See
+> `docs/project/IEEE14_ANALYSIS_WIZARD.md`.
 - `pf_init_paths.m`;
 - `+stability/ts_simulate.m`;
 - `+stability/multicase_sssa.m`;

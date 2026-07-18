@@ -662,3 +662,57 @@ Branch: `main`. HEAD == `origin/main` after fast-forward push.
 PDF, and the archived font/resource file are committed validation/provenance
 material by explicit user instruction. They remain unreachable from
 production and `pf_init_paths`.
+
+## Analysis Wizard UI (2026-07-19)
+
+**Status:** Wizard Phases 1-5 complete; Phase 6 (docs + full regression)
+in progress.
+**Branch:** `main`
+**Doc:** `docs/project/IEEE14_ANALYSIS_WIZARD.md`
+
+`solve_case.m` refactored into a thin wrapper (Extract + delegate). The
+wizard UI (base-MATLAB `figure`/`uipanel`/`uicontrol`, NOT uifigure) and
+the programmatic path both route through the SINGLE shared dispatcher
+`wizard.dispatch_analysis` (G4). Pure logic lives in `+wizard/*`
+(headless-testable); page/render builders live in nested packages
+`+wizard/+pages/*`, `+wizard/+render/*`.
+
+Frozen contracts preserved across the refactor (characterization tests
+18/18 green before AND after):
+- programmatic ABI (name-value `analysis`/`case`/`options`);
+- stable analysis IDs (`pf`/`sssa`/`ts`/`ibr`; no `ibr_ts`);
+- per-analysis result schemas; launcher sub-struct; execution_summary;
+- error IDs (`solve_case:analysis`, `solve_case:case` preserved, not relaxed
+  to `wizard:*`);
+- log-file tokens (`PF VERIFICATION`, `STATUS: COMPLETE`, etc.);
+- partial invocation: partially specified calls open the wizard with
+  selections pre-populated and NEVER auto-execute (raise
+  `MATLAB:hg:NonInteractiveFunctionSupport` in batch, matching the old
+  `listdlg` behavior);
+- events=false reaches the production IBR runtime as an ACTUALLY empty
+  schedule (distinct slim 17-field schema vs 58-field events-on; empty
+  `events`; all-zero per-sample `transaction_id`; zero `event_transactions`).
+
+IBR settings dialog moved verbatim from `solve_case.m` into
+`+wizard/ibr_settings_dialog.m` (base-MATLAB three-column contract
+unchanged; `test_ibr_launcher_settings_ui.m` contract checks green, source
+location updated). `run_ts.m` NOT edited (correction #7).
+
+Generic 12-section view model (`wizard.adapt_result`) for ALL analyses;
+IBR Section H producer reused ONLY through the explicit
+`wizard.adapt_ibr_section_h` adapter (PF/SSSA/TS return `not_applicable`).
+
+### Tests (headless)
+
+- `tests/test_wizard_characterization.m` — 18 (frozen ABI, before/after refactor)
+- `tests/test_wizard_pure_layer.m` — 29 (registry/discover/defaults/build/validate)
+- `tests/test_wizard_dispatch.m` — 15 (dispatch + adapt_result + config_io)
+- `tests/test_wizard_section_h_adapter.m` — 6 (Section H adapter)
+- `tests/test_wizard_ui_smoke.m` — 14 (UI routing, invisible-figure pattern)
+- existing launcher tests (`test_ibr_launcher_settings_ui.m`,
+  `test_ibr_launcher_configuration_logging.m`, `test_solve_case_launcher.m`)
+  — 16 green
+
+Full regression required (single-owner shared `solve_case.m` edited); see
+Phase 6 commit message for the recorded counts.
+

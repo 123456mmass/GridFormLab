@@ -20,10 +20,12 @@ builder_name = pages{idx, 1};
 
 % Get or create the content panel.
 panel = wizard_content_panel(app);
-% Clear existing children of the content panel.
-delete(findobj(panel, 'Type', 'uipanel'));
-delete(findobj(panel, 'Type', 'uicontrol'));
-delete(findobj(panel, 'Type', 'uitable'));
+% Clear existing CHILDREN of the content panel (not the panel itself).
+% findobj(panel, ...) would include the panel; restrict to direct children.
+children = panel.Children;
+if ~isempty(children)
+    delete(children);
+end
 
 % Header label.
 wizard_render_header(app, panel, pages{idx, 2});

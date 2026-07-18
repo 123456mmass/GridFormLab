@@ -1,0 +1,96 @@
+function opt = defaults_for_method(analysis_id, case_entry)
+%DEFAULTS_FOR_METHOD  Default-option producer for an analysis (pure, no UI).
+%   opt = wizard.defaults_for_method(analysis_id) returns the analysis-level
+%   default options struct (no case-specific overrides).
+%   opt = wizard.defaults_for_method(analysis_id, case_entry) applies the
+%   frozen default-value provenance priority:
+%     1. case-defined canonical defaults (case_entry.options)
+%     2. source-defined model defaults (folded into catalog options)
+%     3. existing approved launcher defaults (PF/SSSA/TS/IBR defaults below)
+%     4. frozen project numerical defaults (e.g. EMF6 corrector_iter=3)
+%     5. otherwise require an explicit value or mark unavailable
+%
+%   This function is PURE: no UI, no solver, no case loading. It does NOT tune
+%   any value for attractive plots. Display presets (Quick inspection /
+%   Normal-operation detail / Event detail / Custom) are handled elsewhere and
+%   may change only display/output sampling — never solver step, event timing,
+%   physical parameters, tolerances, or gates.
+%
+%   Defaults mirror the existing approved launcher defaults in solve_case.m:
+%     - PF:   verbose=true, plot_results=true, max_iter=50, tolerance=1e-10,
+%             enforce_q_limits=true, q_limit_tolerance=1e-6,
+%             max_q_limit_switches=20  (solve_case.m:45-47)
+%     - SSSA: case-driven model + fd_eps/stability_tolerance/
+%             equilibrium_tolerance/newton_max_iterations/load_model
+%             (solve_case.m sssa_dialog_defaults:641-655)
+%     - TS:   catalog base options (network_case_catalog base struct)
+%     - IBR:  t_end=15, dt=0.01, verbose=false, plot_results=true,
+%             plot_visible=true, initial_gfm_count=0, initial_gfl_count=4,
+%             ibr_events (enabled, fault_bus=4, Zf=1i*0.1, fault_on=3.0,
+%             fault_clear=3.1, sg_trip=5.0, sg_on=8.0, selected_gfm_indices=2:5,
+%             reference_resource_index=2)  (solve_case.m ibr_defaults:343-352)
+%
+%   See also: wizard.ANALYSIS_REGISTRY, wizard.DISCOVER_CASES.
+
+if nargin < 2, case_entry = struct(); end
+analysis_id = lower(char(analysis_id));
+registry = wizard.analysis_registry();
+idx = find(strcmp(analysis_id, {registry.id}), 1);
+if isempty(idx)
+    error('wizard:defaults_for_method:unknownAnalysis', ...
+        'Unknown analysis ID %s.', analysis_id);
+end
+
+base = base_defaults(analysis_id);
+case_opt = struct();
+if isstruct(case_entry) && isfield(case_entry, 'options') && isstruct(case_entry.options)
+    case_opt = case_entry.options;
+end
+opt = merge_options(base, case_opt);
+end
+
+function opt = base_defaults(analysis_id)
+switch analysis_id
+    case 'pf'
+        opt = struct('verbose', true, 'plot_results', true, ...
+            'max_iter', 50, 'tolerance', 1e-10, ...
+            'enforce_q_limits', true, 'q_limit_tolerance', 1e-6, ...
+            'max_q_limit_switches', 20);
+    case 'sssa'
+        % SSSA model-specific defaults are case-driven (fd_eps depends on model).
+        % Launcher defaults mirror sssa_dialog_defaults.
+        opt = struct('fd_eps', 1e-6, 'stability_tolerance', 1e-7, ...
+            'equilibrium_tolerance', 1e-10, 'newton_max_iterations', 300, ...
+            'load_model', 'cz_p_cz_q');
+    case 'ts'
+        opt = struct('t_end', 15, 'dt', 0.01, 't_fault', 1, 't_clear', 1.1, ...
+            'Zf', 1i*0.1, 'method', 'trapezoidal', 'stepper', 'fixed', ...
+            'corrector_mode', 'adaptive', 'corrector_iter', [], ...
+            'corrector_abs_tol', 1e-10, 'corrector_rel_tol', 1e-8, ...
+            'max_corrector_iter', 10, 'corrector_failure', 'error', ...
+            'verbose', true, 'plot_results', true, 'model', 'classical', ...
+            'pm_mode', 'balanced');
+    case 'ibr'
+        opt = struct('t_end', 15.0, 'dt', 0.01, 'verbose', false, ...
+            'plot_results', true, 'plot_visible', true, ...
+            'initial_gfm_count', 0, 'initial_gfl_count', 4, ...
+            'initial_gfm_indices', [], 'initial_reference_resource_index', [], ...
+            'automatic_gfm_switching', true, ...
+            'ibr_events', struct('enabled', true, 'fault_bus', 4, ...
+                'Zf', 1i*0.1, 'fault_on', 3.0, 'fault_clear', 3.1, ...
+                'sg_trip', 5.0, 'sg_on', 8.0, ...
+                'selected_gfm_indices', 2:5, 'reference_resource_index', 2));
+    otherwise
+        error('wizard:defaults_for_method:unknownAnalysis', ...
+            'Unknown analysis ID %s.', analysis_id);
+end
+end
+
+function out = merge_options(defaults, user)
+out = defaults;
+if ~isstruct(user) || isempty(user), return; end
+names = fieldnames(user);
+for k = 1:numel(names)
+    out.(names{k}) = user.(names{k});
+end
+end

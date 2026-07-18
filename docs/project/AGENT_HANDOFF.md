@@ -2,7 +2,7 @@
 
 Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3
 Branch: `main`
-Tested working tree: `0cb65e9` (IBR Phase 3: Section H reporting + modal_analysis cell-index fixes)
+Tested working tree: `80568cf` (IBR Phase 3 hardening: fail-closed fingerprint + shape guards)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
@@ -58,15 +58,39 @@ explicit-state GFL source.
    paths. Fixed to curly-brace indexing. Defect record:
    `docs/project/defects/2026-07-18-cell-array-collapse-and-indexing.md`.
 
-### Verification (Phase 3 delivery, commit 0cb65e9)
+### Verification (Phase 3 delivery, commit 80568cf)
 
-- Phase 3 targeted (`test_ibr_section_h_report.m`): **20/20 PASS**.
+- Phase 3 targeted (`test_ibr_section_h_report.m`): **23/23 PASS**
+  (20 base + 3 hardening shape guards).
 - Phase 2 targeted (`test_modal_analysis.m`): **24/24 PASS**.
-- Phase 1+2+3 targeted: **74/74 PASS**.
-- Full regression: **1021 passed / 0 failed / 4 incomplete** (the 4
+- Phase 1+2+3 targeted: **77/77 PASS**.
+- Full regression: **1024 passed / 0 failed / 4 incomplete** (the 4
   incomplete are pre-existing `test_pgaz_conversion_contract` assumption
   filters on the external pgaz validation tool, unrelated to this change).
 - MATLAB R2026a Update 3 (glnxa64); `matlab -batch` with `pf_init_paths`.
+
+### Phase 3 hardening (commit 80568cf)
+
+Advisor review of the Phase 3 delivery identified four follow-up items;
+three were applied in-scope (no contract change), one was deferred to a
+new Phase 3.1 task:
+
+1. `canonical_serialize` now errors fail-closed on unsupported types
+   (`ibr:section_h_report:unsupportedType`) instead of returning an `'X'`
+   placeholder — a fingerprint must not silently drop a value.
+2. Fingerprint claims reduced to "change-detection" (not "durable" /
+   "MATLAB-version-independent"); `mat2str`/`num2str` formatting can vary
+   across MATLAB releases. Stability is asserted only for identical input
+   on the same MATLAB version (`test_fingerprint_stable_identical_input`).
+3. Three new shape-guard tests: unsupported-type fail-closed,
+   `full_state_eigenvalues.rows` is a cell array, `participation.rows` is a
+   cell array (regression guards for the `struct()` collapse bug).
+4. Defect record corrected: the `struct()` collapse explanation now
+   describes comma-separated-list semantics precisely.
+
+Deferred to Phase 3.1 (task #8, separate plan + approval required):
+NaN/Inf/−0 representation policy, nested struct depth/cycle handling,
+cross-MATLAB-version canonicalization audit.
 
 ### Scope and ownership
 

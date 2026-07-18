@@ -64,7 +64,11 @@ ev = struct('enabled',true,'fault_bus',4,'Zf',1i*.1, ...
 req = wizard.build_request('ibr','ieee14_1sg_4ibr', ...
     'options',struct('t_end',.1,'dt',.01,'plot_results',false),'events',ev);
 r = wizard.dispatch_analysis(req);
-tc.verifyTrue(r.converged);
+% GFL-RMS10 is approved for normal operation, not LVRT.  The same configured
+% fault that the legacy WECC route survived must fail closed rather than tune
+% or freeze the new PLL/current equations to force a pass.
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id, 'ts_simulate_ibr_hybrid:rightLimit');
 tc.verifyGreaterThan(r.execution_summary.event_transactions, 0);
 end
 

@@ -13,6 +13,7 @@ parse(p, varargin{:});
 analysis = lower(char(p.Results.analysis));
 case_id = lower(char(p.Results.case));
 user_opt = p.Results.options;
+ts_events_enabled = true;
 
 registry = wizard.analysis_registry();
 if isempty(analysis)
@@ -66,23 +67,91 @@ switch analysis
         if isempty(selected), result = []; return; end
         opt.method = selected;
         opt.integrator = selected;
+        event_mode = choose_one('Time-Domain Simulation events', ...
+            {'No events - normal event-free simulation', ...
+             'Configure fault event'}, {'off','on'}, 1, [470 120]);
+        if isempty(event_mode), result = []; return; end
+        ts_events_enabled = strcmp(event_mode, 'on');
         [opt, accepted] = edit_options(opt, entry.label, {'ibr_events'});
     case 'ibr'
+        % The launcher is bound to RMS10-capable containers. The initial
+        % GFM/GFL mix remains editable; Profile B (1 GFM + 3 GFL) is default.
+        opt.ibr_profile = 'rms10_profile_b';
+        opt.initial_gfm_count = 1;
+        opt.initial_gfl_count = 3;
+        opt.initial_gfm_indices = 2;
+        opt.initial_reference_resource_index = 2;
+        sub_ids = {'pf','sssa','ts','full'};
+        sub_labels = { ...
+            'Power Flow - network operating point', ...
+            'Small-Signal Stability - mixed SG/GFM/GFL full-state model', ...
+            'Time-Domain Simulation (TS) - mixed-resource time simulation', ...
+            'Full Analysis - PF + equilibrium + SSSA + TS'};
+        current = 3;
+        if isfield(opt, 'ibr_analysis')
+            found = find(strcmp(sub_ids, lower(char(opt.ibr_analysis))), 1);
+            if ~isempty(found), current = found; end
+        end
+        selected = choose_one('Select IEEE14 1-SG + 4-IBR analysis', ...
+            sub_labels, sub_ids, current, [560 180]);
+        if isempty(selected), result = []; return; end
+        opt.ibr_analysis = selected;
         case_data = entry.loader();
-        [opt, accepted] = wizard.ibr_settings_dialog(case_data, opt, entry.label);
+        if strcmp(selected, 'ts')
+            % The mixed-resource TS uses the same canonical fixed-step
+            % implicit trapezoidal kernel as the SG path.  Method is frozen;
+            % only time grid, outputs, and event choice are user settings.
+            opt.method = 'trapezoidal';
+            opt.integrator = 'trapezoidal';
+            event_mode = choose_one('IBR Time-Domain Simulation events', ...
+                {'No events - normal event-free simulation', ...
+                 'Configure fault / SG trip / reclose schedule'}, ...
+                {'off','on'}, 1, [560 120]);
+            if isempty(event_mode), result = []; return; end
+            if strcmp(event_mode, 'on')
+                [opt, accepted] = wizard.ibr_settings_dialog(case_data, opt, entry.label);
+            else
+                opt.ibr_events = struct('enabled', false);
+                [opt, accepted] = edit_options(opt, ...
+                    sprintf('%s - Time-Domain Simulation (event-free)', entry.label), ...
+                    {'ibr_events','ibr_analysis','ibr_profile', ...
+                     'initial_gfl_count', ...
+                     'initial_gfm_indices','initial_reference_resource_index', ...
+                     'automatic_gfm_switching'});
+            end
+        elseif strcmp(selected, 'full')
+            [opt, accepted] = wizard.ibr_settings_dialog(case_data, opt, entry.label);
+        else
+            % PF/SSSA have no event transaction.  Keep the compact editable
+            % settings dialog and explicitly disable the nested event route.
+            opt.ibr_events = struct('enabled', false);
+            [opt, accepted] = edit_options(opt, ...
+                sprintf('%s - %s', entry.label, upper(selected)), ...
+                {'ibr_events','initial_gfl_count','initial_gfm_indices', ...
+                 'initial_reference_resource_index'});
+        end
     otherwise
         error('solve_case:analysis', 'Unknown analysis %s.', analysis);
 end
 if ~accepted, result = []; return; end
+if strcmp(analysis, 'ibr')
+    opt = wizard.normalize_ibr_mode_selection(opt);
+end
 
 args = {'options', opt, 'interactive', true};
 if strcmp(analysis, 'ts')
-    ev = struct('enabled', true, 'fault_bus', opt.fault_bus, ...
-        'fault_on', opt.t_fault, 'fault_clear', opt.t_clear, 'Zf', opt.Zf);
+    ev = struct('enabled', ts_events_enabled);
+    if ts_events_enabled
+        ev.fault_bus = opt.fault_bus;
+        ev.fault_on = opt.t_fault;
+        ev.fault_clear = opt.t_clear;
+        ev.Zf = opt.Zf;
+    end
     args = [args {'events', ev}];
 elseif strcmp(analysis, 'ibr') && isfield(opt, 'ibr_events')
     args = [args {'events', opt.ibr_events}];
 end
+
 req = wizard.build_request(analysis, case_id, args{:});
 req = wizard.validate_request(req);
 result = wizard.dispatch_analysis(req);

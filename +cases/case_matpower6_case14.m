@@ -87,7 +87,9 @@ type = bus(:,2); proj_type = 3*ones(nb,1); proj_type(type == 3) = 1; proj_type(t
 V0 = ones(nb,1); V0(proj_type == 1 | proj_type == 2) = bus(proj_type == 1 | proj_type == 2, 8);
 A0 = zeros(nb,1);
 case_data = struct();
-case_data.base_values = struct('S_base_MVA', base, 'V_base_kV', 0, 'frequency_Hz', 60);
+% Source-mapped reporting base from cases.case_ieee14bus (same IEEE14
+% network): |V|_kV = |V|_pu*69 kV.  The PF equations remain per-unit.
+case_data.base_values = struct('S_base_MVA', base, 'V_base_kV', 69, 'frequency_Hz', 60);
 case_data.bus_data = [bus(:,1), proj_type, V0, A0, Pgen, Qgen, bus(:,3)/base, bus(:,4)/base, bus(:,5)/base, bus(:,6)/base];
 % Project line_data uses B_half. MATPOWER branch b is total line charging.
 tap = br(:,9); tap(tap == 0) = 1;

@@ -94,7 +94,12 @@ function test_defaults_ibr_frozen_values(tc)
 opt = wizard.defaults_for_method('ibr');
 tc.verifyEqual(opt.t_end, 15.0);
 tc.verifyEqual(opt.dt, 0.01);
-tc.verifyEqual(opt.initial_gfl_count, 4);
+% Approved launcher contract (2026-07-19): Profile B replaces the implicit
+% four-WECC default. Independent state-count oracle is 5+13+3*10=48 active.
+tc.verifyEqual(opt.ibr_profile, 'rms10_profile_b');
+tc.verifyEqual(opt.initial_gfm_count, 1);
+tc.verifyEqual(opt.initial_gfl_count, 3);
+tc.verifyEqual(opt.initial_gfm_indices, 2);
 tc.verifyEqual(opt.ibr_events.fault_bus, 4);
 tc.verifyEqual(opt.ibr_events.fault_on, 3.0);
 tc.verifyEqual(opt.ibr_events.fault_clear, 3.1);

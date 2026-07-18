@@ -19,7 +19,7 @@ for i = 1:numel(results_list)
     end
     plotted_labels{end + 1} = labels{min(i, numel(labels))};
     color = colors(mod(i - 1, size(colors, 1)) + 1, :);
-    semilogy(1:numel(history), history, '-o', 'LineWidth', 2, ...
+    plot(1:numel(history), history, '-o', 'LineWidth', 2, ...
         'MarkerSize', 5, 'Color', color, 'MarkerFaceColor', color);
 end
 hold off;
@@ -29,4 +29,5 @@ title('NR vs GS Convergence');
 legend(plotted_labels, 'Location', 'northeast', 'Interpreter', 'none');
 grid on;
 set(gca, 'GridAlpha', 0.18);
+set(gca, 'YScale', 'linear');
 end

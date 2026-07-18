@@ -41,9 +41,9 @@ style_axis(gca);
 
 nexttile([1 2]);
 if isempty(mismatch_plot)
-    semilogy(1, tolerance, 'o', 'Color', [0.25 0.25 0.25], 'MarkerFaceColor', [0.25 0.25 0.25]);
+    plot(1, tolerance, 'o', 'Color', [0.25 0.25 0.25], 'MarkerFaceColor', [0.25 0.25 0.25]);
 else
-    semilogy(1:iter, mismatch_plot, '-o', ...
+    plot(1:iter, mismatch_plot, '-o', ...
         'Color', [0.08 0.25 0.45], 'LineWidth', 2, ...
         'MarkerSize', 5, 'MarkerFaceColor', [0.08 0.25 0.45]);
 end
@@ -55,6 +55,7 @@ ylabel('Max Mismatch (pu)');
 title(sprintf('%s Convergence', results.method), 'Interpreter', 'none');
 grid on;
 style_axis(gca);
+set(gca, 'YScale', 'linear');
 
 st = sgtitle(sprintf('%s - %s', results.system_name, results.method), 'Interpreter', 'none', 'FontWeight', 'bold');
 st.Color = [0.10 0.10 0.10];

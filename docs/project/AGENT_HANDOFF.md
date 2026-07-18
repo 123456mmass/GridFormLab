@@ -7,6 +7,27 @@ Tested working tree: `5373921` (GFL-RMS10 Phase 4: TS disturbance + limiter veri
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-07-19 — IBR PF/SSSA/TS/Full launcher products
+
+The compact `solve_case` flow now selects IBR, the IEEE14 1-SG + 4-IBR case,
+then Power Flow / SSSA / Time-Domain Simulation (TS) / Full Analysis. The
+interactive IBR launcher defaults to RMS10 Profile B (IBR2 GFM13,
+IBR3/6/8 GFL-RMS10), which produces 48 active states from a 98-state fixed
+inventory. The GFM/GFL count remains editable; the UI reconciles count,
+explicit indices, complementary GFL count, and reference index. Full Analysis
+returns separate `pf`, `equilibrium`, `sssa`, and `ts` products, with SSSA and
+TS sharing the same equilibrium.  Detailed PF reports, SG+IBR state/eigenvalue
+tables with descriptions, and four TS plot products are enabled.  The legacy
+WECC code remains only for explicit regression consumers and is not offered by
+the compact launcher UI. RMS10 LVRT remains fail-closed/not ready.
+
+PF reporting converts IEEE14 voltage using the in-repository 69-kV base, uses
+a linear mismatch plot, and prints per-resource P/Q in pu and MW/MVAr with a
+reconciliation against total generation. Targeted evidence: 22/22
+numerical/report/plot/SSSA tests, 60/60 launcher tests before the final AUTO
+field adjustment, and 14/14 final AUTO UI + IBR sub-analysis tests passed.
+Full regression was intentionally not run at the user's request.
+
 ## IBR dynamic-equation contract — Phases 0A/1/2/3 (2026-07-18)
 
 **Status:** Phases 0A (source verdict), 1 (Section H core mappings), 2

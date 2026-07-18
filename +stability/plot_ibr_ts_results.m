@@ -111,6 +111,47 @@ legend(ax_i,'Location','best','Interpreter','none');
 power_path = fullfile(output_dir,[prefix 'ieee14_ibr_voltage_power_current.png']);
 saveas(fig2,power_path);
 
+% -------------------------------------------------------------------------
+% Figure 3: device electrical/control angles (SG rotor, GFM VSM, GFL PLL).
+angle_path = '';
+angle_handle = [];
+if isfield(result,'device_angle_deg') && ...
+        isequal(size(result.device_angle_deg),[numel(device_ids),numel(t)])
+    fig3 = figure('Visible',vis,'Name','IBR SG/GFM/GFL angles', ...
+        'Units','pixels','Position',[160 120 1150 650]);
+    ax_a = axes(fig3); hold(ax_a,'on'); grid(ax_a,'on');
+    set(ax_a,'Tag','ibr_angle_axes');
+    for k=1:numel(device_ids)
+        plot(ax_a,t,result.device_angle_deg(k,:),'LineWidth',1.2, ...
+            'Color',colors(k,:),'DisplayName',sprintf('%s angle',device_ids{k}));
+    end
+    xlabel(ax_a,'Time (s)'); ylabel(ax_a,'Electrical angle (deg)');
+    title(ax_a,['SG rotor / GFM VSM / GFL PLL angles' status_suffix]);
+    add_event_lines(ax_a,events,true);
+    legend(ax_a,'Location','best','Interpreter','none');
+    angle_path=fullfile(output_dir,[prefix 'ieee14_ibr_angle.png']);
+    saveas(fig3,angle_path);
+    if visible, angle_handle=fig3; else, close(fig3); end
+end
+
+% Figure 4: all bus-voltage magnitudes (same physical signal class as SG TS).
+fig4 = figure('Visible',vis,'Name','IBR bus voltages', ...
+    'Units','pixels','Position',[190 140 1150 650]);
+ax_va = axes(fig4); hold(ax_va,'on'); grid(ax_va,'on');
+set(ax_va,'Tag','ibr_all_voltage_axes');
+bus_colors=lines(numel(bus_ids));
+for k=1:numel(bus_ids)
+    plot(ax_va,t,result.bus_voltage_magnitude(k,:),'LineWidth',1.0, ...
+        'Color',bus_colors(k,:),'DisplayName',sprintf('Bus %g',bus_ids(k)));
+end
+xlabel(ax_va,'Time (s)'); ylabel(ax_va,'|V| (pu)');
+title(ax_va,['All bus voltage magnitudes' status_suffix]);
+add_event_lines(ax_va,events,true);
+legend(ax_va,'Location','eastoutside','Interpreter','none');
+voltage_path=fullfile(output_dir,[prefix 'ieee14_ibr_voltage.png']);
+saveas(fig4,voltage_path);
+if visible, voltage_handle=fig4; else, close(fig4); voltage_handle=[]; end
+
 if visible
     freq_handle = fig1; power_handle = fig2;
 else
@@ -124,7 +165,9 @@ if isfield(result,'reclose_status') && ~isempty(result.reclose_status)
     reclose_status = char(string(result.reclose_status));
 end
 plot_paths = struct('freq_plot',freq_path,'power_plot',power_path, ...
+    'angle_plot',angle_path,'voltage_plot',voltage_path, ...
     'freq_fig',freq_handle,'power_fig',power_handle,'output_dir',output_dir, ...
+    'angle_fig',angle_handle,'voltage_fig',voltage_handle, ...
     'event_markers',events,'event_times',event_times, ...
     'reclose_status',reclose_status,'voltage_bus_ids',selected_bus_ids);
 end

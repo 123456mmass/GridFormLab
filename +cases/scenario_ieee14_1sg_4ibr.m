@@ -51,13 +51,30 @@ sg1 = resource_entry( ...
     ["synchronous","breaker_open"], "synchronous", ...
     struct('Mbase', 615.0), struct());
 
-% IBR2/3/6/8: dual-mode WECC REGC_A/REEC_A GFL + REGFM_B1 G2 GFM.
+% IBR2/3/6/8 construction profile.  Legacy remains the API default.  The
+% opt-in Profile B constructs the 23-state dual family for all four devices;
+% runtime mode selection then activates IBR2 GFM13 and IBR3/6/8 GFL-RMS10.
+ibr_profile = 'legacy';
+if isfield(scenario_opt, 'ibr_profile') && ~isempty(scenario_opt.ibr_profile)
+    ibr_profile = lower(char(scenario_opt.ibr_profile));
+end
+switch ibr_profile
+    case 'legacy'
+        gfl_family = '';
+    case 'rms10_profile_b'
+        gfl_family = 'rms10';
+    otherwise
+        error('cases:scenario_ieee14_1sg_4ibr:badIbrProfile', ...
+            'Unknown ibr_profile "%s".', ibr_profile);
+end
+
+% IBR2/3/6/8: dual-mode GFL + REGFM_B1 G2 GFM.
 % Mbase is the CASE_DEFINED unity-PF nameplate proxy (IBR2=140,
 % IBR3/6/8=100); each source model owns its documented defaults.
-ibr2 = ibr_entry('IBR2', 2, 140.0, 'gfl');
-ibr3 = ibr_entry('IBR3', 3, 100.0, 'gfl');
-ibr6 = ibr_entry('IBR6', 6, 100.0, 'gfl');
-ibr8 = ibr_entry('IBR8', 8, 100.0, 'gfl');
+ibr2 = ibr_entry('IBR2', 2, 140.0, 'gfl', gfl_family);
+ibr3 = ibr_entry('IBR3', 3, 100.0, 'gfl', gfl_family);
+ibr6 = ibr_entry('IBR6', 6, 100.0, 'gfl', gfl_family);
+ibr8 = ibr_entry('IBR8', 8, 100.0, 'gfl', gfl_family);
 
 resource_spec = [sg1, ibr2, ibr3, ibr6, ibr8];
 
@@ -71,9 +88,17 @@ scenario.scenario_id = 'ieee14_1sg_4ibr';
 scenario.provenance = struct( ...
     'case_source', case_data.reference.network, ...
     'sg_dynamics', case_data.reference.sg_dynamics, ...
-    'ibr_model', 'WECC REGC_A/REEC_A GFL + REGFM_B1 G2 GFM (20-state dual-mode superset)', ...
+    'ibr_model', sprintf('%s GFL + REGFM_B1 G2 GFM dual-mode superset', gfl_family_label(gfl_family)), ...
     'classification', 'SG1=CASE_DEFINED (Kodsi); IBR Mbase=CASE_DEFINED nameplate proxy; REGFM_B1 Table 1=SOURCE_VERBATIM', ...
     'note', 'IEEE14 IDs/buses confined to this profile only; engine is case-agnostic');
+end
+
+function label = gfl_family_label(family)
+if strcmpi(family, 'rms10')
+    label = 'GFL-RMS10 (23-state dual)';
+else
+    label = 'WECC REGC_A/REEC_A (20-state dual)';
+end
 end
 
 % =========================================================================

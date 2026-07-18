@@ -52,6 +52,37 @@ if isempty(aidx)
 end
 analysis_meta = registry(aidx);
 
+% IBR is a resource family, while ibr_analysis selects the requested
+% analysis product.  Keep 'ts' as the backward-compatible default used by
+% every pre-submenu request.
+if strcmp(req.analysis, 'ibr')
+    if ~isfield(req.options, 'ibr_analysis') || isempty(req.options.ibr_analysis)
+        req.options.ibr_analysis = 'ts';
+    end
+    if ~(ischar(req.options.ibr_analysis) || ...
+            (isstring(req.options.ibr_analysis) && isscalar(req.options.ibr_analysis)))
+        error('wizard:validate_request:badIbrAnalysis', ...
+            'options.ibr_analysis must be pf, sssa, ts, or full.');
+    end
+    req.options.ibr_analysis = lower(char(req.options.ibr_analysis));
+    if ~ismember(req.options.ibr_analysis, {'pf','sssa','ts','full'})
+        error('wizard:validate_request:badIbrAnalysis', ...
+            'Unknown IBR analysis %s.', req.options.ibr_analysis);
+    end
+    if isfield(req.options, 'ibr_profile') && ~isempty(req.options.ibr_profile)
+        if ~(ischar(req.options.ibr_profile) || ...
+                (isstring(req.options.ibr_profile) && isscalar(req.options.ibr_profile)))
+            error('wizard:validate_request:badIbrProfile', ...
+                'options.ibr_profile must be legacy or rms10_profile_b.');
+        end
+        req.options.ibr_profile = lower(char(req.options.ibr_profile));
+        if ~ismember(req.options.ibr_profile, {'legacy','rms10_profile_b'})
+            error('wizard:validate_request:badIbrProfile', ...
+                'Unknown IBR profile %s.', req.options.ibr_profile);
+        end
+    end
+end
+
 % --- case ID ---
 entries = wizard.discover_cases(req.analysis);
 if ~any(strcmp(req.case_id, {entries.id}))
@@ -95,6 +126,16 @@ switch req.events_policy
     otherwise
         error('wizard:validate_request:badSchema', ...
             'Unknown events_policy %s.', req.events_policy);
+end
+
+% PF and SSSA are operating-point analyses.  They cannot consume a hidden
+% time-domain event merely because the top-level IBR family supports events.
+if strcmp(req.analysis, 'ibr') && ...
+        ismember(req.options.ibr_analysis, {'pf','sssa'}) && ...
+        strcmp(req.events_policy, 'configured')
+    error('wizard:validate_request:ibrEventsNotApplicable', ...
+        'IBR %s does not accept events; select TS or Full Analysis.', ...
+        upper(req.options.ibr_analysis));
 end
 end
 

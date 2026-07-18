@@ -25,9 +25,10 @@ legacy-style analysis list, case list, and method-specific settings dialogs.
 The six-page wizard remains an explicit non-default UI, while its pure request,
 validation, dispatch, and result-adapter layers remain the shared backend.
 
-This is a UI/orchestration change only. No new PF/SSSA/equilibrium/TS
-solvers, no independent SSSA A matrix, no GFL-specific solver, and no loaded
-solutions as production results were introduced.
+The IBR entry now has a second, compact analysis selector after the case is
+chosen: Power Flow, SSSA, Time-Domain Simulation (TS), or Full Analysis. These are
+orchestration products over the existing project-owned kernels; no independent
+SSSA A matrix, GFL-specific solver, or loaded solution was introduced.
 
 ## Architecture
 
@@ -58,11 +59,48 @@ wizard UI and the programmatic path. No duplicate dispatch exists anywhere.
 |-------|-----------------------------------|------------------|----------------------|
 | `pf`  | Power Flow                        | NOT_APPLICABLE   | no                   |
 | `sssa`| Small-Signal Stability           | NOT_APPLICABLE   | yes                  |
-| `ts`  | Transient Stability              | optional         | yes                  |
-| `ibr` | IBR Simulation (mixed-resource)  | optional         | yes                  |
+| `ts`  | Time-Domain Simulation (TS)       | optional         | yes                  |
+| `ibr` | IBR mixed-resource family; submenu `pf/sssa/ts/full` | TS/full only | depends on submenu |
 
-`ibr` already means mixed-resource transient stability; a separate `ibr_ts`
-ID is NOT introduced.
+The stable public ID remains `ibr`; a separate `ibr_ts` ID is not introduced.
+The additive option `options.ibr_analysis` selects `pf`, `sssa`, `ts`, or
+`full`.  `ts` remains the schema-compatible time-domain product, while the
+interactive compact launcher defaults the IEEE14 case to the approved RMS10
+Profile B. The user may change the GFM count; the UI reconciles explicit
+indices, the complementary GFL count, and the reference index.
+
+## IEEE14 IBR submenu and result products
+
+The compact path is:
+
+```
+IBR -> IEEE14 1-SG + 4-IBR
+    -> Power Flow | SSSA | Time-Domain Simulation (TS) | Full Analysis
+```
+
+The default production launcher profile is `rms10_profile_b`: SG1 online, IBR2 in
+REGFM_B1 GFM mode, and IBR3/6/8 in GFL-RMS10 mode.  The fixed inventory is
+98 states (SG6 plus four 23-state dual containers); the operating active set
+is 48 states: five SG states, 13 GFM states, and three times ten GFL states.
+All four IBR containers remain RMS10-capable when the initial mode mix changes;
+the active order is then computed from runtime metadata.
+
+Results are explicit rather than inferred from warm-start counters:
+
+- PF publishes the complete Newton PF result and detailed bus/branch/balance
+  report, physical kV values from the 69-kV IEEE14 reporting base, a linear
+  convergence plot, and per-device/bus P/Q in pu and MW/MVAr.
+- SSSA publishes the mixed-resource equilibrium, `sssa.A`, every active-state
+  eigenvalue, state/device/local/global indices, descriptions, and modal
+  participation when well-conditioned.
+- TS preserves the historical top-level TS schema and adds four standard plot
+  products: device angle, frequency, power/current, and bus voltage.
+- Full publishes `result.pf`, `result.equilibrium`, `result.sssa`, and
+  `result.ts`; SSSA and TS share the exact same equilibrium arrays.
+
+PF and SSSA reject configured events.  RMS10 low-voltage ride-through remains
+outside the approved first slice, so an unsupported fault fails closed rather
+than silently adding PLL freeze or relaxing the algebraic gate.
 
 ## Pure layer (+wizard/*, headless-testable)
 

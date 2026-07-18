@@ -12,6 +12,8 @@ end
 function test_case14_data_import(testCase)
     c = cases.case_matpower6_case14();
     testCase.verifyEqual(c.base_values.S_base_MVA, 100);
+    testCase.verifyEqual(c.base_values.V_base_kV, 69, ...
+        'IEEE14 reporting voltage base is source-mapped to 69 kV.');
     testCase.verifySize(c.bus_data, [14 12]);
     testCase.verifySize(c.line_data, [20 7]);
     testCase.verifySize(c.mpc.gen, [5 21]);
@@ -24,6 +26,8 @@ function test_case14_powerflow_matches_matpower_reference(testCase)
     r = pfsolver.powerflow_newton_raphson(c, struct('verbose', false, 'plot_results', false, ...
         'max_iter', 50, 'tolerance', 1e-10, 'enforce_q_limits', false));
     testCase.verifyTrue(r.converged, 'Imported MATPOWER6 case14 should converge with in-house NR solver.');
+    testCase.verifyEqual(r.bus_voltage_kV, 69*r.bus_voltage, 'AbsTol', 0, ...
+        'Physical kV display must be the exact pu-to-base conversion.');
     ref = c.reference_solution;
     % MATPOWER case14 stores a rounded solved profile (about 3 decimals for
     % voltage and 2 decimals for angle). Allow the small published-data
@@ -44,4 +48,24 @@ function test_import_matches_existing_project_ieee14_conversion(testCase)
     testCase.verifyTrue(r_new.converged && r_old.converged);
     testCase.verifyEqual(r_new.bus_voltage, r_old.bus_voltage, 'AbsTol', 1e-10);
     testCase.verifyEqual(r_new.bus_angle_deg, r_old.bus_angle_deg, 'AbsTol', 1e-8);
+end
+
+function test_pf_convergence_plot_uses_linear_axis(testCase)
+old = get(groot, 'DefaultFigureVisible');
+cleanup = onCleanup(@() set(groot, 'DefaultFigureVisible', old)); %#ok<NASGU>
+set(groot, 'DefaultFigureVisible', 'off');
+c = cases.case_matpower6_case14();
+r = pfsolver.powerflow_newton_raphson(c, struct('verbose', false, ...
+    'plot_results', false, 'max_iter', 50, 'tolerance', 1e-10, ...
+    'enforce_q_limits', false));
+before = findall(groot, 'Type', 'figure');
+pf_plot_powerflow_results(r, 1e-10);
+created = setdiff(findall(groot, 'Type', 'figure'), before);
+fig_cleanup = onCleanup(@() close(created(ishandle(created)))); %#ok<NASGU>
+testCase.verifyNumElements(created, 1);
+axes_list = findall(created, 'Type', 'axes');
+conv = axes_list(arrayfun(@(a) contains(string(a.Title.String), ...
+    'Convergence'), axes_list));
+testCase.verifyNumElements(conv, 1);
+testCase.verifyEqual(conv.YScale, 'linear');
 end

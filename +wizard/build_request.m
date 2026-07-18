@@ -43,6 +43,9 @@ registry = wizard.analysis_registry();
 aidx = find(strcmp(analysis_id, {registry.id}), 1);
 events_applicable = registry(aidx).events_applicable;
 ev = p.Results.events;
+events_explicit = ~isempty(p.Results.events) || ...
+    (isfield(p.Results.options, 'ibr_events') && ...
+     ~isempty(p.Results.options.ibr_events));
 % For IBR, the legacy launcher carries events inside options.ibr_events
 % (nested). Extract it into the request's events field so the dispatcher
 % attaches it correctly (correction #6: events must reach the production
@@ -65,6 +68,16 @@ elseif isstruct(ev) && isfield(ev, 'enabled') && ~logical(ev.enabled)
     events_policy = 'event_free';
 else
     events_policy = 'configured';
+end
+
+% The top-level IBR family supports events, but its PF and SSSA products do
+% not.  Suppress only the inherited TS default event here.  An event supplied
+% explicitly by the caller is retained and rejected by validate_request.
+if strcmp(analysis_id, 'ibr') && isfield(opt, 'ibr_analysis') && ...
+        ismember(lower(char(opt.ibr_analysis)), {'pf','sssa'}) && ...
+        ~events_explicit
+    ev = struct('enabled', false);
+    events_policy = 'event_free';
 end
 
 req = struct( ...

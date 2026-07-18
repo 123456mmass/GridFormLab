@@ -135,16 +135,17 @@ if export_results
     f = figure('Name', 'Benchmark Convergence', 'Color', 'w', 'Visible', 'off');
     hold on;
     if isfield(results, 'nr') && ~isempty(results.nr.mismatch_history)
-        semilogy(1:numel(results.nr.mismatch_history), results.nr.mismatch_history, '-o', ...
+        plot(1:numel(results.nr.mismatch_history), results.nr.mismatch_history, '-o', ...
             'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'NR');
     end
     if isfield(results, 'gs') && ~isempty(results.gs.mismatch_history)
-        semilogy(1:numel(results.gs.mismatch_history), results.gs.mismatch_history, '-s', ...
+        plot(1:numel(results.gs.mismatch_history), results.gs.mismatch_history, '-s', ...
             'LineWidth', 1.5, 'MarkerSize', 4, 'DisplayName', 'GS');
     end
     xlabel('Iteration'); ylabel('Max Mismatch');
     title(sprintf('%s — Convergence Comparison', case_data.system_name));
     legend('Location', 'best'); grid on;
+    set(gca, 'YScale', 'linear');
     saveas(f, fullfile(output_dir, sprintf('benchmark_%s.png', name)));
     close(f);
     if verbose, fprintf('Benchmark plot: %s\n', fullfile(output_dir, sprintf('benchmark_%s.png', name))); end

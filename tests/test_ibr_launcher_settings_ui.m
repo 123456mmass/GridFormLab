@@ -33,7 +33,10 @@ tc.verifySubstring(s,"opt.initial_gfm_count");
 tc.verifySubstring(s,"opt.initial_gfl_count");
 tc.verifySubstring(s,"opt.initial_gfm_indices");
 tc.verifySubstring(s,"opt.initial_reference_resource_index");
-tc.verifySubstring(s,"blank=count selector");
+tc.verifySubstring(s,"[AUTO from count]");
+tc.verifySubstring(s,"GFM reference index [AUTO]");
+tc.verifySubstring(s,"set([fields{7:9}], 'Enable', 'off'");
+tc.verifySubstring(s,"wizard.normalize_ibr_mode_selection(opt)");
 end
 
 function test_event_fields_include_reclose_dwell_timeout(tc)
@@ -50,7 +53,7 @@ end
 function test_dialog_validation_is_fail_closed(tc)
 s = prompt_section();
 tc.verifySubstring(s,"Require 0 < dt <= t_end.");
-tc.verifySubstring(s,"Initial GFM+GFL counts must equal");
+tc.verifySubstring(s,"Initial GFM count is out of range.");
 tc.verifySubstring(s,"Require 0 <= synchronism dwell <= synchronism timeout.");
 tc.verifySubstring(s,"Require fault_on < fault_clear <= sg_trip < sg_on <= t_end.");
 tc.verifySubstring(s,"Post-trip indices must be unique eligible resources and include the reference.");

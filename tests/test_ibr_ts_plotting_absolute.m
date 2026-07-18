@@ -8,16 +8,18 @@ addpath(fileparts(fileparts(mfilename('fullpath'))));
 pf_init_paths();
 end
 
-function test_exactly_two_figures_and_physical_series(testCase)
+function test_four_figures_and_physical_series(testCase)
 r = synthetic_result();
 out = tempname; mkdir(out);
 cleanup = onCleanup(@() cleanup_artifacts(out));
 before = findall(groot,'Type','figure');
 p = stability.plot_ibr_ts_results(r,struct('output_dir',out,'visible',true));
 after = findall(groot,'Type','figure');
-testCase.verifyEqual(numel(after)-numel(before),2,'Exactly two figures are created.');
+testCase.verifyEqual(numel(after)-numel(before),4,'Angle, frequency, power, and voltage figures are created.');
+testCase.verifyTrue(isfile(p.angle_plot));
 testCase.verifyTrue(isfile(p.freq_plot));
 testCase.verifyTrue(isfile(p.power_plot));
+testCase.verifyTrue(isfile(p.voltage_plot));
 
 axf = findobj(p.freq_fig,'Tag','ibr_frequency_axes');
 freq_lines = findobj(axf,'Type','line');
@@ -46,7 +48,7 @@ testCase.verifyEqual(ilim.YData,r.device_current_limit_sys(2,:),'AbsTol',0, ...
     'Current limit comes from authoritative result data.');
 testCase.verifyFalse(any(abs(ilim.YData-1.5)<eps), ...
     'No fabricated 1.5-pu current-limit line.');
-close(p.freq_fig); close(p.power_fig);
+close(p.angle_fig); close(p.freq_fig); close(p.power_fig); close(p.voltage_fig);
 end
 
 function test_fault_schedule_owns_voltage_bus(testCase)
@@ -57,7 +59,7 @@ testCase.verifyEqual(p.voltage_bus_ids,3,'AbsTol',0);
 axv = findobj(p.freq_fig,'Tag','ibr_voltage_axes');
 names = string(get(findobj(axv,'Type','line'),'DisplayName'));
 testCase.verifyEqual(names,"|V| fault bus 3");
-close(p.freq_fig); close(p.power_fig);
+close(p.angle_fig); close(p.freq_fig); close(p.power_fig); close(p.voltage_fig);
 r.sched.fault_bus=99;
 testCase.verifyError(@() stability.plot_ibr_ts_results(r,struct('output_dir',out)), ...
     'plot_ibr_ts_results:badFaultBus');
@@ -85,6 +87,8 @@ testCase.verifyFalse(p.event_markers(end).applied, ...
     'Synchronism timeout remains an explicit non-applied marker.');
 testCase.verifyEmpty(p.freq_fig,'Closed figures do not return stale handles.');
 testCase.verifyEmpty(p.power_fig,'Closed figures do not return stale handles.');
+testCase.verifyEmpty(p.angle_fig,'Closed figures do not return stale handles.');
+testCase.verifyEmpty(p.voltage_fig,'Closed figures do not return stale handles.');
 end
 
 function test_missing_physical_units_fail_closed(testCase)
@@ -108,7 +112,7 @@ testCase.verifySubstring(string(axf.Title.String),'PARTIAL / FAILED CLOSED');
 txt=evalc('stability.print_ibr_run_log(r);');
 testCase.verifySubstring(txt,'ts_simulate_ibr_hybrid:stepNewton');
 testCase.verifySubstring(txt,'Last published time');
-close(p.freq_fig); close(p.power_fig);
+close(p.angle_fig); close(p.freq_fig); close(p.power_fig); close(p.voltage_fig);
 end
 
 function r = synthetic_result()
@@ -119,6 +123,7 @@ r.device_ids = {'SG_A','IBR_B'};
 r.device_bus_ids = [1 7];
 r.device_frequency_Hz = [60.00 59.98 59.95 NaN NaN 60.01; ...
     NaN NaN NaN 60.02 60.01 60.00];
+r.device_angle_deg = [0 1 2 NaN NaN 3; -2 -1 0 1 2 3];
 r.bus_voltage_magnitude = [1.00 0.91 1.01 1.00 1.00 1.00; ...
     1.02 0.88 1.01 1.01 1.01 1.01; ...
     0.99 0.86 0.98 0.99 1.00 1.00];
@@ -145,5 +150,7 @@ end
 function cleanup_artifacts(out)
 close(findall(groot,'Type','figure','Name','IBR absolute frequency and voltage'));
 close(findall(groot,'Type','figure','Name','IBR physical power and current'));
+close(findall(groot,'Type','figure','Name','IBR SG/GFM/GFL angles'));
+close(findall(groot,'Type','figure','Name','IBR bus voltages'));
 if isfolder(out), rmdir(out,'s'); end
 end

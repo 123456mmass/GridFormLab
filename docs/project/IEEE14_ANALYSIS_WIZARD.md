@@ -2,7 +2,7 @@
 
 Date: 2026-07-19
 Branch: `main`
-Status: `WIZARD_UI_IMPLEMENTED` (Phases 1-5 complete; full regression pending)
+Status: `LEGACY_DIALOG_DEFAULT / WIZARD_BACKEND_AVAILABLE`
 
 ## Purpose
 
@@ -11,13 +11,19 @@ analyses (PF, SSSA, TS, IBR). Before this work its interactive surface was
 four separate `listdlg`/`inputdlg` prompts plus a hand-built `dialog` for
 IBR, with validation inline in local functions unreachable from tests.
 
-This change introduces a sequential, method-aware **wizard** built entirely
+This work introduced a sequential, method-aware **wizard** built entirely
 with base-MATLAB `figure`/`uipanel`/`uicontrol` (NOT uifigure; the two are
 not mixed). The wizard collects analysis, case, configuration, and (for
 TS/IBR) events, reviews the run contract, executes through the existing
 production launchers, and displays a generic 12-section result view. PF and
 SSSA are event-free. The pure logic is separated from the GUI so headless
 `matlab -batch` tests work.
+
+After desktop acceptance, the user selected the former compact dialog workflow
+as the default interactive surface. Therefore `solve_case()` now opens the
+legacy-style analysis list, case list, and method-specific settings dialogs.
+The six-page wizard remains an explicit non-default UI, while its pure request,
+validation, dispatch, and result-adapter layers remain the shared backend.
 
 This is a UI/orchestration change only. No new PF/SSSA/equilibrium/TS
 solvers, no independent SSSA A matrix, no GFL-specific solver, and no loaded
@@ -27,7 +33,7 @@ solutions as production results were introduced.
 
 ```
 solve_case (canonical public entry, thin wrapper)
- ├─ no arguments / partial ──> wizard.show   (opens the base-MATLAB wizard figure)
+ ├─ no arguments / partial ──> wizard.legacy_show (compact dialog workflow)
  └─ programmatic            ──> wizard.build_request
                                 ↓
                           wizard.validate_request

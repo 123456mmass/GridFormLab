@@ -3,7 +3,7 @@ function p6_render_section(panel, view, idx)
 sec = view.sections(idx);
 ctrl = findobj(panel, 'Tag', 'p6_content');
 if isempty(ctrl), return; end
-txt = wizard.pages.p6_section_text(sec);
+txt = p6_section_text(sec);
 set(ctrl, 'String', txt);
 end
 

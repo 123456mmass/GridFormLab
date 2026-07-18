@@ -13,10 +13,9 @@ function test_wizard_ui_smoke()
 %   (correction: separate UI_EXECUTION_PASS from NUMERICAL_CONVERGENCE from
 %   PHYSICAL_RESULT_CLASSIFICATION).
 %
-%   In a non-interactive (batch) MATLAB session a real figure cannot be kept
-%   alive, so this test exercises the routing/builders directly rather than
-%   rendering into a live figure. The interactive figure render is exercised
-%   by manual use of wizard.show in a desktop MATLAB session.
+%   A hidden classic figure exercises the actual renderer. This gate was added
+%   after the former function-resolution-only smoke test passed while desktop
+%   rendering failed before creating the footer controls.
 
 pf_init_paths();
 results = struct('pass', 0, 'fail', 0);
@@ -40,7 +39,7 @@ pages = { ...
     'p1_analysis', 'Select analysis', true; ...
     'p2_case', 'Select case', true; ...
     'p3_configure', 'Configure analysis', true; ...
-    'p4_events', 'Events', false; ...
+    'p4_events', 'Events', true; ...
     'p5_review', 'Review and execute', true; ...
     'p6_results', 'Results', true};
 
@@ -93,9 +92,69 @@ results = check(results, numel(view.sections) == 12, 'adapt_result produces 12 s
 results = check(results, strcmp(view.sections(3).status, 'ok'), 'PF section ok');
 results = check(results, strcmp(view.sections(4).status, 'not_applicable'), 'SSSA section not_applicable for pf');
 
+% --- 5. Real hidden-figure render, selection commit, and navigation ---
+fig = figure('Visible', 'off', 'MenuBar', 'none', 'ToolBar', 'none');
+cleanup = onCleanup(@() delete_if_valid(fig)); %#ok<NASGU>
+uiapp = app;
+uiapp.analysis = '';
+uiapp.case_id = '';
+uiapp.current_page = 1;
+uiapp.fig = fig;
+fig.UserData.app = uiapp;
+wizard.render_page(uiapp);
+next = findobj(fig, 'Style', 'pushbutton', 'String', 'Next >');
+back = findobj(fig, 'Style', 'pushbutton', 'String', '< Back');
+lb = findobj(fig, 'Style', 'listbox');
+results = check(results, isscalar(next) && strcmp(get(next, 'Enable'), 'on'), ...
+    'page 1 renders an enabled Next button');
+results = check(results, isscalar(back) && strcmp(get(back, 'Enable'), 'off'), ...
+    'page 1 renders a disabled Back button');
+set(lb, 'Value', 4);
+cb = get(lb, 'Callback'); cb(lb, []);
+results = check(results, strcmp(fig.UserData.app.analysis, 'ibr'), ...
+    'analysis list callback commits IBR selection');
+cb = get(next, 'Callback'); cb(next, []);
+results = check(results, fig.UserData.app.current_page == 2, ...
+    'Next advances to the case page');
+results = check(results, ~isempty(fig.UserData.app.case_id), ...
+    'case page commits its displayed initial selection');
+
+% Events page is reachable for IBR but skipped for PF/SSSA.
+uiapp = fig.UserData.app;
+uiapp.current_page = 3;
+uiapp.analysis = 'ibr';
+fig.UserData.app = uiapp;
+wizard.go_page(fig, +1);
+results = check(results, fig.UserData.app.current_page == 4, ...
+    'IBR navigation reaches the Events page');
+uiapp = fig.UserData.app;
+uiapp.current_page = 3;
+uiapp.analysis = 'pf';
+fig.UserData.app = uiapp;
+wizard.go_page(fig, +1);
+results = check(results, fig.UserData.app.current_page == 5, ...
+    'PF navigation skips the Events page');
+
+% --- 6. Default interactive entry uses the user-selected compact dialogs ---
+solve_src = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'solve_case.m'));
+legacy_src = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+    '+wizard', 'legacy_show.m'));
+results = check(results, contains(solve_src, 'wizard.legacy_show'), ...
+    'solve_case default interactive path uses compact legacy dialogs');
+results = check(results, contains(legacy_src, 'listdlg') && contains(legacy_src, 'inputdlg'), ...
+    'legacy UI provides compact selection and editable settings dialogs');
+results = check(results, contains(legacy_src, 'wizard.dispatch_analysis'), ...
+    'legacy UI retains the shared production dispatcher');
+
 fprintf('\n==== WIZARD UI SMOKE: %d passed, %d failed ====\n', results.pass, results.fail);
 if results.fail > 0
     error('test_wizard_ui_smoke:Failed', '%d checks failed', results.fail);
+end
+
+function delete_if_valid(fig)
+if isgraphics(fig)
+    delete(fig);
+end
 end
 end
 

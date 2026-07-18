@@ -1,6 +1,7 @@
 function result = solve_case(varargin)
 %SOLVE_CASE Interactive in-house PF / SSSA / TS / IBR launcher.
-%   RESULT = SOLVE_CASE() opens the analysis wizard (base-MATLAB UI).
+%   RESULT = SOLVE_CASE() opens the compact legacy-style analysis, case, and
+%   method-settings dialogs.
 %   RESULT = SOLVE_CASE('analysis',ID,'case',ID,'options',OPT) is the
 %   non-interactive (programmatic) form. Production: project solvers only.
 %
@@ -10,9 +11,9 @@ function result = solve_case(varargin)
 %                             -> wizard.dispatch_analysis (single shared
 %                             dispatcher used by BOTH the wizard UI and the
 %                             programmatic path, G4)
-%     - interactive / partial path -> wizard.show (opens the wizard UI with
-%                             supplied selections pre-populated; NEVER
-%                             auto-executes, correction #3)
+%     - interactive / partial path -> wizard.legacy_show (the original
+%                             compact dialog workflow backed by the same
+%                             request builder and dispatcher)
 %
 %   ABI, result schemas, failure IDs, log-file behavior, and the headless
 %   path are preserved (frozen by tests/test_wizard_characterization.m).
@@ -37,9 +38,9 @@ user_opt = p.Results.options;
 interactive = isempty(analysis) || isempty(case_id);
 
 if interactive
-    % Wizard UI path. The wizard collects the remaining selections and, on
-    % Run, calls wizard.dispatch_analysis (the same dispatcher as below).
-    result = wizard.show('analysis', analysis, 'case', case_id, ...
+    % Compact legacy-style UI path. It collects the remaining selections and
+    % calls the same dispatcher as the programmatic path below.
+    result = wizard.legacy_show('analysis', analysis, 'case', case_id, ...
         'options', user_opt);
     return;
 end

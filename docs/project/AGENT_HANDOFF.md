@@ -665,8 +665,9 @@ production and `pf_init_paths`.
 
 ## Analysis Wizard UI (2026-07-19)
 
-**Status:** Wizard Phases 1-5 complete; Phase 6 (docs + full regression)
-in progress.
+**Status:** Wizard backend delivered; compact legacy-style dialogs restored as
+the default interactive surface after desktop review. Full regression was
+stopped by user request; focused verification is recorded below.
 **Branch:** `main`
 **Doc:** `docs/project/IEEE14_ANALYSIS_WIZARD.md`
 
@@ -708,11 +709,21 @@ IBR Section H producer reused ONLY through the explicit
 - `tests/test_wizard_pure_layer.m` — 29 (registry/discover/defaults/build/validate)
 - `tests/test_wizard_dispatch.m` — 15 (dispatch + adapt_result + config_io)
 - `tests/test_wizard_section_h_adapter.m` — 6 (Section H adapter)
-- `tests/test_wizard_ui_smoke.m` — 14 (UI routing, invisible-figure pattern)
+- `tests/test_wizard_ui_smoke.m` — 21 (real hidden-figure renderer and navigation)
 - existing launcher tests (`test_ibr_launcher_settings_ui.m`,
   `test_ibr_launcher_configuration_logging.m`, `test_solve_case_launcher.m`)
   — 16 green
 
-Full regression required (single-owner shared `solve_case.m` edited); see
-Phase 6 commit message for the recorded counts.
+The default `solve_case()` path is now `wizard.legacy_show`: compact analysis
+and case list dialogs followed by method-specific editable settings. It uses
+the same `wizard.build_request` / `validate_request` / `dispatch_analysis`
+backend as programmatic calls. The six-page UI is non-default. Desktop defects
+in its footer, initial-case commit, Events navigation, and blank Results page
+were corrected as fallback hardening (`UI-2026-07-19-01`).
+
+Focused final-tree evidence: legacy backend Code Analyzer 0 issues; launcher
+and dispatcher tests 31/31; hidden-figure wizard smoke 21/21; broader focused
+wizard/launcher suite 66/66. No failed or incomplete targeted tests. No
+numerical equation, parameter, tolerance, solver, or result schema changed.
+Full repository regression was intentionally not rerun by user request.
 

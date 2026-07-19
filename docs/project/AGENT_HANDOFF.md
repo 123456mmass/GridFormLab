@@ -86,6 +86,16 @@ Previously, its presentation-only fallback interpreted an explicit empty
 all-GFL request. The numerical PF was unaffected; the corrected report prints
 SG1 plus four GFL-RMS10 resources and active order 45.
 
+The report operating-point tables were subsequently unified. Bus voltages,
+bus generation/load/net injection, all 20 branch flows, and device injections
+are now reconstructed from the same accepted SG1 plus four-GFL equilibrium
+used by SSSA and TS. The source REF/PV/PQ PF is retained only as the frozen
+constant-admittance load anchor and is not published beside the equilibrium
+tables. The report producer independently checks
+`Sgen + Sshunt - Sload - Sbranch_loss`; the regenerated balance norm is
+`1.8610e-11 pu`. Table 5 bus generation equals the aggregation of Table 7
+device injections by bus.
+
 The user-observed TS failure at `20260719_082442` is not the normal-operation
 route: the configured bus-4 fault reaches `fault_on` at 3 s and produces
 `|V|=0.039238 pu`, below the unchanged GFL-RMS10

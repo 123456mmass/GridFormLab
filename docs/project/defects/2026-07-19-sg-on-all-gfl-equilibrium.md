@@ -116,6 +116,16 @@ table and plot in the report is from SG1 plus four active GFL-RMS10 resources.
 The compiled report has 17 A4 portrait pages; the PF, line-flow, resource,
 SSSA, and event-free TS pages were visually checked after rasterization.
 
+The original report revision placed source-case REF/PV/PQ PF bus and branch
+tables beside the all-GFL mixed-device injection table. Those are different
+operating points and cannot be compared row-wise. The report producer now
+reconstructs every operating-point table from the accepted all-GFL
+equilibrium: device `S=V*conj(I)` is aggregated by bus, frozen-admittance load
+power is evaluated at the equilibrium voltage, and branch terminal powers are
+evaluated at that same voltage. An independent complex balance assertion gives
+`1.8610e-11 pu`, and Table 5 generation agrees exactly with Table 7 after
+aggregation by bus.
+
 A separately configured bus-4 fault still fails closed at its right limit when
 the all-GFL terminal voltage reaches `0.039238 pu`, below the unchanged
 `V_div_min=0.1 pu` RMS10 balanced-LVRT domain. This is an explicit model-domain

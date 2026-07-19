@@ -29,8 +29,8 @@ assert(pf.converged && sssa.converged && ts.converged, ...
 save(fullfile(out,'raw_report_products.mat'),'pf','sssa','ts','-v7.3');
 
 write_case_tables(case_data,out);
-write_pf_tables(pf.pf,case_data,out);
-write_resource_table(sssa.equilibrium,out,'normal_resource_pf.csv');
+eq_tables=write_equilibrium_tables(sssa.equilibrium,pf.pf,case_data,out);
+write_resource_table(sssa.equilibrium,case_data.mpc.baseMVA,out,'normal_resource_pf.csv');
 write_state_inventory(sssa.equilibrium,out);
 write_sssa_table(sssa,out,'normal_sssa_eigenvalues.csv');
 write_ts_table(ts,out,'normal_event_free_ts.csv');
@@ -46,6 +46,9 @@ manifest = struct('generated_at',char(datetime('now','Format','yyyy-MM-dd HH:mm:
     'normal_active_states',size(sssa.sssa.A,1), ...
     'equilibrium_residual',sssa.equilibrium.residual_norm, ...
     'physical_kcl_norm',sssa.equilibrium.physical_kcl_norm, ...
+    'reported_power_balance_norm',eq_tables.balance_norm, ...
+    'reported_total_generation_pu',eq_tables.total_generation_pu, ...
+    'reported_total_load_pu',eq_tables.total_load_pu, ...
     'ts_converged',logical(ts.converged), ...
     'ts_final_time',ts.t(end), ...
     'ts_accepted_steps',numel(ts.t)-1, ...
@@ -77,32 +80,58 @@ t=table((1:size(b,1)).',b(:,1),b(:,2),b(:,3),b(:,4),b(:,5),b(:,6), ...
 writetable(t,fullfile(out,'case_line_data.csv'));
 end
 
-function write_pf_tables(pf,c,out)
-nb=numel(pf.external_bus_ids);
-type_names={'PQ','PV','REF','ISOLATED'};
-type=type_names(c.mpc.bus(:,2)).';
-t=table((1:nb).',pf.external_bus_ids(:),string(type),pf.bus_voltage(:), ...
-    pf.bus_voltage_kV(:),pf.bus_angle_deg(:), ...
+function metrics=write_equilibrium_tables(eq,pf_anchor,c,out)
+V=complex(eq.y0(1:2:end),eq.y0(2:2:end));
+bus_ids=c.mpc.bus(:,1); nb=numel(bus_ids); base=c.mpc.baseMVA;
+type=repmat("PQ",nb,1); type(c.mpc.bus(:,2)==3)="REF";
+t=table((1:nb).',bus_ids,string(type),abs(V),69*abs(V),rad2deg(angle(V)), ...
     'VariableNames',{'bus_position','bus_id','type','V_pu','V_kV','angle_deg'});
 writetable(t,fullfile(out,'normal_pf_bus.csv'));
-t=table(pf.external_bus_ids(:),pf.P_generation(:),pf.Q_generation(:), ...
-    pf.P_load(:),pf.Q_load(:),pf.P_generation(:)-pf.P_load(:), ...
-    pf.Q_generation(:)-pf.Q_load(:), ...
+
+resources=equilibrium_resource_rows(eq,base);
+Sgen=complex(zeros(nb,1));
+for k=1:height(resources)
+    bp=find(bus_ids==resources.bus_id(k),1);
+    Sgen(bp)=Sgen(bp)+resources.P_pu(k)+1i*resources.Q_pu(k);
+end
+Vanchor=pf_anchor.bus_voltage(:).*exp(1i*deg2rad(pf_anchor.bus_angle_deg(:)));
+Sload0=(c.mpc.bus(:,3)+1i*c.mpc.bus(:,4))/base;
+Sload=Sload0.*(abs(V).^2./abs(Vanchor).^2);
+t=table(bus_ids,real(Sgen),imag(Sgen),real(Sload),imag(Sload), ...
+    real(Sgen-Sload),imag(Sgen-Sload), ...
     'VariableNames',{'bus_id','P_gen_pu','Q_gen_pu','P_load_pu', ...
     'Q_load_pu','P_net_pu','Q_net_pu'});
 writetable(t,fullfile(out,'normal_pf_power.csv'));
-t=table((1:numel(pf.mismatch_history)).',pf.mismatch_history(:), ...
+
+seed_pf=eq.initialization.sg_on_all_gfl.pf;
+t=table((1:numel(seed_pf.mismatch_history)).',seed_pf.mismatch_history(:), ...
     'VariableNames',{'iteration','max_mismatch_pu'});
 writetable(t,fullfile(out,'normal_pf_convergence.csv'));
-e=pf.line_endpoints;
-t=table((1:size(e,1)).',e(:,1),e(:,2),pf.line_flow_P(:,1), ...
-    pf.line_flow_Q(:,1),pf.line_loss_P(:),pf.line_loss_Q(:), ...
+
+[Sf,St]=branch_terminal_power(c.mpc,V,bus_ids);
+br=c.mpc.branch;
+t=table((1:size(br,1)).',br(:,1),br(:,2),real(Sf),imag(Sf), ...
+    real(Sf+St),imag(Sf+St), ...
     'VariableNames',{'line','from_bus','to_bus','P_from_pu','Q_from_pu', ...
     'P_loss_pu','Q_loss_pu'});
 writetable(t,fullfile(out,'normal_pf_line_flow.csv'));
+
+Sshunt=(-c.mpc.bus(:,5)+1i*c.mpc.bus(:,6))/base.*abs(V).^2;
+balance=sum(Sgen)+sum(Sshunt)-sum(Sload)-sum(Sf+St);
+assert(abs(balance)<1e-8,'report:ieee14_ibr:equilibriumPowerBalance', ...
+    'All-GFL equilibrium report balance is %.3e pu.',abs(balance));
+metrics=struct('balance_norm',abs(balance), ...
+    'total_generation_pu',sum(real(Sgen)), ...
+    'total_load_pu',sum(real(Sload)), ...
+    'total_branch_loss_pu',sum(real(Sf+St)));
 end
 
-function write_resource_table(eq,out,name)
+function write_resource_table(eq,base,out,name)
+t=equilibrium_resource_rows(eq,base);
+writetable(t,fullfile(out,name));
+end
+
+function t=equilibrium_resource_rows(eq,base)
 V=complex(eq.y0(1:2:end),eq.y0(2:2:end)); nd=numel(eq.devices);
 idx=(1:nd).'; id=strings(nd,1); bus=zeros(nd,1); mode=strings(nd,1);
 P=zeros(nd,1); Q=P; Vm=P;
@@ -116,10 +145,25 @@ for k=1:nd
     P(k)=real(S); Q(k)=imag(S); Vm(k)=abs(V(d.bus_position));
     xo=xo+d.nx; uo=uo+d.nu;
 end
-t=table(idx,id,bus,mode,P,Q,100*P,100*Q,Vm,69*Vm, ...
+t=table(idx,id,bus,mode,P,Q,base*P,base*Q,Vm,69*Vm, ...
     'VariableNames',{'device_index','device_id','bus_id','mode','P_pu','Q_pu', ...
     'P_MW','Q_MVAr','V_pu','V_kV'});
-writetable(t,fullfile(out,name));
+assert(isequal(cellstr(t.mode),{'SG';'GFL';'GFL';'GFL';'GFL'}), ...
+    'report:ieee14_ibr:modeMap','Report equilibrium is not SG1 plus four GFL resources.');
+end
+
+function [Sf,St]=branch_terminal_power(mpc,V,bus_ids)
+br=mpc.branch; nl=size(br,1); Sf=complex(zeros(nl,1)); St=Sf;
+for k=1:nl
+    if br(k,11)==0, continue; end
+    i=find(bus_ids==br(k,1),1); j=find(bus_ids==br(k,2),1);
+    tap=br(k,9); if tap==0, tap=1; end
+    a=tap*exp(1i*deg2rad(br(k,10)));
+    ys=1/(br(k,3)+1i*br(k,4)); ysh=1i*br(k,5)/2;
+    If=((ys+ysh)/(a*conj(a)))*V(i)-(ys/conj(a))*V(j);
+    It=(ys+ysh)*V(j)-(ys/a)*V(i);
+    Sf(k)=V(i)*conj(If); St(k)=V(j)*conj(It);
+end
 end
 
 function write_state_inventory(eq,out)

@@ -69,8 +69,8 @@ contains SG1 at bus~1 and IBR2, IBR3, IBR6, and IBR8 in 10-state
 PLL-resolved grid-following (GFL) mode.  The report
 defines every state, reference frame, sign convention, per-unit conversion,
 network residual, equilibrium condition, SSSA reduction, and implicit
-trapezoidal time step.  Power flow, SSSA, and the 15-s event-free TS are
-executed independently with the same SG1 plus four-GFL resource assignment.
+trapezoidal time step.  The reported operating-point tables, SSSA, and the
+15-s event-free TS all use the same accepted SG1 plus four-GFL equilibrium.
 Numerical plots are rendered natively by
 \LaTeX{} from CSV files exported from the project-owned MATLAB solvers, so the
 plot font, size, and spacing are identical to the report.  Numerical
@@ -94,7 +94,7 @@ profile, convergence, and physical classifications in \code{manifest.txt}.
 
 The products in this report are deliberately separated:
 \begin{enumerate}
-  \item normal network power flow (PF), with no dynamic states and no event;
+  \item mode-aware all-GFL PF warm-start with effective PQ converter buses;
   \item mixed-device equilibrium and full-state SSSA at the fixed four-GFL mode map;
   \item a 15-s event-free normal-operation TS from that equilibrium.
 \end{enumerate}
@@ -456,12 +456,13 @@ semantics.  In compact form, Newton iterations solve
 J_{PF}(z^{(m)})\Delta z^{(m)}=-F_{PF}(z^{(m)}),\qquad
 z^{(m+1)}=z^{(m)}+\Delta z^{(m)},
 \]
-until \(\|F_{PF}\|_\infty\) is below tolerance.  PF establishes network
-voltage and dispatch targets; it does not claim that a dynamic state is at
-equilibrium.  Accordingly, the PF tables below retain the source-case
-REF/PV/PQ schedule shown by the launcher.  The subsequent mixed-device
-equilibrium independently enforces the four GFL \(P_{ref},Q_{ref}\) controls;
-its resource-injection table is labelled separately.
+until \(\|F_{PF}\|_\infty\) is below tolerance.  The source-case REF/PV/PQ PF
+is used only to freeze the constant-admittance load model.  The reported
+operating point instead uses the mode-aware warm-start, changes every online
+GFL terminal to its effective PQ semantics, and then accepts only the
+subsequent coupled equilibrium satisfying the full device ODEs and every KCL
+row.  Thus all reported bus, load, branch, and device tables share the same
+voltage vector and SG1 plus four-GFL mode map.
 
 \subsection{Mixed-device equilibrium}
 
@@ -503,20 +504,20 @@ Between event transactions, the implicit trapezoidal step solves
 The public sampling interval is \(h=0.01\) s.  This report uses an empty event
 schedule, so the fixed all-GFL mode map remains unchanged for all 1500 steps.
 
-\section{Normal PF and SSSA results}
+\section{All-GFL equilibrium and SSSA results}
 
 \begin{figure}[H]\centering
 \includegraphics[width=\textwidth]{\datadir/matlab_normal_pf.pdf}
-\caption{Normal mixed-resource power-flow voltage results.}
+\caption{Accepted SG1 plus four-GFL equilibrium bus-voltage results.}
 \end{figure}
 
 \begin{figure}[H]\centering
 \includegraphics[width=0.78\textwidth]{\datadir/matlab_normal_pf_convergence.pdf}
-\caption{PF convergence on a linear, not logarithmic, vertical scale.}
+\caption{Mode-aware all-GFL PF warm-start convergence on a linear vertical scale.}
 \end{figure}
 
 \begin{table}[H]\centering\scriptsize
-\caption{Solved normal-operation bus voltages from the in-house Newton--Raphson PF.}
+\caption{Solved bus voltages at the accepted SG1 plus four-GFL equilibrium.}
 \pgfplotstabletypeset[col sep=comma,
  columns={bus_id,type,V_pu,V_kV,angle_deg},
  columns/bus_id/.style={column name=Bus},columns/type/.style={column name=Type,string type},
@@ -528,9 +529,9 @@ schedule, so the fixed all-GFL mode map remains unchanged for all 1500 steps.
 \end{table}
 
 \begin{table}[H]\centering\scriptsize
-\caption{Solved bus generation, load, and net injection.  All quantities are
-on the 100-MVA system base and positive net injection denotes power delivered
-to the network.}
+\caption{All-GFL equilibrium bus generation, voltage-dependent admittance
+load, and net injection.  All quantities are on the 100-MVA system base and
+positive net injection denotes power delivered to the network.}
 \pgfplotstabletypeset[col sep=comma,
  columns={bus_id,P_gen_pu,Q_gen_pu,P_load_pu,Q_load_pu,P_net_pu,Q_net_pu},
  columns/bus_id/.style={column name=Bus},
@@ -545,8 +546,9 @@ to the network.}
 \end{table}
 
 \begin{table}[H]\centering\scriptsize
-\caption{Solved branch sending-end flows and losses.  Power quantities are on the
-100-MVA system base; the sign follows the listed from--to orientation.}
+\caption{All-GFL equilibrium branch sending-end flows and losses.  Power
+quantities are on the 100-MVA system base; the sign follows the listed
+from--to orientation.}
 \pgfplotstabletypeset[col sep=comma,
  columns={line,from_bus,to_bus,P_from_pu,Q_from_pu,P_loss_pu,Q_loss_pu},
  columns/line/.style={column name=Line},columns/from_bus/.style={column name=From},
@@ -560,8 +562,7 @@ to the network.}
 \end{table}
 
 \begin{table}[H]\centering\scriptsize
-\caption{Solved device injections at the all-GFL mixed-device equilibrium
-(distinct from the source-case REF/PV/PQ PF dispatch table above).}
+\caption{Solved device injections at the same all-GFL mixed-device equilibrium.}
 \pgfplotstabletypeset[col sep=comma,
  columns={device_index,device_id,bus_id,mode,P_MW,Q_MVAr,V_pu,V_kV},
  columns/device_index/.style={column name=Index},columns/device_id/.style={column name=Device,string type},

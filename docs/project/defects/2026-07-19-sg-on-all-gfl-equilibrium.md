@@ -95,6 +95,33 @@ No full-suite PASS is claimed. A broader exploratory focused run had 83 passes
 and four pre-existing contract-test failures in files outside this change; the
 scoped delivery gate above excludes those unrelated stale assertions.
 
+## Reporting follow-up
+
+The R2026a report evidence was regenerated from the corrected production
+route. It now includes 14 PF bus rows, 20 branch-flow/loss rows, the complete
+45-root all-GFL SSSA spectrum, and manifest fields for the all-GFL equilibrium
+and event-free TS. The 15-s event-free TS accepted `1500/1500` steps.
+
+A separate presentation-only defect was proven in the PF resource breakdown:
+the reporter treated the authoritative empty `initial_gfm_indices=[]` as a
+missing option and substituted its default index 2. The solver and selected
+mode map were already all-GFL, but the printed row incorrectly labelled IBR2
+as GFM. The reporter now consumes `selection.selected_gfm_indices`, preserves
+an explicit empty fallback, and prints active order 45 with four GFL-RMS10
+resources. The targeted all-GFL file passes `6/6` tests on MATLAB R2026a.
+
+The report keeps the complete GFM state order, ODEs, and control equations as
+documentation of the reserved inactive dual-mode branch. Every numerical
+table and plot in the report is from SG1 plus four active GFL-RMS10 resources.
+The compiled report has 17 A4 portrait pages; the PF, line-flow, resource,
+SSSA, and event-free TS pages were visually checked after rasterization.
+
+A separately configured bus-4 fault still fails closed at its right limit when
+the all-GFL terminal voltage reaches `0.039238 pu`, below the unchanged
+`V_div_min=0.1 pu` RMS10 balanced-LVRT domain. This is an explicit model-domain
+diagnostic, not a recurrence of the equilibrium defect and not evidence for
+changing the ODE, current limits, or voltage-domain gate.
+
 ## Related files
 
 - `+stability/mixed_ibr_sg_on_gfl_initialize.m`

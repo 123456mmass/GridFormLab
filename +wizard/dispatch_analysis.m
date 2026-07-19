@@ -198,7 +198,7 @@ switch ibr_analysis
     case 'pf'
         result = run_ibr_pf(case_data, selection, opt);
         print_pf_checks(result.pf, struct('tolerance', 1e-10));
-        print_resource_injections(case_data, result.pf, opt, true);
+        print_resource_injections(case_data, result.pf, opt, true, selection);
         print_ibr_product_summary(result);
     case 'pf_compare'
         result = wizard.ibr_sg_cycle_comparison(case_data, scenario, ...
@@ -226,7 +226,7 @@ switch ibr_analysis
             stability.print_ibr_run_log(result);
         else
             result = assemble_ibr_full(case_data, scenario, selection, opt, ts_result);
-            print_resource_injections(case_data, result.pf, opt, true);
+            print_resource_injections(case_data, result.pf, opt, true, selection);
             print_ibr_product_summary(result);
         end
     otherwise
@@ -729,9 +729,10 @@ if isfield(case_data, 'bus_data')
 end
 end
 
-function print_resource_injections(case_data, pf, opt, is_ibr)
+function print_resource_injections(case_data, pf, opt, is_ibr, selection)
 % Reporting-only ownership map. P/Q are solved PF injections and never feed
 % back into the numerical solution.
+if nargin < 5, selection = struct(); end
 bus_ids = pf.external_bus_ids(:);
 gen_pos = find(pf.bus_type(:) <= 2);
 Sbase = pf.base_values.S_base_MVA;
@@ -743,7 +744,14 @@ if is_ibr
     if strcmp(profile, 'rms10_profile_b')
         ids = {'SG1','IBR2','IBR3','IBR6','IBR8'};
         rb = [1 2 3 6 8];
-        gfm_idx = option_value(opt, 'initial_gfm_indices', 2);
+        if isfield(selection,'selected_gfm_indices')
+            gfm_idx = selection.selected_gfm_indices;
+        elseif isfield(opt,'initial_gfm_indices')
+            % Empty is an authoritative all-GFL request, not a missing value.
+            gfm_idx = opt.initial_gfm_indices;
+        else
+            gfm_idx = 2;
+        end
         modes = {'SG-EMF6','GFL-RMS10','GFL-RMS10','GFL-RMS10','GFL-RMS10'};
         for j = 1:4
             if ismember(j+1, gfm_idx), modes{j+1} = 'GFM-13'; end
@@ -755,10 +763,16 @@ if is_ibr
         else
             profile_name = 'RMS10 configurable mix';
         end
-        fprintf('Profile : %s | SG=1, GFM=%d, GFL-RMS10=%d\n', ...
-            profile_name, ngfm, ngfl);
-        fprintf('Order   : active=%d (SG 5 + %dxGFM 13 + %dxGFL 10), inventory=98\n', ...
-            active_order, ngfm, ngfl);
+        if ngfm == 0
+            fprintf('Profile : %s | SG=1, GFL-RMS10=%d\n',profile_name,ngfl);
+            fprintf('Order   : active=%d (SG 5 + %dxGFL 10), inventory=98\n', ...
+                active_order,ngfl);
+        else
+            fprintf('Profile : %s | SG=1, GFM=%d, GFL-RMS10=%d\n', ...
+                profile_name, ngfm, ngfl);
+            fprintf('Order   : active=%d (SG 5 + %dxGFM 13 + %dxGFL 10), inventory=98\n', ...
+                active_order, ngfm, ngfl);
+        end
     else
         ids = arrayfun(@(k) sprintf('GEN%d',k), 1:numel(gen_pos), 'UniformOutput', false);
         rb = bus_ids(gen_pos).';

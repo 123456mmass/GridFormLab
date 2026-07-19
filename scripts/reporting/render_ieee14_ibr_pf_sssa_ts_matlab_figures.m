@@ -17,11 +17,8 @@ set(groot,'defaultAxesFontName',font_name,'defaultTextFontName',font_name, ...
 
 render_pf(data_dir,colors);
 render_sssa(data_dir,colors);
-render_pf_compare(data_dir,colors);
-render_ts(data_dir,'fault_only_ts.csv','matlab_fault_only_ts.pdf',colors, ...
-    'Fault-only time-domain simulation',true);
-render_ts(data_dir,'sg_cycle_ts.csv','matlab_sg_cycle_ts.pdf',colors, ...
-    'SG trip and return-request time-domain simulation',false);
+render_ts(data_dir,'normal_event_free_ts.csv','matlab_normal_event_free_ts.pdf', ...
+    colors,'SG1 plus four GFL-RMS10 event-free simulation',false);
 end
 
 function render_pf(data_dir,c)
@@ -50,33 +47,12 @@ tiledlayout(f,1,2,'TileSpacing','compact','Padding','compact');
 nexttile; scatter(T.real_1_per_s,T.imag_1_per_s,30,c(1,:),'filled'); hold on;
 xline(0,'--r','Stability boundary','LabelVerticalAlignment','bottom');
 xlabel('Real(\lambda) (1/s)'); ylabel('Imag(\lambda) (1/s)');
-title('All 48 active-state eigenvalues'); grid on;
+title('All 45 active-state eigenvalues'); grid on;
 nexttile; scatter(T.real_1_per_s,T.imag_1_per_s,30,c(1,:),'filled'); hold on;
 xline(0,'--r'); xlim([-400 20]); ylim([-25 25]);
 xlabel('Real(\lambda) (1/s)'); ylabel('Imag(\lambda) (1/s)');
 title('Low/medium-frequency detail'); grid on;
 export_report(f,data_dir,'matlab_normal_sssa.pdf');
-end
-
-function render_pf_compare(data_dir,c)
-T = read_report_csv(data_dir,'sg_trip_pf_compare.csv');
-labels = cellstr(string(T.device_id));
-f = report_figure([80 60 1000 850]);
-tiledlayout(f,3,1,'TileSpacing','compact','Padding','compact');
-nexttile; grouped_bar([T.P_pre_MW T.P_trip_MW T.P_return_MW],labels,c);
-ylabel('P (MW)'); title('Active-power injection'); legend('Pre-trip','SG tripped','SG returned','Location','best');
-nexttile; grouped_bar([T.Q_pre_MVAr T.Q_trip_MVAr T.Q_return_MVAr],labels,c);
-ylabel('Q (MVAr)'); title('Reactive-power injection');
-nexttile; grouped_bar([T.V_pre_pu T.V_trip_pu T.V_return_pu],labels,c);
-ylabel('|V| (pu)'); xlabel('Indexed device'); title('Terminal-bus voltage');
-export_report(f,data_dir,'matlab_sg_trip_pf_compare.pdf');
-end
-
-function grouped_bar(Y,labels,c)
-b = bar(Y,'grouped');
-color_index = [1 2 5];
-for k=1:3, b(k).FaceColor=c(color_index(k),:); b(k).EdgeColor='none'; end
-set(gca,'XTick',1:numel(labels),'XTickLabel',labels); grid on;
 end
 
 function render_ts(data_dir,csv_name,pdf_name,c,heading,include_fault_bus)

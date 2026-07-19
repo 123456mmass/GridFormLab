@@ -121,6 +121,18 @@ tc.verifyTrue(all(isfinite(ts.x_traj(:))));
 tc.verifyTrue(all(isfinite(ts.y_traj(:))));
 end
 
+function test_pf_reporting_uses_committed_all_gfl_map(tc)
+opt = all_gfl_options();
+opt.ibr_analysis = 'pf';
+text = evalc("r = solve_case('analysis','ibr','case','ieee14_1sg_4ibr','options',opt);");
+tc.verifyTrue(r.converged);
+tc.verifySubstring(text, ...
+    'Profile : RMS10 configurable mix | SG=1, GFL-RMS10=4');
+tc.verifySubstring(text,'IBR2    2      GFL-RMS10');
+tc.verifyFalse(contains(text,'GFM-13'));
+tc.verifyFalse(contains(text,'0xGFM'));
+end
+
 function opt = all_gfl_options()
 opt = wizard.defaults_for_method('ibr','ieee14_1sg_4ibr');
 opt.initial_gfm_count = 0;

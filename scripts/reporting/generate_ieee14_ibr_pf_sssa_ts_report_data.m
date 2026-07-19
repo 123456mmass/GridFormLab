@@ -13,66 +13,44 @@ if ~isfolder(out), mkdir(out); end
 
 case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
 base_opt = struct('ibr_profile','rms10_profile_b', ...
-    'initial_gfm_count',1,'initial_gfl_count',3, ...
-    'initial_gfm_indices',2,'initial_reference_resource_index',2, ...
+    'initial_gfm_count',0,'initial_gfl_count',4, ...
+    'initial_gfm_indices',[],'initial_reference_resource_index',[], ...
     'plot_results',false,'plot_visible',false,'verbose',false,'pf_verbose',false);
 
-% Independent normal-operation products (no Full Analysis shortcut).
+% Independent all-GFL normal-operation products (no Full Analysis shortcut).
 pf = run_product('pf',base_opt,struct('enabled',false));
 sssa = run_product('sssa',base_opt,struct('enabled',false));
-pf_cmp = run_product('pf_compare',base_opt,struct('enabled',false));
-sssa_cmp = run_product('sssa_compare',base_opt,struct('enabled',false));
-assert(pf.converged && sssa.converged && pf_cmp.converged && sssa_cmp.converged, ...
+ts = run_product('ts',merge(base_opt,struct('t_end',15.0, ...
+    'plot_results',true,'plot_visible',false)),struct('enabled',false));
+assert(pf.converged && sssa.converged && ts.converged, ...
     'report:ieee14_ibr:stationaryProduct','A stationary report product failed closed.');
 
-% Fault-only TS: balanced positive-sequence fault, no SG trip transaction.
-fault_event = struct('enabled',true,'event_profile','fault_only', ...
-    'fault_bus',4,'Zf',1i*0.1,'fault_on',0.10,'fault_clear',0.20, ...
-    'sg_trip',0.25,'sg_on',0.28);
-fault_opt = merge(base_opt,struct('t_end',0.30,'dt',0.01,'plot_results',true));
-fault = run_product('ts',fault_opt,fault_event);
-
-% SG-cycle TS: no fault; automatic selector owns the post-trip GFM set.
-sg_event = struct('enabled',true,'event_profile','sg_cycle', ...
-    'fault_bus',4,'Zf',1i*0.1,'fault_on',0.05,'fault_clear',0.08, ...
-    'sg_trip',0.10,'sg_on',0.20,'automatic_gfm_switching',true, ...
-    'selected_gfm_indices',[],'reference_resource_index',[]);
-sg_opt = merge(base_opt,struct('t_end',0.30,'dt',0.01, ...
-    'plot_results',true,'automatic_gfm_switching',true));
-sg_cycle = run_product('ts',sg_opt,sg_event);
-
 % Checkpoint the exact production outputs before presentation-only export.
-save(fullfile(out,'raw_report_products.mat'),'pf','sssa','pf_cmp','sssa_cmp', ...
-    'fault','sg_cycle','-v7.3');
+save(fullfile(out,'raw_report_products.mat'),'pf','sssa','ts','-v7.3');
 
 write_case_tables(case_data,out);
 write_pf_tables(pf.pf,case_data,out);
-write_resource_table(sssa.equilibrium,case_data,out,'normal_resource_pf.csv');
+write_resource_table(sssa.equilibrium,out,'normal_resource_pf.csv');
 write_state_inventory(sssa.equilibrium,out);
-write_sssa_tables(sssa,out);
-write_comparison_tables(pf_cmp,sssa_cmp,out);
-write_ts_table(fault,out,'fault_only_ts.csv');
-write_ts_table(sg_cycle,out,'sg_cycle_ts.csv');
-write_event_table(fault,out,'fault_only_events.csv');
-write_event_table(sg_cycle,out,'sg_cycle_events.csv');
+write_sssa_table(sssa,out,'normal_sssa_eigenvalues.csv');
+write_ts_table(ts,out,'normal_event_free_ts.csv');
 
 manifest = struct('generated_at',char(datetime('now','Format','yyyy-MM-dd HH:mm:ss Z')), ...
     'branch',git_text(root,'rev-parse --abbrev-ref HEAD'), ...
     'commit',git_text(root,'rev-parse HEAD'), ...
-    'case_id','ieee14_1sg_4ibr','profile','rms10_profile_b', ...
-    'normal_gfm_indices',2,'normal_gfl_indices',[3 4 5], ...
-    'fault_converged',logical(fault.converged), ...
-    'fault_failure_id',field_or(fault,'failure_id',''), ...
-    'fault_failure_reason',field_or(fault,'failure_reason',''), ...
-    'sg_cycle_converged',logical(sg_cycle.converged), ...
-    'sg_cycle_reclose_status',field_or(sg_cycle,'reclose_status',''), ...
+    'case_id','ieee14_1sg_4ibr','model_inventory','dual_rms10_inventory', ...
+    'normal_mode','SG1_PLUS_FOUR_GFL_RMS10', ...
+    'normal_gfl_indices',[2 3 4 5], ...
     'sssa_status',sssa.sssa.stability_status, ...
     'sssa_max_real',max(real(sssa.sssa.eigenvalues)), ...
     'normal_active_states',size(sssa.sssa.A,1), ...
-    'comparison_active_states',arrayfun(@(p) size(p.sssa.A,1),sssa_cmp.points), ...
+    'equilibrium_residual',sssa.equilibrium.residual_norm, ...
+    'physical_kcl_norm',sssa.equilibrium.physical_kcl_norm, ...
+    'ts_converged',logical(ts.converged), ...
+    'ts_final_time',ts.t(end), ...
+    'ts_accepted_steps',numel(ts.t)-1, ...
     'output_directory',out);
-save(fullfile(out,'report_evidence.mat'),'pf','sssa','pf_cmp','sssa_cmp', ...
-    'fault','sg_cycle','manifest','-v7.3');
+save(fullfile(out,'report_evidence.mat'),'pf','sssa','ts','manifest','-v7.3');
 write_manifest(manifest,fullfile(out,'manifest.txt'));
 fprintf('Report evidence written to %s\n',out);
 end
@@ -107,12 +85,24 @@ t=table((1:nb).',pf.external_bus_ids(:),string(type),pf.bus_voltage(:), ...
     pf.bus_voltage_kV(:),pf.bus_angle_deg(:), ...
     'VariableNames',{'bus_position','bus_id','type','V_pu','V_kV','angle_deg'});
 writetable(t,fullfile(out,'normal_pf_bus.csv'));
+t=table(pf.external_bus_ids(:),pf.P_generation(:),pf.Q_generation(:), ...
+    pf.P_load(:),pf.Q_load(:),pf.P_generation(:)-pf.P_load(:), ...
+    pf.Q_generation(:)-pf.Q_load(:), ...
+    'VariableNames',{'bus_id','P_gen_pu','Q_gen_pu','P_load_pu', ...
+    'Q_load_pu','P_net_pu','Q_net_pu'});
+writetable(t,fullfile(out,'normal_pf_power.csv'));
 t=table((1:numel(pf.mismatch_history)).',pf.mismatch_history(:), ...
     'VariableNames',{'iteration','max_mismatch_pu'});
 writetable(t,fullfile(out,'normal_pf_convergence.csv'));
+e=pf.line_endpoints;
+t=table((1:size(e,1)).',e(:,1),e(:,2),pf.line_flow_P(:,1), ...
+    pf.line_flow_Q(:,1),pf.line_loss_P(:),pf.line_loss_Q(:), ...
+    'VariableNames',{'line','from_bus','to_bus','P_from_pu','Q_from_pu', ...
+    'P_loss_pu','Q_loss_pu'});
+writetable(t,fullfile(out,'normal_pf_line_flow.csv'));
 end
 
-function write_resource_table(eq,c,out,name)
+function write_resource_table(eq,out,name)
 V=complex(eq.y0(1:2:end),eq.y0(2:2:end)); nd=numel(eq.devices);
 idx=(1:nd).'; id=strings(nd,1); bus=zeros(nd,1); mode=strings(nd,1);
 P=zeros(nd,1); Q=P; Vm=P;
@@ -149,7 +139,7 @@ t=cell2table(rows,'VariableNames',{'global_state','device_index','device_id', ..
 writetable(t,fullfile(out,'normal_state_inventory.csv'));
 end
 
-function write_sssa_tables(r,out)
+function write_sssa_table(r,out,name)
 s=r.sssa; eq=r.equilibrium; m=stability.modal_analysis(s);
 active=s.active_state_indices(:); offsets=[0 cumsum([eq.devices.nx])]; n=numel(m.eigenvalues);
 mode=(1:n).'; raw=m.raw_eigen_index(:); pair=m.conjugate_pair_id(:);
@@ -166,36 +156,11 @@ t=table(mode,raw,pair,lr,li,f,zeta,device,gidx,lidx,state,participation, ...
     'VariableNames',{'mode','raw_eigen_index','pair_id','real_1_per_s', ...
     'imag_1_per_s','frequency_Hz','damping_ratio','dominant_device', ...
     'global_state','local_state','dominant_state','participation_percent'});
-writetable(t,fullfile(out,'normal_sssa_eigenvalues.csv'));
-end
-
-function write_comparison_tables(pf_cmp,sssa_cmp,out)
-r=pf_cmp.device_rows; n=numel(r); idx=(1:n).'; id=strings(n,1); bus=zeros(n,1);
-P=zeros(n,3); Q=P; V=P;
-for k=1:n
-    id(k)=string(r(k).device_id); bus(k)=r(k).bus_id;
-    P(k,:)=[r(k).pre.P_MW r(k).tripped.P_MW r(k).returned.P_MW];
-    Q(k,:)=[r(k).pre.Q_MVAr r(k).tripped.Q_MVAr r(k).returned.Q_MVAr];
-    V(k,:)=[r(k).pre.V_pu r(k).tripped.V_pu r(k).returned.V_pu];
-end
-t=table(idx,id,bus,P(:,1),P(:,2),P(:,3),Q(:,1),Q(:,2),Q(:,3), ...
-    V(:,1),V(:,2),V(:,3),'VariableNames',{'index','device_id','bus_id', ...
-    'P_pre_MW','P_trip_MW','P_return_MW','Q_pre_MVAr','Q_trip_MVAr', ...
-    'Q_return_MVAr','V_pre_pu','V_trip_pu','V_return_pu'});
-writetable(t,fullfile(out,'sg_trip_pf_compare.csv'));
-p=sssa_cmp.points; label=replace(string({p.label}).','_','-'); active=arrayfun(@(x) size(x.sssa.A,1),p).';
-maxreal=arrayfun(@(x) max(real(x.sssa.eigenvalues)),p).';
-stable=arrayfun(@(x) x.sssa.root_counts.stable,p).';
-marginal=arrayfun(@(x) x.sssa.root_counts.marginal,p).';
-unstable=arrayfun(@(x) x.sssa.root_counts.unstable,p).';
-t=table(label,active,maxreal,stable,marginal,unstable, ...
-    'VariableNames',{'point','active_states','max_real_1_per_s', ...
-    'stable_roots','marginal_roots','unstable_roots'});
-writetable(t,fullfile(out,'sg_trip_sssa_compare.csv'));
+writetable(t,fullfile(out,name));
 end
 
 function write_ts_table(r,out,name)
-n=numel(r.t); ids=matlab.lang.makeValidName(r.device_ids);
+ids=matlab.lang.makeValidName(r.device_ids);
 t=table(r.t(:),'VariableNames',{'time_s'});
 for k=1:numel(ids)
     t.([ids{k} '_angle_deg'])=r.device_angle_deg(k,:).';
@@ -206,41 +171,11 @@ for k=1:numel(ids)
     bi=find(r.bus_ids==r.device_bus_ids(k),1);
     t.([ids{k} '_V_pu'])=r.bus_voltage_magnitude(bi,:).';
 end
-fb=find(r.bus_ids==4,1); t.fault_bus4_V_pu=r.bus_voltage_magnitude(fb,:).';
-writetable(t,fullfile(out,name));
-end
-
-function write_event_table(r,out,name)
-if ~isfield(r,'event_log') || isempty(r.event_log)
-    writetable(table(),fullfile(out,name)); return;
-end
-e=r.event_log; n=numel(e); idx=(1:n).'; type=string({e.type}).';
-requested=nan(n,1); actual=nan(n,1); applied=false(n,1);
-prekcl=nan(n,1); rightkcl=nan(n,1);
-for k=1:n
-    requested(k)=scalar_field(e(k),'requested_time',field_or(e(k),'time',NaN));
-    actual(k)=scalar_field(e(k),'actual_time',field_or(e(k),'time',NaN));
-    applied(k)=logical(scalar_field(e(k),'applied',false));
-    prekcl(k)=scalar_field(e(k),'pre_kcl_norm',NaN);
-    rightkcl(k)=scalar_field(e(k),'right_kcl_norm',NaN);
-end
-t=table(idx,type,requested,actual,applied,prekcl,rightkcl, ...
-    'VariableNames',{'event_index','type','requested_time_s','actual_time_s', ...
-    'applied','pre_kcl_norm','right_kcl_norm'});
 writetable(t,fullfile(out,name));
 end
 
 function out=merge(a,b)
 out=a; f=fieldnames(b); for k=1:numel(f), out.(f{k})=b.(f{k}); end
-end
-
-function v=field_or(s,name,default)
-if isstruct(s) && isfield(s,name) && ~isempty(s.(name)), v=s.(name); else, v=default; end
-end
-
-function v=scalar_field(s,name,default)
-v=field_or(s,name,default);
-if ~(isnumeric(v) || islogical(v)) || ~isscalar(v), v=default; end
 end
 
 function s=git_text(root,args)
@@ -249,7 +184,7 @@ if status~=0, s='UNAVAILABLE'; else, s=strtrim(s); end
 end
 
 function write_manifest(m,file)
-fid=fopen(file,'w'); c=onCleanup(@() fclose(fid)); %#ok<NASGU>
+fid=fopen(file,'w'); c=onCleanup(@() fclose(fid));
 f=fieldnames(m);
 for k=1:numel(f)
     v=m.(f{k});

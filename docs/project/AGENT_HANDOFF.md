@@ -66,6 +66,37 @@ the exact admittances frozen by `composite_dae` before its mode-aware PF.
 - full repository regression was started, then stopped by explicit user
   instruction that it was unnecessary; no full-suite PASS is claimed.
 
+### Report and TS follow-up
+
+The report generator and `docs/source/report_ieee14_ibr_pf_sssa_ts_en.tex`
+now publish the 14 solved PF bus rows, all 20 branch sending-end flow/loss
+rows, and the complete 45-root SG1 + four-GFL SSSA table. Every numerical
+table and plot in this report uses SG1 plus IBR2/3/6/8 in GFL-RMS10 mode; no
+GFM resource is active in the reported operating point. The detailed GFM
+state order, ODEs, and controls remain in the report as documentation of the
+reserved inactive dual-mode branch. Regenerated R2026a evidence records
+all-GFL equilibrium residual `9.6265e-12`, physical KCL `8.4308e-12`, and
+event-free TS completion at 15 s with `1500/1500` accepted steps. The final
+17-page PDF is A4 portrait throughout; PF, line-flow, resource, SSSA, and TS
+result pages were visually inspected from rasterized output.
+
+The PF resource-reporting path also now consumes the committed mode selection.
+Previously, its presentation-only fallback interpreted an explicit empty
+`initial_gfm_indices=[]` as missing and printed IBR2 as GFM despite the solved
+all-GFL request. The numerical PF was unaffected; the corrected report prints
+SG1 plus four GFL-RMS10 resources and active order 45.
+
+The user-observed TS failure at `20260719_082442` is not the normal-operation
+route: the configured bus-4 fault reaches `fault_on` at 3 s and produces
+`|V|=0.039238 pu`, below the unchanged GFL-RMS10
+`V_div_min=0.1 pu` balanced-LVRT domain. Runtime therefore correctly rejects
+the right-limit transaction with
+`ibr:gfl_rms10_model:lowVoltagePowerInversion`. The compact launcher already
+labels this choice `Fault only - fail-closed diagnostic (RMS10 LVRT not
+ready)` and defaults its event-choice dialog to `No events`. Do not remove the
+voltage-domain gate or reinterpret this configured-fault result as an
+event-free TS regression.
+
 ### Scope already delivered and not to regress
 
 - IBR menu separates `Power Flow`, `SSSA`, `Time-Domain Simulation (TS)`, and

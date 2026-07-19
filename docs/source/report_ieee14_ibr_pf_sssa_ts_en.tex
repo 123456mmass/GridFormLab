@@ -12,7 +12,7 @@
 ]{THSarabun}
 \setmonofont{Latin Modern Mono}
 \usepackage{amsmath,amssymb,mathtools}
-\usepackage{geometry,booktabs,array,tabularx,longtable,pdflscape}
+\usepackage{geometry,booktabs,array,tabularx,longtable}
 \usepackage{siunitx}
 \usepackage{xcolor,hyperref,fancyhdr,caption,subcaption,float}
 \usepackage{pgfplots,pgfplotstable}
@@ -21,7 +21,7 @@
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
 \pagestyle{fancy}\fancyhf{}
-\lhead{IEEE 14-Bus Mixed SG/GFM/GFL System}
+\lhead{IEEE 14-Bus SG + Four GFL-RMS10 System}
 \rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,citecolor=blue!55!black}
 \sisetup{detect-all,round-mode=places,round-precision=5,table-number-alignment=center}
@@ -54,8 +54,8 @@
 \newcommand{\vect}[1]{\boldsymbol{#1}}
 
 \title{\textbf{Dynamic-Equation and Analysis Contract for an IEEE 14-Bus Mixed-Resource System}\\
-\large One EMF6 Synchronous Generator, One 13-State GFM--VSG, and Three 10-State GFL Converters\\[1mm]
-\normalsize Power Flow, Equilibrium, Full-State SSSA, Fault-Only and SG-Trip Time-Domain Studies}
+\large One EMF6 Synchronous Generator and Four 10-State GFL--RMS10 Converters\\[1mm]
+\normalsize Power Flow, Equilibrium, Full-State SSSA, and Event-Free Time-Domain Simulation}
 \author{In-house Power-Flow Project}
 \date{19 July 2026}
 
@@ -64,19 +64,20 @@
 
 \begin{abstract}
 This report documents the exact positive-sequence RMS equations used by the
-project for the IEEE 14-bus mixed-resource case.  The normal profile contains
-SG1 at bus~1, IBR2 in 13-state grid-forming (GFM) mode at bus~2, and IBR3,
-IBR6, and IBR8 in 10-state PLL-resolved grid-following (GFL) mode.  The report
+project for the IEEE 14-bus mixed-resource case.  The fixed operating mode
+contains SG1 at bus~1 and IBR2, IBR3, IBR6, and IBR8 in 10-state
+PLL-resolved grid-following (GFL) mode.  The report
 defines every state, reference frame, sign convention, per-unit conversion,
 network residual, equilibrium condition, SSSA reduction, and implicit
-trapezoidal time step.  Power flow, SSSA, fault-only TS, and SG trip/return
-products are executed independently; the launcher ``Full Analysis'' product
-is intentionally excluded.  Numerical plots are rendered natively by
+trapezoidal time step.  Power flow, SSSA, and the 15-s event-free TS are
+executed independently with the same SG1 plus four-GFL resource assignment.
+Numerical plots are rendered natively by
 \LaTeX{} from CSV files exported from the project-owned MATLAB solvers, so the
 plot font, size, and spacing are identical to the report.  Numerical
 instability or fail-closed outcomes are reported rather than tuned away.
 \end{abstract}
 
+\newpage
 \tableofcontents
 \newpage
 
@@ -94,13 +95,9 @@ profile, convergence, and physical classifications in \code{manifest.txt}.
 The products in this report are deliberately separated:
 \begin{enumerate}
   \item normal network power flow (PF), with no dynamic states and no event;
-  \item mixed-device equilibrium and full-state SSSA at the same fixed mode map;
-  \item a balanced positive-sequence fault-only TS, with no SG trip;
-  \item an SG-trip TS with automatic GFM selection, with no network fault;
-  \item independent pre-trip, SG-tripped, and SG-returned PF/SSSA operating-point comparisons.
+  \item mixed-device equilibrium and full-state SSSA at the fixed four-GFL mode map;
+  \item a 15-s event-free normal-operation TS from that equilibrium.
 \end{enumerate}
-The last item is not a time trajectory and its eigenvalue rows are not
-cross-operating-point mode matches.
 
 \section{Case data and index maps}
 
@@ -120,18 +117,18 @@ The fixed normal resource map is
 Device index & Bus ID & Device & Normal mode & Physical states & Active in normal SSSA\\
 \midrule
 1 & 1 & SG1 & synchronous EMF6 & 6 & 5\\
-2 & 2 & IBR2 & GFM REGFM\_B1 & 13 of dual 23 & 13\\
+2 & 2 & IBR2 & GFL-RMS10 & 10 of dual 23 & 10\\
 3 & 3 & IBR3 & GFL-RMS10 & 10 of dual 23 & 10\\
 4 & 6 & IBR6 & GFL-RMS10 & 10 of dual 23 & 10\\
 5 & 8 & IBR8 & GFL-RMS10 & 10 of dual 23 & 10\\
 \midrule
-\multicolumn{4}{r}{Active dynamic order} & \multicolumn{2}{c}{\(5+13+3(10)=48\)}\\
+\multicolumn{4}{r}{Active dynamic order} & \multicolumn{2}{c}{\(5+4(10)=45\)}\\
 \bottomrule
 \end{tabular}
 \end{center}
-The total fixed inventory is 98 states: SG1 contributes 6 and each dual IBR
-contains both the 13-state GFM and 10-state GFL branches.  Only the branch
-selected by the operating mode enters the reduced dynamic matrix.
+The runtime inventory remains fixed at 98 states: SG1 contributes 6 and each
+dual-capable IBR reserves 23 coordinates.  For this report, only the ten
+GFL-RMS10 coordinates of each IBR enter the 45-state reduced dynamic matrix.
 
 \subsection{Bus and line input data}
 
@@ -278,6 +275,12 @@ removed.  The retained \(T_m\) policy is therefore visible in the post-trip
 trajectory; it is not silently re-solved at every time step.
 
 \section{GFM--VSG REGFM\_B1: 13-state equations}
+
+These equations document the reserved grid-forming branch of each dual-mode
+IBR.  That branch is inactive throughout the operating point studied in this
+report: it contributes no row to the 45-state SSSA matrix and is not integrated
+by the event-free TS.  It is retained here to make the complete device model
+and inactive-state inventory auditable.
 
 \subsection{State order and device frame}
 
@@ -455,7 +458,10 @@ z^{(m+1)}=z^{(m)}+\Delta z^{(m)},
 \]
 until \(\|F_{PF}\|_\infty\) is below tolerance.  PF establishes network
 voltage and dispatch targets; it does not claim that a dynamic state is at
-equilibrium.
+equilibrium.  Accordingly, the PF tables below retain the source-case
+REF/PV/PQ schedule shown by the launcher.  The subsequent mixed-device
+equilibrium independently enforces the four GFL \(P_{ref},Q_{ref}\) controls;
+its resource-injection table is labelled separately.
 
 \subsection{Mixed-device equilibrium}
 
@@ -467,9 +473,7 @@ Equilibrium uses the full device equations and solves
 for active states and algebraic variables.  Frozen or inactive branch states
 remain in the inventory but not in the Newton unknown vector.  GFL lock gives
 \(v_q=0\), \(P_f=P_{ref}\), \(Q_f=Q_{ref}\), and stationary current states.
-GFM equilibrium gives \(\omega_m=0\), locked PLL/filter states, and stationary
-voltage/current limits.  SG equilibrium solves constant \(T_m,E_{fd}\), which
-are then held in TS.
+SG equilibrium solves constant \(T_m,E_{fd}\), which are then held in TS.
 
 \subsection{Full-state SSSA}
 
@@ -496,10 +500,8 @@ Between event transactions, the implicit trapezoidal step solves
 0&=x_{n+1}-x_n-\frac{h}{2}\left[f(x_n,y_n)+f(x_{n+1},y_{n+1})\right],\\
 0&=g(x_{n+1},y_{n+1};\sigma_{n+1}).
 \end{align}
-The public sampling interval is \(h=0.01\) s.  A failed logical step may be
-bisected internally by the same equations, without changing the published
-sample grid or event landing time.  Fault application/clearing and SG
-trip/return are separate atomic transactions with left/right KCL checks.
+The public sampling interval is \(h=0.01\) s.  This report uses an empty event
+schedule, so the fixed all-GFL mode map remains unchanged for all 1500 steps.
 
 \section{Normal PF and SSSA results}
 
@@ -514,7 +516,52 @@ trip/return are separate atomic transactions with left/right KCL checks.
 \end{figure}
 
 \begin{table}[H]\centering\scriptsize
-\caption{Solved device injections at the normal mixed equilibrium.}
+\caption{Solved normal-operation bus voltages from the in-house Newton--Raphson PF.}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,type,V_pu,V_kV,angle_deg},
+ columns/bus_id/.style={column name=Bus},columns/type/.style={column name=Type,string type},
+ columns/V_pu/.style={column name=$|V|$ pu,fixed,precision=4},
+ columns/V_kV/.style={column name=$|V|$ kV,fixed,precision=2},
+ columns/angle_deg/.style={column name=$\delta$ deg,fixed,precision=4},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_bus.csv}
+\end{table}
+
+\begin{table}[H]\centering\scriptsize
+\caption{Solved bus generation, load, and net injection.  All quantities are
+on the 100-MVA system base and positive net injection denotes power delivered
+to the network.}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,P_gen_pu,Q_gen_pu,P_load_pu,Q_load_pu,P_net_pu,Q_net_pu},
+ columns/bus_id/.style={column name=Bus},
+ columns/P_gen_pu/.style={column name=$P_{\rm gen}$ pu,fixed,precision=4},
+ columns/Q_gen_pu/.style={column name=$Q_{\rm gen}$ pu,fixed,precision=4},
+ columns/P_load_pu/.style={column name=$P_{\rm load}$ pu,fixed,precision=4},
+ columns/Q_load_pu/.style={column name=$Q_{\rm load}$ pu,fixed,precision=4},
+ columns/P_net_pu/.style={column name=$P_{\rm net}$ pu,fixed,precision=4},
+ columns/Q_net_pu/.style={column name=$Q_{\rm net}$ pu,fixed,precision=4},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_power.csv}
+\end{table}
+
+\begin{table}[H]\centering\scriptsize
+\caption{Solved branch sending-end flows and losses.  Power quantities are on the
+100-MVA system base; the sign follows the listed from--to orientation.}
+\pgfplotstabletypeset[col sep=comma,
+ columns={line,from_bus,to_bus,P_from_pu,Q_from_pu,P_loss_pu,Q_loss_pu},
+ columns/line/.style={column name=Line},columns/from_bus/.style={column name=From},
+ columns/to_bus/.style={column name=To},
+ columns/P_from_pu/.style={column name=$P_{ij}$ pu,fixed,precision=4},
+ columns/Q_from_pu/.style={column name=$Q_{ij}$ pu,fixed,precision=4},
+ columns/P_loss_pu/.style={column name=$P_{\rm loss}$ pu,fixed,precision=6},
+ columns/Q_loss_pu/.style={column name=$Q_{\rm loss}$ pu,fixed,precision=6},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_line_flow.csv}
+\end{table}
+
+\begin{table}[H]\centering\scriptsize
+\caption{Solved device injections at the all-GFL mixed-device equilibrium
+(distinct from the source-case REF/PV/PQ PF dispatch table above).}
 \pgfplotstabletypeset[col sep=comma,
  columns={device_index,device_id,bus_id,mode,P_MW,Q_MVAr,V_pu,V_kV},
  columns/device_index/.style={column name=Index},columns/device_id/.style={column name=Device,string type},
@@ -529,55 +576,47 @@ trip/return are separate atomic transactions with left/right KCL checks.
 
 \begin{figure}[H]\centering
 \includegraphics[width=\textwidth]{\datadir/matlab_normal_sssa.pdf}
-\caption{All 48 normal-profile eigenvalues (left) and the low/medium-frequency
-detail (right).  Each point is one eigenvalue of the same 48-state reduced
+\caption{All 45 SG1 plus four-GFL eigenvalues (left) and the low/medium-frequency
+detail (right).  Each point is one eigenvalue of the same 45-state reduced
 matrix.  The dashed line is \(\Re\lambda=0\); roots to its right are unstable.}
 \end{figure}
 
-\section{SG trip/return PF and SSSA comparison}
+\subsection{SG1 plus four GFL--RMS10 normal-operation SSSA}
 
-\begin{figure}[H]\centering
-\includegraphics[width=0.94\textwidth]{\datadir/matlab_sg_trip_pf_compare.pdf}
-\caption{Symmetric native-LaTeX PF comparison.  Each column is an independently solved stationary operating point.}
-\end{figure}
+The explicit all-GFL mode map keeps SG1 online and assigns IBR2, IBR3, IBR6,
+and IBR8 to GFL--RMS10.  Its independently solved equilibrium has 45 active
+states.  The complete spectrum below is published without filtering: the four
+large positive real PLL roots and the small positive SG angle root make the
+physical result \textbf{UNSTABLE}.  Successful equilibrium and SSSA execution
+therefore must not be interpreted as a stable classification.
 
-\begin{table}[H]\centering\small
-\caption{SSSA comparison summary.  Equal row numbers do not imply matched modes.}
-\pgfplotstabletypeset[col sep=comma,string type,
- columns={point,active_states,max_real_1_per_s,stable_roots,marginal_roots,unstable_roots},
- columns/point/.style={column name=Point},columns/active_states/.style={column name=Order},
- columns/max_real_1_per_s/.style={column name=$\max\Re\lambda$},
- columns/stable_roots/.style={column name=Stable},columns/marginal_roots/.style={column name=Marginal},
- columns/unstable_roots/.style={column name=Unstable},
+\begin{table}[p]\centering\tiny
+\caption{Complete 45-root SSSA result for SG1 plus four GFL--RMS10 resources.}
+\pgfplotstabletypeset[col sep=comma,
+ columns={mode,raw_eigen_index,real_1_per_s,imag_1_per_s,frequency_Hz,damping_ratio,dominant_device,local_state,participation_percent},
+ columns/mode/.style={column name=No.},columns/raw_eigen_index/.style={column name=Raw},
+ columns/real_1_per_s/.style={column name=$\Re\lambda$ (s$^{-1}$),sci,sci zerofill,precision=3},
+ columns/imag_1_per_s/.style={column name=$\Im\lambda$ (s$^{-1}$),sci,sci zerofill,precision=3},
+ columns/frequency_Hz/.style={column name=$f$ (Hz),sci,sci zerofill,precision=3},
+ columns/damping_ratio/.style={column name=$\zeta$,fixed,precision=4},
+ columns/dominant_device/.style={column name=Device,string type},
+ columns/local_state/.style={column name=Local state},
+ columns/participation_percent/.style={column name=Part. (\%),fixed,precision=2},
  every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
-{\datadir/sg_trip_sssa_compare.csv}
+{\datadir/normal_sssa_eigenvalues.csv}
 \end{table}
 
-\section{Fault-only time-domain result}
+\clearpage
+\section{Event-free time-domain result}
 
-The fault-only case applies a balanced positive-sequence shunt fault at bus~4
-at \(t=0.10\) s and clears it at \(t=0.20\) s.  No SG trip or automatic mode
-switch is included.  MATLAB renders the unchanged output series and exports
-the figure as vector PDF; no resampling, smoothing, or clipping is applied.
-
-\begin{figure}[H]\centering
-\includegraphics[width=\textwidth]{\datadir/matlab_fault_only_ts.pdf}
-\caption{MATLAB fault-only TS.  Event times are 0.10 and 0.20 s.}
-\end{figure}
-
-\section{SG-trip time-domain result}
-
-This separate run contains no fault.  The SG trip request lands at
-\(t=0.10\) s; the automatic selector commits the post-trip GFM set and the SG
-injects zero current after opening.  The SG-on request at \(t=0.20\) s starts
-the synchronism guard.  If the dwell has not completed by the end of this
-short report window, the outcome is labelled pending rather than presented as
-a successful physical reclose.
+The SG1 plus four-GFL normal-operation TS starts from the same converged
+equilibrium used by SSSA and completes all 1500 fixed 0.01-s steps to 15 s.
+The empty event schedule keeps SG1 online and all four IBRs in GFL-RMS10 mode.
+No fault, breaker transaction, or automatic mode switch is included.
 
 \begin{figure}[H]\centering
-\includegraphics[width=\textwidth]{\datadir/matlab_sg_cycle_ts.pdf}
-\caption{MATLAB SG-trip/return-request TS.  Missing SG frequency after the
-trip denotes an offline device, not zero frequency.}
+\includegraphics[width=\textwidth]{\datadir/matlab_normal_event_free_ts.pdf}
+\caption{MATLAB event-free TS for SG1 plus four GFL-RMS10 resources over 15 s.}
 \end{figure}
 
 \section{Comparison with the conventional SG analysis path}
@@ -588,34 +627,31 @@ analysis mathematics, but not the device states.  A classical SG contributes
 the converter models contribute control and physical current states.  PF is
 common because all resources appear as scheduled injections and voltage
 constraints.  Equilibrium, SSSA, and TS are generic consumers of the device
-ABI: they do not contain a GFM-specific or GFL-specific eigenvalue matrix.
-Consequently, changing an IBR from GFL-RMS10 to GFM changes the active state
-map and the nonlinear current law, but does not change the Schur-complement or
-implicit-trapezoidal algorithms.
+ABI: they do not contain a device-specific eigenvalue matrix.  In the present
+fixed mode map, the four IBRs contribute only their GFL-RMS10 coordinates and
+current laws to the Schur-complement and implicit-trapezoidal algorithms.
 
 \section{Limitations and interpretation}
 
 \begin{itemize}
 \item The GFL fault contract is balanced positive-sequence RMS LVRT.  It is
 not an EMT, negative-sequence, or zero-voltage model.
-\item The SG trip/return stationary comparison is not proof that a breaker
-reclose transaction will pass the voltage, frequency, angle and dwell guard.
 \item A completed numerical SSSA execution is distinct from a stable physical
 classification.  Positive-real-part eigenvalues remain in the table and plot.
-\item The 13-state GFM and 10-state GFL orders need not be equal: order counts
-the independent memory elements required by each sourced control architecture,
-not the number of terminals or rated power.
+\item The documented grid-forming branch remains inactive in every numerical
+result in this report; its equations are model documentation, not evidence that
+any IBR was assigned that mode.
 \end{itemize}
 
 \section{Conclusion}
 
 The report exposes a traceable chain from case data through device equations,
 state order, initialization, DAE assembly, PF, SSSA, and TS.  The same
-nonlinear SG/GFM/GFL equations initialize the equilibrium, are differentiated
-for SSSA, and are integrated for TS.  Native \LaTeX{} plots retain the exact
-MATLAB series while enforcing common typography and symmetric layout.  The
-separated fault-only and SG-trip products prevent a combined workflow from
-hiding which event or model caused a response or fail-closed outcome.
+nonlinear SG and four GFL-RMS10 equations initialize the equilibrium, are
+differentiated for SSSA, and are integrated for TS.  Native \LaTeX{} plots
+retain the exact MATLAB series while enforcing common typography and symmetric
+layout.  The inactive grid-forming equations remain documented without being
+mixed into the reported numerical operating point.
 
 \begin{thebibliography}{9}
 \bibitem{kodsi} S. K. M. Kodsi and C. A. Ca\~nizares,

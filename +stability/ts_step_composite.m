@@ -24,6 +24,10 @@ fd_eps = option_value(opt,'fd_eps',3e-6);
 verbose = logical(option_value(opt,'verbose',false));
 full_kcl = logical(option_value(opt,'full_kcl',true));
 t_now = option_value(opt,'t_now',0.0);
+% Domain-preserving line search is opt-in. Only the hybrid IBR TS caller
+% sets this flag; ts_simulate_composite, equilibrium, and SSSA callers use
+% the default-off path so their behavior is unchanged.
+domain_preserving = logical(option_value(opt,'domain_preserving_trials',false));
 
 nx = numel(x0);
 ny = numel(y0);
@@ -63,8 +67,16 @@ residual_fn = @(z) coupled_residual(z,x0,f0,h,active_indices, ...
     frozen_indices,free_vars,free_rows,vcon_vars,vcon_ref,ny,dae,Ynet,u, ...
     event_context,full_kcl,t_now+h);
 jacobian_fn = @(z) forward_fd(z,residual_fn,fd_eps);
-[z_sol,niter,ok,residual_norm,rcond_val] = stability.composite_newton( ...
-    z0,residual_fn,jacobian_fn,tol,max_iter,verbose);
+newton_opt = struct();
+if domain_preserving
+    newton_opt.trial_exception_classifier = @trial_domain_classifier;
+    newton_opt.trial_exception_diagnostic = @(z_trial,me) ...
+        trial_domain_diagnostic(z_trial,me,active_indices,free_vars, ...
+        vcon_vars,vcon_ref,ny,dae,event_context);
+end
+[z_sol,niter,ok,residual_norm,rcond_val,~,newton_info] = ...
+    stability.composite_newton(z0,residual_fn,jacobian_fn,tol,max_iter, ...
+    verbose,newton_opt);
 
 x1 = x0;
 y1 = zeros(ny,1);
@@ -82,6 +94,10 @@ step = struct('x_full',x1,'y_full',y1,'converged',ok, ...
     'active_state_indices',active_indices, ...
     'frozen_state_indices',frozen_indices,'finite', ...
     all(isfinite(x1)) && all(isfinite(y1)) && isfinite(residual_norm));
+% Additive diagnostics (default-off path publishes zero/empty counters so
+% every caller sees a stable shape).
+step.newton_info = newton_info;
+step.domain_rejected_trials = newton_info.domain_rejected_trials;
 end
 
 function r = coupled_residual(z,x0,f0,h,active,frozen,free_vars,free_rows, ...
@@ -123,5 +139,118 @@ function value = option_value(opt,name,default)
 value = default;
 if isfield(opt,name) && ~isempty(opt.(name))
     value = opt.(name);
+end
+end
+
+% =========================================================================
+function tf = trial_domain_classifier(me)
+%TRIAL_DOMAIN_CLASSIFIER  Exact-ID predicate for line-search trial throws.
+%   Returns true ONLY for the confirmed RMS10 runtime low-voltage domain
+%   violation. Every other exception (including the constructor/equilibrium
+%   voltageOutsideValidityDomain ID and all hard errors) returns false so
+%   composite_newton rethrows it unchanged.
+tf = strcmp(me.identifier, 'ibr:gfl_rms10_model:lowVoltagePowerInversion');
+end
+
+% =========================================================================
+function diag = trial_domain_diagnostic(z_trial, ~, active, free_vars, ...
+    vcon_vars, vcon_ref, ny, dae, event_context)
+%TRIAL_DOMAIN_DIAG  Pure read-only attribution of a rejected trial.
+%   Reconstructs y_trial from z_trial using the SAME mapping as
+%   coupled_residual, then scans online RMS10-backed devices whose runtime
+%   mode is 'gfl' and reports every device whose terminal |V| is below its
+%   own configured runtime minimum. No dae_f/dae_g/reconstruct/current_injection
+%   callback is invoked; no state is mutated.
+na = numel(active);
+y_trial = zeros(ny,1);
+if ~isempty(vcon_vars)
+    y_trial(vcon_vars) = vcon_ref(:);
+end
+y_trial(free_vars) = z_trial(na+1:end);
+
+violating = repmat(struct('device_id','','bus_id',0,'bus_position',0, ...
+    'trial_voltage',NaN,'runtime_min_voltage',NaN), 0);
+min_v = NaN;
+nd = numel(dae.devices);
+for k = 1:nd
+    dev = dae.devices(k);
+    bp = dev.bus_position;
+    if numel(y_trial) < 2*bp, continue; end
+    Vmag = abs(complex(y_trial(2*bp-1), y_trial(2*bp)));
+    if ~isfinite(Vmag), continue; end
+    [is_online, active_mode] = resolve_runtime_mode(dev, event_context);
+    if ~is_online || ~strcmp(active_mode,'gfl'), continue; end
+    threshold = read_runtime_min_voltage(dev);
+    if ~isfinite(threshold), continue; end
+    if Vmag < threshold
+        violating(end+1) = struct( ...
+            'device_id', char(dev.device_id), ...
+            'bus_id', dev.bus_id, ...
+            'bus_position', bp, ...
+            'trial_voltage', Vmag, ...
+            'runtime_min_voltage', threshold); %#ok<AGROW>
+        if ~isfinite(min_v) || Vmag < min_v
+            min_v = Vmag;
+        end
+    end
+end
+diag = struct( ...
+    'violating_devices', violating, ...
+    'minimum_trial_voltage', min_v);
+end
+
+function [is_online, active_mode] = resolve_runtime_mode(dev, event_context)
+%RESOLVE_RUNTIME_MODE  Read the runtime online/mode for a device without
+%   invoking any device callback. Mirrors dual_mode_ibr_model.resolve_status
+%   semantics: runtime hybrid_state takes precedence over constructor
+%   defaults; an offline device is never a violator.
+is_online = true;
+active_mode = '';
+if isfield(dev,'initial_online') && ~isempty(dev.initial_online)
+    is_online = logical(dev.initial_online);
+end
+if isfield(dev,'initial_mode') && ~isempty(dev.initial_mode)
+    active_mode = char(dev.initial_mode);
+end
+if isempty(event_context) || ~isstruct(event_context) || ...
+        ~isfield(event_context,'hybrid_state') || ...
+        ~isstruct(event_context.hybrid_state)
+    return;
+end
+hs = event_context.hybrid_state;
+if ~isfield(dev,'device_id'), return; end
+key = matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+if isfield(hs,'device_online') && isstruct(hs.device_online) && ...
+        isfield(hs.device_online,key)
+    is_online = logical(hs.device_online.(key));
+end
+if isfield(hs,'device_modes') && isstruct(hs.device_modes) && ...
+        isfield(hs.device_modes,key)
+    raw = hs.device_modes.(key);
+    if ischar(raw) || (isstring(raw) && isscalar(raw))
+        active_mode = char(raw);
+    end
+end
+end
+
+function threshold = read_runtime_min_voltage(dev)
+%READ_RUNTIME_MIN_VOLTAGE  Read the configured RMS10 runtime V_div_min from
+%   device provenance. Standalone RMS10 exposes provenance.params.V_div_min;
+%   the dual-mode wrapper forwards it as provenance.gfl_runtime_min_voltage.
+%   Returns NaN if absent so the caller skips attribution for that device.
+threshold = NaN;
+if ~isfield(dev,'provenance') || ~isstruct(dev.provenance)
+    return;
+end
+p = dev.provenance;
+if isfield(p,'gfl_runtime_min_voltage') && isscalar(p.gfl_runtime_min_voltage) && ...
+        isfinite(p.gfl_runtime_min_voltage)
+    threshold = p.gfl_runtime_min_voltage;
+    return;
+end
+if isfield(p,'params') && isstruct(p.params) && ...
+        isfield(p.params,'V_div_min') && isscalar(p.params.V_div_min) && ...
+        isfinite(p.params.V_div_min)
+    threshold = p.params.V_div_min;
 end
 end

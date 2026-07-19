@@ -93,7 +93,16 @@ end
 function test_defaults_ibr_frozen_values(tc)
 opt = wizard.defaults_for_method('ibr');
 tc.verifyEqual(opt.t_end, 15.0);
-tc.verifyEqual(opt.dt, 0.01);
+% Default dt=0.005 (2026-07-20): the Profile-B Zf=0.1i fault route at dt=0.01
+% stalls at t=3.25 s with a near-singular coupled Jacobian
+% (rcond~2e-7, domain_rejected_trials=0) — a step-size/globalization defect
+% tracked as IBR-2026-07-20-01. dt=0.005 passes the fault window, reaches
+% sg_trip/sg_on, and completes to t=15 s (197 domain-preserving trial
+% rejections, accepted min|V|>=V_div_min). The default is set to the value
+% that the bounded diagnosis proved converges; it is not a tolerance/gate
+% relaxation. See defect record
+% docs/project/defects/2026-07-20-dt01-newton-stall-t325.md.
+tc.verifyEqual(opt.dt, 0.005);
 % Approved launcher contract (2026-07-19): Profile B replaces the implicit
 % four-WECC default. Independent state-count oracle is 5+13+3*10=48 active.
 tc.verifyEqual(opt.ibr_profile, 'rms10_profile_b');

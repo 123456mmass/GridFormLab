@@ -39,7 +39,8 @@ if isfield(opt,'load_model') && ~isempty(opt.load_model), load_model = opt.load_
 
 result = struct('converged', false, 'x_traj', [], 'y_traj', [], 't', [], ...
     'events', [], 'metadata', struct(), 'fingerprint', struct(), ...
-    'selector_log', struct(), 'reclose_log', struct());
+    'selector_log', struct(), 'reclose_log', struct(), ...
+    'domain_rejected_trials', 0, 'subdivision_depth', 0);
 
 if ~isfield(scenario, 'case_data') || ~isfield(scenario, 'resources')
     result.metadata.failure = 'run_hybrid_case:invalidScenario';
@@ -388,6 +389,10 @@ if isfield(ts_res,'failure_reason')
     result.failure_reason = ts_res.failure_reason;
     result.metadata.error = ts_res.failure_reason;
 end
+% Additive domain-preserving diagnostics (default 0; absent on early-fail
+% paths that never reached TS).
+result.domain_rejected_trials = ts_safe_counter(ts_res,'domain_rejected_trials');
+result.subdivision_depth = ts_safe_counter(ts_res,'subdivision_depth');
 copy_fields = {'sample_side','topology_history','active_state_history', ...
     'event_context_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
@@ -423,7 +428,9 @@ summary=struct('pf_stage_invocations',3, ...
     'equilibrium_invocations',1,'equilibrium_newton_iterations',eq.iterations, ...
     'sssa_invocations',0,'selector_candidate_evaluations',0, ...
     'ts_invocations',1,'ts_step_attempts',0,'ts_accepted_steps',0, ...
-    'ts_newton_iterations',0,'event_transactions',numel(event_log));
+    'ts_newton_iterations',0,'event_transactions',numel(event_log), ...
+    'domain_rejected_trials',ts_safe_counter(ts,'domain_rejected_trials'), ...
+    'subdivision_depth',ts_safe_counter(ts,'subdivision_depth'));
 if isfield(ts,'step_attempts'), summary.ts_step_attempts=ts.step_attempts;
 elseif isfield(ts,'iter_per_step'), summary.ts_step_attempts=numel(ts.iter_per_step); end
 if isfield(ts,'accepted_steps'), summary.ts_accepted_steps=ts.accepted_steps;
@@ -440,6 +447,17 @@ if isfield(scenario,'selection_log') && scenario.selection_log.selector_evaluate
     % assembles equilibrium + SSSA DAEs, each of which owns one PF warm-start.
     summary.pf_stage_invocations=summary.pf_stage_invocations+ ...
         3*scenario.selection_log.equilibrium_evaluations;
+end
+end
+
+function n = ts_safe_counter(ts, name)
+%TS_SAFE_COUNTER  Read an additive TS counter with a stable 0 default so
+%   early-fail paths (no TS run) and legacy no-event routes publish the
+%   same field shape as the IBR event route.
+n = 0;
+if isstruct(ts) && isfield(ts,name) && isscalar(ts.(name)) && ...
+        isnumeric(ts.(name)) && isfinite(ts.(name))
+    n = double(ts.(name));
 end
 end
 

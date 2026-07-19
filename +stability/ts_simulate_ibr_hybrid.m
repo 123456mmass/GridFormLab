@@ -79,6 +79,8 @@ step_residuals = [];
 step_attempts = 0;
 accepted_steps = 0;
 internal_substeps = 0;
+domain_rejected_total = 0;
+subdivision_depth = 0;
 % --- Phase-1 read-only resynchronization diagnostics (Mission C) -------------
 % Per-sample record of the synchronism state during the offline coast. These
 % accumulators are written but never read by the integration logic, so they do
@@ -108,11 +110,14 @@ while t < settings.t_end-settings.event_tol
         active = stability.ts_dynamic_state_indices(dae,ec);
         step_opt = struct('newton_tol',settings.newton_tol, ...
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
-            'verbose',settings.verbose,'full_kcl',true,'t_now',t);
+            'verbose',settings.verbose,'full_kcl',true,'t_now',t, ...
+            'domain_preserving_trials',true);
         [step,retry_stats] = advance_with_subdivision( ...
             x,y,t,h,dae,Ycurr,u,ec,active,step_opt,settings,0);
         step_attempts=step_attempts+retry_stats.attempts;
         internal_substeps=internal_substeps+retry_stats.accepted_leaf_steps;
+        domain_rejected_total = domain_rejected_total + retry_stats.domain_rejected_trials;
+        subdivision_depth = max(subdivision_depth, retry_stats.subdivision_depth);
         total_iterations = total_iterations+step.iterations;
         max_residual = max(max_residual,step.residual_norm);
         step_iterations(end+1)=step.iterations; %#ok<AGROW>
@@ -120,8 +125,7 @@ while t < settings.t_end-settings.event_tol
         if ~step.converged || ~step.finite
             converged = false;
             failure_id = 'ts_simulate_ibr_hybrid:stepNewton';
-            failure_reason = sprintf('Composite step failed at t=%.15g (residual %.3e).', ...
-                target,step.residual_norm);
+            failure_reason = format_step_failure(target, h, step, retry_stats);
             break;
         end
         x = step.x_full;
@@ -540,6 +544,8 @@ res.residual_per_step=step_residuals;
 res.step_attempts=step_attempts;
 res.accepted_steps=accepted_steps;
 res.internal_substeps=internal_substeps;
+res.domain_rejected_trials=domain_rejected_total;
+res.subdivision_depth=subdivision_depth;
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
@@ -593,6 +599,8 @@ meta.event_count=numel(event_log);
 meta.internal_substeps=internal_substeps;
 meta.failure_id=failure_id;
 meta.failure_reason=failure_reason;
+meta.domain_rejected_trials=domain_rejected_total;
+meta.subdivision_depth=subdivision_depth;
 end
 
 function [dae,u,ec,sched,s] = initialize(case_data,devices,x0,y0,opt)
@@ -649,9 +657,18 @@ function [step,stats] = advance_with_subdivision(x0,y0,t0,h,dae,Ynet,u,ec,active
 % the internal numerical landing points are refined. This is a
 % NUMERICAL_METHOD safeguard for millisecond converter loops, not a change
 % to device equations, event times, or the published sample contract.
+%
+% Subdivision operates strictly within the caller-supplied interval
+% [t0,t0+h]; the main loop bounds h by the next scheduled event before
+% calling here, so internal half-step landings cannot cross an event
+% boundary and are never published as samples.
 step_opt.t_now=t0;
 trial=stability.ts_step_composite(x0,y0,h,dae,Ynet,u,ec,active,step_opt);
-stats=struct('attempts',1,'accepted_leaf_steps',double(trial.converged&&trial.finite));
+stats=struct('attempts',1, ...
+    'accepted_leaf_steps',double(trial.converged&&trial.finite), ...
+    'domain_rejected_trials',step_domain_rejects(trial), ...
+    'subdivision_depth',depth, ...
+    'terminal_domain_failure',step_terminal_failure(trial));
 if trial.converged && trial.finite
     step=trial;
     return;
@@ -666,6 +683,10 @@ h2=h/2;
     x0,y0,t0,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
 stats.attempts=stats.attempts+left_stats.attempts;
 stats.accepted_leaf_steps=left_stats.accepted_leaf_steps;
+stats.domain_rejected_trials=stats.domain_rejected_trials+left_stats.domain_rejected_trials;
+stats.subdivision_depth=max(stats.subdivision_depth,left_stats.subdivision_depth);
+stats.terminal_domain_failure=pick_terminal_failure(stats.terminal_domain_failure, ...
+    left_stats.terminal_domain_failure,left,trial);
 if ~left.converged || ~left.finite
     step=left;
     step.iterations=trial.iterations+left.iterations;
@@ -676,9 +697,103 @@ end
     left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
 stats.attempts=stats.attempts+right_stats.attempts;
 stats.accepted_leaf_steps=left_stats.accepted_leaf_steps+right_stats.accepted_leaf_steps;
+stats.domain_rejected_trials=stats.domain_rejected_trials+right_stats.domain_rejected_trials;
+stats.subdivision_depth=max(stats.subdivision_depth,right_stats.subdivision_depth);
+% The terminal failed leaf governs the failure report. A successful left
+% child that triggered subdivision retains its rejected-trial count in the
+% aggregate, but the right child's terminal evidence (when it fails) takes
+% precedence over the parent's.
+stats.terminal_domain_failure=pick_terminal_failure(stats.terminal_domain_failure, ...
+    right_stats.terminal_domain_failure,right,trial);
 step=right;
 step.iterations=trial.iterations+left.iterations+right.iterations;
 step.residual_norm=max([trial.residual_norm,left.residual_norm,right.residual_norm]);
+end
+
+% =========================================================================
+function n = step_domain_rejects(step)
+n = 0;
+if isstruct(step) && isfield(step,'domain_rejected_trials') && ...
+        isscalar(step.domain_rejected_trials) && ...
+        isfinite(step.domain_rejected_trials)
+    n = step.domain_rejected_trials;
+end
+end
+
+function f = step_terminal_failure(step)
+f = struct([]);
+if isstruct(step) && isfield(step,'newton_info') && isstruct(step.newton_info) && ...
+        isfield(step.newton_info,'line_search_exhausted') && ...
+        step.newton_info.line_search_exhausted
+    f = step.newton_info;
+end
+end
+
+function f = pick_terminal_failure(current, candidate, ~, parent_step)
+%PICK_TERMINAL_FAILURE  Preserve the terminal failed-leaf evidence.
+%   A child that actually exhausted its line search (non-empty scalar struct
+%   with line_search_exhausted=true) overrides the parent's evidence because
+%   the child is the actual terminal attempt. An empty struct([]) candidate
+%   (child succeeded) must NOT override a non-empty parent evidence.
+has_evidence = @(x) isstruct(x) && isscalar(x) && ~isempty(fieldnames(x)) && ...
+    isfield(x,'line_search_exhausted') && x.line_search_exhausted;
+if has_evidence(candidate)
+    f = candidate;
+    return;
+end
+if has_evidence(current)
+    f = current;
+    return;
+end
+% Fall back to the parent step's newton_info if it exhausted and no child
+% has reported yet (e.g., depth limit reached at the parent).
+f = step_terminal_failure(parent_step);
+end
+
+function reason = format_step_failure(target, h, step, retry_stats)
+%FORMAT_STEP_FAILURE  Compose the public failure_reason with terminal-leaf
+%   domain evidence when present, otherwise the ordinary Newton message.
+base = sprintf('Composite step failed at t=%.15g (residual %.3e).', ...
+    target, step.residual_norm);
+info = retry_stats.terminal_domain_failure;
+if isempty(fieldnames(info)) || ~isfield(info,'line_search_exhausted') || ...
+        ~info.line_search_exhausted || ...
+        ~isfield(info,'domain_rejected_trials') || ...
+        info.domain_rejected_trials <= 0
+    reason = base;
+    return;
+end
+parts = {base};
+if isfield(info,'residual_before_line_search') && isscalar(info.residual_before_line_search) && ...
+        isfinite(info.residual_before_line_search)
+    parts{end+1} = sprintf('residual_before=%.3e', info.residual_before_line_search); %#ok<AGROW>
+end
+if isfield(info,'final_tested_alpha') && isscalar(info.final_tested_alpha) && ...
+        isfinite(info.final_tested_alpha)
+    parts{end+1} = sprintf('final_tested_alpha=%.3e', info.final_tested_alpha); %#ok<AGROW>
+end
+if isfield(info,'minimum_trial_voltage') && isscalar(info.minimum_trial_voltage) && ...
+        isfinite(info.minimum_trial_voltage)
+    parts{end+1} = sprintf('minimum_trial_voltage=%.4g', info.minimum_trial_voltage); %#ok<AGROW>
+end
+parts{end+1} = sprintf('h=%.3e domain_rejected_trials=%d', h, info.domain_rejected_trials); %#ok<AGROW>
+% Violating devices: list every attributed device, never just the first.
+viol_str = '';
+if isfield(info,'final_domain_violation') && isstruct(info.final_domain_violation) && ...
+        isfield(info.final_domain_violation,'violating_devices')
+    vd = info.final_domain_violation.violating_devices;
+    for k = 1:numel(vd)
+        if isfield(vd(k),'device_id') && isfield(vd(k),'bus_id') && ...
+                isfield(vd(k),'trial_voltage')
+            viol_str = [viol_str, sprintf(' %s@bus%d(%.4g)', ...
+                char(vd(k).device_id), vd(k).bus_id, vd(k).trial_voltage)]; %#ok<AGROW>
+        end
+    end
+end
+if ~isempty(viol_str)
+    parts{end+1} = sprintf('violating_devices:%s', viol_str); %#ok<AGROW>
+end
+reason = strjoin(parts, ' ');
 end
 
 function events=schedule_events(sched)
@@ -1379,9 +1494,11 @@ res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
     'reference_owner_indices',[],'gfm_reference_resource_indices',[], ...
     'reference_island_ids',[],'committed_config_fingerprint','', ...
     'pre_event_input_fingerprint','', ...
-    'selector_table_fingerprint','');
+    'selector_table_fingerprint','', ...
+    'domain_rejected_trials',0,'subdivision_depth',0);
 meta=struct('method','trapezoidal_coupled_newton_shared','full_kcl',true, ...
-    'event_aware',true,'failure_id','','failure_reason','');
+    'event_aware',true,'failure_id','','failure_reason','', ...
+    'domain_rejected_trials',0,'subdivision_depth',0);
 if isfield(opt,'ibr_event_schedule'), res.sched=opt.ibr_event_schedule; end
 end
 

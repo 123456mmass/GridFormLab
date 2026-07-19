@@ -1,11 +1,119 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4
+Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization
 Branch: `main`
-Tested working tree: `5373921` (GFL-RMS10 Phase 4: TS disturbance + limiter verification)
+Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top of all-GFL equilibrium)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
+
+## 2026-07-19 — Domain-preserving Newton globalization (RESOLVED_PENDING_FINAL_REGRESSION)
+
+**Starting repository checkpoint:** `ea7150f` (`HEAD == origin/main`).
+Defect record: `docs/project/defects/2026-07-19-domain-preserving-newton-globalization.md`.
+
+### User-visible symptom
+
+The IEEE14 Profile-B `1-SG + 4-IBR` full-analysis run with `Zf=0.1i` died at
+`t=3.25 s` — before `sg_trip=5 s` and `sg_on=8 s` — so the SG reclose workflow
+was never reached. `dt=0.01` surfaced `ts_simulate_ibr_hybrid:stepNewton`
+(residual `4.983e-4`); `dt=0.005` surfaced
+`ibr:gfl_rms10_model:lowVoltagePowerInversion` from a `composite_newton`
+line-search trial iterate.
+
+### Root cause
+
+`composite_newton` propagated any exception from the line-search trial
+evaluation `residual_fn(z_new)` to the caller. The classified RMS10 runtime
+domain exception is raised when a *trial* iterate leaves the balanced-LVRT
+voltage domain, not when the *accepted* iterate does. Accepted-trajectory
+instrumentation proved accepted IBR terminal voltages stayed above `0.48735`
+(overall `0.45766`), far above `V_div_min=0.1` — a Newton-globalization
+defect, not a physical LVRT violation. The throw bypassed
+`trial.converged=false`, so `advance_with_subdivision` never bisected.
+
+### Correction (opt-in, backward-compatible; TS trial path only)
+
+- `+stability/composite_newton.m`: optional 7th input `opt`, always-returned
+  7th output `info`. `try/catch` wraps only `r_new=residual_fn(z_new)` in the
+  alpha-halving loop. Exact-ID classifier on
+  `ibr:gfl_rms10_model:lowVoltagePowerInversion`; every other exception
+  rethrows. Classified trial: increment counter, record bounded diagnostics,
+  never assign accepted state from the trial, halve alpha via the existing
+  `1..2^-19` sequence, continue. Legacy acceptance rule unchanged. Current
+  residual, Jacobian/FD, and final reporting remain uncaught.
+- `+stability/ts_step_composite.m`: policy on only when
+  `step_opt.domain_preserving_trials=true` (sole caller:
+  `ts_simulate_ibr_hybrid`). Pure voltage-reconstruction diagnostic (no
+  DAE/device callbacks); reports every below-threshold online GFL device;
+  reads `V_div_min` from device provenance (no hard-coded threshold).
+- `+stability/ts_simulate_ibr_hybrid.m`: publishes
+  `domain_rejected_trials`/`subdivision_depth` in `res`/`meta`/`empty_result`;
+  extends `advance_with_subdivision.stats`; preserves subdivision invariants
+  and scheduled-event boundaries; composes domain-specific failure messages
+  only when terminal-leaf classified evidence exists.
+- `+stability/run_hybrid_case.m`: copies counters to the public result and
+  `execution_summary` on every path.
+- `+ibr/dual_mode_ibr_model.m`: forwards `gfl_runtime_min_voltage` from
+  standalone GFL provenance (additive metadata only).
+
+No equation, parameter, threshold, tolerance, event timing, accepted-state
+rule, or PF/equilibrium/SSSA result changed. Equilibrium, SSSA, and
+`ts_simulate_composite` remain default-off and bit-identical.
+
+### Verification
+
+- `tests/test_composite_newton_contract.m`: **9/9 PASS** (6 new + 3 legacy).
+- `tests/test_ts_domain_preserving_newton.m`: **5/5 PASS** (new).
+- Numerical invariance gates (expected values unchanged): 96 passed, 2
+  pre-existing failures in the `mixed_equilibrium_solve` path (confirmed by
+  `git stash` baseline; unrelated — that path calls `composite_newton` with
+  the 6-arg default form).
+- End-to-end `Zf=0.1i`:
+  - `dt=0.005` (PASSES): prior `lowVoltagePowerInversion` trial throw is
+    now a rejected trial; the domain-preserving catch engaged **197 times**
+    and the run completed all 3005 accepted samples to `t=15 s`, reaching
+    `sg_trip=5 s`, `sg_on=8 s`, terminating at `sg_reclose_timeout=13 s`.
+    Accepted IBR voltages stayed `min|V|=0.48825 >= V_div_min`;
+    `domain_rejected_trials=197`, `subdivision_depth=4` published; event
+    landings exact.
+  - `dt=0.01` (STILL FAILS — separate defect IBR-2026-07-20-01): fails at
+    `t=3.25 s` with `domain_rejected_trials=0` and `subdivision_depth=4`.
+    No classified domain throw occurred, so the domain-preserving catch was
+    never engaged; subdivision exhausted without rescue. Non-smooth
+    residual trajectory and near-singular `rcond~7e-7` indicate a
+    non-domain Newton/Jacobian stall (limiter discontinuity or
+    conditioning), not a trial-voltage violation. Out of scope for this
+    fix; tracked as a follow-up defect.
+- Evidence: `output/diagnostics/verify_domain_preserving_fix_20260720.log`
+  and `output/diagnostics/diagnose_dt01_t325_20260720.log`.
+- Full repository regression: **1185 passed / 10 failed / 7 incomplete**
+  (MATLAB R2026a, tested tree `ea7150f` with the fix applied). All 10
+  failures confirmed pre-existing by `git stash` baseline (fail identically
+  without the fix): 2 in `mixed_equilibrium_solve` (6-arg default
+  `composite_newton`), 2 in `test_ibr_launcher_settings_ui` (UI dialog),
+  2 in `test_ibr_ts_plotting_absolute` (figure creation), 1 in
+  `test_ibr_equilibrium_initializer` (SG device), 1 in
+  `test_ieee14_1sg_4ibr_phaseB1`, 1 in `test_wizard_characterization`, 1
+  in `test_wizard_ibr_subanalysis`, 1 in
+  `test_ieee14_sg_reference_equilibrium`. The 7 incomplete are the
+  pre-existing `test_pgaz_conversion_contract` assumption filters (external
+  pgaz tool not installed). None are caused by the domain-preserving
+  change.
+
+### Scope and follow-up
+
+The domain-throw defect is resolved and verified by targeted tests. The
+dt=0.01 end-to-end gate is **not** met and is tracked as a separate
+non-domain Newton/Jacobian stall (IBR-2026-07-20-01); a full root-cause
+fix (domain-aware FD, Jacobian regularization, or limiter smoothing) is a
+separate numerical-method contract requiring its own plan and approval.
+
+SG governor/reclose controller is **out of scope** for this slice per the
+user decision; it is diagnosed separately after the TS fault path is
+correct. At `dt=0.005` the run reaches the reclose workflow and reports
+`SYNC_TIMEOUT` — a physical synchronism outcome, not a numerical failure.
+`IBR_PRODUCTION_INTEGRATION_READY` remains `NOT_READY`.
 
 ## 2026-07-19 — all-GFL SSSA initialization (RESOLVED)
 

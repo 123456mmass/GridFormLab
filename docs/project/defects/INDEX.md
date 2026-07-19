@@ -12,6 +12,7 @@ whole directory into agent context.
 | UI-2026-07-19-02 | RESOLVED_TEST_CONTRACT | IBR launcher defaults | Tests encoded the retired implicit four-WECC launcher default and required an out-of-scope RMS10 fault to converge | [IBR launcher default-profile test contract](2026-07-19-ibr-launcher-default-profile-test-contract.md) |
 | IBR-2026-07-19-02 | RESOLVED | RMS10 reduced equilibrium initialization | Registered `ibr_dual_mode_rms10` devices were rejected by a legacy-only device-identity gate although they implement the required equilibrium ABI | [RMS10 reduced initializer device type](2026-07-19-rms10-reduced-initializer-device-type.md) |
 | IBR-2026-07-19-03 | RESOLVED_PENDING_FINAL_REGRESSION | GFL-RMS10 balanced-fault TS | Runtime `V_valid_min` gate blocked the sourced FRT domain; fault-on rolled back near 0.377 pu | [RMS10 runtime low-voltage domain](2026-07-19-rms10-runtime-low-voltage-domain.md) |
+| IBR-2026-07-19-04 | RESOLVED | SG-on all-GFL equilibrium/SSSA/TS | Mode-aware PF used constant-power loads while the composite DAE used frozen constant-admittance loads, leaving a 0.164 pu KCL component | [SG-on all-GFL equilibrium](2026-07-19-sg-on-all-gfl-equilibrium.md) |
 
 New records use `YYYY-MM-DD-short-slug.md` and contain: status, observed
 symptom, deterministic reproduction, affected tree/environment, evidence-backed

@@ -17,9 +17,10 @@ init = struct('applicable',false,'converged',false,'failure_id','', ...
     'failure_reason','','x0',dae.x0,'y0',dae.y0,'u0',dae.u0,'pf',struct(), ...
     'gfl_device_indices',[],'classification','PROJECT_DERIVED');
 
-if ~isfield(case_data,'bus_data') || size(case_data.bus_data,2) < 6
+if ~isfield(case_data,'bus_data') || size(case_data.bus_data,2) < 10
     init.failure_id = 'mixed_ibr_sg_on_gfl_initialize:badCaseSchema';
-    init.failure_reason = 'The mode-aware PF seed requires bus_data P/Q generation columns.';
+    init.failure_reason = ['The mode-aware PF seed requires standardized bus_data ' ...
+        'generation, load, and shunt columns.'];
     return;
 end
 
@@ -58,7 +59,42 @@ if ~any(online & ~is_ibr & ismember(lower(modes),["sg","synchronous"]))
     return;
 end
 
+pf_opt = struct('verbose',false,'plot_results',false,'max_iter',50, ...
+    'tolerance',1e-10,'enforce_q_limits',false);
+if isfield(opt,'pf_opt') && isstruct(opt.pf_opt)
+    names = fieldnames(opt.pf_opt);
+    for k=1:numel(names), pf_opt.(names{k})=opt.pf_opt.(names{k}); end
+end
+
+% composite_dae freezes P and Q loads as admittances at the original PF
+% voltage.  A second ordinary constant-power PF is therefore not a KCL-exact
+% seed after GFL buses change from PV to PQ.  Re-express the unchanged loads
+% as the exact shunts used by composite_dae before solving the mode-aware PF.
+base_pf = pfsolver.powerflow_newton_raphson(case_data,pf_opt);
+if ~base_pf.converged
+    init.failure_id = 'mixed_ibr_sg_on_gfl_initialize:basePfNoConverge';
+    init.failure_reason = sprintf('Base PF did not converge: %s.',base_pf.reason);
+    return;
+end
+
 seed_case = case_data;
+for row = 1:size(seed_case.bus_data,1)
+    bus_id = seed_case.bus_data(row,1);
+    bp = find(base_pf.external_bus_ids == bus_id,1);
+    if isempty(bp) || ~isfinite(base_pf.bus_voltage(bp)) || ...
+            base_pf.bus_voltage(bp) <= 0
+        init.failure_id = 'mixed_ibr_sg_on_gfl_initialize:basePfBusMap';
+        init.failure_reason = sprintf( ...
+            'Base PF has no finite positive voltage for external bus %g.',bus_id);
+        return;
+    end
+    vm2 = base_pf.bus_voltage(bp)^2;
+    seed_case.bus_data(row,9) = seed_case.bus_data(row,9) + ...
+        seed_case.bus_data(row,7)/vm2;
+    seed_case.bus_data(row,10) = seed_case.bus_data(row,10) - ...
+        seed_case.bus_data(row,8)/vm2;
+    seed_case.bus_data(row,7:8) = 0;
+end
 for kk = gfl(:)'
     dev = dae.devices(kk);
     row = find(seed_case.bus_data(:,1) == dev.bus_id,1);
@@ -80,12 +116,6 @@ for kk = gfl(:)'
     seed_case.bus_data(row,6) = dev.u0(q_slot);
 end
 
-pf_opt = struct('verbose',false,'plot_results',false,'max_iter',50, ...
-    'tolerance',1e-10,'enforce_q_limits',false);
-if isfield(opt,'pf_opt') && isstruct(opt.pf_opt)
-    names = fieldnames(opt.pf_opt);
-    for k=1:numel(names), pf_opt.(names{k})=opt.pf_opt.(names{k}); end
-end
 pf = pfsolver.powerflow_newton_raphson(seed_case,pf_opt);
 init.applicable = true;
 init.pf = pf;

@@ -7,17 +7,16 @@ Tested working tree: `5373921` (GFL-RMS10 Phase 4: TS disturbance + limiter veri
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
-## 2026-07-19 — current continuation: all-GFL SSSA initialization (OPEN)
+## 2026-07-19 — all-GFL SSSA initialization (RESOLVED)
 
-**Current repository checkpoint:** `649e168` (`HEAD == origin/main` when this
-entry was written).  The next agent must start from a clean tree, re-read this
-section, `AGENTS.md`, and `TRACK_COORDINATION.md`, then treat the following as
-an unfinished numerical diagnosis—not a completed production capability.
+**Starting repository checkpoint:** `4cbf413` (`HEAD == origin/main`).
+Resolution evidence was generated on MATLAB R2026a. See defect record
+`docs/project/defects/2026-07-19-sg-on-all-gfl-equilibrium.md`.
 
 ### User-visible symptom
 
 In the compact IBR launcher, choosing `SSSA` with `Initial GFM count = 0` and
-`Initial GFL count = 4` (SG1 remains online) fails closed before eigenanalysis:
+`Initial GFL count = 4` (SG1 remains online) failed closed before eigenanalysis:
 
 ```matlab
 o = wizard.defaults_for_method('ibr','ieee14_1sg_4ibr');
@@ -34,9 +33,9 @@ table is printed without a converged equilibrium.  Do not fabricate a spectrum,
 silently convert a GFL to GFM, relax a tolerance, or alter any source/case
 parameter to make this pass.
 
-### What is currently being changed
+### Correction
 
-The in-progress helper `+stability/mixed_ibr_sg_on_gfl_initialize.m` is a
+The helper `+stability/mixed_ibr_sg_on_gfl_initialize.m` is a
 `PROJECT_DERIVED` **warm-start only** for the narrow SG-on/all-online-GFL
 configuration. It changes each online GFL terminal bus from the inherited PF
 PV label to the effective PQ semantics implied by its actual `P_ref,Q_ref`,
@@ -47,27 +46,25 @@ constant `[Tm,Efd]` seed through the existing RHS. `mixed_equilibrium_solve`
 then still solves and verifies the unmodified full DAE/KCL system at the
 unchanged `1e-8` gate.
 
-This helper did **not** yet converge end-to-end. The last direct attempt still
-reported a coupled residual above tolerance. Its purpose is diagnostic; do not
-claim it is a correction until the gates below pass.
+The diagnosis found stationary device states but a load-inconsistent network
+seed: SG RHS was `1.62e-15`, every GFL RHS was below `2e-11`, while a physical
+KCL component reached `0.164 pu`. The complete KCL error matched the difference
+between constant-power PF loads and the composite DAE's frozen
+constant-admittance loads. The helper now represents the unchanged loads with
+the exact admittances frozen by `composite_dae` before its mode-aware PF.
 
-### Required next work
+### Closure evidence
 
-1. At the mode-aware seed, print/measure residual blocks separately: SG RHS,
-   every GFL RHS, and full KCL. Establish which block prevents Newton progress.
-2. Independently check the SG stationary initializer against the existing
-   `synchronous_emf6_ssa.initialize_equilibrium` equations for identical
-   terminal V and P+jQ. Do not accept merely because a test passes.
-3. Repair only the proven initializer/runtime defect. No ODE, state order,
-   source parameter, limiter, base/sign convention, or acceptance tolerance may
-   change without a new approved contract.
-4. Add a targeted all-GFL normal-operation equilibrium/SSSA test only once an
-   independent oracle establishes expected finite residual/KCL behavior. Then
-   run the changed launcher/UI tests and, after the runtime path is settled,
-   the required full regression.
-5. Update/create a defect record before delivery. No record exists yet for
-   this all-GFL symptom; use `docs/project/defects/2026-07-19-sg-on-all-gfl-equilibrium.md`
-   and add it to `INDEX.md`.
+- independent EMF6 stationary oracle: exact SG-state agreement; angle residual
+  `2.78e-17`;
+- corrected initial/coupled residual `9.63e-12`, physical KCL `8.43e-12`;
+- SSSA publishes all 45 active states and 45 finite roots; the physical result
+  is honestly classified `UNSTABLE` under the unchanged equations;
+- event-free 15 s TS accepts `1500/1500` steps;
+- scoped producer/consumer/launcher regression: `45/45` passed;
+- wizard UI smoke: `24/24` passed;
+- full repository regression was started, then stopped by explicit user
+  instruction that it was unnecessary; no full-suite PASS is claimed.
 
 ### Scope already delivered and not to regress
 

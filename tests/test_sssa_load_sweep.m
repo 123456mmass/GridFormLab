@@ -414,8 +414,11 @@ for k = 1:numel(ls.figure_files)
     if exist(ls.figure_files{k}, 'file') == 2, written = written + 1; end
 end
 testCase.verifyGreaterThanOrEqual(written, 10);
-testCase.verifyTrue(any(contains(ls.figure_files, ...
-    'plot_G_device_dq_power_vs_load.png')));
+expected_scalar_plots = {'plot_G_id_vs_load.png','plot_H_iq_vs_load.png', ...
+    'plot_I_active_power_vs_load.png','plot_J_reactive_power_vs_load.png'};
+for k = 1:numel(expected_scalar_plots)
+    testCase.verifyTrue(any(contains(ls.figure_files,expected_scalar_plots{k})));
+end
 testCase.verifyEqual(ls.plot_data.load_percentages,[0;20;40;60;80]);
 testCase.verifyEqual(size(ls.plot_data.tracked_segments{1}.eigenvalues,2),10);
 end

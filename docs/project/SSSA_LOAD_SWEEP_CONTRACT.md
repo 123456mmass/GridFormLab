@@ -248,7 +248,8 @@ or eigenvalue equations.
 - Tracked plot coordinates use a cumulative one-to-one raw-index permutation
   of shape `number_of_points` by `number_of_active_states`; adjacent-pair
   assignments are not modal identities.
-- Plot G publishes accepted-equilibrium `i_d`, `i_q`, `P`, and `Q`. GFL
+- Plots G--J publish accepted-equilibrium `i_d`, `i_q`, `P`, and `Q` in four
+  separate figures with independent axes. GFL
   currents come from native GFL current states. GFM-no-PLL has no current
   states, so its displayed dq current is the diagnostic transform
   `I_inv*exp(-j*delta_vsm)`, classified

@@ -240,33 +240,31 @@ grid on;
 fig_files = save_fig(fig, figfile, save_plots, fig_files);
 plot_status.plot_F = true;
 
-% Plot G: accepted-equilibrium dq currents and injected P/Q.
+% Plots G-J: one accepted-equilibrium quantity per figure.
 if any(isfinite(data.i_d_pu_inverter)) && any(isfinite(data.i_q_pu_inverter)) && ...
         any(isfinite(data.P_MW)) && any(isfinite(data.Q_MVAr))
-    [fig, figfile] = make_fig(vis, output_root, 'plot_G_device_dq_power_vs_load');
-    subplot(2,1,1);
-    plot(pct_data,data.i_d_pu_inverter,'-o','LineWidth',1.5, ...
-        'DisplayName','i_d'); hold on;
-    plot(pct_data,data.i_q_pu_inverter,'-s','LineWidth',1.5, ...
-        'DisplayName','i_q');
-    ylabel('Current (pu, inverter base)');
-    legend('Location','best'); grid on;
-    if ~isempty(data.current_source) && ~isempty(data.current_source{1})
-        title(sprintf('Current source: %s',data.current_source{1}), ...
-            'Interpreter','none','FontWeight','normal');
-    end
-    subplot(2,1,2);
-    plot(pct_data,data.P_MW,'-o','LineWidth',1.5,'DisplayName','P'); hold on;
-    plot(pct_data,data.Q_MVAr,'-s','LineWidth',1.5,'DisplayName','Q');
-    xlabel('Load increase (%)'); ylabel('Injection (MW / MVAr)');
-    legend('Location','best'); grid on;
-    sgtitle(sprintf('Plot G — Device dq current and injected power [%s]',case_id), ...
-        'Interpreter','none');
-    fig_files = save_fig(fig,figfile,save_plots,fig_files);
-    plot_status.plot_G = true;
+    [fig_files,plot_status.plot_G_id] = plot_scalar_product(vis,output_root, ...
+        'plot_G_id_vs_load',pct_data,data.i_d_pu_inverter,'o', ...
+        'i_d (pu, inverter base)',sprintf('Plot G — d-axis current [%s]',case_id), ...
+        data.current_source,save_plots,fig_files);
+    [fig_files,plot_status.plot_H_iq] = plot_scalar_product(vis,output_root, ...
+        'plot_H_iq_vs_load',pct_data,data.i_q_pu_inverter,'s', ...
+        'i_q (pu, inverter base)',sprintf('Plot H — q-axis current [%s]',case_id), ...
+        data.current_source,save_plots,fig_files);
+    [fig_files,plot_status.plot_I_P] = plot_scalar_product(vis,output_root, ...
+        'plot_I_active_power_vs_load',pct_data,data.P_MW,'o', ...
+        'P injection (MW)',sprintf('Plot I — Active-power injection [%s]',case_id), ...
+        {},save_plots,fig_files);
+    [fig_files,plot_status.plot_J_Q] = plot_scalar_product(vis,output_root, ...
+        'plot_J_reactive_power_vs_load',pct_data,data.Q_MVAr,'s', ...
+        'Q injection (MVAr)',sprintf('Plot J — Reactive-power injection [%s]',case_id), ...
+        {},save_plots,fig_files);
 else
-    plot_status.plot_G = false;
-    plot_status.plot_G_reason = 'DEVICE_DQ_OR_POWER_DIAGNOSTICS_UNAVAILABLE';
+    plot_status.plot_G_id = false;
+    plot_status.plot_H_iq = false;
+    plot_status.plot_I_P = false;
+    plot_status.plot_J_Q = false;
+    plot_status.device_dq_power_reason = 'DEVICE_DQ_OR_POWER_DIAGNOSTICS_UNAVAILABLE';
 end
 end
 
@@ -285,6 +283,31 @@ if save_plots
     fig_files{end+1} = figfile_fig; %#ok<AGROW>
 end
 close(fig);
+end
+
+function [fig_files,written] = plot_scalar_product(vis,output_root,name,x,y,marker, ...
+    y_label,plot_title,current_source,save_plots,fig_files)
+[fig,figfile] = make_fig(vis,output_root,name);
+plot(x,y,['-' marker],'LineWidth',1.5,'MarkerSize',7);
+xlabel('Load increase (%)'); ylabel(y_label);
+title(plot_title,'Interpreter','none');
+if ~isempty(current_source) && ~isempty(current_source{1})
+    subtitle(sprintf('Current source: %s',current_source{1}), ...
+        'Interpreter','none','FontWeight','normal');
+end
+finite_y = y(isfinite(y));
+if ~isempty(finite_y)
+    span = max(finite_y)-min(finite_y);
+    scale = max(1,max(abs(finite_y)));
+    if span <= 1e-10*scale
+        center = mean(finite_y);
+        margin = max(0.01*abs(center),0.01);
+        ylim([center-margin center+margin]);
+    end
+end
+grid on;
+fig_files = save_fig(fig,figfile,save_plots,fig_files);
+written = save_plots;
 end
 
 function v = option_value(s, name, fallback)

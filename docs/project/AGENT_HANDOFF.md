@@ -13,8 +13,8 @@ Starting commit `3379688`. The plot adapter now preserves the raw 10-mode GFL
 and 4-mode GFM spectra, constructs cumulative one-to-one tracked-mode indices,
 and includes the base case in `[0 20 40 60 80]`. Plot A is the complete linear
 real/imaginary eigenvalue plane with unconnected markers; a labelled
-low-frequency detail is additional only. Plot G publishes accepted-equilibrium
-`i_d`, `i_q`, `P`, and `Q` for each load level. GFL currents are native states;
+low-frequency detail is additional only. Plots G--J publish accepted-equilibrium
+`i_d`, `i_q`, `P`, and `Q` as four separate figures for each load level. GFL currents are native states;
 GFM-no-PLL currents are a labelled VSM-frame diagnostic transform because that
 4-state model has no current state. Every point verifies
 `P+jQ = V*conj(I)` within `1e-10` pu before publishing.

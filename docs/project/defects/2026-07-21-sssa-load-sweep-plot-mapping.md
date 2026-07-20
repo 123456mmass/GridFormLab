@@ -33,7 +33,8 @@ style that visually connected unrelated raw roots.
   pairwise assignments and validate it as a full one-to-one map.
 - Preserve and plot every raw eigenvalue; Plot A uses markers only and retains
   a separately labelled low-frequency detail without replacing the full view.
-- Derive Plot G from the accepted device reconstruction. GFL `i_d/i_q` are
+- Derive Plots G--J from the accepted device reconstruction, with `i_d`,
+  `i_q`, `P`, and `Q` in separate figures. GFL `i_d/i_q` are
   native states. GFM-no-PLL has no current state, so its displayed dq current is
   explicitly classified `PROJECT_DERIVED_DIAGNOSTIC_VSM_FRAME_TRANSFORM` and
   does not feed any equation.
@@ -44,7 +45,7 @@ style that visually connected unrelated raw roots.
 
 `tests/test_sssa_load_sweep.m`: 30/30 PASS after adding checks for cumulative
 mode identity, 10/4 modal dimensions, raw-spectrum equality, native/derived dq
-current provenance, power identity, Plot G creation, and single-point tables.
+current provenance, power identity, four scalar-plot files, and single-point tables.
 Final delivery reruns the proportional targeted launcher consumers only.
 
 ## Limitations

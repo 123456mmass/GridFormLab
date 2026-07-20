@@ -1,5 +1,8 @@
 .claude/settings.local.json
+.claude/settings.json
+.claude/plans/
 n_bus_py/
+tests/output/
 
 # --- Local-only report sources and scratch files (kept off GitHub) ---
 *.tex

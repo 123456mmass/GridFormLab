@@ -1,11 +1,82 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization; 2026-07-20 GFM-VSG-no-PLL SMIB-first characterization
+Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization; 2026-07-20 GFM-VSG-no-PLL SMIB-first characterization; 2026-07-21 SSSA load sweep (SMIB loaded-IBR)
 Branch: `main`
 Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top of all-GFL equilibrium)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
+
+## 2026-07-21 — SSSA load sweep (single GFL/GFM to infinite bus, shunt load)
+
+**Starting commits:** `smib_starting_commit=83390db`,
+`smib_delivery_commit=efa9617`, `load_sweep_starting_commit=efa9617`.
+
+### Scope
+
+A configurable SSSA load-sweep product that scales a shunt load at constant
+power factor and re-solves equilibrium + full-KCL SSSA at every load level.
+User redirected scope from IEEE14-mixed+SG to a SINGLE IBR (GFL-RMS10 OR
+GFM-no-PLL — two separate cases) connected to an ideal infinite bus through
+`Z_line`, with a shunt load at the IBR terminal bus. Default percentages
+`[20 40 60 80]`, user-adjustable. New schema `smib_loaded_ibr/1.0`; the
+existing ideal `smib_verification/1.0` fixture stays bit-identical.
+
+### Files added
+
+- `+cases/case_ibr_smib_loaded_gfl_rms10.m`, `+cases/case_ibr_smib_loaded_gfm_no_pll.m`
+- `+ibr/smib_loaded_equilibrium.m` (dedicated Newton equilibrium solver; 2-stage init)
+- `+ibr/smib_loaded_sssa_oracle.m` (SSSA oracle with load current term)
+- `+stability/+load_sweep/route_smib_ibr.m` (route adapter)
+- `tests/test_sssa_load_sweep.m` (27 tests, GFL+GFM)
+- `docs/project/defects/2026-07-21-gfl-rms10-smib-unstable-mode.md`
+
+### Files modified
+
+- `+stability/sssa_load_sweep.m` (route `smib_ibr`; default `[20 40 60 80]`)
+- `+stability/sssa_load_sweep_point.m` (accept `smib_ibr`; smib snapshot copy)
+- `+stability/sssa_load_sweep_scale_case.m` (smib_loaded_ibr branch)
+- `+stability/+load_sweep/applicability.m`, `fingerprint.m` (smib_loaded_ibr)
+- `+wizard/defaults_for_method.m`, `discover_cases.m`, `validate_request.m`, `dispatch_analysis.m`
+- `tests/test_wizard_smib_cases.m` (loaded-IBR discovery)
+- `docs/project/SSSA_LOAD_SWEEP_CONTRACT.md`, `docs/project/defects/INDEX.md`
+
+### Dispatch policy (ASSUMED_DIAGNOSTIC)
+
+IBR references (`P_ibr_base`, `Q_ibr_base` for GFL; `P_ibr_base`+`V_ref` for
+GFM) are held FIXED at base. The infinite bus is the slack that absorbs the
+incremental load through `Z_line`. Terminal voltage decreases monotonically
+with load (GFL: 0.994→0.975; GFM: 0.986→0.976). Setting IBR reference = load
+would make line flow = 0 and degenerate to an isolated IBR+load.
+
+### Fresh targeted metrics (R2025a-equivalent)
+
+- GFL loaded-IBR sweep `[20 40 60 80]`: all 4 points SUCCESS, 10 eigenvalues
+  each, equilibrium residual <5e-12, mode matching available. `max_real≈3.4e5`
+  (UNSTABLE — same magnitude as the existing ideal-SMIB oracle 3.37e5; this
+  is a GFL-RMS10 device-model property, NOT a load-sweep defect; see defect
+  record `SWEEP-2026-07-21-01`).
+- GFM loaded-IBR sweep `[20 40 60 80]`: all 4 points SUCCESS, 4 eigenvalues
+  each, `max_real≈-0.56` (ASYMPTOTICALLY STABLE), mode matching available.
+- Ideal SMIB (`smib_verification/1.0`) + `sssa_load_sweep` rejected with
+  `wizard:validate_request:loadSweepSmibIncompatible` /
+  `LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB`.
+- `tests/test_sssa_load_sweep.m`: 27/27 PASS. `tests/test_wizard_smib_cases.m`:
+  6/6 PASS.
+
+### Readiness
+
+`SSSA_LOAD_SWEEP_PRODUCTION_READY = DIAGNOSTIC_ONLY`. Production device
+f/current_injection closures are used unchanged; no external solver; no
+device-equation edits. The load-growth/dispatch study policy is
+`ASSUMED_DIAGNOSTIC` (IBR-refs-fixed + infinite-bus-slack). No exact stability
+boundary, CPF nose point, or production operating-limit approval is claimed.
+Stability is an outcome, not an acceptance gate.
+
+### Full regression
+
+Run on the final unchanged source tree. See the verification section of the
+delivery report for pass/fail counts.
 
 ## 2026-07-20 — Separate GFL/GFM SMIB launcher cases
 

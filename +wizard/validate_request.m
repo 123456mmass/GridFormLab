@@ -91,6 +91,14 @@ if ~any(strcmp(req.case_id, {entries.id}))
     error('solve_case:case', 'Case %s not supported for %s.', req.case_id, req.analysis);
 end
 
+% SMIB entries are independent, event-free verification fixtures.  They do
+% not have four switchable IEEE14 IBRs and cannot run SG-cycle comparisons.
+is_smib = strcmp(req.analysis,'ibr') && endsWith(req.case_id,'_smib');
+if is_smib && ~ismember(req.options.ibr_analysis,{'pf','sssa','ts','full'})
+    error('wizard:validate_request:smibAnalysis', ...
+        'SMIB verification supports pf, sssa, ts, or full only.');
+end
+
 % --- events policy vs analysis applicability ---
 switch req.events_policy
     case 'not_applicable'
@@ -138,6 +146,10 @@ if strcmp(req.analysis, 'ibr') && ...
     error('wizard:validate_request:ibrEventsNotApplicable', ...
         'IBR %s does not accept events; select TS or Full Analysis.', ...
         upper(req.options.ibr_analysis));
+end
+if is_smib && strcmp(req.events_policy,'configured')
+    error('wizard:validate_request:smibEventsNotSupported', ...
+        'SMIB verification is event-free; configured events are not supported.');
 end
 end
 

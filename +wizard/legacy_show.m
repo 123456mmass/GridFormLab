@@ -74,6 +74,32 @@ switch analysis
         ts_events_enabled = strcmp(event_mode, 'on');
         [opt, accepted] = edit_options(opt, entry.label, {'ibr_events'});
     case 'ibr'
+        is_smib = endsWith(case_id,'_smib');
+        if is_smib
+            sub_ids = {'pf','sssa','ts','full'};
+            sub_labels = { ...
+                'PF / Equilibrium - phasor, KCL and power identity', ...
+                'Small-Signal Stability - Schur/direct SMIB oracle', ...
+                'Time-Domain Simulation - event-free SMIB oracle', ...
+                'Full Verification - PF/equilibrium + SSSA + event-free TDS'};
+            current=4;
+            if isfield(opt,'ibr_analysis')
+                found=find(strcmp(sub_ids,lower(char(opt.ibr_analysis))),1);
+                if ~isempty(found), current=found; end
+            end
+            selected=choose_one('Select Single Infinite Bus verification', ...
+                sub_labels,sub_ids,current,[590 150]);
+            if isempty(selected), result=[]; return; end
+            opt.ibr_analysis=selected;
+            opt.ibr_events=struct('enabled',false);
+            % SMIB contains exactly one converter of the case-selected type.
+            % IEEE14 family/profile/mode-count controls are not applicable.
+            excluded={'ibr_events','ibr_analysis','ibr_profile', ...
+                'initial_gfm_count','initial_gfl_count','initial_gfm_indices', ...
+                'initial_reference_resource_index','automatic_gfm_switching', ...
+                'pf_verbose'};
+            [opt,accepted]=edit_options(opt,entry.label,excluded);
+        else
         % The launcher is bound to RMS10-capable containers. The initial
         % GFM/GFL mix remains editable; Profile B (1 GFM + 3 GFL) is default.
         opt.ibr_profile = 'rms10_profile_b';
@@ -177,12 +203,13 @@ switch analysis
                 {'ibr_events','initial_gfm_indices', ...
                  'initial_reference_resource_index'});
         end
+        end
     otherwise
         error('solve_case:analysis', 'Unknown analysis %s.', analysis);
 end
 
 if ~accepted, result = []; return; end
-if strcmp(analysis, 'ibr')
+if strcmp(analysis, 'ibr') && ~endsWith(case_id,'_smib')
     opt = wizard.normalize_ibr_mode_selection(opt);
 end
 

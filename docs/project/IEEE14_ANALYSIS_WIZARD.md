@@ -4,6 +4,24 @@ Date: 2026-07-19
 Branch: `main`
 Status: `LEGACY_DIALOG_DEFAULT / WIZARD_BACKEND_AVAILABLE`
 
+## Separate single-infinite-bus verification cases
+
+The IBR case selector exposes two independent diagnostic cases alongside the
+IEEE14 mixed-resource case:
+
+- `gfl_rms10_smib`: one 10-state GFL-RMS10 connected to an ideal algebraic
+  infinite bus through the frozen external line impedance;
+- `gfm_no_pll_smib`: one 4-state GFM-VSG no-PLL connected to the same frozen
+  fixture on its source-reproduction 50 Hz base.
+
+Each case offers PF/equilibrium, SSSA, event-free time-domain simulation, or
+Full Verification. Here PF is the closed phasor/KCL/power equilibrium identity,
+not the multi-bus Newton PF. SSSA uses `ibr.smib_sssa_oracle`; TDS uses
+`ibr.smib_tds_oracle`. Both are `ASSUMED_DIAGNOSTIC` falsification oracles and
+never feed production states or parameters. The converter families are not
+combined in a SMIB case. Events, SG-cycle comparisons, and the IEEE14
+GFM/GFL device-count controls are rejected or hidden.
+
 ## Purpose
 
 `solve_case.m` is the canonical public launcher for the four in-house

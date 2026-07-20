@@ -136,6 +136,11 @@ Only one active track may modify any of the following at a time:
 > reassignment. The wizard's pure dispatcher is `wizard.dispatch_analysis`
 > (single shared dispatcher for both the UI and the programmatic path). See
 > `docs/project/IEEE14_ANALYSIS_WIZARD.md`.
+>
+> **2026-07-20 SMIB launcher integration:** one integration owner is adding
+> two diagnostic IBR case routes (`gfl_rms10_smib` and `gfm_no_pll_smib`) to
+> the wizard discovery/UI/dispatcher. No shared PF/SSSA/TS numerical kernel
+> or production case schema is changed; the routes call existing SMIB oracles.
 - `pf_init_paths.m`;
 - `+stability/ts_simulate.m`;
 - `+stability/multicase_sssa.m`;

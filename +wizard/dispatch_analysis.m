@@ -43,6 +43,9 @@ case_data = entry.loader();
 
 % Attach the event spec to options for the TS/IBR launchers that consume it.
 opt = attach_events(opt, req, analysis);
+if strcmp(analysis,'ibr') && isfield(case_data,'smib_verification')
+    opt = sanitize_smib_options(opt);
+end
 
 root = pf_init_paths();
 logdir = fullfile(root, 'output', 'logs');
@@ -76,7 +79,11 @@ switch analysis
         end
         print_ts_checks(result);
     case 'ibr'
-        result = run_ibr_analysis(case_data, opt, entry.label, root, case_id);
+        if isfield(case_data,'smib_verification')
+            result = ibr.run_smib_verification_case(case_data,opt);
+        else
+            result = run_ibr_analysis(case_data, opt, entry.label, root, case_id);
+        end
     otherwise
         error('wizard:dispatch_analysis:unknownAnalysis', ...
             'Unknown analysis ID %s.', analysis);
@@ -101,6 +108,16 @@ diary('off');
 % UI explanation path is handled by the wizard controller; do not block here.
 % (solve_case.m opens a modal msgbox only in interactive mode; the wizard
 %  shows results in-page instead.)
+end
+
+function opt = sanitize_smib_options(opt)
+% Remove IEEE14 multi-device controls from the one-converter SMIB contract.
+irrelevant={'ibr_profile','pf_verbose','initial_gfm_count','initial_gfl_count', ...
+    'initial_gfm_indices','initial_reference_resource_index', ...
+    'automatic_gfm_switching'};
+for k=1:numel(irrelevant)
+    if isfield(opt,irrelevant{k}), opt=rmfield(opt,irrelevant{k}); end
+end
 end
 
 % =========================================================================

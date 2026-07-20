@@ -59,10 +59,12 @@ tc.verifyGreaterThanOrEqual(numel(r), 1);
 tc.verifyTrue(all(strcmp({r.analysis}, 'ts')));
 end
 
-function test_discover_ibr_single_entry(tc)
+function test_discover_ibr_includes_ieee14_and_separate_smib_cases(tc)
 r = wizard.discover_cases('ibr');
-tc.verifyEqual(numel(r), 1);
+tc.verifyEqual(numel(r), 3);
 tc.verifyEqual(r(1).id, 'ieee14_1sg_4ibr');
+tc.verifyTrue(any(strcmp({r.id},'gfl_rms10_smib')));
+tc.verifyTrue(any(strcmp({r.id},'gfm_no_pll_smib')));
 end
 
 function test_discover_is_lazy_no_solve(tc)

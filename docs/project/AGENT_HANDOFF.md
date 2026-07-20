@@ -7,6 +7,21 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-07-20 — Separate GFL/GFM SMIB launcher cases
+
+The IBR case dialog now lists `gfl_rms10_smib` and `gfm_no_pll_smib`
+separately. Each route supports PF/equilibrium, SSSA, event-free TDS, or Full
+Verification using the existing device closures and independent SMIB oracles.
+It does not expose IEEE14 mode counts, SG-cycle comparison, or events.
+
+Fresh R2025a targeted metrics: GFL order/roots 10/10, `||f||inf=2.79e-13`,
+`||g||inf=1.11e-16`, Schur/direct error `6.68e-15`; its positive PLL pole is
+retained and classified UNSTABLE. GFM no-PLL order/roots 4/4,
+`||f||inf=6.52e-14`, `||g||inf=2.08e-16`, Schur/direct error `8.10e-11`,
+ASYMPTOTICALLY STABLE, event-free TDS drift zero. Figures are written beneath
+`output/figures/smib/{gfl_rms10,gfm_no_pll}/`. IEEE14 integration readiness is
+unchanged.
+
 ## 2026-07-20 — GFM-VSG without PLL (SMIB-first, source-traced)
 
 **Starting repository checkpoint:** `4d8b015` (`HEAD` one commit ahead of

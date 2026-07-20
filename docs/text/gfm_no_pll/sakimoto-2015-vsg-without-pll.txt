@@ -1,0 +1,614 @@
+                B
+IEEJ Transactions on Power and Energy
+Vol.135 No.7 pp.462–471     DOI: 10.1541/ieejpes.135.462
+
+
+                                                                                                                                  Paper
+
+    Virtual Synchronous Generator without Phase Locked Loop based on
+            Current Controlled Inverter and its Parameter Design
+                   Kenichi Sakimoto∗a)                   Member,                Kazushige Sugimoto∗                    Member
+                   Yuji Shindo∗                          Senior Member,         Toshifumi Ise∗∗                        Fellow
+
+                                              (Manuscript received Aug. 4, 2014, revised Jan. 25, 2015)
+
+
+           The inverters which simulate the actual synchronous generators can continue to operate in grid disconnection. It
+        is called virtual synchronous generator (VSG). In this paper, the VSG without phase locked loop (PLL) based on a
+        current controlled inverter is proposed. The proposed controller is composed of impedance model, governor, AVR,
+        damper model and rotor model. It can be synchronized with grid without PLL because it has synchronizing power.
+        VSG parameter design method is provided by stability analysis. Finally, simulation and experimental results show that
+        the proposed VSG can operate in disconnection from the grid. It can supply load after disconnection from grid.
+
+        Keywords: virtual synchronous generator, grid connected inverter, distributed generator, grid disconnection
+
+
+                                                                              generators on inverters. By using the VSG control, the in-
+   1.     Introduction                                                        verter can operate both in a grid connection and in an isolated
+   In order to reduce the greenhouse gas, distributed genera-                 grid since the inverter behaves like an actual synchronous
+tors such as wind farms, solar power stations and so on are                   generator. Various methods have been proposed as the vir-
+widely introduced in the world. These sources are connected                   tual synchronous generator control (1)–(13) . In Refs. (2) and (4),
+to a grid by inverters. Most of conventional inverters of dis-                the VSG are constructed on the voltage controlled inverters,
+tributed generators are controlled by current controllers. The                while the VSG in Ref. (1) is based on the current controlled
+current controllers can synchronize with the grid by a PLL                    inverters with the PLL. VSG require short-term energy stor-
+(Phase Locked Loop) and control currents of the inverter ac-                  age for simulating the rotor inertia (5) . VSG diagram proposed
+cording to current commands. The current controller is based                  in Ref. (5) is shown in Fig. 1.
+on premise that the inverter is connected to the grid. There-                    The distributed generators are required to withstand a grid
+fore, it cannot operate in the isolated grid. The conventional                failure. It is called fault ride through (FRT). It is diﬃcult to
+method of the inverter in isolated grid is CVCF (Constant                     reduce the rush current due to the grid fault for the voltage
+Voltage and Constant Frequency) control. The inverters with                   controlled inverters since the inverter currents are not con-
+CVCF output the voltage whose frequency and voltage RMS                       trolled directly. It is also diﬃcult that the current controlled
+are constant. The CVCF control cannot operate in grid con-                    inverters with PLL have FRT capability since there is no ev-
+nected mode since it cannot synchronize with the grid. Dis-                   idence that the PLL behaves correctly at the grid fault. We
+tributed generators are required to continue to operate in var-               proposed the VSG based on a current control inverter with
+ious conditions. For example, the system continues to supply                  rotor model instead of PLL. The damper model is also in-
+power to critical loads without interruption in a grid fault.                 stalled in order to stabilize rotor swing. In previous works,
+Therefore, when the conventional inverter is disconnected                     it is verified that the VSG control without PLL can operate
+from the grid, the inverter must be stop for the moment to                    in voltage sag by simulation (13) . However, in Ref. (13), it is
+change its control logic.                                                     not verified that the VSG can operate in isolated grid and grid
+   On the other hand, synchronous generators can synchro-                     disconnection.
+nized to the grid by synchronizing power and can operate                         In this paper, VSG parameter design method is provided by
+both in a grid connection and in an isolated grid. When syn-                  stability analysis and it is verified that the VSG can operate
+chronous generators are disconnected from the grid, they can
+continue to operate without changing control logic.
+   The virtual synchronous generator (VSG) is an attempt
+to realize the characteristics of the actual synchronous
+
+ a) Correspondence to: Kenichi Sakimoto. E-mail: sakimoto kenichi
+    @khi.co.jp
+  ∗
+    Kawasaki Heavy Industries, LTD.
+    1-1, Kawasaki-cho, Akashi 673-8666, Japan
+ ∗∗
+    Osaka University
+    2-1, Yamadaoka, Suita 565-0871, Japan                                                           Fig. 1. VSG diagram
+
+
+
+c 2015 The Institute of Electrical Engineers of Japan.                  462
+                                  Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+in grid disconnection by simulation and experiment.                                           From the Eq. (1), the current commands fed to the inverter
+                                                                                            are taken as
+  2.      Virtual Synchronous Generator                                                           ∗                        
+                                                                                                  Iq      1      r x Eq − Vgq
+   The proposed VSG control is based on a current control                                             = 2                         · · · · · · · · · · · · · · · (2)
+                                                                                                  Id∗   r + x2 −x r        −Vgd
+type inverter. The control block diagram is shown in Fig. 2.
+It consists of a impedance model, a governor model, an AVR                                  where each values are considered as instantaneous values.
+(Automatic Voltage Regulator) model, a rotor model and a                                       x of impedance model corresponds to reactance of actual
+damper model. LF and RF are reactance and resistance of                                     synchronous generators. The VSG impedance x should be
+filter reactor for inverter. The grid in Fig. 2 includes other                              set to approximately transient impedance xd  of other syn-
+generators, transmission lines, loads and so on.                                            chronous generators in order to share loads among genera-
+   2.1 Impedance Model                   The inverter current com-                          tors. In this paper, r + jx is set to 0.2 + j0.4 (pu).
+mands of the VSG are calculated using impedance model.                                         2.2 Governor and AVR Model                   The VSG model
+The impedance model is based on the algebraic approxi-                                      must have a governor and an AVR in order to share loads with
+mation of Park’s equation (1) . It simulates the impedance of                               other generators. The governor model is shown in Fig. 2. The
+a synchronous generator without transient and sub-transient                                 governor regulator is proportional and integral type. The tur-
+impedances since the current controller of inverter cannot                                  bine model consists of a 1st order delay whose time constant
+respond fast enough to simulate transient and sub-transient                                 T tur was set to 120 ms. The governor has droop characteris-
+impedances and there is no need. The generator is assumed                                   tics. The diﬀerence between active power P and its command
+to be a cylindrical type, where the reactance of direct axis
+and quadrature axis are equal to each other. Figures 3 and 4
+show the impedance model of the VSG and its phasor dia-
+gram. Here, the synchronous impedance of the generator is
+denoted by r + jx. The electromotive force induced by the
+field windings is denoted by Eq . The phase diﬀerence be-
+tween the rotor and the grid is denoted by δ, which is known
+as load angle (14) . The q-axis is chosen parallel to Eq , while
+the d-axis is taken at a right angle to it. The grid voltage is                                           Fig. 3. Impedances model of the VSG
+denoted by Vg , and its projections to d and q axis are denoted
+by Vgd and Vgq . The generator currents and its projections to
+d-q axis are denoted by I ∗ , Id∗ , Iq∗ respectively. Then we obtain
+the following.
+       Ėq − V̇g = (Eq − Vgq ) − jVgd
+                 = (r + jx)(Iq∗ + jId∗ )
+                                                                                                            Fig. 4. Phaser diagram of the VSG
+                 = (rIq∗ − xId∗ ) + j(rId∗ + xIq∗ ) · · · · · · · · · · · · · · (1)
+
+
+
+
+                                                                       Fig. 2. Control block diagram
+
+
+                                                                                      463                                   IEEJ Trans. PE, Vol.135, No.7, 2015
+                                     Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+                                                                                                                      
+P∗ is fed to the input of the regulator via the gain Kgd . The pa-
+                                                                                                              θR =         ωR dt + θR0 · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (5)
+rameter Kgd is referred to as the speed regulation. Kgd should
+be set to the same level with the droop gain of other genera-
+tor’s governor. In this paper, Kgd set to 5%. P∗ is controlled                                          where θR0 is initial value of θR . θR is phase of Eq in Figs. 3
+by host controller considering the generator characteristics                                            and 4.
+and states.                                                                                                2.4 Synchronizing Power                         If the load angle δ is
+   The AVR is shown in Fig. 2. The AVR regulator is an in-                                              changed in actual synchronous generators, load angle is re-
+tegral type. It simulates PI controller and field winding char-                                         turn to original by synchronizing power. The proposed VSG
+acteristics of actual synchronous generators. These can be                                              can also synchronize to the grid since the VSG controller has
+combined into one integral element by assuming equal time                                               a synchronizing power. In this section, characteristics of grid
+constant between PI controller and field winding. The diﬀer-                                            are expressed in a block diagram in order to analyze the syn-
+ence between the reactive power Q and its command Q∗ is                                                 chronizing power of the VSG. The relation between the grid
+also fed to the input of the regulator via the gain Kad . In this                                       voltage Vg and the rotor angle θR is obtained. Grid phase θg
+paper, Kad is set to 5%. AVR also has droop characteristics.                                            is phase of Vg in Fig. 3 given by
+When the inductive load is connected to VSG in isolated grid,                                                     
+the grid voltage is lowered.                                                                                 θg =     ωg dt + θg0 · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (6)
+   2.3 Rotor Model           The phase of d-q transformation is
+calculated using rotor model. Assuming that the loss of the                                             where ωg is grid frequency and θg0 is initial value of θg . δ in
+winding is neglected, the generator electric torque T e is given                                        Fig. 4 is the diﬀerence between θR and the grid phase θg . δ is
+by following                                                                                            given by
+     T e = Eq iq /ω · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (3)               δ = θR − θg · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (7)
+  The rotor dynamics of the virtual generator is given by
+                                                                                                           From Fig. 4, the relation between δ and Vg is
+       dωR
+     J     = T p − T e − T d − Dg ωR · · · · · · · · · · · · · · · · · · · (4)
+        dt
+where T p and Dg denote the torque and the mechanical damp-
+ing of the prime mover which is proportional to rotor speed.
+T d is the damping torque which is described later. The mo-
+ment of inertia of the generator and the prime mover are
+merged as J. J should be set to the same level with other gen-
+erators because of well-balanced load shearing in transient
+condition. In this paper, J is set to 4 s since it is typically 2 s
+to 10 s in actual synchronous generators (14) . The rotor angle
+θR is given by
+                                                                                                                  Fig. 5. Characteristics of grid voltage Vgd and Vgq
+
+
+
+
+                                                            Fig. 6. Controller and Characteristics of a grid voltage
+
+
+                                                                                                  464                                               IEEJ Trans. PE, Vol.135, No.7, 2015
+                                    Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+                     ⎫                                                                                                  x
+     Vg = jVgd + Vgq ⎪
+                     ⎪
+                     ⎪                                                                                           =− 2         Vgd0 − Δδ · · · · · · · · · · · · · · · · · · · · · (13)
+                     ⎬                                                                                               r + x2
+     Vgd = −Vg sin δ ⎪
+                     ⎪ · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (8)
+                     ⎪
+     Vgq = Vg cos δ ⎭                                                                                        T d = Kτd
+                                                                                                                        dT e
+                                                                                                                         dt
+   During starting VSG, θR0 is set to be equal to θg0 according                                                             x dΔδ                 dΔδ
+to the procedure shown in Sect. 5.1                                                                              = Kτd 2                 =D                · · · · · · · · · · · · · · · · · (14)
+                                                                                                                        r + x dt
+                                                                                                                              2                     dt
+   In steady state, Vg is equal to Vg0 (= jVgd0 + Vgq0 ). If δ is
+deviated from δ0 to δ0 + Δδ, then the grid voltage Vg is varied                                          where D is given by following equation.
+to Vg0 + ΔVg as follows.                                                                                                  x
+                                                                                                              D = Kτd 2         · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (15)
+                                                                                                                       r + x2
+     Vg0 + ΔVg = j Vgd0 + ΔVgd + Vgq0 + ΔVgq · · · · (9)                                                   According to Ref. (15), the damping power generated by
+             ∂                                                                                           the damper winding of an actual synchronous generator is
+     ΔVgd =     −Vg sin δ Δδ
+            ∂δ                                                                                           given as following.
+          = −Vg cos δ0 · Δδ = −Vgq0 · Δδ · · · · · · · · · · · · (10)                                                    dΔδ
+             ∂                                                                                                   Pdamp = PD   · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (16)
+     ΔVgq =     Vg cos δ Δδ                                                                                                dt
+            ∂δ                                                                                           where PD is called damping factor and expressed as follow-
+          = −Vg sin δ0 · Δδ = Vgd0 · Δδ · · · · · · · · · · · · · · (11)
+                                                                                                         ing.
+   Figure 5 expresses Eqs. (7)–(11) in the form of block dia-                                                                                                                                     
+                                                                                                                         1    1                              1         1         
+gram. This figure shows the characteristics of a grid voltage                                                 PD = V 2      −       T      sin  2
+                                                                                                                                                   δ  0 +           −           T      cos   2
+                                                                                                                                                                                               δ0
+                                                                                                                        Xd Xd d                            Xq Xq q
+Vgd and Vgq . Figure 6 shows the block diagram in which the
+inverter, the filter and the grid in Fig. 2 are represented by                                                                                       · · · · · · · · · · · · · · · · · · · (17)
+block diagrams.                                                                                             Assuming that rotor speed ωR is 1.0 pu, the damping torque
+   The arrows in Fig. 6 indicate the feedback loops of the rotor                                         T d of Eq. (14) is equal to damping power Pdamp of Eq. (16).
+angle θR . The solid and red lines indicate that the polarity of                                         It proves that the damping torque T d in VSG simulates
+the signal transfer is positive, while the dashed and blue line                                          the power generated by damper winding of an actual syn-
+is reversed. If the change of the rotor angle θR is positive, then                                       chronous generator. Thus,
+the generator torque increased and the angular velocity is de-                                                                   x
+creased. Finally the rotor angle θR is decreased. In the same                                                 PD = D = Kτd 2           · · · · · · · · · · · · · · · · · · · · · · · · · (18)
+                                                                                                                              r + x2
+way, if the deviation of θR is negative, the generator torque is
+decreased and the deviation returns to the equilibrium. This                                                3.     Stability Analysis and Parameter Design
+system consists of negative feedback loop of θR and it can
+                                                                                                            It is necessary to analyze the stability of VSG control in
+synchronize with grid. It is called synchronizing power. Ef-
+                                                                                                         order to design parameter. In this section, we analyzed the
+fect of feedback loop shown as thin line is smaller than thick
+                                                                                                         stability of rotor speed ωR .
+line because the resistance r is smaller than x. When con-
+                                                                                                            3.1 Stability Analysis in Isolated Operation           In the
+ventional inverters with PLL operate in voltage sag, they are
+                                                                                                         isolated operation, the output active power P was determined
+required to adjust the PLL parameters to detect grid phase
+                                                                                                         by the loads connected to the inverter. In this section, the
+exactly in voltage sag. However, the proposed VSG can op-
+                                                                                                         control stability is analyzed in isolated operation in order to
+erate in voltage sag because it has no PLL. Ref. (13) gives
+                                                                                                         design the PI (Proportional and Integral) control gain of the
+more detail on VSG operation in voltage sag.
+                                                                                                         governor. Assuming that the rotor speed ωR is 1 pu, the elec-
+   After disconnection from grid, the voltage Vg is changed
+                                                                                                         trical torque T e is equal to the active power P. Therefore, the
+from grid voltage to load voltage and VSG can continue to
+                                                                                                         simplified block diagram in the isolated operation is shown
+operate without changing controller. VSG can be recon-
+                                                                                                         in Fig. 7. In Fig. 7, P∗ and ω∗ are omitted. The transfer func-
+nected to grid using synchroscope according to same pro-
+                                                                                                         tion between P and ωR is derived from Fig. 7 and given by
+ducer as conventional synchronous generators.
+                                                                                                         Eq. (19)
+   2.5 Damper Model              In actual synchronous genera-
+tors, the rotor swing is stabilized by damper windings. In                                                             Kτd T tur s3 + (T tur + Kτd ) s2
+VSG, damping torque which is generated by damper wind-                                                           ωR    + Kgd KGP + 1 s + Kgd KGI
+ings of an actual synchronous generator is simulated in order                                                       =− ⎛                                 ⎞ · · · · · · · · · · · (19)
+                                                                                                                 P     ⎜⎜⎜ JT tur s3 + Dg T tur + J s2 ⎟⎟⎟
+to stabilize the controller. If τd is negligible small in the first                                                      ⎜⎜⎝                             ⎟⎟
+order delay element of damper model, damping torque T d in                                                                   + Dg + KGP s + KGI ⎠
+VSG is given by following.
+                   d
+     T d = Kτd        T e · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (12)
+                   dt
+  To simplify the analysis, the model is approximated that
+Eq = 1.0 pu and Vgq0 = 1.0 pu. From Fig. 6, T e and T d is
+given by Eq. (13) and Eq. (14) using Eq. (10) and Eq. (12).
+                 x                                                                                               Fig. 7. The block diagram from P to ωR in an isolated
+     T e = −Eq 2     Vgd0 + ΔVgd                                                                                 grid
+              r + x2
+
+                                                                                                   465                                            IEEJ Trans. PE, Vol.135, No.7, 2015
+                                    Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+                                                                                                                               ⎫
+  Stability condition of Eq. (19) is given by Eq. (20) using                                                   K > 3.09 (J = 2)⎪
+                                                                                                                               ⎪
+                                                                                                                               ⎪
+                                                                                                                               ⎬
+Routh’s stability criterion                                                                                    K > 5.39 (J = 4)⎪
+                                                                                                                               ⎪ · · · · · · · · · · · · · · · · · · · · · · · · · · · (25)
+                                                                                                                               ⎪
+                                                                                                               K > 7.27 (J = 6)⎭
+       Dg T tur + J Dg + KGP
+                              > KGI · · · · · · · · · · · · · · · · (20)                                  As J is larger, damping eﬀect is decreased and damping
+                JT tur
+                                                                                                        factor K has to be set to larger. If K is set to 10, thus, the
+   3.2 PI Gain of the Governor Design                    The propor-                                    damping factor D is equal to 0.2 using Eq. (15).
+tional gain of the governor KGP is designed about a recipro-
+cal of droop gain Kgd preferably. Therefore KGP was set to                                                4.     Simulation Results
+20 (= 1/0.05). From Eq. (20), the integral gain KGI must sat-                                             In the simulation, the VSG was connected to a grid as
+isfy the following equation. The other parameter is shown in                                            shown in Fig. 9. The filter consists of reactors, capacitors and
+Table 1.                                                                                                a transformer. The capacitors do not only work as a filter,
+      (1.0 × 0.12 + 4.0) (1.0 + 20)                                                                     but make the current control stable in an isolated operation (1) .
+                                    = 180.25 > KGI · · · · (21)
+               4.0 × 0.12                                                                               Control parameters of the VSG are shown in Table 1. Circuit
+                                                                                                        parameters are shown in Table 2. Load model was constant
+  In this paper, KGI is set to 100.
+                                                                                                        impedance model in following simulations. All simulations
+  3.3 Stability Analysis in the Grid Connected Opera-
+                                                                                                        are done by in-house simulator (16) .
+tion      In the grid connected operation, the rotor speed ωR
+                                                                                                          4.1 Grid Connected Operation               In the simulation,
+was determined by the grid frequency. To simplify the anal-
+                                                                                                        the VSG was connected to a grid and an active power com-
+ysis, the model is approximated that Eq is constant, ωR =
+                                                                                                        mand P∗ was changed from 0.0 pu to 0.5 pu in steps. Table 3
+1.0 pu, and Vgq0 = 1.0 pu. The feedback loop shown as thin
+                                                                                                        shows the parameters of J and K in each case. The param-
+line in Fig. 6 is also neglected. It is equivalent to r = 0.
+                                                                                                        eters of case 1-2 and 2-2 are equal. The other parameters
+Therefore, the simplified block diagram in the grid connected
+operation is shown in Fig. 8. In Fig. 8, P∗ and ω∗ are omitted.
+K plant was following.
+                   377x
+      K plant =            · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · (22)
+                  r 2 + x2
+  The transfer function between P and ωR is derived from
+Fig. 8 and given by Eq. (23)                                                                                      Fig. 9. The circuit of the VSG connected to a grid
+
+      P                 Kgd (sKGP + KGI ) KPlant                                                                                Table 1. Control parameters
+        =⎛                                                ⎞
+      P∗ ⎜⎜T tur Js4 + T tur KPlant Kτd + Dg + J s3 ⎟⎟
+          ⎜⎜⎜                                             ⎟⎟⎟
+            ⎜⎜⎜ + T K                                       ⎟⎟⎟
+                     tur Plant + KPlant Kτd + Dg s
+                                                   2
+              ⎜⎜⎜                                             ⎟⎟⎟
+                ⎝                                               ⎠
+                  + KGP Kgd + 1 KPlant s + KGI Kgd KPlant
+                                                     · · · · · · · · · · · · · · · · · · · (23)
+
+  Stability condition of Eq. (23) is given by Eq. (24) using
+Routh’s stability criterion.
+                               
+                T tur KPlant     (T tur KPlant − J)2 +
+            −                +
+                +2Dg + J         4JKPlant 1 + KGP Kgd
+    τd K >
+                               2KPlant
+                                    · · · · · · · · · · · · · · · · · · · (24)
+                                                                                                                                Table 2. Circuit parameters
+  3.4 Damping Factor Design             τd is design to remove
+the noise from inverter switching and to be enough small for
+rotor model to neglect first order delay element of damper
+model. In this paper, τd is set to 0.01. J is set to 2 s, 4 s and
+6 s in simulation and experimental system. From Eq. (24),
+the damping factor K must satisfy the following equations to                                                     Table 3. Test cases and parameter in grid connected
+operate stably. The other parameter is shown in Table 1.                                                         operation
+
+
+
+
+          Fig. 8. The block diagram from P∗ to P in a grid
+          connected operation
+
+
+                                                                                                  466                                          IEEJ Trans. PE, Vol.135, No.7, 2015
+                         Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+                                                                            Table 4. Test cases and parameter in grid disconnection
+
+
+
+
+                         (a) Active power
+
+
+
+
+                          (b) Rotor speed
+      Fig. 10. Simulation result (Case 1-1 J = 4 s, K = 5)
+
+
+
+
+                         (a) Active power
+
+
+
+
+                          (b) Rotor speed
+                                                                            Fig. 12. Simulation result (Case 3-1 P∗ = 0.0 pu, Load
+    Fig. 11. Simulation result (Case 1-2 and Case 2-2 J =                   was 0.0 kW)
+    4 s, K = 10)
+
+
+were used in Table 1. Figures 10 and 11 show the simulation
+results of grid connection operation.
+   Resistance r in impedance model which is neglected in
+stability analysis contributes to damping eﬀect. Therefore,
+in case 1-1 (Fig. 10) which is unstable condition in stability
+analysis, the VSG operated stably and near limit of stable.
+   Figure 11 show that the output power P is equal to the
+power command P∗ in steady state. VSG output power fol-
+lowed the power command P∗ quickly and rotor speed ωR
+was converged after 0.5 s.
+   4.2 Grid Disconnection          In the simulation, the VSG
+was disconnected from the grid by opening the MC at 1 s.
+The control method of the inverter was not changed. Ta-
+ble 4 shows the simulation cases. Figures 12 and 13 show
+the simulation results of gird disconnection. In all cases, the
+VSG can continue to operate from grid-connected mode to
+isolated mode smoothly. In the grid-connected operation, the
+output power of the VSG equal to the power command P∗ and
+changed to load power after grid disconnection. In case 3-1                 Fig. 13. Simulation result (Case 3-2 P∗ = 0.0 pu, Load
+shown in Fig. 12 and case 3-4, the rotor speed is not changed               was 5.0 kW)
+after grid disconnection since the power command P∗ was
+consistent with the power of the load. In case 3-2 shown in                 ω∗ − ω = −Kgd (P∗ − P)· · · · · · · · · · · · · · · · · · · · · · · · (26)
+Fig. 13 and case 3-3, the rotor speed ωR in steady state af-
+ter the grid disconnection was not equal to 1 pu. It is caused            In case 3-2, the power command P∗ was set to 0.0 pu and
+by the droop characteristics of the governor. Relationship              the load power P was 5.0 kW (= 0.50 pu). The rotor speed
+between power and rotor speed in steady state is given by               ωR = 0.975 is obtained by Eq. (26). It is consistent with the
+Eq. (26) because of the droop characteristics of governor.              simulation results shown in Fig. 13.
+
+                                                                  467                                       IEEJ Trans. PE, Vol.135, No.7, 2015
+                           Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+
+
+
+                                                                                         Fig. 16. Experimental system
+
+
+
+
+                                                                                                 (a) Active power
+
+
+
+
+       Fig. 14. Simulation result (Case 3-5 P∗ = 0.0 pu, Load                                    (b) Rotor speed
+       was 5.0 kW lagging 0.8)                                              Fig. 17. Experimental result (Case 1-1 P∗ = 0.5 pu,
+                                                                            J = 4 s, K = 5).
+
+
+                                                                        power P and reactive power Q are carried out by the DSP
+                                                                        within this time step. The control parameters of the VSG and
+                                                                        the circuit parameters are same as the simulations which are
+                                                                        shown in Tables 1 and 2. Load was resistive load.
+                                                                           Starting inverter requires synchronizing to the grid. Pro-
+                                                                        posed VSG control is based on current control type inverter.
+                                                                        First, the inverter was started using conventional current con-
+                                                                        trol with PLL. Current commands Id∗ and Iq∗ were set to 0.0
+                                                                        and the phase of dq transform was set to θg calculated by
+                                                                        PLL. Controller is switched from conventional current con-
+                                                                        trol to VSG control by switching Id∗ and Iq∗ to output of
+                                                                        impedance model and the phase of dq transform to rotor
+                                                                        phase θR . The initial parameter of θR was set to θg at switch-
+                                                                        ing to VSG control. After switching to VSG control, con-
+                                                                        troller uses no PLL. PLL is used for only synchronizing to
+                                                                        grid at starting up the inverter.
+                                                                           5.2 Grid Connected Operation             In the experimental
+                                                                        test, the VSG was connected to grid and active power com-
+       Fig. 15. Simulation result (Case 3-6 P∗ = 0.0 pu, Load           mand P∗ was changed from 0.0 pu to 0.5 pu in steps. J and K
+       was 5.0 kW leading 0.8)                                          are same as simulation parameter which is shown in Table 3.
+                                                                        The other parameters were used in Table 1. Figures 18 to 21
+                                                                        show the experimental results of grid connected operation.
+   In case 3-5 and 3-6 shown in Figs. 14 and 15, the load volt-            In case 1-1, the experimental result shown in Fig. 17, the
+age in steady state after the grid disconnection was not equal          VSG control was enabled at 1 s. VSG output power became
+to 1 pu. It was caused by the droop characteristics of the              0 pu because the inverter was stopped by inverter’s protec-
+AVR. In the other cases, the load voltages were maintained              tion for over currents at 1.05 s. Rotor speed fluctuate because
+at 1 pu by VSG’s AVR.                                                   DSP continued to operate after inverter stopped. The damp-
+                                                                        ing factor K in case 1-1 is smaller than 5.39 and it is un-
+  5.     Experimental Result
+                                                                        stable condition. Therefore, the VSG control was unstable
+   5.1 Experimental System           In the experimental sys-           and could not continue to operate. In the other cases, VSG
+tem, the VSG was connected to a commercial grid as shown                output power followed the power command P∗ quickly and
+in Fig. 9. The experimental system is same as the simulations.          rotor speed ωR was converged within 1 s. In case 2-1, the
+The configuration of inverter system is shown in Fig. 16. DSP           experimental result shown in Fig. 18 is consistent with sim-
+(TMS320VC33) was used for controller of inverter. The con-              ulation result shown in Fig. 11. In case 1-2 and 1-3 shown
+troller time step was set to 125 μs. All calculations for the           in Figs. 18 and 19, the diﬀerence was only in damping fac-
+controller shown in Fig. 1 including calculations of active             tor K. These results show that the damper model provides
+
+                                                                  468                                IEEJ Trans. PE, Vol.135, No.7, 2015
+                         Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+
+
+
+                         (a) Active power                                                      (a) Active power
+
+
+
+
+                         (b) Rotor speed                                                       (b) Rotor speed
+    Fig. 18. Experimental result (Case 1-2 and Case 2-2                   Fig. 21. Experimental result (Case 2-3 J = 6 s, K = 10)
+    J = 4 s, K = 10)
+
+
+
+
+                         (a) Active power
+
+
+
+
+                         (b) Rotor speed                                  Fig. 22. Experimental result (Case 3-1 P∗ = 0.0 pu,
+    Fig. 19. Experimental result (Case 1-3 J = 4 s, K = 15)               Load was 0.0 kW)
+
+
+
+
+                         (a) Active power
+
+
+
+
+                         (b) Rotor speed
+                                                                          Fig. 23. Experimental result (Case 3-2 P∗ = 0.0 pu,
+    Fig. 20. Experimental result (Case 2-1 J = 2 s, K = 10)               Load was 5.0 kW)
+
+
+the damping eﬀects since oscillations of these decreased also         agrees with experimental results shown in Fig. 19.
+with increasing the damping factor K. In case 2-1, 2-2 and              5.3 Grid Disconnection          Figures 22 to 25 show ex-
+2-3 shown in Figs. 20, 18 and 21, the diﬀerence was only in           perimental results of grid disconnection corresponding to the
+inertia J. These experimental results show that the damping           cases shown in Table 4. The case 3-5 and 3-6 were not ex-
+eﬀect was decreased with increasing the inertia.                      perimented because of experimental system. In the exper-
+  There was error between the output power P and the power            iments, the VSG was disconnected from the grid by open-
+command P∗ . It is caused by the droop characteristics of the         ing the MC in Fig. 16 at 1 s. In all cases, the VSG could
+governor. In case 1-3, Fig. 19 shows that the rotor speed was         continue to operate from grid-connected mode to isolated
+0.999 pu (= 59.94 Hz) in steady state. Relationship between           mode smoothly. The control logic of the inverter was not
+power and rotor speed in steady state is given by Eq. (26).           changed between grid-connected and isolated mode. After
+The output power P = 0.02 + P∗ is obtained by Eq. (26). It            grid disconnection, output power of VSG P was larger than
+
+                                                                469                                IEEJ Trans. PE, Vol.135, No.7, 2015
+                                Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+                                                                                           (2)      K. Sakimoto, Y. Miura, and T. Ise: “Stabilization of a Power System includ-
+                                                                                                    ing Inverter Type Distributed Generators by the Virtual Synchronous Gener-
+                                                                                                    ator”, IEEJ Trans. PE, Vol.132, No.4, pp.341–349 (2012) (in Japanese)
+                                                                                           (3)      K. Sakimoto, Y. Miura, and T. Ise: “Characteristics of Parallel Operation
+                                                                                                    of Inverter Type Distributed Generators Operated by a Virtual Synchronous
+                                                                                                    Generator”, IEEJ Trans. PE, Vol.133, No.2, pp.186–194 (2013) (in Japanese)
+                                                                                           (4)      T. Shintai, Y. Miura, and T. Ise: “Oscillation Damping of a Distributed Gen-
+                                                                                                    erator Using a Virtual Synchronous Generator”, IEEE Trans. Power Delivery,
+                                                                                                    Vol.29, No.2, pp.668–676 (2014)
+                                                                                           (5)      J. Driesen and K. Visscher: “Virtual Synchronous Generators”, Power and
+                                                                                                    Energy Society General Meeting — Conversion and Delivery of Electrical
+                                                                                                    Energy in the 21st Century, 2008 IEEE, pp.1–3 (2008)
+                                                                                           (6)      T. Loix, S. De Breucker, P. Vanassche, J. Van den Keybus, J. Driesen, and K.
+                                                                                                    Visscher: “Layout and performance of the power electronic converter plat-
+                                                                                                    form for the VSYNC project”, Proc. of the IEEE Powertech Conference,
+                                                                                                    pp.1–8 (2009)
+                                                                                           (7)      M. Albu, K. Visscher, D. Creanga, A. Nechifor, and N. Golovanov: “Storage
+       Fig. 24. Experimental result (Case 3-3 P∗ = 0.5 pu,                                          selection for DG applications containing virtual synchronous generators”,
+       Load was 0.0 kW)                                                                             Proc. of the IEEE Powertech Conference, pp.1–6 (2009)
+                                                                                           (8)      V. Van Thong, A. Woyte, M. Albu, M. Van Hest, J. Bozelie, J. Diaz, T. Loix,
+                                                                                                    D. Stanculescu, and K. Visscher: “Virtual synchronous generator: Laboratory
+                                                                                                    scale results and field demonstration”, Proc. of the IEEE Powertech Confer-
+                                                                                                    ence, pp.1–6 (2009)
+                                                                                           (9)      M.P.N. van Wesenbeeck, S.W.H. de Haan, P. Varela, and K. Visscher: “Grid
+                                                                                                    tied converter with virtual kinetic storage”, Proc. of the IEEE Powertech Con-
+                                                                                                    ference, pp.1–7 (2009)
+                                                                                           ( 10 )   M. Torres and L.A.C. Lopes: “Virtual synchronous generator control in au-
+                                                                                                    tonomous wind-diesel power systems”, Electrical Power & Energy Confer-
+                                                                                                    ence (EPEC), 2009 IEEE, pp.1–6 (2009)
+                                                                                           ( 11 )   Q.-C. Zhong and G. Weiss: “Static synchronous generators for distributed
+                                                                                                    generation and renewable energy”, Power Systems Conference and Exposi-
+                                                                                                    tion, 2009. PSCE’09. IEEE/PES, pp.1–6 (2009)
+                                                                                           ( 12 )   H.-P. Beck and R. Hesse: “Virtual synchronous machine”, Electrical Power
+                                                                                                    Quality and Utilisation, 2007. 9th International Conference on EPQU 2007,
+                                                                                                    pp.1–6 (2007)
+                                                                                           ( 13 )   K. Sakimoto, K. Sugimoto, and Y. Shindo: “Low Voltage Ride Through Ca-
+                                                                                                    pability of a Grid Connected Inverter based on the Virtual Synchronous Gen-
+                                                                                                    erator”, Proc. of IEEE Intrnl. Conf. of Power Electronics and Drive Systems,
+       Fig. 25. Experimental result (Case 3-4 P∗ = 0.5 pu,
+                                                                                                    pp.1066–1071 (2013)
+       Load was 5.0 kW)                                                                    ( 14 )   P. Kundur: “AC Transmission”, in Power System Stability and Control,
+                                                                                                    Chapter 6, p.221, McGraw-Hill (1993)
+                                                                                           ( 15 )   “Synchronous machine, Induction machine”, in Electrical Engineering Hand-
+load power. The diﬀerence power between VSG and load
+                                                                                                    book 7th Edition, Chapter 15, p.785, IEE Japan (2013) (in Japanese)
+are due to losses of the transformer and lines. These losses                               ( 16 )   S. Harada, Y. Shindo, and M. Kawamura: “An Integrated Simulator for
+were about 0.4 kW (= 0.04 pu). In case 3-2, the power com-                                          Power Electronics”, Japan Industry Applications Society Conference, Vol.1,
+mand P∗ was set to 0.0 pu and the load power P was 5.4 kW                                           pp.349–350 (2011) (in Japanese)
+
+(= 0.54 pu) including transformer losses. In case 3-2, the
+rotor speed ωR = 0.973 pu is obtained by Eq. (26). It is con-
+sistent with the experimental results shown in Fig. 23. In case
+3-1 and 3-3, filtering eﬀect by filter circuit are weakened be-
+cause the load is zero after the grid disconnection. In Figs. 22                           Kenichi Sakimoto (Member) received the B.Eng. and M.Eng. de-
+and 24, the ripples of P and ωR were appeared.                                                             grees in electrical engineering from Osaka University,
+                                                                                                           Osaka, Japan, in 2010, and 2012. He joined Kawasaki
+  6.     Conclusions                                                                                       Heavy Industries, Ltd. His research interests are in
+                                                                                                           the area of power electronics and power system.
+   The VSG control based on current control inverter with-
+out PLL is proposed. The proposed VSG consists of an
+impedance model, a governor model, an AVR model, a rotor
+model and a damper model. Controller stability in grid con-
+nection and isolated operation were analyzed. Parameter de-
+sign of VSG controller based on stability analysis was shown.
+Simulation and experimental results showed that the pro-
+posed VSG could operate in disconnection from grid. It could                               Kazushige Sugimoto (Member) received the M.Eng. degree in elec-
+supply load power after disconnection from grid smoothly.                                                  trical engineering from Osaka City University, Osaka,
+                                                                                                           Japan, in 1991. He joined Kawasaki Heavy Indus-
+                                                                                                           tries, Ltd. He is now engaged in the development and
+                                References                                                                 analysis of wind and solar power generation equip-
+                                                                                                           ment, power storage systems, gas turbine generators,
+                                                                                                           and power supplies for ships and aircraft.
+  (1)    Y. Hirase, K. Abe, K. Sugimoto, and Y. Shindo: “A grid-connected inverter
+         with virtual synchronous generator model of algebraic type”, Electr. Eng.
+         Jpn., Vol.184, No.4, pp.10–21 (2013-9)
+
+
+                                                                                     470                                          IEEJ Trans. PE, Vol.135, No.7, 2015
+                              Virtual Synchronous Generator without Phase Locked Loop Kenichi Sakimoto et al.
+
+   Yuji Sindo (Senior Member) was born in Osaka, Japan, in 1956.                       Toshifumi Ise (Fellow) was born in 1957. He received the B.Eng.,
+                      He received the B.E. degree in electrical engineering                               M.Eng., and Ph.D. degrees in electrical engineering
+                      from Okayama University in 1979. He received the                                    from Osaka University, Osaka, Japan, in 1980, 1982,
+                      M.E. and Dr.Eng. degrees in control engineering from                                and 1986, respectively. From 1986 to 1990, he was
+                      Osaka University in 1981 and 1984, respectively. He                                 with the Nara National College of Technology, Nara,
+                      joined Kawasaki Heavy Industries in 1984. From                                      Japan. Since 1990, he has been with the Division of
+                      1984, he worked on robotics, servo drives, power                                    Electrical, Electronic and Information Engineering,
+                      conversions, and high speed drive systems. His re-                                  Faculty of Engineering, Osaka University, where he is
+                      search interests include electric machines, actuators                               currently a Professor. His research interests are in the
+                      and sensors, motor control and drives, power elec-                                  areas of power electronics and applied superconduc-
+tronics applied to transmission and distribution systems, etc. He received          tivity including superconducting magnet energy storage (SMES) for power
+the IEEJ Technical Development Award in 2009. He is a member of IEEE.               system transmission and new distribution system.
+
+
+
+
+                                                                              471                                       IEEJ Trans. PE, Vol.135, No.7, 2015
+

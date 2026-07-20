@@ -1,0 +1,1022 @@
+             1362                                        IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+
+              A General [P Q]-[ω V] Model of Hybrid GFM/GFL
+              Multi-VSC Systems: Power Oscillation Analysis and
+                            Suppression Method
+                      Siqi Fu , Yao Sun , Member, IEEE, Xiaochao Hou , Member, IEEE, Shimiao Chen , Guangze Shi,
+                                                      and Mei Su , Member, IEEE
+
+
+                Abstract—Power, voltage, and frequency oscillation or instability               converters (VSCs). According to the different characteristics
+             of a multivoltage source converters (VSCs) system will threaten its                of the control scheme, VSCs are divided into grid-following
+             stable operation. From a power system point of view, the four vari-                (GFL) control-based VSCs and grid-forming (GFM) control-
+             ables [P Q]-[ω V] are the key characteristic indicators that are paid
+             attention to, which are usually used to describe the nodal dynamic                 based VSCs [1], [2]. Influenced by improper VSC controller
+             characteristics, instead of the traditional impedance model. With                  designs, network impedance distribution, and other reasons, the
+             that in mind, this article establishes a general [P Q]-[ω V] model of a            frequency, voltage, and power oscillations of the multi-VSC
+             hybrid GFM/GFL multi-VSC system for power oscillation analysis,                    system are induced during outer disturbances, which may affect
+             where the system structure is not limited to a special star topology.
+                                                                                                the stable operation of the system [3], [4], [5], [6]. Hence, it
+             The general [P Q]-[ω V] models of VSCs under typical grid-forming
+             and grid-following control schemes are comprehensively built. As a                 is important to establish a model convenient for both power
+             result, it could serve as a standard model that provides a convenient              oscillation characteristics and stability analysis.
+             and universal tool for both the low and medium frequency (a few                       Generally, there are two kinds of classical methods based on
+             tenths to tens Hz) power oscillation analysis and stability analysis.              the small-signal linearization for system oscillation and stability
+             Moreover, the proposed model can locate the weak nodes with                        analysis, i.e., the eigenvalue analysis approach [7], [8], and the
+             severe power oscillations and evaluate the effect of the oscillation
+             suppression methods. To suppress the system medium frequency                       impedance-based method [9]. The first type usually builds the
+             oscillation, a washout-filter coupling feedback control method is                  state-space model of the system. The small-signal state-space
+             proposed with more control freedom and improved dynamic per-                       models of a droop-controlled grid-connected inverter [10], sin-
+             formance. Finally, the control-hardware-in-loop experiment results                 gle VSG grid-connected [11], and multi-VSG system [12] have
+             verify the theoretical analysis.                                                   been established, and the impact of various coefficients on the
+                Index Terms—Microgrid, modeling, multi-VSC system, oscilla-                     system oscillation characteristic and stability is analyzed based
+             tion.                                                                              on the eigenvalue analysis. However, when the system is large
+                                                                                                and complex, the state space matrix will become very high order,
+                                         I. INTRODUCTION                                        which leads to a large amount of calculation of finding all system
+                    ARIOUS distributed generation units and energy storage                      poles [13]. The second type, i.e., the impedance-based method as
+             V      units are connected to the ac grid through voltage source                   a great instrument to evaluate stability is first presented in [14].
+                                                                                                Zhang et al. [15] analyze the harmonic stability of a grid-tied
+                Manuscript received 13 January 2024; revised 9 April 2024; accepted 4 July
+                                                                                                interlinking converter operating under ac voltage control mode.
+             2024. Date of publication 11 July 2024; date of current version 14 October 2024.   Tan et al. [16] established the impedance model of a VSC-HVDC
+             This work was supported in part by the National Natural Science Foundation         system and discussed how to partition a complex system. The
+             of China under Grant 62125308, Grant 52337008, and Grant 52307232, in part
+             by the Hunan Provincial Natural Science Foundation of China under Grant
+                                                                                                impedance model is derived under different frames, such as
+             2024JJ4055, and in part by the State Key Laboratory of Power System Operation      DQ-frame, positive-negative sequence, and so on [16], [17],
+             and Control under Grant SKLD23KM12. (Corresponding author: Xiaochao                [18], [19]. The abovementioned impedance models are obtained
+             Hou.)
+                Siqi Fu, Yao Sun, Shimiao Chen, and Mei Su are with the School of Au-
+                                                                                                by deducing the transfer function relation between voltage and
+             tomation, Hunan Provincial Key Laboratory of Power Electronics Equipment           current.
+             and Gird, Central South University, Changsha 410083, China (e-mail: siqi_fu_          Whereas, voltage (V), frequency (f), active power (P), and
+             csu@csu.edu.cn; yaosun@csu.edu.cn; 214601009@csu.edu.cn; sumeicsu@
+             csu.edu.cn).
+                                                                                                reactive power (Q) may be variables of more interest to those
+                Xiaochao Hou is with the School of Electronic Information, Central South        working in the power system community. Hence, several studies
+             University, Changsha 410004, China (e-mail: houxc10@csu.edu.cn).                   have made use of some of those physical quantities to build
+                Guangze Shi is with the School of Artificial Intelligence and Advanced
+             Computing, Hunan University of Technology and Business, Changsha 410205,
+                                                                                                the “admittance” or “impedance” model in recent years. For
+             China, and also with the Xiangjiang Laboratory, Changsha 410205, China             multi-VSG grid-connected systems, literature [20] establishes a
+             (e-mail: 3006@hutb.edu.cn).                                                        P-ω “admittance” model. The impact of crucial coefficients on
+                Color versions of one or more figures in this article are available at
+             https://doi.org/10.1109/JESTIE.2024.3427009.
+                                                                                                the frequency and amplitude of the active power oscillation is
+                Digital Object Identifier 10.1109/JESTIE.2024.3427009                           studied. The P-ω model of a multi-VSG system in off-grid mode
+
+
+                                      2687-9735 © 2024 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+                                                    See https://www.ieee.org/publications/rights/index.html for more information.
+
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                     1363
+
+
+
+            is established [21]. Based on the model, a stability criterion
+            is presented. However, all of the abovementioned literatures
+            neglect the dynamics of the voltage variables. As a result, the
+            accuracy of the model is affected to some extent. To overcome
+            the abovementioned shortcoming, a [P Q]-[ω V] model of a
+            multi-VSG system in grid-connected modes is established [22].
+            The benefits of the aforementioned models are that power os-
+            cillations can be analyzed easily. However, the abovementioned
+            models are only applicable to the system with a special struc-
+            ture, i.e., star topology, and only support grid-forming VSCs
+            represented by VSGs. That is to say, they are lack of generality.
+               Recently, there has been much research on power oscillation
+            suppression. The authors in [23] and [24] propose a control
+            method to suppress the system LFO (low-frequency power oscil-
+            lation, e.g., a few tenths to several Hz). A bandpass filter-based
+            improved virtual impedance droop control scheme is proposed in
+            [25] to help power decoupling. Except for LFO, considering the
+            dynamics of line inductance, MFO (medium-frequency oscilla-                       Fig. 1.   Block diagram of a classic grid-forming control, i.e., VSG control.
+            tion, e.g., tens to hundreds of Hz) also exists and has been studied
+            in [26], [27], and [28], which may cause system instability.
+            Connecting a real resistor to the converter can suppress the MFO,                        steady-state equilibrium of the system and provides more
+            but produces additional loss. Thus, a virtual resistance is applied                      control freedom to adjust the system dynamic perfor-
+            in [26]. Besides, a modified VSG control scheme that replaces                            mance.
+            the virtual active power with the real active power feedback                         The rest of this article is organized as follows. In Section II,
+            is proposed in [28]. Washout filter-based approaches [29], [30],                  the [P Q]-[ω V] model of a single VSC is established. In
+            [31], [32] are proposed to help power sharing, power decoupling                   Section III, a general model of the multi-VSC system with
+            and suppress LFO, but have no effect on suppressing MFO.                          arbitrary network topology is established. Section IV presents
+               To solve the aforementioned problem, this article builds a                     the stability criterion and the oscillation analysis of the system.
+            general [P Q]-[ω V] model to study the oscillation and stability                  Section V conducts a case study of a four-VSC off-grid system.
+            of multi-VSC systems. The following statements summarize the                      Section VI is a conclusion.
+            contributions of this article.
+               1) A general [P Q]-[ω V] model for a multi-VSC system is                                     II. [P Q]-[ω/V ] MODEL OF A SINGLE VSC
+                   established. Compared with the P-ω model in [20] and                          Grid-forming control and grid-following control are two basic
+                   [21], the general [P Q]-[ω V] model considers the voltage                  control schemes for VSC. In this section, [P Q]-[ω V] models
+                   fluctuation and inductance dynamics which is more accu-                    of the VSC under the aforementioned control schemes will be
+                   rate. Compared with [22], the structure of the multi-VSC                   established.
+                   system is not limited to a special form such as star topology
+                   and it is arbitrary. In addition, the multi-VSC system                     A. Model of a Grid-Forming-Control-Based VSC
+                   allows both grid-forming and grid-following VSCs. And
+                   the [P Q]-[ω V] models of VSCs under most typical control                     VSG control is a classic grid-forming control scheme and its
+                   schemes are built in this study. In a word, it could serve as              block diagram is illustrated in Fig. 1. The [P Q]-[ω V] modeling
+                   a standard model to study the low and medium frequency                     of the VSG will be introduced in detail. As shown in Fig. 1, Vpi
+                   (a few tenths to tens Hz) power oscillations and stability                 is the amplitude of the inverter output voltage. δ pi is the output
+                   of a multi-VSC system.                                                     voltage phase. Si represents the output apparent power of the
+               2) The proposed model can be used conveniently to locate                       VSG-i. When establishing the model of the inverter, considering
+                   the weak nodes with severe low and medium frequency                        the dual closed loop helps study the high-frequency oscillation
+                   power oscillations and evaluate the effect of the oscillation              of the system. However, the order of the whole model is high,
+                   suppression methods. Besides, in the stability analysis                    which increases the difficulty of calculation. Thus, for simplicity,
+                   based on the proposed model, we do not need to consider                    we assume that the bandwidth of the inner loop is much larger
+                   the issue of the right half-plane pole [32].                               than that of the power control, ignoring the dual closed loop
+               3) A washout-filter coupling feedback (WFCF) control                           and focusing on studying the low and medium frequency (a few
+                   method is proposed. Compared with the conventional                         tenths to tens Hz) power oscillation in this article. Then, the
+                   washout-filter direct P-ω and Q-V power feedback method                    small signal model of the VSG is expressed as follows:
+                   in [29], [30], [31], [32], and [33] to help power sharing and                                   ṽpi = Gbi (s) ṽi∗ − Zbi (s) S̃i                      (1)
+                   power decoupling, the proposed WFCF method adopts
+                   washout-filter coupling P-V and Q-ω power feedback                         where represents the small variations in variables, ṽi∗ =
+                                                                                                        ~
+                                                                                                          T                                                          T
+                   to suppress the MFO effectively. It does not affect the                    [ω̃i∗ Ṽi∗ ] represents the reference disturbance, ṽpi = [ω̃pi Ṽpi ]
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1364                                        IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+                                                                                                  Linearizing (3) around the equilibrium points yields
+                                                                                                           ⎧
+                                                                                                           ⎨ĩid = (Rload +Lload s)Ṽpid2 +Xload 2Ṽpiq
+                                                                                                                      (R    +L load  s) +X
+                                                                                                                                      load        load
+                                                                                                                                                                         (5)
+                                                                                                             ⎩ĩ        −Xload Ṽpid +(Rload +Lload s)Ṽpiq
+                                                                                                                   iq =    (Rload +Lload s)2 +Xload 2
+
+
+                                                                                               where Ṽpid = Ṽpi cosδin0 − Vpi0 sinδin0 δ̃in and Ṽpiq =
+                                                                                               Ṽpi sinδin0 + Vpi0 cosδin0 δ̃in .
+                                                                                                  Calculating the load power and linearizing it around the
+                                                                                               equilibrium points yields
+                                                                                                 ⎧                                                           
+                                                                                                 ⎨P̃i = 1.5 Ṽpid iid0 + Vpid0 ĩid + Ṽpiq iiq0 + Vpiq0 ĩiq
+                                                                                                                                                                .
+                                                                                                 ⎩Q̃i = 1.5 −Ṽpid iiq0 − Vpid0 ĩiq + Ṽpiq iid0 + Vpiq0 ĩid
+                                                                                                                                                                 (6)
+                                                                                                  Substituting (3)–(5) into (6), after simplification, the port
+             Fig. 2. (a) Conventional impedance model. (b) Proposed model of an off-grid
+             GFM control-based VSC.
+                                                                                               equivalent [P Q]-[ω V] model of a general RL load is represented
+                                                                                               as follows:
+
+                                                                                                                            S̃i = Ci (s) ṽpi .                          (7)
+             is the output angular frequency and voltage amplitude,
+                             T                         1            1                             The matrix Ci (s) is presented in Appendix (A.1). Every
+             S̃i = [P̃i Q̃i ] , Zbi (s) = diag{ Ji ω∗ s+D pi ω
+                                                               ∗ K s+D
+                                                                  i    qi
+                                                                          } and
+                                      D ω∗           D                                         element of Ci (s) does not have the right half-plane poles and
+             Gbi (s) = diag{ Ji ω∗ s+D
+                                    pi
+                                       pi ω
+                                                 qi
+                                            ∗ K s+D
+                                               i    qi
+                                                       }.                                      Ci (s) is stable.
+              According to the conventional modeling method [23], the                             The difference is that the conventional impedance-based
+             model of the VSC can be expressed as follows:                                     model chooses voltage and current as state variables, and the
+                                                                                               proposed model chooses P, Q, ω, and V as state variables.
+                                  ũc = Gs (s) ũr − Zs (s) ĩg .                      (2)
+                                                                                               Compared with the conventional model, it is conducive and
+                Usually, the VSC under grid-forming control is designed to be                  convenient for the proposed model to analyze directly power,
+             stable under current-source loads in island mode. Thus, all the                   frequency, and voltage oscillations under disturbances and re-
+             transfer functions Gs (s), Z s (s),Gbi (s) and Z bi (s) are stable.               lated affecting factors without complex coordinate transforma-
+             Furthermore, the models of the VSC can be described as a                          tion and calculation based on voltage and current information.
+             “voltage source” and an “impedance” in series with it as shown                    The proposed modeling method is equally applicable to power
+             in Fig. 2. The equivalent circuit shown in Fig. 2(a) is derived                   converters based on classical droop control, VSG control, as well
+             from (2), and the circuit shown in Fig. 2(b) is derived from (1),                 as other classical GFM controls. The output model is expressed
+             where a constant power load is considered. Furthermore, the                       as (1), and the matrices Gbi (s) and Zbi (s) in the model based
+             idea of the impedance-based stability analysis can be borrowed                    on five classical GFM control methods are shown in appendices
+             [9].                                                                              Table II.
+                Besides, the port equivalent [P Q]-[ω V] model of a general RL
+             load is derived. The load inductance dynamic model is expressed                   B. Model of a Grid-Following-Control-Based VSC
+             as follows:                                                                          In this subsection, the [P Q]-[ω V] modeling of the VSC
+                                                                                              under the grid-following control with inertia emulation will be
+                        Lload didtid = Vpid − iid Rload + ωn Lload iiq
+                                                                             (3)               introduced. And the control block diagram is shown in Fig. 3.
+                               di
+                        Lload dtiq = Vpiq − iiq Rload − ωn Lload iid                           If kdf = kpf = kQ = 0, the control scheme becomes a classic
+                                                                                               grid-following control scheme. It is noted that under weak
+             where iidq represents output current, ω n is the steady angu-                     network conditions, the design of the PLL is to be more accurate
+             lar frequency, Vpid = Vpi cosδin , Vpiq = Vpi sinδin and δin =                    considering the impedance on the grid side [34]. However, the
+             δpi − δn . RLoad and LLoad are the load resistance and inductance,                nodal equivalent [P Q]-[ω V] dynamic characteristics model of
+             XLoad = ω n LLoad .                                                               one converter is mainly established in this part, and the [P Q]-
+                From (3), the steady-state values of the current iidq are ob-                  [ω V] model of the transmission line is separately established in
+             tained                                                                            Section III.
+                            ⎧
+                            ⎨iid0 = Rload Vpid02 +Xload 2Vpiq0                                    For simplicity, the bandwidth of the inner current loop is
+                                          Rload +Xload                                         assumed to be much larger than that of the power control loop.
+                                                                            (4)
+                            ⎩iiq0 =   −X load Vpid0 +Rload Vpiq0
+                                                 2        2                                    Then, the effect of the inner current loop is ignored, i.e., iid =
+                                           R       +X
+                                                  load      load
+                                                                                               iidref and iiq = iiqref .
+             where Xij = ω n Lij , Vpid0 = Vpi0 cosδin0 and Vpiq0 =                               After the dq transformation as shown in Fig. 3, the voltage
+             Vpi0 sinδin0 . The subscript “0 ” stands for the steady-state value.              vectors of PCC can be expressed as Vpidq = Vpi ej(δpi −δsi ) ,
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                      1365
+
+
+
+
+            Fig. 3.   Block diagram of a classic GFL control, i.e., inertia emulation control   Fig. 4. (a) Conventional admittance model and (b) the proposed model of a
+            [2].                                                                                grid-following-control-based VSC.
+
+
+
+            where δsi is the output phase angle of the PLL. The error angle
+            Δδ = δpi − δsi is zero when the system reaches a steady state.
+              The dynamic equations of the PLL in small signal sense are
+            expressed as follows:
+                       
+                         δ̃si = 1sω̃si                     .
+                                        k                               (8)
+                         ω̃si = kp,l + si,l Vpi0 δ̃pi − δ̃si
+                                                                                                Fig. 5.   Structure diagram of an n VSC system with arbitrary network topology.
+               Furthermore, substituting δ̃pi = ω̃pi /s into (3) yields
+                                            ω̃si = Gp (s) ω̃pi                           (9)
+                                   (k
+                                 p,l     s+k
+                                          i,l    )V
+                                                 pi0                                            represented as follows:
+            where Gp (s) = s2 +(k   p,l s+ki,l )Vpi0
+                                                       .
+               According to Fig. 3, the output current of the GFL converter                                           i = G (s) iref − Ys (s) uc .                       (14)
+            in small signal sense is expressed as follows:
+                      ⎧                                                                         Usually, the VSC under grid-following control is designed
+                      ⎨ĩid = 1.5V1        P̃ i
+                                               ∗
+                                                  −
+                                                         kdf s
+                                                       s+ω      + k pf   f˜si                   to be stable under an ideal voltage source in grid-connected
+                                             
+                                   pid0                      c
+                                                                              (10)              mode. Thus, all the transfer functions Gs (s), Y s (s),Gai (s) and
+                      ⎩ĩ = − 1                   ∗
+                                                    −
+                         iq     1.5Vpid0      Q̃  i     k Q Ṽ pi                               Y ai (s) are stable. To facilitate the analysis, the model of the
+                                                                                                VSC described in (12) and (14) can be described as a “current
+            where Vpid0 = Vpi0 . The subscript “0 ” stands for the steady-
+                                                                                                source” and an “admittance” in parallel with it as shown in Fig. 4.
+            state value.
+                                                                                                Fig. 4(a) represents the equivalent circuit under the conventional
+               The output power of the GFL converter can be calculated in
+                                                                                                model and Fig. 4(b) represents the equivalent circuit under the
+            (6). Substituting (9) and (10) into (6) yields
+               ⎧                                                                                proposed model. In addition, several models of the VSC under
+                                   ∗
+               ⎨P̃i = P̃i∗ + VPpi0
+                                 i
+                                     Ṽpi − G11 (s) ω̃pi                                        the other typical GFL control methods are listed in appendices
+                                                       ∗            (11)                      Table III.
+               ⎩Q̃i = Q̃∗ − kQ − Qi ∗ Ṽpi + Pi (1−Gp (s)) ω̃pi
+                          i               Vpid0            s
+
+                                  G (s)[(k      +k    )s+k   ω ]     Q∗ (1−Gp (s))
+                                                                                                III. MULTI-VSC SYSTEM MODEL UNDER GENERAL NETWORK
+            where G11 (s) = p       df   pf
+                                    2π(s+ωc )
+                                               pf c
+                                                     +                     s       .
+              Rewriting (11) in matrix form as follows:                                            This section establishes a [P Q]-[ω V] model for a multi-VSC
+                                                                                                system under a general network. An arbitrary network structure
+                                S̃i = Gai (s) S̃∗i − Yai (s) ṽpi                      (12)     including n VSC units shown in Fig. 5 can be equivalently
+                                        T                                                       transformed into a fully meshed network as shown in Fig. 6
+            where S̃∗i = [P̃∗i Q̃∗i ] represents the power reference distur-                    [36].
+            bance, Gai (s) is a 2 × 2 unit matrix, and
+                                    ⎡                         ∗
+                                                                    ⎤
+                                        G11 (s)        − VPpi0
+                                                            i                                   A. Model of Line Power Transmission
+                      Yai (s) = ⎣ P ∗ (1−G (s))                   ∗
+                                                                    ⎦. (13)                        Without loss of generality, the transmission power from node
+                                      − i s p        kQ − VQpi0 i
+
+                                                                                                i to node j is presented. Defining when i < j, Sij = [Pij Qij ]T
+             According to the conventional modeling method [35], the                            represents the apparent power out from node i to node j, and Sji
+                                                                                                      
+            model of the VSC under the grid-following control can be                            = [Pji  Qji ]T represents the apparent power injected to node j
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1366                                                IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+
+                                                                                                 where the output power S̃i of the VSC-i is always flowing into
+                                                                                                 node i, and we define the load power S̃Li is always flowing out
+                                                                                                 from node i. As previously defined, when t < i, S̃it represents the
+                                                                                                 power injected to node i from node t. When t > i, S̃it represents
+                                                                                                 the power out node i.
+                                                                                                    Combining (16)–(18), the network subsystem model is ac-
+                                                                                                 quired in matrix form as follows:
+                                                                                                        ⎡     ⎤          ⎡      ⎤          ⎡      ⎤
+                                                                                                          S̃1              ṽp1              S̃L1
+                                                                                                        ⎢S̃2 ⎥           ⎢ṽp2 ⎥           ⎢S̃L2 ⎥
+                                                                                                        ⎢     ⎥          ⎢      ⎥          ⎢      ⎥
+                                                                                                        ⎢. ⎥ = Yline (s) ⎢..    ⎥ + I2n×2n ⎢.     ⎥                           (19)
+                                                                                                        ⎣.. ⎦            ⎣.     ⎦          ⎣..    ⎦
+                                                                                                            S̃n                       ṽpn                      S̃Ln
+
+             Fig. 6.   Equivalent fully meshed network of an n VSC system.                       where I2n×2n represents a 2n × 2n unit matrix. The transfer
+                                                                                                 function matrix Yline (s) is shown in Appendix (A.6). Yline (s) is
+                                                                                                 a stable transfer function, since the elements of matrix Yline (s)
+             from node i. Sij and Sji are unequal because there exists power                    are Cij (s), Dij (s), Cji (s), and Cji (s), or their sum. In the con-
+             loss on the line impedance between node i and node j. Rij + jXij                    ventional modeling method, both the admittance matrix of the
+             represents the line impedance between node i and node j.                            power network and its inverse are stable since the power network
+                Aligning the steady phase angle δ n with axis d, after dq                        is passive. However, in the proposed [P Q]-[ω V] modeling
+             transformation, the inductance dynamic model is expressed as                        method, only the matrix Yline (s) is stable, while Y−1 line (s) is
+             follows:                                                                            not necessarily stable.
+                       diijd
+                   Lij dt     = Vpid − Vpjd − iijd Rij + ωn Lij iijq
+                                                                          (15)                   C. Model of VSC Subsystem
+                        diijq
+                   Lij dt = Vpiq − Vpjq − iijq Rij − ωn Lij iijd
+                                                                                                    Based on the analysis discussed in Section II, the models of
+             where iijdq represents current out from node i to node j, ω n is the                the VSCs under grid-forming control and grid-following control
+             steady angular frequency, Vpjd = Vpj cosδjn , Vpjq = Vpj sinδjn                     are different. Here, all VSCs are divided into two types.
+             and δjn = δpj − δn .                                                                   Assuming there are k grid-forming VSCs and the others are
+                Based on (15) and refer to the derivation of (3)–(6), the power                  grid-following VSCs in the studied system, then according to
+             P̃vi and Q̃vi is expressed in matrix form                                           (1), the model of grid-forming-control-based VSCs (1-VSC to
+                                                                                                 k-VSC) can be expressed as follows:
+                                S̃ij = Cij (s) ṽpi − Dij (s) ṽpj                        (16)
+                                                                                                      ⎡      ⎤           ⎡     ⎤        ⎡ ∗ ⎤
+                                           T                                  T                         ṽp1               S̃1            ṽ1
+             where ṽpi = [ω̃pi Ṽpi ] and ṽpj = [ω̃pj Ṽpj ] .                                      ⎢ṽp2 ⎥            ⎢S̃2 ⎥         ⎢ṽ2∗ ⎥
+                                                                                                     ⎢      ⎥           ⎢     ⎥        ⎢     ⎥
+                In a similar way, the power P̃ji    and Q̃ji are expressed as                        ⎢..    ⎥ = ZGM (s) ⎢. ⎥ + GGM (s) ⎢.. ⎥                                 (20)
+             follows:                                                                                 ⎣.     ⎦           ⎣. ⎦
+                                                                                                                           .            ⎣. ⎦
+                                                                                                          ṽpk                        S̃k                        ṽk∗
+                                S̃ji = Cji (s) ṽpj − Dji (s) ṽpi                     (17)
+                                                                                                                               ⎡                                        ⎤
+                                         T                                                                                         −Zb1 (s)        0        0
+                               
+             where S̃ji = [P̃ji  Q̃ji ] . The matrices Cij (s), Cji (s), Dij (s),                                    ⎢                         ..                    ⎥
+                                                                                                 where        ZGM (s) = ⎣             0              .      0           ⎦ and GGM
+             and Dji (s) are presented in Appendix (A.2)–(A.5). Every el-
+             ement of the matrices Cij (s), Dij (s), Cji (s), and Dji (s) do not                                                    0            0     −Zbk (s)
+                                                                                                          ⎡                                   ⎤
+             have the right half-plane poles. Thus, the matrices Cij (s), Cji (s),                           Gb1 (s)    0            0
+             Dij (s), and Dji (s) are stable, but their inverse matrix is not                         ⎢                ..       ⎥
+                                                                                                 (s) = ⎣    0              .0    ⎦ and 0 represents a 2 × 2
+             necessarily stable. It is noted that when there is no physical                                 0      0 Gbk (s)
+             connection between node i and node j, Cij = Dij = Cji = Dji                       zero matrix.
+             = 02 × 2 .                                                                            According to (8), the output model of grid-following control-
+                                                                                                 based VSCs (k + 1-VSC to n-VSC) can be expressed as follows:
+             B. Model of the Network Subsystem
+                According to the established line power transmission model                          ⎡       ⎤           ⎡ ∗     ⎤           ⎡          ⎤
+                                                                                                      S̃k+1               S̃k+1               ṽp(k+1)
+             (16) and (17) and the principle of power conservation, obtaining                       ⎢S̃k+2 ⎥            ⎢S̃∗    ⎥           ⎢ṽp(k+2) ⎥
+             the power relation equation of node i is as follows:                                   ⎢       ⎥           ⎢ k+2 ⎥             ⎢          ⎥
+                                                                                                    ⎢.      ⎥ = GGF (s) ⎢.      ⎥ + YGF (s) ⎢..        ⎥
+                                                                                                    ⎣..     ⎦           ⎣..     ⎦           ⎣.         ⎦
+                                     
+                                     n                       
+                                                             n
+                          S̃i +                  S̃it −                S̃it − S̃Li = 0   (18)          S̃n                           S̃∗n                          ṽpn
+                                  t < i,t = i             t > i,t=i                                                                                                         (21)
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                   1367
+
+
+
+                                                                                               other words, improper combinations will add lots of work to the
+                                                                                               system stability judgment. Specific theoretical explanations can
+                                                                                               be seen in Section IV. When forming A(s) and M(s) in this part,
+                                                                                               only transfer matrices Yline (s), ZGFM (s), GGFM (s) YGFL (s),
+                                                                                               and GGFL (s) appear that are guaranteed to be stable. In this
+                                                                                               way, the whole system stability is determined only by whether
+                                                                                               the Nyquist curve of det(A(s)) surrounds the origin, and we do
+                                                                                               not need to consider the issue of the right half-plane pole, which
+                                                                                               facilitates system stability analysis.
+
+                                                                                                         IV. STABILITY AND OSCILLATION ANALYSIS
+                                                                                               A. Stability Analysis
+            Fig. 7.       Overall closed-loop diagram of the multi-VSC system.                   Reconstructing the inverse matrix of A(s) as a determinant
+                                                                                               and an adjoint matrix:
+                                         −Ya(k+1) (s)                                                                             adj (A (s))
+                                                            0        0                                                A(s)−1 =                  .                      (23)
+                                                                                                                                    det (A (s))
+            where YGF (s) =                       0
+                                                           ..
+                                                              .     0
+                                                                                 , GGF (s) =
+                                                  0         0     −Yan (s)                        As discussed in Section III, assuming that each GFM and
+            Ga(k+1) (s)          0       0
+                                                                                              GFL VSCs under ideal test conditions are designed to be stable,
+                                 ..                   .                                        then all the transfer functions ZGFM (s), GGFM (s) YGFL (s), and
+                      0             .     0
+                      0           0     Gan (s)                                                GGFL (s) are stable. Besides, when forming A(s) and M(s), only
+               Assuming that the VSCs with grid-forming control under                          stable transfer matrices Yline (s), ZGFM (s), GGFM (s) YGFL (s),
+            current-source loads in island mode and the VSCs with grid-                        and GGFL (s) appear. Thus, A(s) and M(s) are stable transfer
+            following control under ideal voltage source in grid-connected                     function matrices. Furthermore, det(A(s)) and adj(A(s)) are
+            mode are designed to be stable, then all the transfer functions                    stable, since A(s) does not have the right half-plane (RHP) poles
+            ZGFM (s), GGFM (s) YGFL (s) and GGFL (s) are stable.                               (i.e., P = 0).
+                                                                                                  Furthermore, on the grounds of the classical control theory
+            D. Model of the Whole System                                                       [39], the closed-loop system is stable if and only if
+                                                                                                                                                   
+               The model of the multi-VSC system is divided into the                                        Z [det (A (s))] ⊂ s ∈ C|  (s) < 0−             (24)
+            converter device dynamics with the control algorithm and the                       where Z[det(A(s))] denotes zeros of det(A(s)), C denotes the
+            network dynamics with the transmission line as shown in Fig. 7,                    field of complex numbers, and (s) denotes the real part of s.
+            which helps better illustrate how the converter interacts with the                    Since det(A(s)) is analytic on C, except at the poles of A(s),
+            physical network [37].                                                             based on the argument principle (Theorem 1), the stability
+               Combining (18), (20), and (21), arranging the state                             condition of (22) can be equivalently transformed to
+            variables of the studied system as X = [S̃1 S̃2 . . .                                                                           
+            S̃n ṽp1 ṽp2 . . . ṽpn ]T , and the disturbance variables as                                           1                      
+                                                                                                         Z=0⇔          ΔC arg [det (A (s))]     =P        (25)
+                                                                                      T
+            u = [ S̃L1 S̃L2 . . .S̃Ln ṽ1∗ ṽ2∗ . . . ṽk∗ S̃∗k+1 S̃∗k+2 . . . S̃∗n ] , then                        2π                              s∈N̄∞
+            the overall closed-loop model of the system can be presented as                    where N̄∞ is the Nyquist path including the points + j and
+            follows:                                                                           −j, Z, and P represent the amount of zeros and poles of
+                                                                                               det(A(s)).
+                                 X = (A (s))−1 M (s) u                    (22)
+                                                                                                  In other words, when and only when the origin is not encircled
+                                                                                              by the Nyquist diagram of det(A(s)), i.e., det(A(s)) has no RHP
+                                      I2n×2n      −Yline (s)
+            where        A(s) = A       21 (s)
+                                                             ,     A22 (s) =
+                                                  A22 (s)                                    zeros [38], the entire system is stable.
+                I2k×2k    02k×2(n−k)                −ZGM (s)   02k×2(n−k)
+              02(n−k)×2k  −YGF (s)     A21 (s) = 02(n−k)×2k I2(n−k)×2(n−k) ,                      Theorem 1: Argument Principle [39]: Let C express a posi-
+            Ii×i represents a i × i unit matrix, 0i×j represents a i ×j zero                 tively oriented simple closed contour, and assume that
+                                               I2n×2n        02n×2k      02n×2(n−k)               a) a function f(z) is meromorphic in the domain interior to C;
+            matrix, and M(s) =                 02k×2n       GGM (s)      02k×2(n−k)       .       b) f(z) is analytic and nonzero on C;
+                                              02(n−k)×2n   02(n−k)×2k     GGF (s)
+               Remark: There are many ways to arrange the state variables                         c) Z and P are the amounts of zeros and poles of f(z) inside
+            and combine the subsystem models to form the closed-loop                                  C, respectively.
+            whole system model (22). It is worth noting that organizing the                       Then
+            closed-loop matrix requires some skills and is not a simple task.                                       1
+                                                                                                                      ΔC arg [f (z)] = Z − P                (26)
+            If submatrices such as Y−1 line (s) and YGFL −1 (s), which cannot                                      2π
+            be guaranteed to be stable, appear in the A(s) and M(s), then the                  where ΔC arg [f(z)] expresses the change in arg [f(z)] after one
+            number of poles of the right half plane of the submatrix needs                     cycle of z moving along the positive direction of C, which is an
+            to be determined to further judge the whole system stability. In                   integer multiple of 2π.
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1368                                       IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+
+             Fig. 8.   Block diagram of the closed-loop model of a single inverter system.
+
+
+
+             B. Oscillation Analysis                                                           Fig. 9. Configuration of the CHIL system and structure diagram of a four VSC
+                                                                                               test system.
+                The dynamic response of power, frequency, and voltage under
+             the action of the reference and load disturbance can be described
+             via (22) comprehensively. The frequency domain characteristics                                  Ei0 Vg0 sin δog0 Xg + Ei0 2 Rg − Ei0 Vg0 cos δig0 Rg
+             of the system reflect the oscillation characteristics of the system                kqδ (s) =
+                                                                                                                                 R g 2 + Xg 2
+             to some extent. For instance, the amplitude-frequency gain
+             peaks and their corresponding frequency are associated with the                                      Ei0 2 (Rg + Lg s)
+                                                                                                             −
+             oscillation overshoot/amplitude and oscillation frequency in the                                    (Rg + Lg s)2 + Xg 2
+             time-domain waveform [20]. Thus, the system oscillation can be
+             analyzed by the amplitude-frequency characteristic curves, i.e.,                                Ei0 Xg − Vg0 cos δig0 Xg − Rg Vg0 sin δig0
+                                                                                               kqE (s) =
+             bode plots of the transfer function matrix W(s) = (A(s))−1 M(s).                                              R g 2 + Xg 2
+                                                                                                                       Ei0 Xg
+                                                                                                             +                       .                                  (28)
+             C. Washout-Filter Coupling Feedback Control Method                                                  (Rg + Lg s)2 + Xg 2
+                This article proposes a new WFCF control method to suppress
+             the medium frequency oscillation, and it can be expressed as                          Compared with the conventional VSG method, a washout-
+             follows:                                                                          filter coupling P-V and Q-ω power feedback are added. Usually,
+                                                                                              the phase angle difference is small, i.e., cosδ ig0 ≈ 1 and sinδ ig0
+                 ωi = Ji ω1 ∗ s [Pi ∗ − Pi − Dpi ω ∗ (ωi − ω ∗ )] + nxi s+ω
+                                                                           s
+                                                                             c
+                                                                               Qi                                                                  −E Vg0 Rg
+                                                                                               ≈ 0. Ignoring inductance dynamics, kqδ (s) = R i02 +X        2 < 0,
+                            1       ∗                       ∗                                                                                        g    g
+                 KEi = s Qi − Qi − Dqi (Ei − Ei ) − mxi s+ωc Pi          s
+                                                                                               i.e., reactive power and phase angle are negatively correlated
+                                                                                (27)           (Q̃i ∝ −δ̃i ). Thus, adding reactive power positive feedback to
+             where mxi and nxi are the active power feedback coefficient and                   the frequency control loop is beneficial to the system stability.
+                                                                                                                      2Rg Ei0 −Rg Vg0
+             reactive power feedback coefficient, respectively. ω c represents                 Similarly, kpE (s) = R      2
+                                                                                                                             +X 2
+                                                                                                                                      > 0, i.e., active power and
+                                                                                                                              g      g
+             the washout-filter cut-off frequency.                                             voltage magnitude are negatively correlated (P̃i ∝ Ẽi ). Thus,
+                A single inverter system is taken as an example here to                        negative active power feedback is added to the voltage control
+             illustrate the principle of the proposed method. The small-signal                 loop. It is worth noting that the proposed WFCF control method
+             closed-loop model can be represented in Fig. 8, where kpδ (s),                    does not affect the steady-state equilibrium of the system and
+             kpE (s), kqδ (s), and kqE (s) can be derived by analogy with (11)–                provides more control freedom to adjust the system dynamic
+             (14), and its expression is                                                       performance. The [P Q]-[ω V] model of the proposed method is
+                                Ei0 2 Xg                                                       shown in Table II, case 6. Besides, the influence of key control
+              kpδ (s) =                                                                        parameters mxi and nxi on the power oscillation of the system is
+                           (Rg + Lg s)2 + Xg 2                                                 discussed in Section V, Case E.
+                               Ei0 2 Xg −Ei0 Vg0 cos δig0 Xg −Ei0 Vg0 sin δig0 Rg
+                           −
+                                                  Rg 2 +Xg 2                                                                V. CASE STUDY
+                           Vg0 sin δog0 Xg + Rg Ei0 − Rg Vg0 cos δig0                             Fig. 9 shows the configuration of the control-hardware-in-
+             kpE (s) =                                                                         loop (CHIL) and a specific structure diagram of a four-VSC
+                                           R g 2 + Xg 2
+                                                                                               off-grid system, where VSC-1 adopts inertia emulation control
+                                 Ei0 (Rg + Lg s)                                               [2] (GFL control), VSC-2 adopts the generalized droop con-
+                           +
+                               (Rg + Lg s)2 + Xg 2                                             trol method [40], VSC-3 adopts the conventional VSG control
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                    1369
+
+
+
+                                              TABLE I
+                                         SYSTEM PARAMETERS
+
+
+
+
+                                                                                              Fig. 11. (a) Bode plots of the transfer functions ΔPi /ΔPL4 . (b) Active power
+                                                                                              waveforms under load disturbance ΔPL4 .
+
+
+
+
+                                                                                              Fig. 12. (a) Bode plots of the transfer functions ΔPi /ΔE3 ∗ without WFCF
+                                                                                              control. (b) Active power waveforms under voltage reference disturbance ΔE3 ∗ .
+
+
+
+                                                                                              in the same way, and the original single VSC controller design
+                                                                                              shows good performance.
+
+            Fig. 10.   Bode plots of the transfer functions. (a) Zb3,11 . (b) Zb3,22 .        B. Oscillation Characteristics Analysis and Verification
+                                                                                                 In this case, the power oscillation characteristics of the 4 VSC
+                                                                                              system are analyzed by the amplitude-frequency characteris-
+            method, and VSC-4 adopts the decentralized mutual damping                         tic curve of the transfer function matrix W(s), and m4 is set
+            control method [23]. OPAL-RT4510 simulator simulates the cir-                     to 0. Fig. 11(a) shows the bode plot of the transfer function
+            cuit system and the DSP performs the controllers of VSCs. The                     ΔPi /ΔPL4 . The peak coordinate value of the low-frequency
+            control parameters and line impedance parameters are presented                    resonance point of ΔP3 /ΔPL4 and ΔP4 /ΔPL4 is marked, and
+            in Table I.                                                                       they have a large low-frequency resonance peak value. It indi-
+                                                                                              cates that low-frequency power oscillations are prone to occur
+                                                                                              between VSC-3 and VSC-4, and the oscillation frequency is fo =
+            A. Performance of Single VSC                                                      5 Hz. Fig. 11(b) shows active power waveforms under a step-up
+               The original single VSC controller design is discussed in this                 load change ΔPL4 = 10 kW. As observed, the active power of
+            case. VSC-3 based on conventional VSG control is taken as an                      VSC-3 and VSC-4 show severe low-frequency oscillations. By
+            example to show that the oscillation issue does not result from the               measurement, the oscillation frequency is 4.9 Hz. It is nearly
+            original VSC controllers’ design [41]. According to the deduce                    consistent with what we infer from Fig. 11(a).
+            in Section II, the small signal model of the VSG is expressed                        Fig. 12(a) shows the bode plot of the transfer functions
+            as (1). The Zb3 (s) and Gb3 (s) are diagonal matrices, and the                    ΔPi /ΔE3 ∗ . The amplitude-frequency curves of ΔP3 /ΔE3 ∗ and
+            diagonal elements are all first-order inertia elements. The bode                  ΔP4 /ΔE3 ∗ have large low-frequency and medium-frequency
+            diagram for the diagonal elements of Zbi (s), i.e., Zb3,11 and                    resonance peak values. It indicates that low-frequency and
+            Zb3,22 are shown in Fig. 10, and the used parameter is shown in                   medium-frequency power oscillations are prone to occur be-
+            Table I. From the bode diagram, it is observed that the original                  tween VSC-3 and VSC-4, and the oscillation frequencies are
+            VSC controller design will not result in the oscillation issue.                   fo1 = 5 Hz and fo2 = 53 Hz. Fig. 12(b) shows active power
+            Similarly, other VSCs with parameters in Table I can be tested                    waveforms under ΔE3 ∗ = 10 V. As observed, the active power
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1370                                       IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+
+             Fig. 13. (a) Bode plots of the transfer functions ΔP3 /ΔPL4 with L34 =            Fig. 14. (a) Bode plots of the transfer functions ΔPi /ΔPL4 . (b) Active power
+             5, 4, and 2 mH. (b) Active power waveforms when L34 = 2 mH under load             waveforms under load disturbance ΔPL4 .
+             disturbance ΔPL4 .
+
+
+
+
+             of VSC-3 and VSC-4 show severe low-frequency and medium-
+             frequency oscillations. By measurement, the oscillation frequen-
+             cies are fo1 = 4.9 Hz and fo2 = 52.5 Hz. It is nearly consistent
+             with what we infer from Fig. 12(a). Thus, the oscillation analysis
+             based on the proposed model is consistent with the CHIL results,
+             and it can be used to locate the weak nodes with severe power
+             oscillations.
+
+
+             C. Influence of Line Impedance
+                In this case, the influence of line impedance on the power
+             oscillation characteristics of the system is analyzed. Fig. 13(a)                 Fig. 15. Bode plots of the transfer function ΔP3 /ΔE3 ∗ with (a) different mx
+                                                                                               and (b) different nx .
+             shows the bode plot of the transfer function ΔP3 /ΔPL4 with L34
+             = 5, 4, and 2 mH. When increasing the L34 , the peak coordinate
+             value of the low-frequency resonance point of ΔP3 /ΔPL4 is
+                                                                                               oscillations that occur between VSC-3 and VSC-4 can be effec-
+             increased from 12.7 to 20 dB, and the frequency of LFO is
+                                                                                               tively suppressed with the method [23]. Fig. 14(b) presents the
+             increased. It indicates that low-frequency power oscillations of
+                                                                                               active power waveforms under ΔPL4 = 10 kW where the VSC-3
+             VSC-3 are more serious with the increase of L34 . Fig. 13(b)
+                                                                                               and VSC-4 adopt the mutual damping method. As observed,
+             shows active power waveforms under a step-up load change
+                                                                                               the decentralized mutual damping method suppressed the power
+             ΔPL4 = 10 kW when L34 = 2 mH. As observed, the LFO of
+                                                                                               oscillation. Thus, the proposed model can be used to assess the
+             active power between VSC-3 and VSC-4 is more serious com-
+                                                                                               oscillation suppression methods.
+             pared with Fig. 11(b). Besides, by measurement, the oscillation
+             frequency is 6.7 Hz. It is nearly consistent with what we infer
+             from Fig. 13(a).                                                                  E. Verification of the Effectiveness of the Proposed Method
+                                                                                                  To verify the effectiveness of the proposed WFCF method,
+                                                                                               this case analyzes the effect of the crucial control coefficient
+             D. Effect Assessment of Oscillation Suppression Method
+                                                                                               mx and nx on the medium-frequency oscillation based on the
+                Many methods were proposed to suppress the power oscil-                        extended [P Q]-[ω V] model. As observed in Fig. 12, under
+             lation among multiple VSGs. The established model in this                         voltage reference disturbance, VSC-3 and VSC-4 have severe
+             article can be used to evaluate the performance of existing power                 medium-frequency oscillations. Thus, applying the proposed
+             oscillation suppression methods in improving the power and                        control method to VSC-3 and VSC-4.
+             frequency dynamics.                                                                  Fig. 15 shows the bode plots of (a) the transfer functions
+                This case takes the decentralized mutual damping method [23]                   ΔP3 /ΔE3 ∗ with mx = 0, 0.3, and 1 and nx = 0, and (b) the
+             as an example to illustrate the assessment ability of the model                   transfer functions ΔP3 /ΔE3 ∗ with mx = 0, nx = 0, 3e-4, 1e-3.
+             on the effect of these methods. Fig. 14(a) shows the bode plot of                 It is observed that the active power feedback coefficient mx
+             the transfer function ΔPi /ΔPL4 where VSC-3 and VSC-4 adopt                       and nx affect the medium-frequency resonance peak of the
+             the decentralized mutual damping method. The parameters are                       transfer function, and the larger mx and nx are, the smaller
+             set as τ i = 0.01 and mi = 0.05. Compared with Fig. 9, the                        the medium-frequency resonance peak value is. It is inferred
+             low-frequency resonant peaks of ΔP3 /ΔPL4 and ΔP4 /ΔPL4                           that increasing mx and nx can effectively suppress the medium-
+             decrease significantly. It indicates that low-frequency power                     frequency oscillation of the system.
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                   1371
+
+
+
+
+            Fig. 16. Active power waveforms under voltage reference disturbance ΔE3 ∗
+            with (a) mx = 5,nx = 0 and (b) mx = 0,nx = 1e-3.
+
+
+
+                                                                                              Fig. 18. Nyquist loci of det(A(s)) with mx = 1 and mx = 0 with the proposed
+                                                                                              [P Q]-[ω V] model.
+
+
+
+
+            Fig. 17. (a) Bode plots of the transfer functions ΔPi /ΔE3 ∗ with the method
+            in [32]. (b) Active power waveforms under voltage reference disturbance ΔE3 ∗ .
+
+
+
+
+               Fig. 16 presents the active power waveforms under voltage
+            reference disturbance ΔE3 ∗ = 10 when the VSC-3 and VSC-4
+            adopt the proposed method (a) with mx = 1, nx = 0 and (b)                         Fig. 19.   CHIL result of the output current of VSC-4.
+            mx = 0, nx = 1e-3. Compared with the results in Fig. 12,
+            the medium-frequency oscillation can be effectively suppressed
+            with the proposed method. The effectiveness of the proposed
+            control strategy is verified, and it is consistent with the conclu-
+                                                                                              proposed WFCF method has a better effect on suppressing
+            sions we draw from the analysis based on the established model.
+                                                                                              medium-frequency power oscillation.
+
+            F. Comparison With the Virtual Active Damping in [32]
+               In this case, the effect of medium frequency power os-                         G. Influence of mx on Stability
+            cillation suppression under the proposed WFCF method
+                                                                                                 In this case, the voltage-droop coefficient of VSC-3 Dq3 =
+            and the virtual active damping in [32] is compared. Since
+                                                                                              100, K3 = 1, and other control parameters are shown in Table I.
+            VSC-3 and VSC-4 have severe medium-frequency oscilla-
+                                                                                              All the subsystems are stable under the parameter settings. The
+            tions, the virtual active damping in [32] is applied to VSC-
+                                                                                              VSC-3 and VSC-4 adopt the proposed WFCF method with nx
+            3 and VSC-4. The converter model can be expressed as
+                                       1               Gf ilter Gll      1                    = 0.2e-3. The Nyquist curves of det(A(s)) with mx = 1 and
+            (1), where Zb (s)={ Ji ω∗ s+D      ∗ , 0; J ω ∗ s+D ω ∗ , K s+D    } and
+                                          pi ω         i        pi     i    qi                mx = 0 are displayed in Fig. 18. When mx = 1, the overall
+                           D ω∗
+                            pi             D ω∗ G
+                                           pi             G
+                                                   f ilter ll      D
+                                                                  qi
+            Gb (s)={ Ji ω∗ s+D      ∗ , 0; Ji ω ∗ s+Dpi ω ∗ , Ki s+Dqi }. Fig. 17(a)          system is stable since the point (−0, 0) is not surrounded by
+                               pi ω
+            shows the bode plot of the transfer functions ΔPi /ΔE3 ∗ . Com-                   the Nyquist curve. When mx = 0, the Nyquist curve surrounds
+            pared with Fig. 12(a), the low-frequency resonance peak values                    (−0, 0), indicating that the overall system gets unstable. Fig. 19
+            are decreased and medium-frequency resonance peak values are                      shows the CHIL result of the output current of VSC-4. When mx
+            increased. Fig. 17(b) shows active power waveforms under ΔE3 ∗                    changes from 1 to 0, the system becomes unstable. It indicates
+            = 10 V. It is observed that the method in [32] helps suppress                     that appropriately the proposed WFCF method is conducive to
+            the low-frequency power oscillation, but the medium-frequency                     system stability. The CHIL result is consistent with the result of
+            power oscillation is not suppressed and worsened. Thus, the                       the obtained stability criterion.
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1372                                       IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+                                                                                                                            TABLE II
+                                                                                                  CORRELATION MATRIX OF THE GRID-FORMING CONTROL-BASED MODEL
+
+
+
+
+             Fig. 20.   Nyquist loci of det(A(s)) with mx = 1 and mx = 0 with the P-ω
+             model.
+
+
+
+             H. Comparison With the P − ω Model
+                In this case, the accuracy of the proposed [P Q]-[ω V] model
+             and P-ω model is compared. The control parameters are set same                                                TABLE III
+                                                                                                CORRELATION MATRIX OF THE GRID-FOLLOWING CONTROL-BASED MODEL
+             with the Case G. The Nyquist curves of det(A(s)) with mx = 1
+             and mx = 0 are displayed in Fig. 20. It is observed that when
+             mx = 1 and mx = 0, the overall system is stable since the point
+             (−0, 0) is not surrounded by the Nyquist curve, indicating that
+             the overall system is stable. However, Fig. 19 shows the CHIL
+             result of the output current of VSC-4. When mx changes from 1
+             to 0, the system becomes unstable. It indicates that the proposed
+             [P Q]-[ω V] model is more accurate than the P-ω model.
+
+                                         VI. CONCLUSION
+                To analyze the power, voltage, and frequency oscillation or
+             instability of a multi-(VSC) system, a general [P Q]-[ω V] model
+             for a multi-VSC system under arbitrary structure is established.
+             The system allows both grid-forming and grid-following VSCs,
+             which provides a new power-system-based oscillation and sta-
+             bility analysis standard model for hybrid GFM/GFL VSCs sys-
+             tem. Based on the [P Q]-[ω V] model, the weak nodes with severe
+             low-frequency and medium-frequency (a few tenths to tens Hz)
+             power oscillations are located and the effect of the oscillation
+             suppression method is evaluated. Besides, the proposed WFCF
+             method suppresses the medium-frequency oscillation effectively
+             and the system stability is improved as the experimental results
+             show. However, there are still some shortcomings of the general                   4 represents the case under the decentralized mutual damping
+             [P Q]-[ω V] model. It is a small signal stability model based                     control method [23]. Case 5 shows the case that the voltage
+             on well-known system parameters. It needs to recalculate the                      control loop of VSG applies a PSS controller [43].
+             steady-state equilibrium of the system (including steady-state                       In Table III, case 1 represents the model of an inverter under
+             power angles and voltage amplitude), when the operating point                     the classical dc-link voltage regulation control strategy [44].
+             changes. In the future, systems with unknown parameters will                      Case 2 presents a control method that changes the dc-link ca-
+             also be the focus of our research.                                                pacitor voltage reference according to grid frequency feedback
+                                                                                               [45]. Case 3 constructed a correction term of dc-link that is in
+                                                                                               proportion to the frequency which provides inertia support [46].
+                                              APPENDIX                                            In the port equivalent [P Q]-[ω V] model of a general RL load
+               In Table II, matrix I represents a 2 × 2 unit matrix. Case 1                    Ci is 2 × 2 matrix and expressed as (A.1), where ZLoad (s) =
+             represents the model of VSC under the classical droop control                     RLoad +LLoad s. In the line power transmission model, Dij , Cji ,
+             [10]. Case 2 shows the case under the generalized droop control                   C ij , and Cji are 2 × 2 matrices and expressed as (A.2)–(A.5)
+             [40]. Case 3 considers the case under the power decoupling                        shown at the top of the this page, where Xij = ω n Lij , Zij (s) =
+             control [42] where Zb3 (s) is no longer a diagonal matrix. Case                   Rij + Lij s and δ ij0 = δ pi0 -δ pj0 .
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                                      1373
+
+
+
+
+                              ⎡  −X                 2
+                                                                 Vpi0 2 Xij                                              (s)
+                                                                                                                                          ⎤
+                                1          load Vpi0                                       Rload Vpi0        V Z
+                                       Rload 2 +Xload 2
+                                                          +Z           2     2           Rload 2 +Xload 2
+                                                                                                          + Z pi0(s)load
+                                                                                                                     2
+                                                                                                                       +Xij 2
+                                s                              load (s) +Xij
+             Ci = 1.5 ⎣                                                                                     load
+                                                                                                                                          ⎦                                            (A.1)
+                                1        Rload Vpi0 2      Z     (s)Vpi0 2             Xload Vpi0           V Xload
+                                       Rload 2 +Xload 2
+                                                        − Z load(s)2 +X    2         Rload 2 +Xload 2
+                                                                                                      + Z pi0    2       2
+                                s                          load         ij                               load (s) +Xload
+
+
+                               ⎡ Zij (s)Vpj0 Vpi0 sin δij0 +Xij Vpj0 Vpi0 cos δij0             Zij (s)Vpi0 cos δij0 −Xij Vpi0 sin δij0
+                                                                                                                                          ⎤
+                                                s[Zij (s)2 +Xij 2 ]                                        Zij (s)2 +Xij 2
+             Dij = 1.5         ⎣                                                                                                          ⎦                                            (A.2)
+                                     Vpi0 Vpj0 sin δij0 Xij −Vpi0 Zij (s)Vpj0 cos δij0         Vpi0 cos δij0 Xij +Vpi0 Zij (s) sin δij0
+                                                    s[Zij (s)2 +Xij 2 ]                                    Zij (s)2 +Xij 2
+
+
+             D ij =
+                     ⎡ Zij (s)Vpi0 Vpj0 sin δij0 −Xij Vpi0 Vpj0 cos δij0         −Zij (s)Vpi0 cos δij0 −Xij Vpi0 sin δij0
+                                                                                                                                  ⎤
+                                      s[Zij (s)2 +Xij 2 ]                                   Zij (s)2 +Xij 2
+             1.5     ⎣                                                                                                            ⎦                                                    (A.3)
+                       Xij Vpi0 Vpj0 sin δij0 +Zij (s)Vpi0 Vpj0 cos δij0         −Xij Vpi0 cos δij0 +Zij (s)Vpi0 sin δij0
+                                      s[Zij (s)2 +Xij 2 ]                                   Zij (s)2 +Xij 2
+
+
+             Cij = 1.5
+             ⎡ X V                                      2                                             2                                                                                  ⎤
+                 1       ij   pi0 Vpj0 cos δij0 −Xij Vpi0 +Rij Vpi0 Vpj0 sin δij0            pi0  V ij     X          Rij Vpi0 −Rij Vpj0 cos δij0 +Xij Vpj0 sin δij0    V Zij (s)
+                                                Rij 2 +Xij 2
+                                                                                         + Z (s) 2
+                                                                                                   +X 2                               Rij 2 +Xij 2
+                                                                                                                                                                     + Z pi0  2     2
+                 s                                                                                                                                                      ij (s) +Xij
+             ⎣                                                                                  ij            ij
+                                                                                                                                                                                          ⎦
+                 1     Rij Vpi0 2 −Rij Vpi0 Vpj0 cos δij0 +Xij Vpi0 Vpj0 sin δij0    Z (s)Vpi0 2                      Xij Vpi0 −Xij Vpj0 cos δij0 −Rij Vpj0 sin δij0      Vpi0 Xij
+                 s                            Rij 2 +Xij 2
+                                                                                  − Z ij(s)2 +X    2                                  Rij 2 +Xij 2
+                                                                                                                                                                     + Z (s) 2
+                                                                                                                                                                               +Xij 2
+                                                                                     ij         ij                                                                      ij
+
+                                                                                                                                                                                       (A.4)
+
+             C ji = 1.5
+             ⎡ R V                                      2                                             2                                                                                  ⎤
+                 1            pi0 Vpj0 sin δij0 +Xij Vpj0 −Xij Vpi0 Vpj0 cos δij0                 V        X          Rij Vpi0 cos δij0 +Xij Vpi0 sin δij0 −Rij Vpj0    V     Zij (s)
+                         ij
+                                                Rij 2 +Xij 2
+                                                                                         − Z (s)
+                                                                                             pj0
+                                                                                                 2
+                                                                                                    ij
+                                                                                                   +X 2                                 Rij 2 +Xij 2
+                                                                                                                                                                     − Z pj0  2       2
+                 s                                                                                                                                                      ij (s) +Xij
+             ⎣                                                                                  ij            ij
+                                                                                                                                                                                          ⎦
+                 1     Rij Vpi0 Vpj0 cos δij0 +Xij Vpi0 Vpj0 sin δij0 −Rij Vpj0 2    V    2
+                                                                                            Zij (s)                   Xij Vpi0 cos δij0 −Rij Vpi0 sin δij0 −Xij Vpj0      Vpj0 Xij
+                                              Rij 2 +Xij 2
+                                                                                  + Z pj0  2       2                                   Rij 2 +Xij 2
+                                                                                                                                                                     − Z (s) 2
+                                                                                                                                                                               +Xij 2
+                 s                                                                   ij (s) +Xij                                                                        ij
+
+                                                                                                                                                                                       (A.5)
+
+             Yline (s) =
+             ⎡                                                                                                                                                                            ⎤
+                 C12 +C13 +· · ·+C1n                            −D12                     ···                        −D1(n−1)                                      −D1n
+             ⎢                                                                                                                                                                            ⎥
+             ⎢                                                                                                                                                                            ⎥
+             ⎢                                                                                                                                                                            ⎥
+             ⎢
+             ⎢
+                              −D 21                 C 21 +C23 +· · ·+C2n · · ·                                    −D2(n−1)                                      −D2n                    ⎥
+                                                                                                                                                                                          ⎥
+             ⎢                                                                                                                                                                            ⎥
+             ⎢                                                                                                                                                                            ⎥
+             ⎢
+             ⎢
+                                ..                                  ..                   ..                                ..                                         ..                  ⎥
+                                                                                                                                                                                          ⎥
+             ⎢                   .                                   .                     .                                .                                          .                  ⎥
+             ⎢                                                                                                                                                                            ⎥
+             ⎢
+             ⎣           −D (n−1)1                          −D (n−1)2                  ···      C (n−1)1 +C (n−1)2 +· · ·+C(n−1)n         −D(n−1)n                                    ⎥
+                                                                                                                                                                                          ⎦
+                          −D n1                              −D n2                     ···                  −D n(n−1)              C n1 +C n2 +· · ·+C n(n−1)
+                                                                                                                                                                 (A.6)
+
+
+                                                      REFERENCES
+                                                                                                                [6] Q. Zhang et al., “Primary frequency support through North Amer-
+             [1] F. Milano, F. Dörfler, G. Hug, D. J. Hill, and G. Verbič, “Foundations and                        ican continental HVDC interconnections with VSC-MTDC sys-
+                 challenges of low-inertia systems,” in Proc. Power Syst. Comput. Conf.,                            tems,” IEEE Trans. Power Syst., vol. 36, no. 1, pp. 806–817, Jan.
+                 2018, pp. 1–25.                                                                                    2021.
+             [2] I. Serban and C. Marinescu, “Control strategy of three-phase battery                           [7] G. O. Kalcon, G. P. Adam, O. Anaya-Lara, S. Lo, and K. Uhlen, “Small-
+                 energy storage systems for frequency support in microgrids and with                                signal stability analysis of multi-terminal VSC-based DC transmission sys-
+                 uninterrupted supply of local loads,” IEEE Trans. Power Electron., vol. 29,                        tems,” IEEE Trans. Power Syst., vol. 27, no. 4, pp. 1818–1830, Nov. 2012.
+                 no. 9, pp. 5010–5020, Sep. 2014.                                                               [8] J. Beerten, S. D’Arco, and J. A. Suul, “Identification and small-signal
+             [3] L. Ruttledge, N. W. Miller, J. O. Sullivan, and D. Flynn, “Frequency                               analysis of interaction modes in VSCMTDC systems,” IEEE Trans. Power
+                 response of power systems with variable speed wind turbines,” IEEE Trans.                          Del., vol. 31, no. 2, pp. 888–897, Apr. 2016.
+                 Sustain. Energy, vol. 3, no. 4, pp. 683–691, Oct. 2012.                                        [9] J. Sun, “Impedance-based stability criterion for grid-connected invert-
+             [4] J. Beerten, S. Cole, and R. Belmans, “Modeling of multi-terminal VSC                               ers,” IEEE Trans. Power Electron., vol. 26, no. 11, pp. 3075–3078,
+                 HVDC systems with distributed DC voltage control,” IEEE Trans. Power                               Nov. 2011.
+                 Syst., vol. 29, no. 1, pp. 34–42, Jan. 2014.                                                  [10] J. Liu, Y. Miura, and T. Ise, “Comparison of dynamic characteristics
+             [5] N. R. Chaudhuri and B. Chaudhuri, “Adaptive droop control for effective                            between virtual synchronous generator and droop control in inverter-based
+                 power sharing in multi-terminal DC (MTDC) grids,” IEEE Trans. Power                                distributed generators,” IEEE Trans. Power Electron., vol. 31, no. 5,
+                 Syst., vol. 28, no. 1, pp. 21–29, Feb. 2013.                                                       pp. 3600–3611, May 2016.
+
+
+
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+             1374                                         IEEE JOURNAL OF EMERGING AND SELECTED TOPICS IN INDUSTRIAL ELECTRONICS, VOL. 5, NO. 4, OCTOBER 2024
+
+
+
+             [11] S. Dong and Y. C. Chen, “Adjusting synchronverter dynamic response              [33] Y. Liao and X. Wang, “Impedance-based stability analysis for intercon-
+                  speed via damping correction loop,” IEEE Trans. Energy Convers., vol. 32,            nected converter systems with open-loop RHP poles,” IEEE Trans. Power
+                  no. 2, pp. 608–619, Jun. 2017.                                                       Electron., vol. 35, no. 4, pp. 4388–4397, Apr. 2020.
+             [12] J. Liu, Y. Miura, H. Bevrani, and T. Ise, “Enhanced virtual synchronous         [34] M. A. K. Magableh, A. A. A. Radwan, and Y. A.-R. I. Mohamed, “Dy-
+                  generator control for parallel inverters in microgrids,” IEEE Trans. Smart           namic stabilization of a centralized weak grid-tied VSC system consid-
+                  Grid, vol. 8, no. 5, pp. 2268–2277, Sep. 2017.                                       ering PV generator dynamics,” IEEE Trans. Power Syst., vol. 39, no. 1,
+             [13] M. Amin and M. Molinas, “Small-signal stability assessment of power                  pp. 2209–2226, Jan. 2024.
+                  electronics based power systems: A discussion of impedance- and                 [35] J. He, Y. W. Li, D. Bosnjak, and B. Harris, “Investigation and active
+                  eigenvalue-based methods,” IEEE Trans. Ind. Appl., vol. 53, no. 5,                   damping of multiple resonances in a parallel-inverter-based microgrid,”
+                  pp. 5014–5030, Sep./Oct. 2017.                                                       IEEE Trans. Power Electron., vol. 28, no. 1, pp. 234–246, Jan. 2013.
+             [14] R. D. Middlebrook, “Input filter considerations in design and application       [36] C. K. Alexander, M. N. Sadiku, and M. Sadiku, Fundamentals of Electric
+                  of switching regulators,” in Proc. Ind. Applicat. Soc. Annu. Meeting, 1976,          Circuits. New York, NY, USA: McGraw-Hill, 2007.
+                  pp. 366–382.                                                                    [37] L. Huang, H. Xin, and F. Dörfler, “H-control of grid-connected con-
+             [15] H. Zhang, M. Saeedifard, X. Wang, Y. Meng, and X. Wang, “System                      verters: Design, objectives and decentralized stability certificates,” IEEE
+                  harmonic stability analysis of grid-tied interlinking converters operating           Trans. Smart Grid, vol. 11, no. 5, pp. 3805–3816, Sep. 2020.
+                  under AC voltage control mode,” IEEE Trans. Power Syst., vol. 37, no. 5,        [38] S. Jiang and G. Konstantinou, “Impedance-based stability analysis: Nodal
+                  pp. 4106–4109, Sep. 2022.                                                            admittance or bus admittance,” IEEE Trans. Power Syst., vol. 39, no. 1,
+             [16] Y. Tan, Y. Sun, J. Lin, L. Yuan, and M. Su, “Revisit impedance-based sta-            pp. 2327–2340, Jan. 2024.
+                  bility analysis of VSC-HVDC system,” IEEE Trans. Power Syst., vol. 39,          [39] G. F. Franklin, J. D. Powell, A. Emami-Naeini, and J. D. Powell, Feedback
+                  no. 1, pp. 1728–1738, Jan. 2024.                                                     Control of Dynamic Systems. Englewood Cliffs, NJ, USA: Prentice-Hall,
+             [17] T. Yin et al., “Impedance-based characterization of positive–negative                2002.
+                  sequence separation and its effects on MMC-HVDC stability,” IEEE                [40] X. Meng, J. Liu, and Z. Liu, “A generalized droop control for grid-
+                  J. Emerg. Sel. Topics Power Electron., vol. 10, no. 4, pp. 4395–4412,                supporting inverter based on comparison between traditional droop control
+                  Aug. 2022.                                                                           and virtual synchronous generator control,” IEEE Trans. Power Electron.,
+             [18] S. Shah, P. Koralewicz, V. Gevorgian, and R. Wallen, “Sequence                       vol. 34, no. 6, pp. 5416–5438, Jun. 2019.
+                  impedance measurement of utility-scale wind turbines and inverters –            [41] A. Yazdani and R. Iravani, Voltage-Sourced Converters in Power Systems:
+                  Reference frame, frequency coupling, and MIMO/SISO forms,” IEEE                      Modeling, Control, and Applications. Hoboken, NJ, USA: Wiley, 2010.
+                  Trans. Energy Convers., vol. 37, no. 1, pp. 75–86, Mar. 2022.                   [42] T. Wu, Z. Liu, J. Liu, S. Wang, and Z. You, “A unified virtual power
+             [19] L. Yu, L. Xu, J. Zhu, and R. Li, “Impedance modelling and stability analysis         decoupling method for droop-controlled parallel inverters in microgrids,”
+                  of diode-rectifier based HVDC connected offshore wind farms,” IEEE                   IEEE Trans. Power Electron., vol. 31, no. 8, pp. 5587–5603, Aug. 2016.
+                  Trans. Power Del., vol. 37, no. 1, pp. 591–602, Feb. 2022.                      [43] P. Sun, J. Yao, Y. Zhao, X. Fang, and J. Cao, “Stability assessment
+             [20] B. Qin, Y. Xu, C. Yuan, and J. Jia, “A unified method of frequency                   and damping optimization control of multiple grid-connected virtual
+                  oscillation characteristic analysis for multi-VSG grid-connected system,”            synchronous generators,” IEEE Trans. Energy Convers., vol. 36, no. 4,
+                  IEEE Trans. Power Del., vol. 37, no. 1, pp. 279–289, Feb. 2022.                      pp. 3555–3567, Dec. 2021.
+             [21] P. Zhang, H. Cai, J. Shi, and X. He, “Stability analysis of parallel inverter   [44] M. Ashabani and Y. A.-R. I. Mohamed, “Novel comprehensive control
+                  systems using a P/w(Q/E) ‘Admittance’,” Proc. CSEE, vol. 36, no. 9,                  framework for incorporating VSCs to smart power grids using bidirectional
+                  pp. 2486–2493, May 2016.                                                             synchronous-VSC,” IEEE Trans. Power Syst., vol. 29, no. 2, pp. 943–957,
+             [22] S. Fu, Y. Sun, J. Lin, S. Chen, and M. Su, “P/Q-ω/V admittance modeling              Mar. 2014.
+                  and oscillation analysis for multi-VSG grid-connected system,” IEEE             [45] J. Zhu, C. D. Booth, G. P. Adam, A. J. Roscoe, and C. G. Bright, “Inertia
+                  Trans. Power Syst., vol. 38, no. 6, pp. 5849–5859, Nov. 2023.                        emulation control strategy for VSC-HVDC transmission systems,” IEEE
+             [23] S. Fu, Y. Sun, L. Li, Z. Liu, H. Han, and M. Su, “Power oscillation                  Trans. Power Syst., vol. 28, no. 2, pp. 1277–1287, May 2013.
+                  suppression of multi-VSG grid via decentralized mutual damping control,”        [46] J. Fang, H. Li, Y. Tang, and F. Blaabjerg, “Distributed power system virtual
+                  IEEE Trans. Ind. Electron., vol. 69, no. 10, pp. 10202–10214, Oct. 2022.             inertia implemented by grid-connected power converters,” IEEE Trans.
+             [24] M. Li et al., “Phase feedforward damping control method for virtual                  Power Electron., vol. 33, no. 10, pp. 8488–8499, Oct. 2018.
+                  synchronous generators,” IEEE Trans. Power Electron., vol. 37, no. 8,
+                  pp. 9790–9806, Aug. 2022.
+             [25] M. K. Behera, L. C. Saikia, S. K. Ramoji, B. Dekaraja, S. K. Bhagat,
+                  and N. R. Babu, “Voltage and frequency control for DG inverter in low
+                  voltage islanded microgrid with improved virtual impedance droop control
+                  scheme,” in Proc. IEEE 17th India Council Int. Conf., 2020, pp. 1–7.                                      Siqi Fu received the B.S. degree in electrical engi-
+             [26] J. Wang, Y. Wang, Y. Gu, W. Li, and X. He, “Synchronous frequency                                         neering and automatization from Hefei University of
+                  resonance of virtual synchronous generators and damping control,” in                                      Technology, Hefei, China, in 2018, and the Ph.D. de-
+                  Proc. 9th Int. Conf. Power Electron., 2015, pp. 1011–1016.                                                gree in control science and engineering from Central
+             [27] X. Xiong, C. Wu, and F. Blaabjerg, “Effects of virtual resistance on                                      South University, Changsha, China, in 2024.
+                  transient stability of virtual synchronous generators under grid voltage                                     Her research interests include control and stabil-
+                  sag,” IEEE Trans. Ind. Electron., vol. 69, no. 5, pp. 4754–4764, May 2022.                                ity of distributed microgrid and power-electronic en-
+             [28] S. Chen, Y. Sun, H. Han, S. Fu, S. Luo, and G. Shi, “A modified VSG                                       abled power network.
+                  control scheme with virtual resistance to enhance both small-signal stabil-
+                  ity and transient synchronization stability,” IEEE Trans. Power Electron.,
+                  vol. 38, no. 5, pp. 6005–6014, May 2023.
+             [29] M. Yazdanian and A. Mehrizi-Sani, “Washout filter-based power sharing,”
+                  IEEE Trans. Smart Grid, vol. 7, no. 2, pp. 967–968, Mar. 2016.
+             [30] M. Yazdanian, S. Leitner, E. Fouladi, A. Mehrizi-Sani, and A.
+                  Muetze, “Small signal stability of washout filter–based power shar-
+                  ing for an inverter-based microgrid,” J. Eng., vol. 2023, no. 2, 2023,                                    Yao Sun (Member, IEEE) received the B.S. degree in
+                  Art. no. e12227.                                                                                          automation, and the M.S. and Ph.D. degrees in control
+             [31] Y. Han, H. Li, L. Xu, X. Zhao, and J. M. Guerrero, “Analysis of washout                                   engineering from Central South University, Chang-
+                  filter-based power sharing strategy—An equivalent secondary controller                                    sha, China, in 2004, 2007, and 2010, respectively.
+                  for islanded microgrid without LBC lines,” IEEE Trans. Smart Grid, vol. 9,                                   He has been a Professor with the School of Au-
+                  no. 5, pp. 4061–4076, Sep. 2018.                                                                          tomation, Central South University. His research in-
+             [32] K. Guo, Y. Qi, J. Yu, D. Frey, and Y. Tang, “A converter-based power                                      terests include matrix converter, microgrid, and wind
+                  system stabilizer for stability enhancement of droop-controlled islanded                                  energy conversion system.
+                  microgrids,” IEEE Trans. Smart Grid, vol. 12, no. 6, pp. 4616–4626,
+                  Nov. 2021.
+
+
+
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+            FU et al.: GENERAL [P Q]-[ω V] MODEL OF HYBRID GFM/GFL MULTI-VSC SYSTEMS                                                                                       1375
+
+
+
+                                        Xiaochao Hou (Member, IEEE) received the B.S.,                                   Guangze Shi received the B.S. degree in thermal
+                                        M.S., and Ph.D. degrees in control science and en-                               power engineering from North China Electric Power
+                                        gineering from the School of Automation, Central                                 University, Beijing, China, in 2015, and the M.S.
+                                        South University, Changsha, China, in 2014, 2017,                                degree in electrical engineering and the Ph.D. degree
+                                        and 2020, respectively.                                                          in power electronics and power transmission from
+                                           From 2018 to 2019, he was a joint Ph.D. student                               Central South University, Changsha, China, in 2018
+                                        with Nanyang Technological University, Singapore.                                and 2022, respectively.
+                                        From 2020 to 2022, he was a Postdoctoral Fellow with                                He is currently with the School of Artificial Intel-
+                                        Tsinghua University, China. Since 2023, he has been                              ligence and Advanced Computing, Hunan University
+                                        an Associate Professor with Central South University.                            of Technology and Business, Changsha, China. His
+                                        His research interests include distributed PV/ESS/EV                             research interests include microgrid, energy storage
+            integrations, series/parallel-type microgrid system.                                system, and power-electronic enabled power network.
+
+
+
+
+                                                                                                                          Mei Su (Member, IEEE) received the B.S. degree
+                                                                                                                          in automation, and the M.S. and Ph.D. degrees in
+                                      Shimiao Chen received the B.S. degree in electrical                                 control engineering from Central South University,
+                                      engineering in 2019 from Central South University,                                  Changsha, China, in 1989, 1992, and 2005, respec-
+                                      Changsha, China, where he is currently working to-                                  tively.
+                                      ward the Ph.D. degree in power electronics with the                                    She has been a Full Professor with the School of
+                                      College of Automation.                                                              Automation, Central South University. She is cur-
+                                         His research interests include renewable energy,                                 rently an Associate Editor for IEEE TRANSACTIONS
+                                      power electronic transient stability analysis, and vir-                             ON POWER ELECTRONICS and IEEE TRANSACTIONS
+                                      tual synchronous generator (VSG).                                                   ON SUSTAINABLE ENERGY. Her research interests in-
+                                                                                                                          clude matrix converter, adjustable speed drives, and
+                                                                                                wind energy conversion.
+
+
+
+
+Authorized licensed use limited to: King Mongkuts Institute of Technology Ladkrabang provided by UniNet. Downloaded on July 08,2026 at 12:13:03 UTC from IEEE Xplore. Restrictions apply.
+

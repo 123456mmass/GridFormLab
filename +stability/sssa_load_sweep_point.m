@@ -90,6 +90,7 @@ end
 
 % Merge route point fields.
 merge_fields = {'pf','equilibrium','sssa','modal','devices','dev_meta', ...
+    'operating_point', ...
     'failure_stage','failure_id','failure_reason'};
 for k = 1:numel(merge_fields)
     if isfield(rp, merge_fields{k})

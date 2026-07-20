@@ -71,7 +71,7 @@ switch analysis_id
         loaded_opt = smib_opt;
         loaded_opt.ibr_analysis = 'sssa_load_sweep';
         loaded_opt.sssa_load_sweep_enabled = true;
-        loaded_opt.sssa_load_percentages = [20 40 60 80];
+        loaded_opt.sssa_load_percentages = [0 20 40 60 80];
         loaded_opt.sssa_load_scaling_policy = 'constant_power_factor';
         loaded_opt.sssa_mode_tracking = true;
         loaded_opt.sssa_save_plots = true;

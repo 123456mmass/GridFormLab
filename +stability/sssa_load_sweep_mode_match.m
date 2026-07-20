@@ -188,6 +188,29 @@ for k = 1:(npts-1)
 end
 seg.matches = matches;
 seg.available = ~isempty(matches) && all(cellfun(@(m) m.assigned, matches));
+seg.tracked_indices = [];
+if seg.available
+    % tracked_indices(k,m) is the RAW eigensolver index, at load point k,
+    % belonging to the mode whose identity is raw index m at the first point.
+    % Each pairwise assignment maps a raw index at point k to a raw index at
+    % point k+1.  Keeping this cumulative map here prevents consumers from
+    % confusing the number of adjacent point pairs (npts-1) with the number
+    % of modes (nstates).
+    tracked = zeros(npts,nstates);
+    tracked(1,:) = 1:nstates;
+    for k = 1:(npts-1)
+        assignment = matches{k}.assignment(:).';
+        if numel(assignment) ~= nstates || any(assignment < 1) || ...
+                any(assignment > nstates) || numel(unique(assignment)) ~= nstates
+            seg.available = false;
+            seg.reason = 'INVALID_PAIRWISE_ASSIGNMENT';
+            tracked = [];
+            break;
+        end
+        tracked(k+1,:) = assignment(tracked(k,:));
+    end
+    seg.tracked_indices = tracked;
+end
 if ~seg.available && isempty(seg.reason)
     seg.reason = 'AMBIGUOUS_OR_ILL_CONDITIONED';
 end

@@ -7,6 +7,22 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-07-21 — SSSA load-sweep plot correction and dq/P/Q diagnostics
+
+Starting commit `3379688`. The plot adapter now preserves the raw 10-mode GFL
+and 4-mode GFM spectra, constructs cumulative one-to-one tracked-mode indices,
+and includes the base case in `[0 20 40 60 80]`. Plot A is the complete linear
+real/imaginary eigenvalue plane with unconnected markers; a labelled
+low-frequency detail is additional only. Plot G publishes accepted-equilibrium
+`i_d`, `i_q`, `P`, and `Q` for each load level. GFL currents are native states;
+GFM-no-PLL currents are a labelled VSM-frame diagnostic transform because that
+4-state model has no current state. Every point verifies
+`P+jQ = V*conj(I)` within `1e-10` pu before publishing.
+
+Targeted verification only, per explicit user instruction not to run the full
+suite: `tests/test_sssa_load_sweep.m` 30/30 PASS before final launcher-consumer
+rerun. Full repository regression intentionally omitted.
+
 ## 2026-07-21 — SSSA load sweep (single GFL/GFM to infinite bus, shunt load)
 
 **Starting commits:** `smib_starting_commit=83390db`,
@@ -19,7 +35,7 @@ power factor and re-solves equilibrium + full-KCL SSSA at every load level.
 User redirected scope from IEEE14-mixed+SG to a SINGLE IBR (GFL-RMS10 OR
 GFM-no-PLL — two separate cases) connected to an ideal infinite bus through
 `Z_line`, with a shunt load at the IBR terminal bus. Default percentages
-`[20 40 60 80]`, user-adjustable. New schema `smib_loaded_ibr/1.0`; the
+`[0 20 40 60 80]`, user-adjustable. New schema `smib_loaded_ibr/1.0`; the
 existing ideal `smib_verification/1.0` fixture stays bit-identical.
 
 ### Files added
@@ -28,12 +44,12 @@ existing ideal `smib_verification/1.0` fixture stays bit-identical.
 - `+ibr/smib_loaded_equilibrium.m` (dedicated Newton equilibrium solver; 2-stage init)
 - `+ibr/smib_loaded_sssa_oracle.m` (SSSA oracle with load current term)
 - `+stability/+load_sweep/route_smib_ibr.m` (route adapter)
-- `tests/test_sssa_load_sweep.m` (27 tests, GFL+GFM)
+- `tests/test_sssa_load_sweep.m` (30 tests after plot-mapping correction, GFL+GFM)
 - `docs/project/defects/2026-07-21-gfl-rms10-smib-unstable-mode.md`
 
 ### Files modified
 
-- `+stability/sssa_load_sweep.m` (route `smib_ibr`; default `[20 40 60 80]`)
+- `+stability/sssa_load_sweep.m` (route `smib_ibr`; default `[0 20 40 60 80]`)
 - `+stability/sssa_load_sweep_point.m` (accept `smib_ibr`; smib snapshot copy)
 - `+stability/sssa_load_sweep_scale_case.m` (smib_loaded_ibr branch)
 - `+stability/+load_sweep/applicability.m`, `fingerprint.m` (smib_loaded_ibr)
@@ -51,18 +67,18 @@ would make line flow = 0 and degenerate to an isolated IBR+load.
 
 ### Fresh targeted metrics (R2025a-equivalent)
 
-- GFL loaded-IBR sweep `[20 40 60 80]`: all 4 points SUCCESS, 10 eigenvalues
+- GFL loaded-IBR sweep `[0 20 40 60 80]`: all 5 points SUCCESS, 10 eigenvalues
   each, equilibrium residual <5e-12, mode matching available. `max_real≈3.4e5`
   (UNSTABLE — same magnitude as the existing ideal-SMIB oracle 3.37e5; this
   is a GFL-RMS10 device-model property, NOT a load-sweep defect; see defect
   record `SWEEP-2026-07-21-01`).
-- GFM loaded-IBR sweep `[20 40 60 80]`: all 4 points SUCCESS, 4 eigenvalues
+- GFM loaded-IBR sweep `[0 20 40 60 80]`: all 5 points SUCCESS, 4 eigenvalues
   each, `max_real≈-0.56` (ASYMPTOTICALLY STABLE), mode matching available.
 - Ideal SMIB (`smib_verification/1.0`) + `sssa_load_sweep` rejected with
   `wizard:validate_request:loadSweepSmibIncompatible` /
   `LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB`.
-- `tests/test_sssa_load_sweep.m`: 27/27 PASS. `tests/test_wizard_smib_cases.m`:
-  6/6 PASS.
+- Final targeted verification: `tests/test_sssa_load_sweep.m` 30/30 PASS;
+  `tests/test_wizard_smib_cases.m` + `tests/test_wizard_dispatch.m` 21/21 PASS.
 
 ### Readiness
 
@@ -75,8 +91,8 @@ Stability is an outcome, not an acceptance gate.
 
 ### Full regression
 
-Run on the final unchanged source tree. See the verification section of the
-delivery report for pass/fail counts.
+Intentionally not run per the user's explicit instruction. The proportional
+targeted producer and launcher-consumer suites above were used instead.
 
 ## 2026-07-20 — Separate GFL/GFM SMIB launcher cases
 

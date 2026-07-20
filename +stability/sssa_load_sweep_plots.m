@@ -37,18 +37,10 @@ if npts == 0
 end
 plot_status.no_successful_points = false;
 
-% Gather eigenvalues per successful point.
-eig_data = cell(npts,1);
-pct_data = zeros(npts,1);
-for k = 1:npts
-    p = points{success_idx(k)};
-    pct_data(k) = p.load_percentage;
-    if isfield(p,'sssa') && isstruct(p.sssa) && isfield(p.sssa,'eigenvalues')
-        eig_data{k} = p.sssa.eigenvalues(:);
-    else
-        eig_data{k} = [];
-    end
-end
+data = stability.sssa_load_sweep_plot_data(points,mode_tracking);
+eig_data = data.eigenvalues;
+pct_data = data.load_percentages;
+plot_status.plot_data = data;
 
 % Plot A: eigenvalue plane overlay.
 [fig, figfile] = make_fig(vis, output_root, 'plot_A_eigenvalue_overlay');
@@ -59,13 +51,14 @@ for k = 1:npts
     lam = eig_data{k};
     if isempty(lam), continue; end
     m = markers{mod(k-1,numel(markers))+1};
-    plot(real(lam), imag(lam), [m '-'], 'Color', colors(k,:), ...
+    plot(real(lam), imag(lam), m, 'LineStyle','none', 'Color', colors(k,:), ...
         'MarkerFaceColor', colors(k,:), 'MarkerSize', 6, ...
         'DisplayName', sprintf('+%d%% (alpha=%.2f)', pct_data(k), 1+pct_data(k)/100));
 end
-xline(0,'--k','Re=0');
+xline(0,'--k','Re=0','HandleVisibility','off');
 xlabel('Real(\lambda) (1/s)'); ylabel('Imag(\lambda) (1/s)');
-title(sprintf('Plot A — Eigenvalue plane overlay [%s]', case_id));
+title(sprintf('Plot A — Eigenvalue plane overlay [%s]', case_id), ...
+    'Interpreter','none');
 legend('Location','bestoutside'); grid on;
 fig_files = save_fig(fig, figfile, save_plots, fig_files);
 plot_status.plot_A = true;
@@ -80,20 +73,33 @@ if ~isempty(all_reals)
     if rrange > 1e3   % extreme compression threshold
         [fig, figfile] = make_fig(vis, output_root, 'plot_A_detail_low_frequency');
         hold on;
+        detail_limit = 1e3; % 1/s, display-only low-frequency window
+        detail_found = false;
         for k = 1:npts
             lam = eig_data{k};
             if isempty(lam), continue; end
+            lam = lam(abs(lam) <= detail_limit);
+            if isempty(lam), continue; end
+            detail_found = true;
             m = markers{mod(k-1,numel(markers))+1};
-            plot(real(lam), imag(lam), [m '-'], 'Color', colors(k,:), ...
+            plot(real(lam), imag(lam), m, 'LineStyle','none', 'Color', colors(k,:), ...
                 'MarkerFaceColor', colors(k,:), 'MarkerSize', 6, ...
                 'DisplayName', sprintf('+%d%%', pct_data(k)));
         end
-        xline(0,'--k','Re=0');
+        xline(0,'--k','Re=0','HandleVisibility','off');
         xlabel('Real(\lambda) (1/s) — detail'); ylabel('Imag(\lambda) (1/s)');
-        title(sprintf('Plot A detail — low-frequency view [%s]', case_id));
-        legend('Location','bestoutside'); grid on;
-        fig_files = save_fig(fig, figfile, save_plots, fig_files);
-        plot_status.plot_A_detail = true;
+        title(sprintf('Plot A detail — low-frequency view [%s]', case_id), ...
+            'Interpreter','none');
+        if detail_found
+            legend('Location','bestoutside'); grid on;
+            fig_files = save_fig(fig, figfile, save_plots, fig_files);
+            plot_status.plot_A_detail = true;
+            plot_status.plot_A_detail_limit_per_s = detail_limit;
+        else
+            close(fig);
+            plot_status.plot_A_detail = false;
+            plot_status.plot_A_detail_reason = 'NO_ROOTS_INSIDE_LOW_FREQUENCY_WINDOW';
+        end
     end
 end
 
@@ -117,13 +123,14 @@ for k = 1:npts
     if ~isempty(lam)
         plot(real(lam), imag(lam), 'o', 'MarkerFaceColor', colors(k,:));
     end
-    xline(0,'--k');
+    xline(0,'--k','HandleVisibility','off');
     axis([xr yr]);
     title(sprintf('+%d%%', pct_data(k)));
     grid on;
     xlabel('Real'); ylabel('Imag');
 end
-sgtitle(sprintf('Plot B — Eigenvalue plane by load level [%s]', case_id));
+sgtitle(sprintf('Plot B — Eigenvalue plane by load level [%s]', case_id), ...
+    'Interpreter','none');
 fig_files = save_fig(fig, figfile, save_plots, fig_files);
 plot_status.plot_B = true;
 
@@ -137,7 +144,8 @@ end
 plot(pct_data, max_reals, '-o', 'LineWidth', 1.5);
 yline(0,'--k','stability boundary');
 xlabel('Load increase (%)'); ylabel('max Real(\lambda) (1/s)');
-title(sprintf('Plot C — Max real eigenvalue vs load [%s]', case_id));
+title(sprintf('Plot C — Max real eigenvalue vs load [%s]', case_id), ...
+    'Interpreter','none');
 grid on;
 fig_files = save_fig(fig, figfile, save_plots, fig_files);
 plot_status.plot_C = true;
@@ -146,35 +154,17 @@ plot_status.plot_C = true;
 if isfield(mode_tracking,'available') && mode_tracking.available
     [fig, figfile] = make_fig(vis, output_root, 'plot_D_tracked_trajectories');
     hold on;
-    for s = 1:numel(mode_tracking.segments)
-        seg = mode_tracking.segments{s};
-        if ~isfield(seg,'available') || ~seg.available, continue; end
-        idx_range = seg.point_indices;
-        for m = 1:numel(seg.matches)
-            mt = seg.matches{m};
-            if ~isfield(mt,'assigned') || ~mt.assigned, continue; end
-            % Plot the trajectory of matched eigenvalues across the segment.
-            lams = NaN(numel(idx_range),1);
-            for kk = 1:numel(idx_range)
-                % success_idx maps segment-relative kk -> successful point
-                % position in eig_data; idx_range(kk) is the absolute point
-                % index. mt.assignment(kk) is the matched column at the
-                % "from" point of pair kk.
-                si = find(success_idx == idx_range(kk), 1);
-                if isempty(si), continue; end
-                lam_k = eig_data{si};
-                if isempty(lam_k), continue; end
-                j = mt.assignment(kk);
-                if j ~= 0 && j <= numel(lam_k)
-                    lams(kk) = lam_k(j);
-                end
-            end
-            plot(real(lams), imag(lams), '-o', 'DisplayName', ...
-                sprintf('mode %d', m));
+    for s = 1:numel(data.tracked_segments)
+        seg = data.tracked_segments{s};
+        for m = 1:size(seg.eigenvalues,2)
+            lams = seg.eigenvalues(:,m);
+            plot(real(lams),imag(lams),'-o','DisplayName', ...
+                sprintf('mode %d',m));
         end
     end
     xlabel('Real(\lambda)'); ylabel('Imag(\lambda)');
-    title(sprintf('Plot D — Tracked modal trajectories [%s]', case_id));
+    title(sprintf('Plot D — Tracked modal trajectories [%s]', case_id), ...
+        'Interpreter','none');
     legend('Location','bestoutside'); grid on;
     fig_files = save_fig(fig, figfile, save_plots, fig_files);
     plot_status.plot_D = true;
@@ -186,49 +176,46 @@ end
 % Plot E: frequency and damping vs load (gated by tracking validity).
 if isfield(mode_tracking,'available') && mode_tracking.available
     [fig, figfile] = make_fig(vis, output_root, 'plot_E_freq_damping_vs_load');
-    % Collect per-mode frequency and damping across tracked segments.
-    % Each segment contains npts-1 matches; match kk links point idx_range(kk)
-    % ("from") to idx_range(kk+1) ("to"), and mt.assignment(kk) is the matched
-    % eigenvalue column at the "from" point. We plot the "from" eigenvalue
-    % per (segment, mode, point) tuple.
-    fdata = []; zdata = [];
-    for s = 1:numel(mode_tracking.segments)
-        seg = mode_tracking.segments{s};
-        if ~isfield(seg,'available') || ~seg.available, continue; end
-        idx_range = seg.point_indices;
-        for m = 1:numel(seg.matches)
-            mt = seg.matches{m};
-            if ~isfield(mt,'assigned') || ~mt.assigned, continue; end
-            for kk = 1:numel(idx_range)
-                si = find(success_idx == idx_range(kk), 1);
-                if isempty(si), continue; end
-                p_kk = points{idx_range(kk)};
-                if ~isfield(p_kk,'sssa') || ~isstruct(p_kk.sssa) || ...
-                        ~isfield(p_kk.sssa,'eigenvalues'), continue; end
-                lam_k = p_kk.sssa.eigenvalues(:);
-                j = mt.assignment(kk);
-                if j == 0 || j > numel(lam_k), continue; end
-                lam = lam_k(j);
-                if abs(imag(lam)) > 1e-9
-                    fdata(end+1,1:2) = [p_kk.load_percentage, abs(imag(lam))/(2*pi)]; %#ok<AGROW>
-                    zdata(end+1,1:2) = [p_kk.load_percentage, ...
-                        -real(lam)/sqrt(real(lam)^2+imag(lam)^2)]; %#ok<AGROW>
-                end
-            end
-        end
-    end
+    oscillatory_found = false;
     subplot(2,1,1);
-    if ~isempty(fdata)
-        plot(fdata(:,1), fdata(:,2), 'o');
+    hold on;
+    for s = 1:numel(data.tracked_segments)
+        seg = data.tracked_segments{s};
+        for m = 1:size(seg.eigenvalues,2)
+            lams = seg.eigenvalues(:,m);
+            nz = find(abs(imag(lams)) > 1e-9,1,'first');
+            if isempty(nz) || imag(lams(nz)) < 0, continue; end
+            oscillatory_found = true;
+            plot(seg.load_percentages,abs(imag(lams))/(2*pi),'-o', ...
+                'DisplayName',sprintf('mode %d',m));
+        end
     end
     ylabel('Frequency (Hz)'); grid on;
     subplot(2,1,2);
-    if ~isempty(zdata)
-        plot(zdata(:,1), zdata(:,2), 'o');
+    hold on;
+    for s = 1:numel(data.tracked_segments)
+        seg = data.tracked_segments{s};
+        for m = 1:size(seg.eigenvalues,2)
+            lams = seg.eigenvalues(:,m);
+            nz = find(abs(imag(lams)) > 1e-9,1,'first');
+            if isempty(nz) || imag(lams(nz)) < 0, continue; end
+            zeta = -real(lams)./abs(lams);
+            plot(seg.load_percentages,zeta,'-o', ...
+                'DisplayName',sprintf('mode %d',m));
+        end
     end
     ylabel('\zeta'); grid on;
     xlabel('Load increase (%)');
-    sgtitle(sprintf('Plot E — Frequency and damping vs load [%s]', case_id));
+    sgtitle(sprintf('Plot E — Frequency and damping vs load [%s]', case_id), ...
+        'Interpreter','none');
+    if ~oscillatory_found
+        subplot(2,1,1); text(0.5,0.5,'No oscillatory eigenvalues', ...
+            'Units','normalized','HorizontalAlignment','center');
+        subplot(2,1,2); text(0.5,0.5, ...
+            'Damping ratio not applicable to real modes', ...
+            'Units','normalized','HorizontalAlignment','center');
+        plot_status.plot_E_reason = 'NO_OSCILLATORY_EIGENVALUES';
+    end
     fig_files = save_fig(fig, figfile, save_plots, fig_files);
     plot_status.plot_E = true;
 else
@@ -238,38 +225,49 @@ end
 
 % Plot F: min bus voltage + PF/equilibrium diagnostics vs load.
 [fig, figfile] = make_fig(vis, output_root, 'plot_F_voltage_diagnostics_vs_load');
-vmin = zeros(npts,1);
-fres = zeros(npts,1);
-gres = zeros(npts,1);
-for k = 1:npts
-    p = points{success_idx(k)};
-    pf = struct();
-    if isfield(p,'pf') && isstruct(p.pf), pf = p.pf; end
-    if isfield(pf,'voltage_min_pu')
-        vmin(k) = pf.voltage_min_pu;
-    elseif isfield(pf,'bus_voltage')
-        vmin(k) = min(abs(pf.bus_voltage));
-    else
-        vmin(k) = NaN;
-    end
-    eq = struct();
-    if isfield(p,'equilibrium') && isstruct(p.equilibrium), eq = p.equilibrium; end
-    fres(k) = option_value(eq,'residual_norm',NaN);
-    gres(k) = option_value(eq,'physical_kcl_norm',NaN);
-end
 subplot(2,1,1);
-plot(pct_data, vmin, '-o', 'LineWidth', 1.5);
+plot(pct_data, data.voltage_min_pu, '-o', 'LineWidth', 1.5);
 xlabel('Load increase (%)'); ylabel('Min bus voltage (pu)');
-title(sprintf('Plot F — Min voltage + diagnostics vs load [%s]', case_id));
+title(sprintf('Plot F — Min voltage + diagnostics vs load [%s]', case_id), ...
+    'Interpreter','none');
 grid on;
 subplot(2,1,2);
-plot(pct_data, fres, '-o', 'LineWidth', 1.5); hold on;
-plot(pct_data, gres, '-s', 'LineWidth', 1.5);
+plot(pct_data, data.f_active_inf, '-o', 'LineWidth', 1.5); hold on;
+plot(pct_data, data.g_inf, '-s', 'LineWidth', 1.5);
 xlabel('Load increase (%)'); ylabel('Residual');
 legend('||f_{active}||','||g||','Location','best');
 grid on;
 fig_files = save_fig(fig, figfile, save_plots, fig_files);
 plot_status.plot_F = true;
+
+% Plot G: accepted-equilibrium dq currents and injected P/Q.
+if any(isfinite(data.i_d_pu_inverter)) && any(isfinite(data.i_q_pu_inverter)) && ...
+        any(isfinite(data.P_MW)) && any(isfinite(data.Q_MVAr))
+    [fig, figfile] = make_fig(vis, output_root, 'plot_G_device_dq_power_vs_load');
+    subplot(2,1,1);
+    plot(pct_data,data.i_d_pu_inverter,'-o','LineWidth',1.5, ...
+        'DisplayName','i_d'); hold on;
+    plot(pct_data,data.i_q_pu_inverter,'-s','LineWidth',1.5, ...
+        'DisplayName','i_q');
+    ylabel('Current (pu, inverter base)');
+    legend('Location','best'); grid on;
+    if ~isempty(data.current_source) && ~isempty(data.current_source{1})
+        title(sprintf('Current source: %s',data.current_source{1}), ...
+            'Interpreter','none','FontWeight','normal');
+    end
+    subplot(2,1,2);
+    plot(pct_data,data.P_MW,'-o','LineWidth',1.5,'DisplayName','P'); hold on;
+    plot(pct_data,data.Q_MVAr,'-s','LineWidth',1.5,'DisplayName','Q');
+    xlabel('Load increase (%)'); ylabel('Injection (MW / MVAr)');
+    legend('Location','best'); grid on;
+    sgtitle(sprintf('Plot G — Device dq current and injected power [%s]',case_id), ...
+        'Interpreter','none');
+    fig_files = save_fig(fig,figfile,save_plots,fig_files);
+    plot_status.plot_G = true;
+else
+    plot_status.plot_G = false;
+    plot_status.plot_G_reason = 'DEVICE_DQ_OR_POWER_DIAGNOSTICS_UNAVAILABLE';
+end
 end
 
 % =========================================================================

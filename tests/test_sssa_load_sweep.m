@@ -31,7 +31,7 @@ c = cases.case_ibr_smib_loaded_gfm_no_pll();
 end
 
 function opt = sweep_opt(cid, pcts)
-if nargin < 2, pcts = [20 40 60 80]; end
+if nargin < 2, pcts = [0 20 40 60 80]; end
 opt = struct('sssa_load_percentages', pcts, 'sssa_save_plots', false, ...
     'case_id', cid);
 end
@@ -71,7 +71,7 @@ c = gfl_case();
 r = stability.sssa_load_sweep(c, sweep_opt('gfl_test'));
 testCase.verifyTrue(r.converged);
 ls = r.sssa_load_sweep;
-testCase.verifyEqual(numel(ls.points), 4);
+testCase.verifyEqual(numel(ls.points), 5);
 for k = 1:numel(ls.points)
     testCase.verifyEqual(ls.points{k}.status, 'SUCCESS');
     testCase.verifyTrue(isfield(ls.points{k},'sssa') && ~isempty(ls.points{k}.sssa));
@@ -84,7 +84,7 @@ c = gfm_case();
 r = stability.sssa_load_sweep(c, sweep_opt('gfm_test'));
 testCase.verifyTrue(r.converged);
 ls = r.sssa_load_sweep;
-testCase.verifyEqual(numel(ls.points), 4);
+testCase.verifyEqual(numel(ls.points), 5);
 for k = 1:numel(ls.points)
     testCase.verifyEqual(ls.points{k}.status, 'SUCCESS');
     testCase.verifyEqual(ls.points{k}.sssa_diag.eigenvalue_count, 4);
@@ -99,8 +99,8 @@ c = gfl_case();
 r = stability.sssa_load_sweep(c, struct('sssa_save_plots', false, ...
     'case_id', 'def_test'));
 ls = r.sssa_load_sweep;
-testCase.verifyEqual(ls.load_percentages, [20 40 60 80]);
-testCase.verifyEqual(ls.load_scales, [1.2 1.4 1.6 1.8]);
+testCase.verifyEqual(ls.load_percentages, [0 20 40 60 80]);
+testCase.verifyEqual(ls.load_scales, [1.0 1.2 1.4 1.6 1.8]);
 end
 
 function test_custom_percentages(testCase)
@@ -257,6 +257,62 @@ for k = 1:numel(ls.points)
 end
 end
 
+function test_tracked_modes_map_to_every_raw_root(testCase)
+cases_to_check = {gfl_case(),gfm_case()};
+expected_orders = [10 4];
+for cidx = 1:numel(cases_to_check)
+    r = stability.sssa_load_sweep(cases_to_check{cidx}, ...
+        sweep_opt(sprintf('tracked_%d',cidx)));
+    ls = r.sssa_load_sweep;
+    testCase.verifyTrue(ls.mode_tracking.available);
+    testCase.verifyEqual(numel(ls.plot_data.tracked_segments),1);
+    seg = ls.plot_data.tracked_segments{1};
+    testCase.verifySize(seg.eigenvalues,[5 expected_orders(cidx)]);
+    for k = 1:5
+        map = seg.raw_indices(k,:);
+        testCase.verifyEqual(sort(map),1:expected_orders(cidx));
+        raw = ls.points{k}.sssa.eigenvalues(:);
+        testCase.verifyEqual(seg.eigenvalues(k,:).',raw(map), ...
+            'AbsTol',1e-12);
+    end
+end
+end
+
+function test_dq_current_and_power_diagnostics(testCase)
+cases_to_check = {gfl_case(),gfm_case()};
+expected_sources = {'NATIVE_GFL_CURRENT_STATES', ...
+    'PROJECT_DERIVED_DIAGNOSTIC_VSM_FRAME_TRANSFORM'};
+for cidx = 1:numel(cases_to_check)
+    r = stability.sssa_load_sweep(cases_to_check{cidx}, ...
+        sweep_opt(sprintf('dq_%d',cidx)));
+    ls = r.sssa_load_sweep;
+    pd = ls.plot_data;
+    testCase.verifyTrue(all(isfinite([pd.i_d_pu_inverter; ...
+        pd.i_q_pu_inverter;pd.P_MW;pd.Q_MVAr])));
+    for k = 1:numel(ls.points)
+        p = ls.points{k};
+        op = p.operating_point;
+        testCase.verifyEqual(op.current_source,expected_sources{cidx});
+        testCase.verifyLessThanOrEqual(op.power_identity_error, ...
+            op.power_identity_tolerance);
+        testCase.verifyEqual(pd.P_MW(k),op.P_MW,'AbsTol',1e-12);
+        testCase.verifyEqual(pd.Q_MVAr(k),op.Q_MVAr,'AbsTol',1e-12);
+        if cidx == 1
+            testCase.verifyEqual(op.i_d_pu_inverter,p.equilibrium.x0(9), ...
+                'AbsTol',1e-12);
+            testCase.verifyEqual(op.i_q_pu_inverter,p.equilibrium.x0(10), ...
+                'AbsTol',1e-12);
+        else
+            rec = p.devices.reconstruct(0,p.equilibrium.x0, ...
+                p.equilibrium.y0,p.equilibrium.u_eq,struct());
+            expected = rec.I_inv*exp(-1i*rec.delta_vsm);
+            testCase.verifyEqual(complex(op.i_d_pu_inverter, ...
+                op.i_q_pu_inverter),expected,'AbsTol',1e-12);
+        end
+    end
+end
+end
+
 % =========================================================================
 % Mode-matching permutation invariance
 % =========================================================================
@@ -347,7 +403,7 @@ end
 % =========================================================================
 function test_headless_plots_generated(testCase)
 c = gfl_case();
-opt = sweep_opt('plot_test', [20 40 60 80]);
+opt = sweep_opt('plot_test', [0 20 40 60 80]);
 opt.sssa_save_plots = true;
 r = stability.sssa_load_sweep(c, opt);
 ls = r.sssa_load_sweep;
@@ -358,6 +414,19 @@ for k = 1:numel(ls.figure_files)
     if exist(ls.figure_files{k}, 'file') == 2, written = written + 1; end
 end
 testCase.verifyGreaterThanOrEqual(written, 10);
+testCase.verifyTrue(any(contains(ls.figure_files, ...
+    'plot_G_device_dq_power_vs_load.png')));
+testCase.verifyEqual(ls.plot_data.load_percentages,[0;20;40;60;80]);
+testCase.verifyEqual(size(ls.plot_data.tracked_segments{1}.eigenvalues,2),10);
+end
+
+function test_single_point_summary_table(testCase)
+c = gfm_case();
+r = stability.sssa_load_sweep(c,sweep_opt('one_point',0));
+testCase.verifyEqual(height(r.sssa_load_sweep.summary_table),1);
+testCase.verifyEqual(r.sssa_load_sweep.summary_table.LoadIncrease_pct,0);
+testCase.verifyLessThan(r.sssa_load_sweep.summary_table.f_active_inf,1e-8);
+testCase.verifyLessThan(r.sssa_load_sweep.summary_table.g_inf,1e-8);
 end
 
 % =========================================================================

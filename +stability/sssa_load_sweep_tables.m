@@ -33,8 +33,18 @@ for k = 1:n
     row.PF_max_mismatch = option_value(pf,'max_mismatch',NaN);
     eq = option_field(p,'equilibrium');
     row.Equilibrium_converged = option_value(eq,'converged',false);
-    if isfield(eq,'residual_norm'), row.f_active_inf = eq.residual_norm; end
-    if isfield(eq,'physical_kcl_norm'), row.g_inf = eq.physical_kcl_norm; end
+    row.f_active_inf = NaN;
+    row.g_inf = NaN;
+    if isfield(eq,'f0') && ~isempty(eq.f0)
+        row.f_active_inf = norm(eq.f0,inf);
+    elseif isfield(eq,'active_f_residual_norm')
+        row.f_active_inf = eq.active_f_residual_norm;
+    end
+    if isfield(eq,'g0') && ~isempty(eq.g0)
+        row.g_inf = norm(eq.g0,inf);
+    elseif isfield(eq,'physical_kcl_norm')
+        row.g_inf = eq.physical_kcl_norm;
+    end
     if isfield(eq,'active_state_indices')
         row.Active_states = numel(eq.active_state_indices);
     elseif isfield(p,'sssa_diag') && isfield(p.sssa_diag,'eigenvalue_count')
@@ -86,7 +96,7 @@ if ~isempty(rows)
     for k = 2:numel(rows)
         rows_struct(k) = rows{k};
     end
-    summary = struct2table(rows_struct);
+    summary = struct2table(rows_struct,'AsArray',true);
 else
     summary = table();
 end

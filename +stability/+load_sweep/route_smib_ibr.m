@@ -124,6 +124,22 @@ pf_diag.Z_line = Z_line;
 pf_diag.classification = 'ASSUMED_DIAGNOSTIC_SMIB_LOADED_PF_EQUILIBRIUM';
 point.pf = pf_diag;
 
+% --- EQUILIBRIUM DEVICE DIAGNOSTICS --------------------------------------
+% Publish only quantities reconstructed by the accepted device closure.  GFL
+% exposes native current states i_d/i_q.  The no-PLL GFM has no current state,
+% so its dq current is a labelled diagnostic frame transform of I_inv using
+% the virtual-rotor angle; it is not fed back into any equation or gate.
+try
+    rec = dev.reconstruct(0,eq.x0,eq.y0,eq.u_eq,struct());
+    op = equilibrium_operating_point(rec,dev,Sbase,eq.V_terminal);
+    point.operating_point = op;
+catch err
+    point.failure_stage = 'EQUILIBRIUM_RECONSTRUCTION';
+    point.failure_id = 'sssa_load_sweep:equilibriumReconstruction';
+    point.failure_reason = err.message;
+    return;
+end
+
 % --- SSSA_LINEARIZATION ---------------------------------------------------
 try
     sssa = ibr.smib_loaded_sssa_oracle(dev, eq.x0, eq.V_terminal, eq.u_eq, ...
@@ -157,6 +173,59 @@ catch err
     point.failure_reason = err.message;
     point.modal = [];
 end
+end
+
+function op = equilibrium_operating_point(rec,dev,Sbase,V_terminal)
+if isfield(rec,'i_d') && isfield(rec,'i_q')
+    i_d = rec.i_d;
+    i_q = rec.i_q;
+    current_source = 'NATIVE_GFL_CURRENT_STATES';
+elseif isfield(rec,'I_inv') && isfield(rec,'delta_vsm')
+    I_dq_inv = rec.I_inv*exp(-1i*rec.delta_vsm);
+    i_d = real(I_dq_inv);
+    i_q = imag(I_dq_inv);
+    current_source = 'PROJECT_DERIVED_DIAGNOSTIC_VSM_FRAME_TRANSFORM';
+else
+    error('route_smib_ibr:missingDqCurrent', ...
+        'Device reconstruction does not expose native or reconstructable dq current.');
+end
+if ~isfield(rec,'Pe') || ~isfield(rec,'Qe')
+    error('route_smib_ibr:missingPower', ...
+        'Device reconstruction must expose Pe and Qe on system base.');
+end
+P_pu = rec.Pe;
+Q_pu = rec.Qe;
+if isfield(rec,'I_sys')
+    I_sys = rec.I_sys;
+elseif isfield(rec,'I_gfl')
+    I_sys = rec.I_gfl;
+else
+    error('route_smib_ibr:missingSystemCurrent', ...
+        'Device reconstruction must expose system-base network current.');
+end
+identity_error = abs(complex(P_pu,Q_pu)-V_terminal*conj(I_sys));
+vals = [i_d i_q P_pu Q_pu];
+if any(~isfinite(vals)) || ~isreal(vals) || ~isfinite(identity_error)
+    error('route_smib_ibr:nonfiniteOperatingPoint', ...
+        'Reconstructed dq current and P/Q must be finite real scalars.');
+end
+identity_tolerance = 1e-10; % NUMERICAL_METHOD reporting consistency gate
+if identity_error > identity_tolerance
+    error('route_smib_ibr:powerIdentityMismatch', ...
+        'Reconstructed S and V*conj(I) differ by %.3e pu (tol %.3e).', ...
+        identity_error,identity_tolerance);
+end
+op = struct('device_id',char(dev.device_id), ...
+    'device_type',char(dev.device_type), ...
+    'i_d_pu_inverter',i_d,'i_q_pu_inverter',i_q, ...
+    'P_pu_system',P_pu,'Q_pu_system',Q_pu, ...
+    'P_MW',P_pu*Sbase,'Q_MVAr',Q_pu*Sbase, ...
+    'current_frame','DEVICE_SYNCHRONOUS_DQ', ...
+    'current_source',current_source, ...
+    'power_convention','GENERATOR_INJECTION_S_EQUALS_V_CONJ_I', ...
+    'power_identity_error',identity_error, ...
+    'power_identity_tolerance',identity_tolerance, ...
+    'classification','EQUILIBRIUM_RECONSTRUCTION_DIAGNOSTIC');
 end
 
 function value = option_value(s, name, fallback)

@@ -17,6 +17,7 @@ whole directory into agent context.
 | IBR-2026-07-20-01 | OPEN | dt=0.01 Newton/Jacobian stall at t=3.25s | After the domain-preserving fix, dt=0.01 still fails at t=3.25s with domain_rejected_trials=0 and subdivision_depth=4; non-smooth residual trajectory and near-singular rcond indicate a non-domain Newton/Jacobian failure (limiter discontinuity or conditioning), not a trial-voltage violation | [dt=0.01 Newton stall](2026-07-20-dt01-newton-stall-t325.md) |
 | UI-2026-07-20-01 | OPEN | IBR Full result schema | Completed IEEE14 Full Analysis result lacks `r.ts.internal_substeps`, so its targeted test errors; reproduced identically at clean baseline `83390db` | [IBR Full internal-substeps schema](2026-07-20-ibr-full-internal-substeps-schema.md) |
 | SWEEP-2026-07-21-01 | RESOLVED | SSSA load sweep GFL-RMS10 SMIB | GFL-RMS10 against an infinite bus shows max_real_eigenvalue ~3.4e5 (unstable); reproduced identically on the existing ideal-SMIB oracle (3.37e5), confirming it is a device-model property, not a load-sweep code defect | [GFL-RMS10 SMIB unstable mode](2026-07-21-gfl-rms10-smib-unstable-mode.md) |
+| SWEEP-2026-07-21-02 | RESOLVED | SSSA load-sweep plots | Tracked plots treated adjacent load-point assignments as modal identities, omitted modes/load points, and lacked source-labelled dq/P/Q diagnostics | [SSSA load-sweep plot mapping](2026-07-21-sssa-load-sweep-plot-mapping.md) |
 
 New records use `YYYY-MM-DD-short-slug.md` and contain: status, observed
 symptom, deterministic reproduction, affected tree/environment, evidence-backed

@@ -35,11 +35,11 @@ load_scale alpha = 1 + load_percent/100
 P_L,k(alpha) = alpha * P_L,k,base
 Q_L,k(alpha) = alpha * Q_L,k,base
 ```
-Default percentages: `[20 40 60 80]` → alpha = `[1.20 1.40 1.60 1.80]`.
+Default percentages: `[0 20 40 60 80]` → alpha = `[1.00 1.20 1.40 1.60 1.80]`.
 (For `smib_loaded_ibr/1.0`, `P_L,k` and `Q_L,k` are the single shunt-load
 fields `P_load_base_pu` / `Q_load_base_pu` at the terminal bus.) The user
-may pass any strictly increasing nonnegative vector, e.g. `[0 20 40 60 80]` to
-include the base case. Scale active and reactive load together; the original
+may pass any strictly increasing nonnegative vector. The default includes the
+base/normal operating point. Scale active and reactive load together; the original
 load power factor is preserved at every bus.
 
 ## 3. Percentage validation (no silent canonicalization)
@@ -236,6 +236,26 @@ production PF/equilibrium/SSSA equations but the load-growth/dispatch study
 policy is `ASSUMED_DIAGNOSTIC`. It does not claim an exact stability boundary,
 CPF nose point, or production operating-limit approval. Stability is an
 outcome, not an acceptance gate.
+
+### 11a. Plot-data correction amendment (2026-07-21)
+
+This reporting-only amendment does not change PF, equilibrium, device, Schur,
+or eigenvalue equations.
+
+- Plot A publishes every raw eigenvalue on linear real/imaginary axes using
+  unconnected markers. An optional low-frequency detail is additional and
+  never replaces the complete spectrum.
+- Tracked plot coordinates use a cumulative one-to-one raw-index permutation
+  of shape `number_of_points` by `number_of_active_states`; adjacent-pair
+  assignments are not modal identities.
+- Plot G publishes accepted-equilibrium `i_d`, `i_q`, `P`, and `Q`. GFL
+  currents come from native GFL current states. GFM-no-PLL has no current
+  states, so its displayed dq current is the diagnostic transform
+  `I_inv*exp(-j*delta_vsm)`, classified
+  `PROJECT_DERIVED_DIAGNOSTIC_VSM_FRAME_TRANSFORM`, and never feeds the model.
+- Each published operating point independently verifies
+  `P+jQ = V*conj(I)` on system base with a `1e-10` pu numerical consistency
+  tolerance; mismatch fails closed before plotting.
 
 ## 12. Ownership
 

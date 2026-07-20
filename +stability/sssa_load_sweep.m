@@ -30,7 +30,7 @@ result.sssa_load_sweep.schema_version = 'sssa_load_sweep/1.0';
 result.sssa_load_sweep.case_id = option_value(opt,'case_id','');
 
 % --- Request-level validation ---------------------------------------------
-percentages = option_value(opt,'sssa_load_percentages',[20 40 60 80]);
+percentages = option_value(opt,'sssa_load_percentages',[0 20 40 60 80]);
 validate_percentages(percentages);
 
 policy = option_value(opt,'sssa_load_scaling_policy','constant_power_factor');
@@ -87,6 +87,11 @@ result.sssa_load_sweep.mode_tracking = stability.sssa_load_sweep_mode_match(poin
 
 % --- Summary table --------------------------------------------------------
 result.sssa_load_sweep.summary_table = stability.sssa_load_sweep_tables(points);
+
+% Pure renderer contract.  Stored even when figure writing is disabled so
+% headless consumers and tests can verify plotted coordinates independently.
+result.sssa_load_sweep.plot_data = stability.sssa_load_sweep_plot_data( ...
+    points,result.sssa_load_sweep.mode_tracking);
 
 % --- Plots (headless) -----------------------------------------------------
 plot_opt = struct('visible', logical(option_value(opt,'sssa_plot_visible',true)), ...

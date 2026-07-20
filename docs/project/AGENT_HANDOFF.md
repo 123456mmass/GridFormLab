@@ -1,11 +1,95 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
-Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization
+Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization; 2026-07-20 GFM-VSG-no-PLL SMIB-first characterization
 Branch: `main`
 Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top of all-GFL equilibrium)
 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
+
+## 2026-07-20 — GFM-VSG without PLL (SMIB-first, source-traced)
+
+**Starting repository checkpoint:** `4d8b015` (`HEAD` one commit ahead of
+`origin/main`; source-set separation commit). No shared file edited.
+
+### Scope
+
+New opt-in positive-sequence RMS GFM-VSG with NO PLL:
+`+ibr/gfm_vsg_no_pll_model.m` (4-state `[delta_vsm, delta_omega_vsm, P_f,
+Q_f]`, algebraic PNNL VFlag=0 Q-V droop, Thevenin behind pure `jX_L`).
+Source contract: `docs/project/GFM_NO_PLL_SOURCE_CONTRACT.md`. Sourced study
+parameters (Avila-Martinez 2025 + PNNL-35110): `H_GFM=5 s`, `D_GFM=20 pu`,
+50 Hz, 100 MVA, `X_L=0.15 pu`, `m_q=0.05`, `T_P=T_Q=0.01 s`.
+
+### Hard no-PLL contract (enforced)
+
+No `delta_PLL`, no `xi_PLL`/`x_PLL_int`, no PLL PI gains, no PLL freeze, no
+PLL-estimated frequency, no runtime `angle(V)` tracking. Runtime rotor angle
+ONLY from `dot(delta_vsm)=omega_base*delta_omega_vsm`. Construction-time
+`reject_unsupported_options` rejects dormant PLL/AVR/limiter fields.
+Behavioral tests: angle-derivative structure, terminal-angle independence,
+rigid-frame covariance.
+
+### DUAL SMIB verification (GFL + GFM as separate cases)
+
+Generic `+ibr/smib_tds_oracle.m` (`ASSUMED_DIAGNOSTIC_SMIB_TDS_ORACLE`,
+NOT a production TS solver) added alongside the existing
+`+ibr/smib_sssa_oracle.m`. Both are generic over either device via runtime
+metadata (`dev.nx`/`dev.active_state_indices`); no hard-coded state count.
+
+Targeted gates (all PASS):
+- Device ABI: `tests/test_ibr_gfm_vsg_no_pll_model.m` — 15/15.
+- GFM SMIB: `tests/test_ibr_gfm_vsg_no_pll_smib.m` — 6/6 (equilibrium, SSSA,
+  FD convergence, event-free TDS, small-perturbation consistency, no-PLL
+  behavior).
+- GFL SMIB: `tests/test_ibr_smib_sssa_oracle.m` — 9/9 (GFL control case
+  extended with SSSA/TDS tests).
+
+GFM-noPLL SMIB metrics: `f0=6.5e-14`, `g0=2.1e-16`, `gy_rcond=0.92`,
+`eigenvalue_count=4`, `schur_direct_err=8.1e-11`, `max_real_eig=-0.556`
+(stable), 4 eigenvalues (1 complex conjugate swing pair + 2 real filter
+modes). Event-free TDS drift=0; nonlinear-vs-linear error=2.9e-5 at
+amp=1e-3; perturbation-halving ratio=1.4e-5.
+
+GFL control case: `f0=2.8e-13`, `g0=1.1e-16`, `gy_rcond=0.83`,
+`eigenvalue_count=10`, `schur_direct_err=6.7e-15`. NOTE: GFL has an
+unstable PLL eigenvalue (real part ~3.4e5) at this operating point; the
+linear SSSA response overflows and is reported honestly as `Inf`
+(`linear_overflow=true`). Stability is an outcome, not a gate. This is
+pre-existing GFL behavior, not a defect of the GFM-no-PLL work.
+
+### Verification plots
+
+`scripts/ibr/smib_verification_plots.m` generates PF/equilibrium + SSSA
+figures for both devices (separate directories) plus a 2x2 summary.
+Diagnostics: `output/diagnostics/smib/{gfl_rms10,gfm_no_pll}_smib.txt`.
+Figures: `output/figures/smib/{gfl_rms10,gfm_no_pll}/` + summary PNG.
+
+```
+GFL_SMIB_PF_EQUILIBRIUM_PLOT = PASS
+GFL_SMIB_SSSA_PLOT = PASS
+GFM_NO_PLL_SMIB_PF_EQUILIBRIUM_PLOT = PASS
+GFM_NO_PLL_SMIB_SSSA_PLOT = PASS
+```
+
+### Delivery status
+
+```
+GFL_SMIB_SSSA_ORACLE = PASS
+LEGACY_REGFM_B1_WITH_PLL_SMIB_COMPARISON = PASS
+GFM_NO_PLL_SOURCE_CONTRACT = PASS
+GFM_NO_PLL_SMIB_EQUILIBRIUM = PASS
+GFM_NO_PLL_SMIB_SSSA = PASS
+GFM_NO_PLL_EVENT_FREE_TS = PASS
+GFM_NO_PLL_IEEE14_INTEGRATION_READY = NOT_READY
+```
+
+IEEE14 integration NOT_READY: `device_contract_metadata` registration,
+`build_mixed_resource_devices` factory case, and IEEE14 60 Hz mapping of
+`H_GFM`/`D_GFM`/`X_L`/`m_q` remain `BLOCKED_CASE_MAPPING` pending separate
+approval. Phase 5 shared composite SSSA/TS comparison deferred (standalone
+oracle is the first-milestone gate). AVR/dynamic voltage PI, current
+limiter, fault LVRT: OUT-OF-SCOPE future extensions.
 
 ## 2026-07-19 — Domain-preserving Newton globalization (RESOLVED_PENDING_FINAL_REGRESSION)
 

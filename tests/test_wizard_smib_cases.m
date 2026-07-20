@@ -11,9 +11,16 @@ end
 function test_discovery_has_two_distinct_smib_entries(tc)
 r=wizard.discover_cases('ibr');
 ids={r.id};
-tc.verifyEqual(sum(endsWith(ids,'_smib')),2);
+% Ideal SMIB verification entries (smib_verification/1.0): exactly two.
+% Loaded-IBR entries (smib_loaded_ibr/1.0) use the _loaded_smib suffix and
+% are counted separately.
+tc.verifyEqual(sum(endsWith(ids,'_smib') & ~endsWith(ids,'_loaded_smib')),2);
 tc.verifyTrue(any(strcmp(ids,'gfl_rms10_smib')));
 tc.verifyTrue(any(strcmp(ids,'gfm_no_pll_smib')));
+% Loaded-IBR sweep entries: exactly two.
+tc.verifyEqual(sum(endsWith(ids,'_loaded_smib')),2);
+tc.verifyTrue(any(strcmp(ids,'gfl_rms10_loaded_smib')));
+tc.verifyTrue(any(strcmp(ids,'gfm_no_pll_loaded_smib')));
 end
 
 function test_gfl_pf_route_uses_ten_state_device(tc)

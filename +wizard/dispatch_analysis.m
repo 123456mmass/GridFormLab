@@ -68,9 +68,19 @@ switch analysis
         print_pf_checks(result, opt);
         print_resource_injections(case_data, result, opt, false);
     case 'sssa'
-        result = stability.multicase_sssa(case_data, opt);
-        result = annotate_sssa_result(result, opt);
-        print_sssa_checks(result);
+        if isfield(opt,'sssa_load_sweep_enabled') && logical(opt.sssa_load_sweep_enabled)
+            ls_opt = opt;
+            ls_opt.case_id = case_id;
+            ls_opt.route = 'sg';
+            if ~isfield(ls_opt,'sssa_load_percentages') || isempty(ls_opt.sssa_load_percentages)
+                ls_opt.sssa_load_percentages = [20 40 60 80];
+            end
+            result = stability.sssa_load_sweep(case_data, ls_opt);
+        else
+            result = stability.multicase_sssa(case_data, opt);
+            result = annotate_sssa_result(result, opt);
+            print_sssa_checks(result);
+        end
     case 'ts'
         result = stability.ts_simulate(case_data, opt);
         if ~isfield(opt, 'plot_results') || opt.plot_results
@@ -191,6 +201,29 @@ if strcmp(ibr_analysis,'full') && isfield(opt,'ibr_method_modes') && ...
     result=run_ibr_full_separate(case_data,opt,label,root,case_id);
     return;
 end
+
+% smib_loaded_ibr/1.0 (single GFL/GFM to infinite bus with shunt load): route
+% directly through stability.sssa_load_sweep using the smib_ibr route. These
+% cases do NOT use the IEEE14 scenario/scenario/scenario build path.
+if isfield(case_data,'smib_loaded_ibr') && isstruct(case_data.smib_loaded_ibr)
+    if strcmp(ibr_analysis,'sssa_load_sweep') || ...
+            (isfield(opt,'sssa_load_sweep_enabled') && logical(opt.sssa_load_sweep_enabled))
+        ls_opt = opt;
+        ls_opt.case_id = case_id;
+        ls_opt.route = 'smib_ibr';
+        if ~isfield(ls_opt,'sssa_load_percentages') || isempty(ls_opt.sssa_load_percentages)
+            ls_opt.sssa_load_percentages = [20 40 60 80];
+        end
+        sweep_result = stability.sssa_load_sweep(case_data, ls_opt);
+        result = sweep_result;
+        result.converged = sweep_result.converged;
+        result.ibr_analysis = 'sssa_load_sweep';
+        result.metadata = struct('dispatch','smib_ibr_sssa_load_sweep', ...
+            'case_id',case_id,'classification','ASSUMED_DIAGNOSTIC_SMIB_LOADED_IBR');
+        return;
+    end
+end
+
 scenario_opt = struct();
 if isfield(opt, 'ibr_profile') && ~isempty(opt.ibr_profile)
     scenario_opt.ibr_profile = opt.ibr_profile;
@@ -226,6 +259,22 @@ switch ibr_analysis
     case 'sssa'
         result = run_ibr_sssa(case_data, scenario, selection, opt);
         print_ibr_product_summary(result);
+    case 'sssa_load_sweep'
+        % IEEE14 mixed load sweep: route through stability.sssa_load_sweep
+        % using the already-selected fixed GFM/GFL device map. Do NOT route
+        % through multicase_sssa; preserve the mixed-resource composite
+        % equilibrium / full-KCL SSSA route (route_ieee14_ibr).
+        ls_opt = opt;
+        ls_opt.case_id = case_id;
+        ls_opt.route = 'ieee14_ibr';
+        ls_opt.scenario = scenario;
+        if ~isfield(ls_opt,'sssa_load_percentages') || isempty(ls_opt.sssa_load_percentages)
+            ls_opt.sssa_load_percentages = [20 40 60 80];
+        end
+        result = stability.sssa_load_sweep(case_data, ls_opt);
+        result.ibr_analysis = 'sssa_load_sweep';
+        result.metadata = struct('dispatch','ieee14_ibr_sssa_load_sweep', ...
+            'case_id',case_id);
     case {'ts','full'}
         if ~isfield(opt, 'ibr_events') || ~isstruct(opt.ibr_events)
             opt.ibr_events = event_struct_from_flat(opt);

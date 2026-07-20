@@ -66,7 +66,7 @@ if strcmp(req.analysis, 'ibr')
     end
     req.options.ibr_analysis = lower(char(req.options.ibr_analysis));
     if ~ismember(req.options.ibr_analysis, ...
-            {'pf','pf_compare','sssa','sssa_compare','ts','full'})
+            {'pf','pf_compare','sssa','sssa_compare','sssa_load_sweep','ts','full'})
         error('wizard:validate_request:badIbrAnalysis', ...
             'Unknown IBR analysis %s.', req.options.ibr_analysis);
     end
@@ -94,9 +94,42 @@ end
 % SMIB entries are independent, event-free verification fixtures.  They do
 % not have four switchable IEEE14 IBRs and cannot run SG-cycle comparisons.
 is_smib = strcmp(req.analysis,'ibr') && endsWith(req.case_id,'_smib');
-if is_smib && ~ismember(req.options.ibr_analysis,{'pf','sssa','ts','full'})
-    error('wizard:validate_request:smibAnalysis', ...
-        'SMIB verification supports pf, sssa, ts, or full only.');
+% Loaded-IBR cases (smib_loaded_ibr/1.0) are the load-sweep target: the
+% sssa_load_sweep product is applicable. Ideal SMIB (smib_verification/1.0)
+% is rejected for the sweep at runtime with
+% LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB; here we only allow the product
+% structurally so the request reaches the applicability predicate.
+is_loaded_smib = strcmp(req.analysis,'ibr') && endsWith(req.case_id,'_loaded_smib');
+if is_smib && ~is_loaded_smib
+    % Ideal SMIB: supports pf/sssa/ts/full only.
+    if ~ismember(req.options.ibr_analysis,{'pf','sssa','ts','full'})
+        % Special case: sssa_load_sweep on ideal SMIB gets a dedicated
+        % user-facing rejection (LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB).
+        if strcmp(req.options.ibr_analysis,'sssa_load_sweep') || ...
+                (isfield(req.options,'sssa_load_sweep_enabled') && ...
+                logical(req.options.sssa_load_sweep_enabled))
+            error('wizard:validate_request:loadSweepSmibIncompatible', ...
+                'LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB');
+        end
+        error('wizard:validate_request:smibAnalysis', ...
+            'SMIB verification supports pf, sssa, ts, or full only.');
+    end
+end
+
+% SSSA load-sweep percentage validation (strictly increasing, unique; no
+% silent sort/dedup/clip). Validated in user-entered order.
+if isfield(req.options,'sssa_load_sweep_enabled') && ...
+        logical(req.options.sssa_load_sweep_enabled)
+    if isfield(req.options,'sssa_load_percentages') && ...
+            ~isempty(req.options.sssa_load_percentages)
+        pcts = req.options.sssa_load_percentages;
+        if ~isnumeric(pcts) || ~isvector(pcts) || isempty(pcts) || ...
+                ~isreal(pcts) || any(~isfinite(pcts)) || any(pcts < 0) || ...
+                numel(unique(pcts)) ~= numel(pcts) || ~all(diff(pcts) > 0)
+            error('wizard:validate_request:badLoadPercentages', ...
+                'sssa_load_percentages must be unique, finite, nonnegative, strictly increasing.');
+        end
+    end
 end
 
 % --- events policy vs analysis applicability ---

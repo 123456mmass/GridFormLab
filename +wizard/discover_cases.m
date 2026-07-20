@@ -64,6 +64,24 @@ switch analysis_id
         r(end+1,1) = item('gfm_no_pll_smib', ...
             'GFM-VSG No-PLL - Single Infinite Bus Verification', ...
             @cases.case_ibr_smib_gfm_no_pll, smib_opt, analysis_id);
+        % Loaded-IBR cases (smib_loaded_ibr/1.0): single GFL/GFM to infinite
+        % bus with a shunt load swept at constant power factor. The default
+        % IBR product for these is the load sweep; the load sweep is also
+        % available for IEEE14 mixed under analysis='ibr'.
+        loaded_opt = smib_opt;
+        loaded_opt.ibr_analysis = 'sssa_load_sweep';
+        loaded_opt.sssa_load_sweep_enabled = true;
+        loaded_opt.sssa_load_percentages = [20 40 60 80];
+        loaded_opt.sssa_load_scaling_policy = 'constant_power_factor';
+        loaded_opt.sssa_mode_tracking = true;
+        loaded_opt.sssa_save_plots = true;
+        loaded_opt.sssa_plot_visible = true;
+        r(end+1,1) = item('gfl_rms10_loaded_smib', ...
+            'GFL-RMS10 Loaded SMIB (single converter, load sweep)', ...
+            @cases.case_ibr_smib_loaded_gfl_rms10, loaded_opt, analysis_id);
+        r(end+1,1) = item('gfm_no_pll_loaded_smib', ...
+            'GFM-VSG No-PLL Loaded SMIB (single converter, load sweep)', ...
+            @cases.case_ibr_smib_loaded_gfm_no_pll, loaded_opt, analysis_id);
     otherwise
         error('wizard:discover_cases:unknownAnalysis', ...
             'Unknown analysis ID %s.', analysis_id);

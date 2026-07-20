@@ -14,14 +14,18 @@ and 4-mode GFM spectra, constructs cumulative one-to-one tracked-mode indices,
 and includes the base case in `[0 20 40 60 80]`. Plot A is the complete linear
 real/imaginary eigenvalue plane with unconnected markers; a labelled
 low-frequency detail is additional only. Plots G--J publish accepted-equilibrium
-`i_d`, `i_q`, `P`, and `Q` as four separate figures for each load level. GFL currents are native states;
+`i_d`, `i_q`, `P`, and `Q` as four separate figures for each load level. GFL
+currents are native states;
 GFM-no-PLL currents are a labelled VSM-frame diagnostic transform because that
 4-state model has no current state. Every point verifies
 `P+jQ = V*conj(I)` within `1e-10` pu before publishing.
+When `sssa_plot_visible=true`, generated desktop figures remain open after the
+sweep returns; only `Visible='off'` headless figures are closed automatically.
 
 Targeted verification only, per explicit user instruction not to run the full
-suite: `tests/test_sssa_load_sweep.m` 30/30 PASS before final launcher-consumer
-rerun. Full repository regression intentionally omitted.
+suite: `tests/test_sssa_load_sweep.m` 31/31 PASS after the visible-figure gate;
+the earlier launcher-consumer rerun was 21/21 PASS. Full repository regression
+intentionally omitted.
 
 ## 2026-07-21 — SSSA load sweep (single GFL/GFM to infinite bus, shunt load)
 
@@ -44,7 +48,7 @@ existing ideal `smib_verification/1.0` fixture stays bit-identical.
 - `+ibr/smib_loaded_equilibrium.m` (dedicated Newton equilibrium solver; 2-stage init)
 - `+ibr/smib_loaded_sssa_oracle.m` (SSSA oracle with load current term)
 - `+stability/+load_sweep/route_smib_ibr.m` (route adapter)
-- `tests/test_sssa_load_sweep.m` (30 tests after plot-mapping correction, GFL+GFM)
+- `tests/test_sssa_load_sweep.m` (31 tests after plot/visibility corrections, GFL+GFM)
 - `docs/project/defects/2026-07-21-gfl-rms10-smib-unstable-mode.md`
 
 ### Files modified
@@ -77,7 +81,7 @@ would make line flow = 0 and degenerate to an isolated IBR+load.
 - Ideal SMIB (`smib_verification/1.0`) + `sssa_load_sweep` rejected with
   `wizard:validate_request:loadSweepSmibIncompatible` /
   `LOAD_SWEEP_NOT_APPLICABLE_TO_IDEAL_SMIB`.
-- Final targeted verification: `tests/test_sssa_load_sweep.m` 30/30 PASS;
+- Final targeted verification: `tests/test_sssa_load_sweep.m` 31/31 PASS;
   `tests/test_wizard_smib_cases.m` + `tests/test_wizard_dispatch.m` 21/21 PASS.
 
 ### Readiness

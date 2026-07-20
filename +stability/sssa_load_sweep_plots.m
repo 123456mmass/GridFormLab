@@ -1,5 +1,5 @@
 function [fig_files, plot_status] = sssa_load_sweep_plots(points, mode_tracking, opt)
-%SSSA_LOAD_SWEEP_PLOTS  Six plot types, headless.
+%SSSA_LOAD_SWEEP_PLOTS  SSSA load-sweep plots for desktop or headless use.
 %   [FIG_FILES, PLOT_STATUS] = stability.sssa_load_sweep_plots(POINTS, ...)
 %   generates six plot types from fresh per-point results; no fabrication,
 %   smoothing, or rescaling. Saves .fig + .png under
@@ -282,7 +282,11 @@ if save_plots
     fig_files{end+1} = figfile; %#ok<AGROW>
     fig_files{end+1} = figfile_fig; %#ok<AGROW>
 end
-close(fig);
+% Desktop figures are a user-facing analysis product and remain open.  Only
+% invisible/headless figures are disposable renderer artifacts.
+if strcmpi(get(fig,'Visible'),'off')
+    close(fig);
+end
 end
 
 function [fig_files,written] = plot_scalar_product(vis,output_root,name,x,y,marker, ...

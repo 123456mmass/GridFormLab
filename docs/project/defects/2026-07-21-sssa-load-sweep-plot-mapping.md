@@ -43,7 +43,7 @@ style that visually connected unrelated raw roots.
 
 ## Verification
 
-`tests/test_sssa_load_sweep.m`: 30/30 PASS after adding checks for cumulative
+`tests/test_sssa_load_sweep.m`: 31/31 PASS after adding checks for cumulative
 mode identity, 10/4 modal dimensions, raw-spectrum equality, native/derived dq
 current provenance, power identity, four scalar-plot files, and single-point tables.
 Final delivery reruns the proportional targeted launcher consumers only.
@@ -54,3 +54,11 @@ The GFL spectrum's large positive real root is retained and reported; it is not
 removed or rescaled by this display correction. GFM dq current is a reporting
 coordinate transform, not an additional GFM dynamic state. No full repository
 regression was run, per explicit user instruction.
+
+## Follow-up: desktop figures closed after rendering
+
+The renderer originally called `close(fig)` unconditionally after every save,
+so `sssa_plot_visible=true` briefly displayed each graph and then removed it.
+The save path now retains visible desktop figures and closes only invisible
+headless figures. A targeted test asserts that visible figure handles survive
+the renderer return and cleans them up afterward.

@@ -405,6 +405,7 @@ function test_headless_plots_generated(testCase)
 c = gfl_case();
 opt = sweep_opt('plot_test', [0 20 40 60 80]);
 opt.sssa_save_plots = true;
+opt.sssa_plot_visible = false;
 r = stability.sssa_load_sweep(c, opt);
 ls = r.sssa_load_sweep;
 testCase.verifyTrue(numel(ls.figure_files) >= 10);  % >= 5 plots x (png+fig)
@@ -423,6 +424,22 @@ testCase.verifyEqual(ls.plot_data.load_percentages,[0;20;40;60;80]);
 testCase.verifyEqual(size(ls.plot_data.tracked_segments{1}.eigenvalues,2),10);
 end
 
+function test_visible_plots_remain_open(testCase)
+c = gfm_case();
+r = stability.sssa_load_sweep(c,sweep_opt('visible_plot_source',[0 20]));
+before = findall(groot,'Type','figure');
+plot_opt = struct('visible',true,'save_plots',false, ...
+    'case_id','visible_plot_test','output_root',tempdir);
+stability.sssa_load_sweep_plots(r.sssa_load_sweep.points, ...
+    r.sssa_load_sweep.mode_tracking,plot_opt);
+after = findall(groot,'Type','figure');
+is_new = arrayfun(@(h) ~any(h == before),after);
+created = after(is_new);
+cleanup = onCleanup(@() close_valid_figures(created)); %#ok<NASGU>
+testCase.verifyGreaterThanOrEqual(numel(created),10);
+testCase.verifyTrue(all(arrayfun(@(h) strcmpi(get(h,'Visible'),'on'),created)));
+end
+
 function test_single_point_summary_table(testCase)
 c = gfm_case();
 r = stability.sssa_load_sweep(c,sweep_opt('one_point',0));
@@ -430,6 +447,12 @@ testCase.verifyEqual(height(r.sssa_load_sweep.summary_table),1);
 testCase.verifyEqual(r.sssa_load_sweep.summary_table.LoadIncrease_pct,0);
 testCase.verifyLessThan(r.sssa_load_sweep.summary_table.f_active_inf,1e-8);
 testCase.verifyLessThan(r.sssa_load_sweep.summary_table.g_inf,1e-8);
+end
+
+function close_valid_figures(figures)
+for k = 1:numel(figures)
+    if isgraphics(figures(k),'figure'), close(figures(k)); end
+end
 end
 
 % =========================================================================

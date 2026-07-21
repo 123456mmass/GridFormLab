@@ -61,10 +61,15 @@ end
 
 function test_discover_ibr_includes_ieee14_and_separate_smib_cases(tc)
 r = wizard.discover_cases('ibr');
-tc.verifyEqual(numel(r), 3);
+% Six IBR entries: ieee14 mixed + three ideal-SMIB verification cases
+% (gfl_rms10, gfm_no_pll, gfm_vsm_sakimoto) + two loaded-IBR sweep cases.
+% (The prior hard-coded count of 3 was stale after the loaded-IBR cases and
+% the Sakimoto GFM case were added; corrected here to the actual set.)
+tc.verifyEqual(numel(r), 6);
 tc.verifyEqual(r(1).id, 'ieee14_1sg_4ibr');
 tc.verifyTrue(any(strcmp({r.id},'gfl_rms10_smib')));
 tc.verifyTrue(any(strcmp({r.id},'gfm_no_pll_smib')));
+tc.verifyTrue(any(strcmp({r.id},'gfm_vsm_sakimoto_smib')));
 end
 
 function test_discover_is_lazy_no_solve(tc)

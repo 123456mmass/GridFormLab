@@ -63,6 +63,7 @@ if ismember(product,{'sssa','ts','full'})
     % smib_tds_oracle still fails safe via its linear_overflow guard.
     perturb_state = 3;
     if strcmp(kind,'gfm_no_pll'), perturb_state = 2; end
+    if strcmp(kind,'gfm_vsm_sakimoto'), perturb_state = 5; end  % omega_R swing
     tds = ibr.smib_tds_oracle(c.dev,c.x,c.V,c.u,c.V_inf,c.Z, ...
         'T',T,'dt',dt,'perturb_state',perturb_state, ...
         'perturb_amp',1e-3,'A_linear',sssa.A);
@@ -106,6 +107,10 @@ switch lower(char(m.kind))
         E_internal=V+1i*X_L*(kappa*I_sys);
         V_ref=abs(E_internal)+m_q*(kappa*Q-Q_ref);
         dev=ibr.gfm_vsg_no_pll_model("GFM_SMIB",1,1,1,V,struct(),P,V_ref);
+    case 'gfm_vsm_sakimoto'
+        % 9-state Sakimoto VSG (no PLL/AVR/PSS); constructor solves the
+        % consistent Q-V droop reference internally (u=[P_ref;Q_ref]).
+        dev=ibr.gfm_vsm_sakimoto_model("GFM_VSM_SAKIMOTO",1,1,1,V,struct(),P,Q);
     otherwise
         error('ibr:run_smib_verification_case:unknownKind', ...
             'Unknown SMIB kind %s.',m.kind);

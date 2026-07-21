@@ -8,19 +8,31 @@ addpath(fileparts(fileparts(mfilename('fullpath'))));
 pf_init_paths();
 end
 
-function test_discovery_has_two_distinct_smib_entries(tc)
+function test_discovery_has_three_distinct_smib_entries(tc)
 r=wizard.discover_cases('ibr');
 ids={r.id};
-% Ideal SMIB verification entries (smib_verification/1.0): exactly two.
-% Loaded-IBR entries (smib_loaded_ibr/1.0) use the _loaded_smib suffix and
-% are counted separately.
-tc.verifyEqual(sum(endsWith(ids,'_smib') & ~endsWith(ids,'_loaded_smib')),2);
+% Ideal SMIB verification entries (smib_verification/1.0): now THREE, after
+% adding the 9-state Sakimoto GFM VSG (gfm_vsm_sakimoto_smib) alongside the
+% 10-state GFL-RMS10 and the 4-state GFM-no-PLL. Loaded-IBR entries
+% (smib_loaded_ibr/1.0) use the _loaded_smib suffix and are counted separately.
+tc.verifyEqual(sum(endsWith(ids,'_smib') & ~endsWith(ids,'_loaded_smib')),3);
 tc.verifyTrue(any(strcmp(ids,'gfl_rms10_smib')));
 tc.verifyTrue(any(strcmp(ids,'gfm_no_pll_smib')));
+tc.verifyTrue(any(strcmp(ids,'gfm_vsm_sakimoto_smib')));
 % Loaded-IBR sweep entries: exactly two.
 tc.verifyEqual(sum(endsWith(ids,'_loaded_smib')),2);
 tc.verifyTrue(any(strcmp(ids,'gfl_rms10_loaded_smib')));
 tc.verifyTrue(any(strcmp(ids,'gfm_no_pll_loaded_smib')));
+end
+
+function test_sakimoto_sssa_route_is_nine_state_no_pll(tc)
+r=run_case('gfm_vsm_sakimoto_smib','sssa');
+tc.verifyTrue(r.converged);
+tc.verifyEqual(r.metadata.device_state_count,9);
+tc.verifyEqual(r.sssa.eigenvalue_count,9);
+tc.verifyFalse(any(contains(lower(string(r.sssa.state_names)),'pll')));
+tc.verifyLessThan(r.sssa.schur_direct_relative_error,1e-7);
+tc.verifyLessThan(r.sssa.max_real_eigenvalue,0);   % Sakimoto proves stable
 end
 
 function test_gfl_pf_route_uses_ten_state_device(tc)

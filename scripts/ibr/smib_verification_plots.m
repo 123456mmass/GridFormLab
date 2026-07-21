@@ -37,6 +37,7 @@ gfl.eig = sssa_eigenvalue_table(gfl.sssa);
 write_diagnostics(gfl,fullfile(diag_dir,'gfl_rms10_smib.txt'));
 plot_pf(gfl,gfl_dir,'GFL-RMS10 — Single Infinite Bus Verification');
 plot_sssa(gfl,gfl_dir,'GFL-RMS10 — Single Infinite Bus Verification');
+plot_tds(gfl,gfl_dir);
 
 % --- Case B: GFM-VSG-noPLL -------------------------------------------------
 gfm = build_case_gfm();
@@ -50,14 +51,17 @@ gfm.eig = sssa_eigenvalue_table(gfm.sssa);
 write_diagnostics(gfm,fullfile(diag_dir,'gfm_no_pll_smib.txt'));
 plot_pf(gfm,gfm_dir,'GFM-VSG No-PLL — Single Infinite Bus Verification');
 plot_sssa(gfm,gfm_dir,'GFM-VSG No-PLL — Single Infinite Bus Verification');
+plot_tds(gfm,gfm_dir);
 
 % --- Summary 2x2 figure ---------------------------------------------------
 plot_summary(gfl,gfm,fullfile(root,'output','figures','smib'));
 
 fprintf('GFL_SMIB_PF_EQUILIBRIUM_PLOT = PASS\n');
 fprintf('GFL_SMIB_SSSA_PLOT = PASS\n');
+fprintf('GFL_SMIB_TDS_CURRENT_POWER_PLOTS = PASS\n');
 fprintf('GFM_NO_PLL_SMIB_PF_EQUILIBRIUM_PLOT = PASS\n');
 fprintf('GFM_NO_PLL_SMIB_SSSA_PLOT = PASS\n');
+fprintf('GFM_NO_PLL_SMIB_TDS_CURRENT_POWER_PLOTS = PASS\n');
 end
 
 % =========================================================================
@@ -411,6 +415,47 @@ save_fig(fig,root_dir,'smib_summary_gfl_gfm');
 end
 
 % =========================================================================
+function plot_tds(c,dirr)
+% Time-domain current and power plots from already-computed TDS signals.
+% Uses the producer metadata labels verbatim; no numerical change.
+sig = c.tds.signals_perturbed;
+t = c.tds.tgrid;
+if isfield(sig,'power_convention') && ~isempty(sig.power_convention)
+    power_src = sig.power_convention;
+else
+    power_src = 'S = V conj(I), generator injection';
+end
+
+fig = figure('Visible','off','Name',sprintf('%s SMIB TDS current and power signals',c.label));
+tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
+
+nexttile;
+plot(t,sig.i_d_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('i_d (pu, inverter base)');
+title('d-axis current','Interpreter','none');
+subtitle(sig.current_source,'Interpreter','none');
+
+nexttile;
+plot(t,sig.i_q_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('i_q (pu, inverter base)');
+title('q-axis current','Interpreter','none');
+subtitle(sig.current_source,'Interpreter','none');
+
+nexttile;
+plot(t,sig.P_MW,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('P injection (MW)');
+title('Active power','Interpreter','none');
+subtitle(power_src,'Interpreter','none');
+
+nexttile;
+plot(t,sig.Q_MVAr,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('Q injection (MVAr)');
+title('Reactive power','Interpreter','none');
+subtitle(power_src,'Interpreter','none');
+
+save_fig(fig,dirr,'tds_dq_power_signals');
+end
+
 function save_fig(fig,dirr,name)
 figfile = fullfile(dirr,[name '.fig']);
 pngfile = fullfile(dirr,[name '.png']);

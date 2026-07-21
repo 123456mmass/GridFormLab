@@ -76,20 +76,7 @@ if ~isempty(result.ts)
     if strcmpi(vis,'off'), close(f); end
 
     sig=q.signals_perturbed;
-    files=scalar_time_plot(files,q.tgrid,sig.i_d_pu_inverter,vis,outdir, ...
-        'tds_id_vs_time','i_d (pu, inverter base)', ...
-        sprintf('%s: d-axis current response',p.device_id),sig.current_source);
-    files=scalar_time_plot(files,q.tgrid,sig.i_q_pu_inverter,vis,outdir, ...
-        'tds_iq_vs_time','i_q (pu, inverter base)', ...
-        sprintf('%s: q-axis current response',p.device_id),sig.current_source);
-    files=scalar_time_plot(files,q.tgrid,sig.P_MW,vis,outdir, ...
-        'tds_active_power_vs_time','P injection (MW)', ...
-        sprintf('%s: active-power response',p.device_id), ...
-        'S = V conj(I), generator injection');
-    files=scalar_time_plot(files,q.tgrid,sig.Q_MVAr,vis,outdir, ...
-        'tds_reactive_power_vs_time','Q injection (MVAr)', ...
-        sprintf('%s: reactive-power response',p.device_id), ...
-        'S = V conj(I), generator injection');
+    files=tiled_time_plot(files,q.tgrid,sig,vis,outdir,p.device_id);
 end
 end
 
@@ -101,6 +88,38 @@ end
 function file=save_plot(fig,outdir,name)
 file=fullfile(outdir,[name '.png']);
 exportgraphics(fig,file,'Resolution',180);
+end
+
+function files=tiled_time_plot(files,t,sig,vis,outdir,device_id)
+f=figure('Visible',vis,'Name',sprintf('%s SMIB TDS current and power signals',device_id));
+tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
+
+nexttile;
+plot(t,sig.i_d_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('i_d (pu, inverter base)');
+title('d-axis current','Interpreter','none');
+subtitle(sig.current_source,'Interpreter','none');
+
+nexttile;
+plot(t,sig.i_q_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('i_q (pu, inverter base)');
+title('q-axis current','Interpreter','none');
+subtitle(sig.current_source,'Interpreter','none');
+
+nexttile;
+plot(t,sig.P_MW,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('P injection (MW)');
+title('Active power','Interpreter','none');
+subtitle('S = V conj(I), generator injection','Interpreter','none');
+
+nexttile;
+plot(t,sig.Q_MVAr,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel('Q injection (MVAr)');
+title('Reactive power','Interpreter','none');
+subtitle('S = V conj(I), generator injection','Interpreter','none');
+
+files{end+1}=save_plot(f,outdir,'tds_dq_power_signals'); %#ok<AGROW>
+if strcmpi(vis,'off'), close(f); end
 end
 
 function files=scalar_time_plot(files,t,y,vis,outdir,name,ylabel_text,title_text,source)

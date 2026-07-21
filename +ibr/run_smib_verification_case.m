@@ -52,7 +52,7 @@ if ismember(product,{'sssa','ts','full'})
 end
 
 tds = [];
-if ismember(product,{'ts','full'})
+if ismember(product,{'sssa','ts','full'})
     T = option_value(opt,'t_end',0.05);
     dt = option_value(opt,'dt',1e-3);
     % These source-reproduction diagnostics are intentionally short. Long
@@ -72,7 +72,7 @@ result = struct('converged',pf.converged, ...
         'source','SMIB_CASE_FIXED_SINGLE_DEVICE'), ...
     'metadata',struct('classification','ASSUMED_DIAGNOSTIC_SMIB_VERIFICATION', ...
         'device_state_count',c.dev.nx,'events','NOT_APPLICABLE'));
-if ~isempty(tds)
+if ismember(product,{'ts','full'}) && ~isempty(tds)
     result.converged = result.converged && tds.newton_info_drift.all_converged;
 end
 result.execution_summary = struct( ...

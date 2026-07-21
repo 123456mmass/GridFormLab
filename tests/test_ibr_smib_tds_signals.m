@@ -18,9 +18,8 @@ r = run_case(cases.case_ibr_smib_gfm_no_pll());
 verify_signals(tc,r,'PROJECT_DERIVED_DIAGNOSTIC_VSM_FRAME_TRANSFORM');
 end
 
-function test_four_separate_time_plot_files(tc)
-expected = {'tds_id_vs_time','tds_iq_vs_time', ...
-    'tds_active_power_vs_time','tds_reactive_power_vs_time'};
+function test_single_tiled_time_plot_file(tc)
+expected = {'tds_dq_power_signals'};
 case_list = {cases.case_ibr_smib_gfl_rms10(), ...
     cases.case_ibr_smib_gfm_no_pll()};
 for c = 1:numel(case_list)

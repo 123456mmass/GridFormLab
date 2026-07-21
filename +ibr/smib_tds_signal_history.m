@@ -30,7 +30,14 @@ for k = 1:n
     if isfield(rec,'i_d') && isfield(rec,'i_q')
         i_d = rec.i_d;
         i_q = rec.i_q;
-        source = 'NATIVE_GFL_CURRENT_STATES';
+        % Native current states. Label by device family so a GFM with a
+        % genuine inner-current-loop state (e.g. gfm_vsm_sakimoto) is not
+        % mislabelled as GFL. GFL-RMS10 keeps its established label.
+        if isfield(dev,'device_type') && contains(lower(char(dev.device_type)),'gfl')
+            source = 'NATIVE_GFL_CURRENT_STATES';
+        else
+            source = 'NATIVE_GFM_CURRENT_STATES';
+        end
     elseif isfield(rec,'I_inv') && isfield(rec,'delta_vsm')
         I_dq_inv = rec.I_inv*exp(-1i*rec.delta_vsm);
         i_d = real(I_dq_inv);

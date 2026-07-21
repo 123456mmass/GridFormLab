@@ -51,10 +51,11 @@ end
 
 function test_gfl_rms10_smib_event_free_tds(testCase)
 [dev,x,V,u,E,Z,s] = gfl_fixture_with_sssa();
-% Perturb P_f (state 3, a stable mode). GFL has an unstable PLL eigenvalue
-% (delta_PLL mode, real part ~3.4e5) at this operating point; perturbing
-% state 1 would make expm(A*t) overflow. Stability is an outcome, reported
-% honestly in the diagnostics; the TDS drift gate uses a stable direction.
+% Perturb P_f (state 3, a stable mode). After the PLL phase-detector sign
+% fix (Yazdani eq 8.1, v_q=+Im; defect 2026-07-21), the GFL-RMS10 SMIB
+% spectrum is asymptotically stable (max_real ~ -11.2; the former +3.4e5
+% delta_PLL saddle is gone). State 3 remains a convenient stable-direction
+% perturbation for the drift gate.
 tds = ibr.smib_tds_oracle(dev,x,V,u,E,Z, ...
     'T',0.05,'dt',1e-3,'perturb_state',3,'perturb_amp',1e-3, ...
     'A_linear',s.A);
@@ -70,10 +71,11 @@ tds1 = ibr.smib_tds_oracle(dev,x,V,u,E,Z, ...
 tds2 = ibr.smib_tds_oracle(dev,x,V,u,E,Z, ...
     'T',0.02,'dt',5e-4,'perturb_state',3,'perturb_amp',1e-4, ...
     'perturb_amp_half',5e-5,'A_linear',s.A);
-% GFL has an unstable PLL eigenvalue (real part ~3.4e5) at this operating
-% point, so the linear SSSA response expm(A*t) overflows. The
+% After the PLL sign fix (Yazdani eq 8.1), the GFL-RMS10 SMIB spectrum is
+% stable, so expm(A*t) no longer overflows and linear_overflow is false:
+% the nonlinear-vs-linear comparison branch runs. The branch is retained so
+% the test remains correct regardless of overflow state. The
 % perturbation-halving ratio (a nonlinear-only metric) must still converge.
-% The nonlinear-vs-linear comparison is skipped when linear_overflow is true.
 if tds1.linear_overflow
     testCase.verifyTrue(tds1.linear_overflow);
     testCase.verifyEqual(tds1.nonlinear_vs_linear_error,Inf);

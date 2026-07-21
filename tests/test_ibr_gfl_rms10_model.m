@@ -152,8 +152,14 @@ x = d.x0;
 x(1) = 0.05;  % delta_PLL != angle(V) -> v_q != 0
 p = d.provenance.params;
 % Recompute v_q at this offset.
+% Yazdani eq 8.1 (f_d+j*f_q=f*e^{-j*rho} => f_q=+Im): v_q = +imag(Vdq).
+% The prior test pinned v_q=-imag(Vdq), which encoded the PLL phase-detector
+% sign defect (det(J_PLL)<0 saddle, +3.4e5 unstable mode). Corrected to match
+% the source convention and the fixed production code; independently verified
+% by output/diagnostics/oracle_pll_signfix.m (SSSA max_real +3.37e5 -> -11.23).
+% See defect docs/project/defects/2026-07-21-gfl-rms10-smib-unstable-mode.md.
 Vdq = V*exp(-1i*x(1));
-v_q = -imag(Vdq);
+v_q =  imag(Vdq);
 dx = d.f(0,x,y,[0.3;0],struct());
 testCase.verifyEqual(dx(2),v_q,'AbsTol',1e-13);
 testCase.verifyEqual(dx(1),p.omega_b*(p.kp_PLL*v_q + p.ki_PLL*x(2)),'AbsTol',1e-12);

@@ -39,8 +39,11 @@ function dev = gfl_rms10_model(device_id, bus_id, bus_position, ...
 %     V_bus = complex(y(2*bp-1), y(2*bp))   (network common xy frame)
 %     dq via delta_PLL (Yazdani eq 8.18-8.19, locked PLL: v_q=0):
 %       v_d =  Re(V_bus*exp(-1i*delta_PLL)) = |V|*cos(angle(V)-delta_PLL)
-%       v_q = -Im(V_bus*exp(-1i*delta_PLL)) = |V|*sin(angle(V)-delta_PLL)
-%       (so v_q>0 when V leads delta_PLL; PLL drives v_q->0)
+%       v_q =  Im(V_bus*exp(-1i*delta_PLL)) = |V|*sin(angle(V)-delta_PLL)
+%       (Yazdani eq 8.1: f_d+j*f_q=f*e^{-j*rho} => f_q=+Im; v_q>0 when V leads
+%        delta_PLL, and the PLL PI drives v_q->0. A prior '-Im' transcription
+%        inverted the phase-detector polarity, giving det(J_PLL)<0 -> saddle;
+%        see defect 2026-07-21-gfl-rms10-smib-unstable-mode.)
 %     PLL (Teodorescu eq 4.38, simple-PI ODE form; NO freeze):
 %       dot(xi_PLL)   = v_q
 %       dot(delta_PLL)= omega_b*(kp_PLL*v_q + ki_PLL*xi_PLL)
@@ -323,7 +326,7 @@ i_q       = x(10);
 % dq voltage via delta_PLL (Yazdani eq 8.18-8.19; locked PLL -> v_q=0).
 Vdq = V * exp(-1i*delta_PLL);
 v_d =  real(Vdq);
-v_q = -imag(Vdq);    % >0 when V leads delta_PLL (drives PLL to lock)
+v_q =  imag(Vdq);    % Yazdani eq 8.1: v_q=+Im=|V|sin(angle(V)-delta_PLL); >0 when V leads
 D_V = v_d^2 + v_q^2;
 if D_V < V_div_min^2
     error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
@@ -430,7 +433,7 @@ i_d = x(9);
 i_q = x(10);
 Vdq = V * exp(-1i*delta_PLL);
 v_d =  real(Vdq);
-v_q = -imag(Vdq);
+v_q =  imag(Vdq);    % Yazdani eq 8.1 convention (v_q=+Im); D_V=v_d^2+v_q^2 sign-invariant
 D_V = v_d^2 + v_q^2;
 if D_V < V_div_min^2
     error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
@@ -463,7 +466,7 @@ delta_PLL = x(1);  xi_PLL = x(2);
 P_f = x(3);  Q_f = x(4);  xi_P = x(5);  xi_Q = x(6);
 xi_id = x(7);  xi_iq = x(8);  i_d = x(9);  i_q = x(10);
 Vdq = V * exp(-1i*delta_PLL);
-v_d =  real(Vdq);  v_q = -imag(Vdq);
+v_d =  real(Vdq);  v_q =  imag(Vdq);   % Yazdani eq 8.1: v_q=+Im
 D_V = v_d^2 + v_q^2;
 if D_V < V_div_min^2
     error('ibr:gfl_rms10_model:lowVoltagePowerInversion', ...

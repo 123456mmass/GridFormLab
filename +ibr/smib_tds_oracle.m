@@ -165,6 +165,7 @@ out.perturb_state = opt.perturb_state;
 out.perturb_amp = opt.perturb_amp;
 out.perturb_amp_half = opt.perturb_amp_half;
 out.x_perturbed = xp;
+out.y_perturbed = yp;
 out.dx_perturbed = dxp;
 out.dx_perturbed_half = dxh;
 out.x_linear = x_lin;
@@ -175,6 +176,8 @@ out.perturbation_halving_ratio = half_ratio;
 out.linear_overflow = linear_overflow;
 out.newton_info_drift = info_drift;
 out.newton_info_perturbed = info_p;
+out.signals_perturbed = ibr.smib_tds_signal_history( ...
+    dev,xp,yp,u_eq,ec);
 out.newton_info_half = info_h;
 end
 

@@ -7,6 +7,22 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-07-21 — Separate SMIB TDS current and power plots
+
+The ideal-SMIB TDS diagnostic now preserves the perturbed algebraic-voltage
+trajectory and reconstructs four independent time-domain products:
+`i_d(t)`, `i_q(t)`, `P(t)`, and `Q(t)`. GFL-RMS10 uses its native inverter-base
+current states. GFM-noPLL has no current state, so its current traces are
+explicitly classified as a reporting-only transform of `I_inv` into the VSM
+rotor frame. Active/reactive power uses the system-base generator convention
+`S=V*conj(I_sys)` and is checked at every sample with a `1e-10` pu numerical
+identity gate. SSSA load-sweep plots remain separate and retain load increase
+(%) on the horizontal axis; only TDS plots use time (s).
+
+Targeted verification only per user instruction: the new signal/plot suite
+passed 3/3 and the existing GFM/GFL SMIB oracle suites passed 15/15. Full
+repository regression was intentionally not run.
+
 ## 2026-07-21 — SSSA load-sweep plot correction and dq/P/Q diagnostics
 
 Starting commit `3379688`. The plot adapter now preserves the raw 10-mode GFL

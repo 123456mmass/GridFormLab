@@ -34,6 +34,7 @@ phasor(p.V_infinite_bus,'V infinite',[0.85 0.325 0.098]);
 axis equal; grid on; xlabel('Real (pu)'); ylabel('Imag (pu)');
 title('Voltage phasors'); legend('Location','best');
 files{end+1}=save_plot(f,outdir,'pf_equilibrium'); %#ok<AGROW>
+if strcmpi(vis,'off'), close(f); end
 
 if ~isempty(result.sssa)
     s=result.sssa; lam=s.eigenvalues;
@@ -53,6 +54,7 @@ if ~isempty(result.sssa)
         'YTickLabel',s.state_names(s.active_state_indices));
     title('Normalized right-mode amplitude');
     files{end+1}=save_plot(f,outdir,'sssa'); %#ok<AGROW>
+    if strcmpi(vis,'off'), close(f); end
 end
 
 if ~isempty(result.ts)
@@ -71,6 +73,23 @@ if ~isempty(result.ts)
     grid on; xlabel('Time (s)'); ylabel('\Delta state');
     title('Small-perturbation nonlinear / linear response');
     files{end+1}=save_plot(f,outdir,'event_free_tds'); %#ok<AGROW>
+    if strcmpi(vis,'off'), close(f); end
+
+    sig=q.signals_perturbed;
+    files=scalar_time_plot(files,q.tgrid,sig.i_d_pu_inverter,vis,outdir, ...
+        'tds_id_vs_time','i_d (pu, inverter base)', ...
+        sprintf('%s: d-axis current response',p.device_id),sig.current_source);
+    files=scalar_time_plot(files,q.tgrid,sig.i_q_pu_inverter,vis,outdir, ...
+        'tds_iq_vs_time','i_q (pu, inverter base)', ...
+        sprintf('%s: q-axis current response',p.device_id),sig.current_source);
+    files=scalar_time_plot(files,q.tgrid,sig.P_MW,vis,outdir, ...
+        'tds_active_power_vs_time','P injection (MW)', ...
+        sprintf('%s: active-power response',p.device_id), ...
+        'S = V conj(I), generator injection');
+    files=scalar_time_plot(files,q.tgrid,sig.Q_MVAr,vis,outdir, ...
+        'tds_reactive_power_vs_time','Q injection (MVAr)', ...
+        sprintf('%s: reactive-power response',p.device_id), ...
+        'S = V conj(I), generator injection');
 end
 end
 
@@ -82,4 +101,14 @@ end
 function file=save_plot(fig,outdir,name)
 file=fullfile(outdir,[name '.png']);
 exportgraphics(fig,file,'Resolution',180);
+end
+
+function files=scalar_time_plot(files,t,y,vis,outdir,name,ylabel_text,title_text,source)
+f=figure('Visible',vis,'Name',title_text);
+plot(t,y,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+xlabel('Time (s)'); ylabel(ylabel_text);
+title(title_text,'Interpreter','none');
+subtitle(source,'Interpreter','none');
+files{end+1}=save_plot(f,outdir,name); %#ok<AGROW>
+if strcmpi(vis,'off'), close(f); end
 end

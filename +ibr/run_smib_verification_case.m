@@ -55,9 +55,12 @@ tds = [];
 if ismember(product,{'sssa','ts','full'})
     T = option_value(opt,'t_end',0.05);
     dt = option_value(opt,'dt',1e-3);
-    % These source-reproduction diagnostics are intentionally short. Long
-    % unstable linear responses may overflow without adding verification.
-    T = min(T,0.05);
+    % The TDS horizon follows the user's t_end setting (no hard cap). The
+    % former clamp (T=min(T,0.05)) was a workaround for the GFL-RMS10 PLL
+    % phase-detector sign defect (+3.4e5 unstable mode) fixed 2026-07-22
+    % (defect SWEEP-2026-07-21-01); the SMIB spectrum is now asymptotically
+    % stable (max_real ~ -11.2) so long horizons no longer overflow. The
+    % smib_tds_oracle still fails safe via its linear_overflow guard.
     perturb_state = 3;
     if strcmp(kind,'gfm_no_pll'), perturb_state = 2; end
     tds = ibr.smib_tds_oracle(c.dev,c.x,c.V,c.u,c.V_inf,c.Z, ...

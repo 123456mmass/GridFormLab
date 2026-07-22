@@ -75,8 +75,25 @@ if ~isempty(result.ts)
     files{end+1}=save_plot(f,outdir,'event_free_tds'); %#ok<AGROW>
     if strcmpi(vis,'off'), close(f); end
 
-    sig=q.signals_perturbed;
-    files=tiled_time_plot(files,q.tgrid,sig,vis,outdir,p.device_id);
+    if isfield(q,'fault_enabled') && q.fault_enabled && ~isempty(q.signals_fault)
+        sig = q.signals_fault;
+        mode_lbl = sprintf('fault response: Z_f=%.3g%+.3gj pu over %.2f-%.2f s', ...
+            real(q.fault_Zf),imag(q.fault_Zf),q.fault_on,q.fault_clear);
+        fwin = [q.fault_on q.fault_clear];
+    elseif isfield(q,'step_enabled') && q.step_enabled && ~isempty(q.signals_step)
+        sig = q.signals_step;
+        mode_lbl = sprintf('grid step at %.2f s: \\DeltaV=%+.0f%%, \\Delta\\theta=%+.0f deg (PLL re-lock / re-sync)', ...
+            q.step_on,100*q.step_dV,q.step_dphase_deg);
+        fwin = q.step_on;
+    else
+        sig = q.signals_drift;   % event-free, initialised at PF equilibrium (flat)
+        mode_lbl = 'event-free TDS (initialised at PF equilibrium): static = dynamic, no oscillation';
+        fwin = [];
+    end
+    files=tiled_time_plot(files,q.tgrid,sig,vis,outdir,p.device_id,mode_lbl,fwin);
+    if isfield(sig,'f_hz') && any(isfinite(sig.f_hz))
+        files=freq_time_plot(files,q.tgrid,sig,vis,outdir,p.device_id,mode_lbl,fwin);
+    end
 end
 end
 
@@ -90,41 +107,68 @@ file=fullfile(outdir,[name '.png']);
 exportgraphics(fig,file,'Resolution',180);
 end
 
-function files=tiled_time_plot(files,t,sig,vis,outdir,device_id)
+function files=tiled_time_plot(files,t,sig,vis,outdir,device_id,mode_lbl,fwin)
+if nargin<7, mode_lbl=''; end
+if nargin<8, fwin=[]; end
 f=figure('Visible',vis,'Name',sprintf('%s SMIB TDS current and power signals',device_id));
-tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
+tl=tiledlayout(2,2,'Padding','compact','TileSpacing','compact');
 
 nexttile;
-plot(t,sig.i_d_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+plot(t,sig.i_d_pu_inverter,'-','LineWidth',1.4); grid on; add_fault_window(fwin);
 xlabel('Time (s)'); ylabel('i_d (pu, inverter base)');
 title('d-axis current','Interpreter','none');
 subtitle(sig.current_source,'Interpreter','none');
 
 nexttile;
-plot(t,sig.i_q_pu_inverter,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+plot(t,sig.i_q_pu_inverter,'-','LineWidth',1.4); grid on; add_fault_window(fwin);
 xlabel('Time (s)'); ylabel('i_q (pu, inverter base)');
 title('q-axis current','Interpreter','none');
 subtitle(sig.current_source,'Interpreter','none');
 
 nexttile;
-plot(t,sig.P_MW,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+plot(t,sig.P_MW,'-','LineWidth',1.4); grid on; add_fault_window(fwin);
 xlabel('Time (s)'); ylabel('P injection (MW)');
 title('Active power','Interpreter','none');
 subtitle('S = V conj(I), generator injection','Interpreter','none');
 
 nexttile;
-plot(t,sig.Q_MVAr,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+plot(t,sig.Q_MVAr,'-','LineWidth',1.4); grid on; add_fault_window(fwin);
 xlabel('Time (s)'); ylabel('Q injection (MVAr)');
 title('Reactive power','Interpreter','none');
 subtitle('S = V conj(I), generator injection','Interpreter','none');
 
+if ~isempty(mode_lbl)
+    title(tl,mode_lbl,'Interpreter','tex','FontWeight','bold');
+end
 files{end+1}=save_plot(f,outdir,'tds_dq_power_signals'); %#ok<AGROW>
 if strcmpi(vis,'off'), close(f); end
 end
 
+function files=freq_time_plot(files,t,sig,vis,outdir,device_id,mode_lbl,fwin)
+if nargin<7, mode_lbl=''; end
+if nargin<8, fwin=[]; end
+f=figure('Visible',vis,'Name',sprintf('%s SMIB TDS frequency',device_id));
+plot(t,sig.f_hz,'-','LineWidth',1.4); grid on; add_fault_window(fwin);
+xlabel('Time (s)'); ylabel('f (Hz)');
+ttl='frequency'; if ~isempty(sig.f_source), ttl=[ttl ' (' sig.f_source ')']; end
+title(ttl,'Interpreter','none');
+if ~isempty(mode_lbl), subtitle(mode_lbl,'Interpreter','tex'); end
+files{end+1}=save_plot(f,outdir,'tds_frequency'); %#ok<AGROW>
+if strcmpi(vis,'off'), close(f); end
+end
+
+function add_fault_window(fwin)
+if numel(fwin)==2
+    xline(fwin(1),'r--','fault on','HandleVisibility','off','LabelVerticalAlignment','bottom');
+    xline(fwin(2),'k--','clear','HandleVisibility','off','LabelVerticalAlignment','bottom');
+elseif numel(fwin)==1
+    xline(fwin(1),'r--','step','HandleVisibility','off','LabelVerticalAlignment','bottom');
+end
+end
+
 function files=scalar_time_plot(files,t,y,vis,outdir,name,ylabel_text,title_text,source)
 f=figure('Visible',vis,'Name',title_text);
-plot(t,y,'-o','LineWidth',1.15,'MarkerSize',3); grid on;
+plot(t,y,'-','LineWidth',1.4); grid on;
 xlabel('Time (s)'); ylabel(ylabel_text);
 title(title_text,'Interpreter','none');
 subtitle(source,'Interpreter','none');

@@ -42,6 +42,12 @@ arguments
     opt.newton_max_iter (1,1) double {mustBeInteger,mustBePositive} = 50
     opt.fd_eps (1,1) double {mustBePositive} = 1e-6
     opt.A_linear (:,:) double = []
+    opt.fault_on (1,1) double {mustBeNonnegative} = 0
+    opt.fault_clear (1,1) double {mustBeNonnegative} = 0
+    opt.fault_Zf (1,1) double = 0.10i
+    opt.step_on (1,1) double {mustBeNonnegative} = 0
+    opt.step_dV (1,1) double = -0.10
+    opt.step_dphase_deg (1,1) double = 20
 end
 
 required = {'nx','nu','bus_position','f','current_injection','state_names'};
@@ -143,6 +149,63 @@ else
     linear_overflow = false;
 end
 
+% --- Fault run (shunt fault impedance Z_f to ground at the terminal bus) ------
+% A three-phase-to-ground fault is modelled as a shunt admittance 1/Z_f applied
+% at the device terminal bus during [fault_on,fault_clear]; the KCL becomes
+%   I_dev = (V - V_inf)/Z_line + V/Z_f    (the shunt draws V/Z_f during the fault)
+% so the terminal voltage sags to a depth set by Z_f, then recovers on clearing.
+% The device starts at the exact equilibrium (NO artificial perturbation): it is
+% flat until the fault, responds during/after it, and rings down to equilibrium.
+fault_enabled = opt.fault_on >= 0 && opt.fault_clear > opt.fault_on && abs(opt.fault_Zf) > 0;
+fault_failed = false; fault_message = '';
+if fault_enabled
+    Ysh_of = @(t) double(t>=opt.fault_on && t<opt.fault_clear)/opt.fault_Zf;
+    try
+        [x_fault,y_fault,info_fault] = integrate_trap_tv(f_handle,dev,u_eq,ec,@(t)V_inf,Z_line, ...
+            x_eq,y_eq,opt.T,opt.dt,opt.newton_tol,opt.newton_max_iter,opt.fd_eps,Ysh_of);
+        signals_fault = ibr.smib_tds_signal_history(dev,x_fault,y_fault,u_eq,ec);
+    catch ME
+        % A too-severe (near-bolted) fault drives the terminal voltage below the
+        % device balanced-domain floor; the reduced study model has no LVRT /
+        % current limiter, so it fails closed. Do NOT crash the whole run: warn,
+        % report the failure, and fall back to the event-free response.
+        fault_failed = true;
+        fault_message = ME.message;
+        x_fault = []; y_fault = []; info_fault = []; signals_fault = [];
+        fault_enabled = false;
+        warning('ibr:smib_tds_oracle:faultTooSevere', ...
+            ['Fault run failed: %s\nThe fault Z_f=%.4g%+.4gj pu is likely too ' ...
+             'severe (terminal voltage below the balanced-domain floor; the ' ...
+             'reduced model has no LVRT/current limiter). Use a larger Z_f ' ...
+             '(e.g. >= 0.1j pu). Showing the event-free response instead.'], ...
+            ME.message, real(opt.fault_Zf), imag(opt.fault_Zf));
+    end
+else
+    x_fault = []; y_fault = []; info_fault = []; signals_fault = [];
+end
+
+% --- Grid step disturbance (permanent V_inf magnitude + phase step) -----------
+% At step_on the infinite-bus voltage steps: magnitude -> (1+step_dV)*|V_inf|
+% and angle jumps by step_dphase_deg (a classic PLL re-lock / re-synchronisation
+% test, cf. Teodorescu Fig 4.7). The device is FLAT until the step, then the GFL
+% PLL re-locks and the GFM swing re-synchronises to the new grid vector.
+step_enabled = opt.step_on > 0;
+if step_enabled
+    Vstep = V_inf*(1+opt.step_dV)*exp(1i*opt.step_dphase_deg*pi/180);
+    Vinf_of = @(t) V_inf*double(t<opt.step_on) + Vstep*double(t>=opt.step_on);
+    try
+        [x_step,y_step,info_step_run] = integrate_trap_tv(f_handle,dev,u_eq,ec,Vinf_of,Z_line, ...
+            x_eq,y_eq,opt.T,opt.dt,opt.newton_tol,opt.newton_max_iter,opt.fd_eps,@(t)0);
+        signals_step = ibr.smib_tds_signal_history(dev,x_step,y_step,u_eq,ec);
+    catch ME
+        step_enabled = false; x_step=[]; y_step=[]; info_step_run=[]; signals_step=[];
+        warning('ibr:smib_tds_oracle:stepFailed', ...
+            'Step-disturbance run failed: %s (try a smaller step).',ME.message);
+    end
+else
+    x_step=[]; y_step=[]; info_step_run=[]; signals_step=[];
+end
+
 out = struct();
 out.classification = 'ASSUMED_DIAGNOSTIC_SMIB_TDS_ORACLE';
 out.device_id = dev.device_id;
@@ -178,7 +241,27 @@ out.newton_info_drift = info_drift;
 out.newton_info_perturbed = info_p;
 out.signals_perturbed = ibr.smib_tds_signal_history( ...
     dev,xp,yp,u_eq,ec);
+out.signals_drift = ibr.smib_tds_signal_history( ...
+    dev,x_drift,y_drift,u_eq,ec);
 out.newton_info_half = info_h;
+out.fault_enabled = fault_enabled;
+out.fault_failed = fault_failed;
+out.fault_message = fault_message;
+out.fault_on = opt.fault_on;
+out.fault_clear = opt.fault_clear;
+out.fault_Zf = opt.fault_Zf;
+out.x_fault = x_fault;
+out.y_fault = y_fault;
+out.signals_fault = signals_fault;
+out.newton_info_fault = info_fault;
+out.step_enabled = step_enabled;
+out.step_on = opt.step_on;
+out.step_dV = opt.step_dV;
+out.step_dphase_deg = opt.step_dphase_deg;
+out.x_step = x_step;
+out.y_step = y_step;
+out.signals_step = signals_step;
+out.newton_info_step = info_step_run;
 end
 
 % =========================================================================
@@ -194,11 +277,12 @@ end
 end
 
 % =========================================================================
-function g = local_g(dev,x,y,u,ec,V_inf,Z_line)
+function g = local_g(dev,x,y,u,ec,V_inf,Z_line,Y_sh)
+if nargin < 8, Y_sh = 0; end
 I_dev = dev.current_injection(0,x,y,u,ec);
 V = complex(y(1),y(2));
 I_line = (V-V_inf)/Z_line;
-mis = I_dev-I_line;
+mis = I_dev - I_line - V*Y_sh;   % V*Y_sh = shunt fault current V/Z_f during fault
 g = [real(mis);imag(mis)];
 end
 
@@ -251,6 +335,33 @@ for k = 1:nsteps
     [z1,info_step] = newton_step(z,x0k,y0k,f0,fh,gh,n,m,dt,tol,max_iter,fd_eps);
     X(:,k+1) = z1(1:n);
     Y(:,k+1) = z1(n+1:end);
+    conv_count = conv_count + info_step.converged;
+    max_resid(k) = info_step.max_resid;
+end
+info = struct('steps',nsteps,'converged_count',conv_count, ...
+    'max_resid_history',max_resid,'all_converged',conv_count==nsteps);
+end
+
+% =========================================================================
+function [X,Y,info] = integrate_trap_tv(fh,dev,u,ec,Vinf_of,Z_line,x0,y0,T,dt,tol,max_iter,fd_eps,Ysh_of)
+% Implicit-trapezoidal integrator with a TIME-VARYING infinite-bus voltage
+% Vinf_of(t) AND shunt admittance Ysh_of(t) at the terminal bus. Used for both
+% the shunt fault (Vinf const, Ysh = 1/Zf during the window) and the grid step
+% disturbance (Vinf stepped, Ysh = 0). f is unchanged; the disturbance enters g.
+n = numel(x0); m = numel(y0);
+nsteps = round(T/dt);
+X = zeros(n,nsteps+1); Y = zeros(m,nsteps+1);
+X(:,1) = x0; Y(:,1) = y0;
+conv_count = 0; max_resid = zeros(nsteps,1);
+for k = 1:nsteps
+    t1 = k*dt;
+    Vinf_k = Vinf_of(t1); Ysh_k = Ysh_of(t1);
+    gh = @(x,y) local_g(dev,x,y,u,ec,Vinf_k,Z_line,Ysh_k);
+    x0k = X(:,k); y0k = Y(:,k);
+    f0 = fh(x0k,y0k);
+    z = [x0k; y0k];
+    [z1,info_step] = newton_step(z,x0k,y0k,f0,fh,gh,n,m,dt,tol,max_iter,fd_eps);
+    X(:,k+1) = z1(1:n); Y(:,k+1) = z1(n+1:end);
     conv_count = conv_count + info_step.converged;
     max_resid(k) = info_step.max_resid;
 end

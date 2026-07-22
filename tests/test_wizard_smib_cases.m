@@ -11,14 +11,17 @@ end
 function test_discovery_has_three_distinct_smib_entries(tc)
 r=wizard.discover_cases('ibr');
 ids={r.id};
-% Ideal SMIB verification entries (smib_verification/1.0): now THREE, after
-% adding the 9-state Sakimoto GFM VSG (gfm_vsm_sakimoto_smib) alongside the
-% 10-state GFL-RMS10 and the 4-state GFM-no-PLL. Loaded-IBR entries
-% (smib_loaded_ibr/1.0) use the _loaded_smib suffix and are counted separately.
-tc.verifyEqual(sum(endsWith(ids,'_smib') & ~endsWith(ids,'_loaded_smib')),3);
+% Ideal SMIB verification entries (smib_verification/1.0): now FIVE, after
+% adding the reduced 6-state EECON49 GFL/GFM (gfl_reduced6_smib,
+% gfm_reduced6_smib) alongside the 10-state GFL-RMS10, 4-state GFM-no-PLL, and
+% 9-state Sakimoto GFM VSG. Loaded-IBR entries (smib_loaded_ibr/1.0) use the
+% _loaded_smib suffix and are counted separately.
+tc.verifyEqual(sum(endsWith(ids,'_smib') & ~endsWith(ids,'_loaded_smib')),5);
 tc.verifyTrue(any(strcmp(ids,'gfl_rms10_smib')));
 tc.verifyTrue(any(strcmp(ids,'gfm_no_pll_smib')));
 tc.verifyTrue(any(strcmp(ids,'gfm_vsm_sakimoto_smib')));
+tc.verifyTrue(any(strcmp(ids,'gfl_reduced6_smib')));
+tc.verifyTrue(any(strcmp(ids,'gfm_reduced6_smib')));
 % Loaded-IBR sweep entries: exactly two.
 tc.verifyEqual(sum(endsWith(ids,'_loaded_smib')),2);
 tc.verifyTrue(any(strcmp(ids,'gfl_rms10_loaded_smib')));

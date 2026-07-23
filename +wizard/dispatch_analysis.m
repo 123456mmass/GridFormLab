@@ -91,6 +91,10 @@ switch analysis
     case 'ibr'
         if isfield(case_data,'smib_verification')
             result = ibr.run_smib_verification_case(case_data,opt);
+        elseif isfield(case_data,'two_ibr_switch')
+            result = ibr.run_two_ibr_switch_case(case_data,opt);
+        elseif isfield(case_data,'padiyar_switch')
+            result = ibr.run_padiyar_switch_case(case_data,opt);
         else
             result = run_ibr_analysis(case_data, opt, entry.label, root, case_id);
         end

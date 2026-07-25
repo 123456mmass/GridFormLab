@@ -23,11 +23,13 @@ arguments
     opts.dt (1,1) double = 2e-3
     opts.fig_dir (1,1) string = ""
     opts.visible (1,1) logical = false
+    opts.plot (1,1) logical = true      % false => create NO figure and write NO PNG (out.fig_paths={})
     opts.compare (1,1) logical = false
     opts.T_d_on (1,1) double = 0.5     % dwell GFL->GFM (s): filters spurious marginal AGSI crossings
     opts.T_d_off (1,1) double = 1.0    % dwell GFM->GFL (s)
     opts.sg_droop_R (1,1) double = 0.05  % SG primary-governor droop (pu/pu); Inf=off
     opts.gfm_ilim (1,1) double = 1.2     % converter current limit (x rated); Inf=off
+    opts.ilim_mode (1,1) string = "clamp"  % current limiter: "clamp" (hard, default) | "vi" (soft virtual-impedance)
     opts.excitation (1,1) string = ""         % "" => per-system default (ieee14->manual, padiyar->avr)
     opts.system (1,1) string = "padiyar"      % "padiyar" (two-area 1SG+3IBR) | "ieee14" (1SG+4IBR)
 end
@@ -38,7 +40,7 @@ if strlength(opts.excitation)==0
 end
 sys = bld(index_mode=opts.index_mode, ...
     T_d_on=opts.T_d_on, T_d_off=opts.T_d_off, sg_droop_R=opts.sg_droop_R, gfm_ilim=opts.gfm_ilim, ...
-    excitation=opts.excitation);
+    ilim_mode=opts.ilim_mode, excitation=opts.excitation);
 pfssa = ibr.padiyar_switch_pf_sssa(sys);
 print_pf_sssa(pfssa);
 out = ibr.padiyar_switch_tds(sys, T=opts.T, dt=opts.dt, ...
@@ -61,7 +63,7 @@ out.pf_summary = pfssa.pf; out.sssa = pfssa;
 if opts.compare
     sysb = bld(index_mode="agsi", ...
         T_d_on=opts.T_d_on, T_d_off=opts.T_d_off, sg_droop_R=opts.sg_droop_R, gfm_ilim=opts.gfm_ilim, ...
-        excitation=opts.excitation);
+        ilim_mode=opts.ilim_mode, excitation=opts.excitation);
     ob = ibr.padiyar_switch_tds(sysb, T=opts.T, dt=opts.dt, ...
         sg_trip_time=opts.sg_trip_time, sg_reclose_time=opts.sg_reclose_time, ...
         fault_on=opts.fault_on, fault_clear=opts.fault_clear, fault_bus=opts.fault_bus, ...
@@ -72,6 +74,13 @@ if opts.compare
 end
 
 % --- separate figures (one per quantity) -----------------------------------
+if ~opts.plot
+    % Plotting disabled: create no figure, write no PNG (the caller asked for
+    % numbers only). Keeps the contract of the returned fields intact.
+    out.fig_paths = {}; out.fig_path = '';
+    fprintf('PADIYAR_SWITCH figures SKIPPED (plot=false).\n');
+    return;
+end
 t = out.tgrid; tt = opts.sg_trip_time; tr = opts.sg_reclose_time;
 cols = [0.85 0.33 0.10; 0.00 0.45 0.74; 0.20 0.60 0.20; 0.49 0.18 0.56; 0.47 0.67 0.19];
 nb3 = out.ibr_buses; vis = opts.visible; nib = numel(nb3);
@@ -81,9 +90,17 @@ if ~exist(od,'dir'), mkdir(od); end
 fps = {};
 if strcmpi(opts.system,"ieee14"), sysname=sprintf('IEEE 14-bus  1-SG + %d-IBR',nib);
 else, sysname=sprintf('Padiyar two-area  1-SG + %d-IBR',nib); end
-mainfig = figure('Color','w','Position',[60 60 940 560], 'NumberTitle','off', ...
+% Figure lettering is matched to the report body text: same typeface (Times New
+% Roman, i.e. the reports' serif) at the same 12 pt size, and the figure is sized
+% in INCHES so the exported PNG is included at 1:1 scale (no rescaling of the
+% lettering). REPORT_FIGURE_STYLE_CONTRACT.
+mainfig = figure('Color','w','Units','inches','Position',[1 1 6.4 3.9], ...
+    'NumberTitle','off', ...
     'Name',sprintf('%s : GFL<->GFM AGSI++ index switching', sysname), ...
-    'Visible', matlab.lang.OnOffSwitchState(vis));
+    'Visible', matlab.lang.OnOffSwitchState(vis), ...
+    'DefaultAxesFontName','Times New Roman','DefaultAxesFontSize',12, ...
+    'DefaultTextFontName','Times New Roman','DefaultTextFontSize',12, ...
+    'DefaultLegendFontName','Times New Roman','DefaultLegendFontSize',12);
 tabs = uitabgroup(mainfig);
 
 ax=newtab(tabs,'AGSI');
@@ -196,14 +213,17 @@ end
 function ax=newtab(tabs,name)
 tb = uitab(tabs,'Title',name);
 ax = axes(tb); hold(ax,'on');
+set(ax,'FontName','Times New Roman','FontSize',12);   % match the report body text
 end
 
 function fp = finfig(ax,ttl,ylab,od,key,tt,tr,out,cols)
 grid(ax,'on'); mark_ev(ax,tt,tr,out,cols);
-title(ax,ttl,'Interpreter','tex'); ylabel(ax,ylab); xlabel(ax,'time (s)');
-legend(ax,'Location','best');
+title(ax,ttl,'Interpreter','tex','FontName','Times New Roman','FontSize',12,'FontWeight','bold');
+ylabel(ax,ylab,'FontName','Times New Roman','FontSize',12);
+xlabel(ax,'time (s)','FontName','Times New Roman','FontSize',12);
+lg = legend(ax,'Location','best'); set(lg,'FontName','Times New Roman','FontSize',11);
 fp = fullfile(od, sprintf('padiyar_switch_%s.png', key));
-exportgraphics(ax, fp, 'Resolution', 130);
+exportgraphics(ax, fp, 'Resolution', 200);
 end
 
 function a = wrap(x)
@@ -216,9 +236,13 @@ if isfinite(tr) && tr<out.tgrid(end)
     xline(ax,tr,':','Color',[.4 .4 .4],'LineWidth',1.1,'Label','SG reclose','HandleVisibility','off');
 end
 if isfield(out,'fault_on') && isfinite(out.fault_on) && out.fault_on<out.tgrid(end)
-    xline(ax,out.fault_on,':','Color',[.80 .10 .10],'LineWidth',1.0,'Label','fault','HandleVisibility','off');
+    xline(ax,out.fault_on,':','Color',[.80 .10 .10],'LineWidth',1.0,'Label','fault', ...
+        'LabelVerticalAlignment','top','HandleVisibility','off');
     if isfinite(out.fault_clear) && out.fault_clear<out.tgrid(end)
-        xline(ax,out.fault_clear,':','Color',[.80 .10 .10],'LineWidth',1.0,'Label','clear','HandleVisibility','off');
+        % The clear line sits within ~0.15 s of the fault line, so its label is
+        % anchored at the OPPOSITE end of the axis to avoid overprinting.
+        xline(ax,out.fault_clear,':','Color',[.80 .10 .10],'LineWidth',1.0,'Label','clear', ...
+            'LabelVerticalAlignment','bottom','HandleVisibility','off');
     end
 end
 if isfield(out,'step_on') && isfinite(out.step_on) && out.step_on<out.tgrid(end)

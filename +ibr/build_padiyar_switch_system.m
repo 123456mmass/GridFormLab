@@ -22,6 +22,7 @@ arguments
     opts.ibr_buses (1,:) double = [1 2 12]
     opts.sg_droop_R (1,1) double = 0.05   % SG primary-governor droop (pu/pu); Inf disables
     opts.gfm_ilim (1,1) double = 1.2      % GFM/GFL current limit (x rated); Inf disables
+    opts.ilim_mode (1,1) string = "clamp" % converter current limiter: "clamp" (hard, default) | "vi" (soft virtual-impedance)
     opts.excitation (1,1) string = "avr"  % Padiyar two-area default: "avr" (5-state, needed for reclose stability); "manual"=4-state NO AVR
 end
 pf_init_paths();
@@ -61,6 +62,7 @@ for j = 1:nib
     % (|I0| ~ |S| < i_max|S|), so the operating point is unchanged; it only caps
     % the low-voltage over-current runaway. Inf => no limit.
     d.ilim = opts.gfm_ilim * abs(P + 1i*Q);
+    d.ilim_mode = char(opts.ilim_mode);
     x_ibr0{j} = d.gfl_dev.equilibrium_initialize(V0, P, Q, struct());
     % Diagnostic per-IBR SCR from the passive-network Thevenin at this bus
     % (used post-trip; pre-trip the SG anchors the grid so SCR is treated strong).

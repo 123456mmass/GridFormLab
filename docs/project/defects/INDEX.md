@@ -23,3 +23,4 @@ whole directory into agent context.
 New records use `YYYY-MM-DD-short-slug.md` and contain: status, observed
 symptom, deterministic reproduction, affected tree/environment, evidence-backed
 root cause, falsified hypotheses, correction, verification, and limitations.
+| SWITCH-2026-07-26-01 | RESOLVED | IEEE14 AGSI++ GFL/GFM switch study | Switching map declared voltage collapse from the intentional during-fault sag (and masked the switch outcome); `plot_results=false` still wrote 8 PNGs; a scheduled fault/step on an unknown bus was silently relocated to bus position 1. Corrected map tally 2/22/0 (was 2/16/6); targeted 69/69 | [IEEE14 switch map classification](2026-07-26-ieee14-switch-map-classification.md) |

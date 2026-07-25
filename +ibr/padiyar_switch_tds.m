@@ -34,8 +34,28 @@ sg = sys.sg; devs = sys.devs; Y = sys.Y; nb = sys.nb;
 Yt = Y;                                   % time-varying admittance (fault/step)
 fault_bp = find(sys.bus_ids==opt.fault_bus,1);
 step_bp  = find(sys.bus_ids==opt.step_bus,1);
-if isempty(fault_bp), fault_bp = 1; end
-if isempty(step_bp),  step_bp  = 1; end
+% FAIL-CLOSED event location: an unknown bus id must NOT be silently relocated to
+% network position 1 (that would apply the disturbance somewhere else and report
+% the result as if it were the requested one). The check is applied only when the
+% corresponding event is actually SCHEDULED (finite time), so a disabled event may
+% keep its inapplicable default bus.
+if isfinite(opt.fault_on) && isempty(fault_bp)
+    error('ibr:padiyar_switch_tds:faultBus', ...
+        'Scheduled fault bus %g is not in this system (bus ids: %s).', ...
+        opt.fault_bus, mat2str(sys.bus_ids));
+end
+if isfinite(opt.step_on) && isempty(step_bp)
+    error('ibr:padiyar_switch_tds:stepBus', ...
+        'Scheduled load-step bus %g is not in this system (bus ids: %s).', ...
+        opt.step_bus, mat2str(sys.bus_ids));
+end
+if isfinite(opt.step_on) && ~isempty(step_bp) && abs(sys.load_adm(step_bp)) == 0
+    warning('ibr:padiyar_switch_tds:stepBusNoLoad', ...
+        ['Load step scheduled at bus %g, which carries NO load in this case: the ' ...
+         'step admittance is zero, so the disturbance has no effect.'], opt.step_bus);
+end
+if isempty(fault_bp), fault_bp = 1; end   % unused (event disabled)
+if isempty(step_bp),  step_bp  = 1; end   % unused (event disabled)
 nib = numel(devs); nsg = sg.nx; nxi = 6;
 sg_bp = sys.sg_bus_position; ibr_bp = sys.ibr_bus_positions;
 % state layout

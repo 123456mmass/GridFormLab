@@ -18,7 +18,7 @@ dt = ov(opt,'dt',    d.dt);
 plot_results = logical(ov(opt,'plot_results', true));
 
 out = ibr.padiyar_switch_demo(index_mode=string(im), sg_trip_time=tt, ...
-    sg_reclose_time=tr, T=T, dt=dt, visible=false);
+    sg_reclose_time=tr, T=T, dt=dt, visible=false, plot=plot_results);
 
 result = struct();
 result.converged = out.newton_all_converged;

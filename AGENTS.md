@@ -13,6 +13,25 @@ These rules apply to the entire repository.
 - Tests may—and must—be corrected when reproducible evidence proves that the test contradicts the cited source, approved derivation, physical/numerical contract, or intended runtime behavior. Document why the test is wrong, provide an independent oracle and before/after evidence, and obtain approval before changing any mathematical contract or acceptance criterion. Fix production code when the implementation is wrong; fix the test when the test is wrong. Never choose whichever side is easier to make pass.
 - Reports must distinguish sourced inputs, assumptions/equations, project results, and external references, with citations and generating commands/scripts.
 
+## Report and figure presentation
+
+These are presentation rules; they never license changing a number, a model, or a gate.
+
+- Lettering inside generated figures must match the report body text: the SAME typeface and the
+  SAME size as the surrounding text. Size figures in physical units (inches) and include them at
+  1:1 scale (`\includegraphics[width=<exact figure width>in]`) instead of rescaling a
+  pixel-sized figure, because rescaling changes the rendered font size. Current contract: MATLAB
+  figures use `Times New Roman` at 12 pt (11 pt for dense multi-panel tiles); the English report
+  is set in Times (`newtxtext,newtxmath`); the Thai report is set in the bundled
+  `TH Sarabun PSK` font under `docs/source/fonts/TH Sarabun PSK V-1/TH Sarabun PSK V-1/`.
+- Powers of ten in report tables and text use mathematical notation only: `$a\times10^{n}$`
+  (e.g. `$+4.448\times10^{-8}$`). Never print a programming-language exponent form such as
+  `4.448e-08`, and never let a generator emit `%e` directly into a table.
+- Prefer subscript symbol notation over raw code identifiers in report prose, tables, and figure
+  axes: write `$H_\times$`, `$k_X$`, `$T_{d,on}$`, `$\Gamma_{on}$` rather than
+  `\texttt{sg_H_scale}`, `\texttt{sg_X_scale}`, `T_d_on`. The code option name may appear once,
+  where the reproduction command is given.
+
 ## Planning and ownership
 
 - Read-only inspection and explanation need no approval. Before mutations, read this file, `docs/project/TRACK_COORDINATION.md`, the current handoff and relevant plan; inspect Git/worktrees, runtime paths, tests, schemas, sources, producers/consumers, ownership, and a relevant baseline.

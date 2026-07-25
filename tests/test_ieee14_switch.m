@@ -70,3 +70,62 @@ verifyFalse(tc, o.diverged);
 verifyEqual(tc, numel(o.fig_paths), 8);
 verifyTrue(tc, isfield(o,'sssa') && o.sssa.n_unstable==0);
 end
+
+function test_solve_case_route(tc)
+% End-to-end: runnable via the solve_case launcher (analysis='ibr',
+% case='ieee14_switch'), returning a converged, small-signal-stable result.
+r = solve_case('analysis','ibr','case','ieee14_switch', ...
+    'options',struct('plot_results',false,'t_end',6.0));
+verifyTrue(tc, r.converged);
+verifyEqual(tc, numel(r.dev_n_switch), 4);
+verifyEqual(tc, r.sssa.n_unstable, 0);            % IEEE14 operating point is stable
+verifyGreaterThan(tc, r.Vmin_end, 0.3);
+verifyEqual(tc, numel(r.figure_files), 0);        % plot_results=false
+end
+
+function test_severe_cleared_fault_recovers_post_clear(tc)
+% DEFECT GUARD (SWITCH-2026-07-26-01, H1): a severe but CLEARED fault sags the
+% network far below the 0.25 pu collapse floor WHILE it is applied, yet the
+% composite recovers after clearing. The switching map must therefore judge
+% collapse on the POST-CLEAR minimum voltage; using the all-time minimum
+% mislabels a survived fault as a voltage collapse.
+sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp");
+o = ibr.padiyar_switch_tds(sys, T=3.0, dt=2e-3, sg_trip_time=inf, ...
+    fault_on=1.0, fault_clear=1.15, fault_bus=9, fault_Zf=0.02i);
+verifyTrue(tc, o.newton_all_converged);
+verifyFalse(tc, o.diverged);
+during = min(o.Vmin);                                   % includes the fault window
+post   = min(o.Vmin(o.tgrid >= 1.15));                  % recovery window only
+verifyLessThan(tc, during, 0.25);                       % the sag alone looks like "collapse"
+verifyGreaterThan(tc, post, 0.90);                      % but the network fully recovers
+verifyGreaterThanOrEqual(tc, sum(o.dev_n_switch), 1);   % AGSI++ did command forming
+end
+
+function test_scheduled_event_bus_fails_closed(tc)
+% DEFECT GUARD (SWITCH-2026-07-26-01, M3): a SCHEDULED fault/load-step on a bus
+% that does not exist in the system must fail closed, never be silently
+% relocated to network position 1 (which would disturb a different bus and
+% report the result as the requested one).
+sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp");
+verifyError(tc, @() ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=inf, ...
+    fault_on=0.02, fault_clear=0.06, fault_bus=999), ...
+    'ibr:padiyar_switch_tds:faultBus');
+verifyError(tc, @() ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=inf, ...
+    step_on=0.02, step_bus=777), ...
+    'ibr:padiyar_switch_tds:stepBus');
+% A DISABLED event (Inf time) may keep an inapplicable default bus: no error.
+o = ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=99);
+verifyTrue(tc, o.newton_all_converged);
+end
+
+function test_plot_false_writes_no_figure(tc)
+% DEFECT GUARD (SWITCH-2026-07-26-01, M1): plot_results=false must actually
+% suppress figure creation and PNG writes, not merely blank the returned list.
+od = fullfile(tempname); mkdir(od);
+cleanup = onCleanup(@() rmdir(od,'s'));
+o = ibr.padiyar_switch_demo(system="ieee14", T=0.3, dt=2e-3, sg_trip_time=99, ...
+    fig_dir=string(od), visible=false, plot=false);
+verifyEmpty(tc, o.fig_paths);
+verifyEqual(tc, numel(dir(fullfile(od,'*.png'))), 0);   % nothing written to disk
+verifyEqual(tc, numel(findall(0,'Type','figure')), 0);  % no figure left open
+end

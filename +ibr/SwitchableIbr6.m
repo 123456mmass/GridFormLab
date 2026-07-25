@@ -77,6 +77,8 @@ classdef SwitchableIbr6 < handle
         SCR_crit = 3.0         % weak-grid SCR threshold for J_SCR
         grid_scr = 1e6         % local short-circuit ratio (set by the driver)
         ilim = inf             % converter current-magnitude limit (system pu); inf=off
+        ilim_mode = 'clamp'    % 'clamp' (hard magnitude clamp, default) | 'vi' (soft virtual-impedance-style rolloff)
+        vi_soft = 0.25         % 'vi' extra headroom fraction: saturates near ilim*(1+vi_soft)
         rocof_filt = NaN       % filtered-RoCoF state
         % --- switching thresholds / dwell / reference availability ---------
         AGSI_up = 0.65    % Gamma_on : GFL->GFM up-line
@@ -237,8 +239,21 @@ classdef SwitchableIbr6 < handle
         function I = current_injection(obj, x, y)
             d = obj.active_dev();
             I = d.current_injection(0, x, y, obj.u, struct());
-            if isfinite(obj.ilim) && abs(I) > obj.ilim
-                I = obj.ilim * I / abs(I);   % converter current saturation (magnitude clamp, angle preserved)
+            m = abs(I);
+            if isfinite(obj.ilim) && m > obj.ilim
+                if strcmpi(obj.ilim_mode,'vi')
+                    % Virtual-impedance-equivalent SOFT current limit: above ilim
+                    % the excess is smoothly rolled off (C1-continuous, inactive
+                    % below ilim so the equilibrium is unchanged), saturating near
+                    % ilim*(1+vi_soft). Emulates the current-limiting effect of an
+                    % adaptive virtual impedance without altering the shared
+                    % reduced-6 model dynamics (angle preserved).
+                    hd = obj.ilim*max(obj.vi_soft,1e-6);
+                    m_lim = obj.ilim + hd*tanh((m-obj.ilim)/hd);
+                    I = I*(m_lim/m);
+                else   % 'clamp' : hard magnitude clamp (angle preserved)
+                    I = obj.ilim*I/m;
+                end
             end
         end
 

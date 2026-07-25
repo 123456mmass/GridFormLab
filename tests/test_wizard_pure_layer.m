@@ -61,10 +61,11 @@ end
 
 function test_discover_ibr_includes_ieee14_and_separate_smib_cases(tc)
 r = wizard.discover_cases('ibr');
-% Ten IBR entries: ieee14 mixed + four ideal-SMIB verification cases + two
+% Eleven IBR entries: ieee14 mixed + four ideal-SMIB verification cases + two
 % loaded-IBR sweep cases + the two-IBR AGSI switch + the Padiyar 1-SG/3-GFL
-% AGSI++ switch case. (6->8 reduced-6; 8->9 two-IBR switch; 9->10 Padiyar switch.)
-tc.verifyEqual(numel(r), 10);
+% AGSI++ switch + the IEEE14 1-SG/4-IBR AGSI++ switch.
+% (6->8 reduced-6; 8->9 two-IBR switch; 9->10 Padiyar switch; 10->11 IEEE14 switch.)
+tc.verifyEqual(numel(r), 11);
 tc.verifyEqual(r(1).id, 'ieee14_1sg_4ibr');
 tc.verifyTrue(any(strcmp({r.id},'gfl_rms10_smib')));
 tc.verifyTrue(any(strcmp({r.id},'gfm_no_pll_smib')));
@@ -73,6 +74,7 @@ tc.verifyTrue(any(strcmp({r.id},'gfl_reduced6_smib')));
 tc.verifyTrue(any(strcmp({r.id},'gfm_reduced6_smib')));
 tc.verifyTrue(any(strcmp({r.id},'two_ibr_switch')));
 tc.verifyTrue(any(strcmp({r.id},'padiyar_switch')));
+tc.verifyTrue(any(strcmp({r.id},'ieee14_switch')));
 end
 
 function test_discover_is_lazy_no_solve(tc)

@@ -35,6 +35,9 @@ arguments
     opts.ibr_buses (1,:) double = [2 3 6 8]
     opts.sg_droop_R (1,1) double = 0.05
     opts.gfm_ilim (1,1) double = 1.2
+    opts.ilim_mode (1,1) string = "clamp"   % converter current limiter: "clamp" (hard, default) | "vi" (soft virtual-impedance)
+    opts.sg_H_scale (1,1) double = 1.0      % scale SG inertia/damping (grid-strength / effective-penetration sweep knob)
+    opts.sg_X_scale (1,1) double = 1.0      % scale SG internal reactances Xd,Xdp,Xq,Xqp (effective electrical-distance / coupling-strength knob; 1.0 = unchanged, re-equilibrated consistently)
     opts.excitation (1,1) string = "manual"
 end
 pf_init_paths();
@@ -55,7 +58,7 @@ Y = pf.Ybus + diag(load_adm);
 y0 = zeros(2*nb,1); y0(1:2:end) = real(V0v); y0(2:2:end) = imag(V0v);
 
 % --- SG unit at the SG bus (Padiyar-1.1, Kodsi data, manual) --------------
-dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation));
+dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation), opts.sg_H_scale, opts.sg_X_scale);
 sg = ibr.padiyar_sg_unit(dae, 1, opts.sg_droop_R);
 
 % --- network Thevenin impedance per bus (diagnostic SCR) ------------------
@@ -77,6 +80,7 @@ for j = 1:nib
         T_d_on=opts.T_d_on, T_d_off=opts.T_d_off);
     devs{j} = d; ibr_bp(j) = bp; Mbase(j) = Mb;
     d.ilim = opts.gfm_ilim * (Mb/100);                 % |I| <= i_max x rated (system base)
+    d.ilim_mode = char(opts.ilim_mode);
     x_ibr0{j} = d.gfl_dev.equilibrium_initialize(V0, P, Q, struct());
     scr_bus(j) = abs(V0)^2 / (abs(Z(bp,bp)) * max(abs(P+1i*Q),0.20));
 end
@@ -105,13 +109,19 @@ sys.base = c.base_values;
 end
 
 % =========================================================================
-function dae = build_sg_dae(c, pf, sg_bus, exc)
+function dae = build_sg_dae(c, pf, sg_bus, exc, H_scale, X_scale)
+if nargin < 5 || isempty(H_scale), H_scale = 1.0; end
+if nargin < 6 || isempty(X_scale), X_scale = 1.0; end
 % Minimal DAE-struct for ONE Padiyar model-1.1 machine at sg_bus, initialised
 % from the power-flow operating point, in the ABI ibr.padiyar_sg_unit expects.
+% X_scale multiplies the internal reactances (coupling-strength / electrical-
+% distance sweep knob). The terminal V,I,P,Q are fixed by the power flow, so
+% the equilibrium is re-derived consistently (delta, Eqp, Edp, Efd adjust;
+% Te=P is invariant with Ra=0). X_scale=1.0 reproduces the baseline exactly.
 sZ = 100/615; sH = 615/100;                     % 615 MVA machine base -> 100 MVA
-Ra=0.0; Xd=0.8979*sZ; Xdp=0.2995*sZ; Xq=0.646*sZ; Xqp=Xq;
+Ra=0.0; Xd=0.8979*sZ*X_scale; Xdp=0.2995*sZ*X_scale; Xq=0.646*sZ*X_scale; Xqp=Xq;
 Tpd0=7.4; Tpq0=0.033; KA=200; TA=0.02;
-H=5.148*sH; D=2.0*sH; fb=c.base_values.frequency_Hz;
+H=5.148*sH*H_scale; D=2.0*sH*H_scale; fb=c.base_values.frequency_Hz;
 
 bp = find(pf.external_bus_ids==sg_bus,1);
 V  = pf.bus_voltage(bp)*exp(1i*deg2rad(pf.bus_angle_deg(bp)));

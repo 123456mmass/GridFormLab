@@ -204,49 +204,54 @@ function make_figure(out, path)
 % figure is sized in INCHES equal to the report text width so the PNG is placed
 % at 1:1 scale. Axis labels use subscript notation (H_x, k_X), not the raw code
 % option names. REPORT_FIGURE_STYLE_CONTRACT.
-fig = figure('Visible','off','Color','w','Units','inches','Position',[1 1 6.27 5.6], ...
+fig = figure('Visible','off','Color','w','Units','inches','Position',[1 1 6.27 6.4], ...
     'DefaultAxesFontName','Times New Roman','DefaultAxesFontSize',11, ...
     'DefaultTextFontName','Times New Roman','DefaultTextFontSize',11);
-tl = tiledlayout(fig, 2, 2, 'Padding','compact','TileSpacing','compact');
+tl = tiledlayout(fig, 2, 2, 'Padding','compact','TileSpacing','loose');
 title(tl, {'IEEE 14-bus 1-SG + 4-IBR SSSA sweep (AGSI++ switch study)', ...
     'Padiyar model-1.1 manual SG + reduced-6 SwitchableIbr6 IBRs'}, ...
     'Interpreter','tex','FontName','Times New Roman','FontSize',12,'FontWeight','bold');
 
-pad_lbl = sprintf('Padiyar two-area: max Re = %+.3f (UNSTABLE)', out.padiyar.maxRe);
+% The Padiyar two-area contrast is drawn as a plain reference line and named in
+% ONE legend only: an in-axes text label would overprint the panel titles.
+pad_lbl = sprintf('Padiyar two-area: %+.3f (UNSTABLE)', out.padiyar.maxRe);
 
 % (a) max Re vs inertia scale H_x
 ax = nexttile(tl); hold(ax,'on'); grid(ax,'on'); style_ax(ax);
-plot(ax, out.H_scales, out.H_maxRe, '-o', 'LineWidth',1.5, 'MarkerFaceColor','w');
+hI = plot(ax, out.H_scales, out.H_maxRe, '-o', 'LineWidth',1.5, 'MarkerFaceColor','w', ...
+    'DisplayName','IEEE 14-bus');
 yline(ax, 0, 'k-', 'LineWidth',1.0);
+hP = plot(ax, NaN, NaN, 'r--', 'LineWidth',1.2, 'DisplayName',pad_lbl);
 if isfinite(out.padiyar.maxRe)
-    yline(ax, out.padiyar.maxRe, 'r--', pad_lbl, 'LineWidth',1.2, ...
-        'LabelHorizontalAlignment','left','Interpreter','tex','FontSize',9, ...
-        'FontName','Times New Roman');
+    yline(ax, out.padiyar.maxRe, 'r--', 'LineWidth',1.2);
+    ylim(ax, [min(0,1.2*min(out.H_maxRe)) 1.25*out.padiyar.maxRe]);
 end
-set(ax,'XScale','log'); xlabel(ax,'inertia scale H_{\times} (SG H and D)');
+set(ax,'XScale','log'); xlabel(ax,'inertia scale H_{\times}');
 ylabel(ax,'max Re(\lambda) [1/s]');
-title(ax,'(a) Spectral abscissa vs inertia'); mark_stable(ax);
+title(ax,'(a) max Re vs inertia','FontSize',11);
+lg = legend(ax,[hI hP],'Orientation','horizontal','Box','off');
+set(lg,'FontName','Times New Roman','FontSize',10);
+lg.Layout.Tile = 'south';   % one shared legend under the whole layout
 
 % (b) min zeta vs inertia scale
 ax = nexttile(tl); hold(ax,'on'); grid(ax,'on'); style_ax(ax);
 plot(ax, out.H_scales, out.H_minzeta, '-o', 'LineWidth',1.5, 'MarkerFaceColor','w');
 yline(ax, 0, 'k-', 'LineWidth',1.0);
-set(ax,'XScale','log'); xlabel(ax,'inertia scale H_{\times} (SG H and D)');
+set(ax,'XScale','log'); xlabel(ax,'inertia scale H_{\times}');
 ylabel(ax,'min damping ratio \zeta [-]');
-title(ax,'(b) Least-damped oscillatory \zeta vs inertia');
+title(ax,'(b) min \zeta vs inertia','FontSize',11);
 
 % (c) max Re vs coupling scale k_X
 ax = nexttile(tl); hold(ax,'on'); grid(ax,'on'); style_ax(ax);
 plot(ax, out.X_scales, out.X_maxRe, '-s', 'LineWidth',1.5, 'MarkerFaceColor','w', 'Color',[0.85 0.33 0.10]);
 yline(ax, 0, 'k-', 'LineWidth',1.0);
 if isfinite(out.padiyar.maxRe)
-    yline(ax, out.padiyar.maxRe, 'r--', pad_lbl, 'LineWidth',1.2, ...
-        'LabelHorizontalAlignment','left','Interpreter','tex','FontSize',9, ...
-        'FontName','Times New Roman');
+    yline(ax, out.padiyar.maxRe, 'r--', 'LineWidth',1.2);
+    ylim(ax, [min(0,1.2*min(out.X_maxRe)) 1.25*out.padiyar.maxRe]);
 end
 set(ax,'XScale','log'); xlabel(ax,'reactance scale k_X (weaker coupling \rightarrow)');
 ylabel(ax,'max Re(\lambda) [1/s]');
-title(ax,'(c) Spectral abscissa vs coupling strength'); mark_stable(ax);
+title(ax,'(c) max Re vs coupling','FontSize',11);
 
 % (d) min zeta vs coupling scale k_X
 ax = nexttile(tl); hold(ax,'on'); grid(ax,'on'); style_ax(ax);
@@ -254,7 +259,7 @@ plot(ax, out.X_scales, out.X_minzeta, '-s', 'LineWidth',1.5, 'MarkerFaceColor','
 yline(ax, 0, 'k-', 'LineWidth',1.0);
 set(ax,'XScale','log'); xlabel(ax,'reactance scale k_X (weaker coupling \rightarrow)');
 ylabel(ax,'min damping ratio \zeta [-]');
-title(ax,'(d) Least-damped oscillatory \zeta vs coupling strength');
+title(ax,'(d) min \zeta vs coupling','FontSize',11);
 
 exportgraphics(fig, path, 'Resolution', 300);
 close(fig);
@@ -262,16 +267,6 @@ end
 
 function style_ax(ax)
 set(ax,'FontName','Times New Roman','FontSize',11);
-end
-
-function mark_stable(ax)
-% Annotate the stable region (below the 0 line) once, lightly.
-yl = ylim(ax);
-if yl(1) < 0
-    text(ax, min(xlim(ax)), yl(1) + 0.02*(yl(2)-yl(1)), '  stable (Re<0)', ...
-        'FontName','Times New Roman','FontSize',9,'Color',[0.3 0.3 0.3], ...
-        'VerticalAlignment','bottom');
-end
 end
 
 % =========================================================================

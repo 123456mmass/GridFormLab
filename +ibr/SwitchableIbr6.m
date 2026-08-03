@@ -19,28 +19,29 @@ classdef SwitchableIbr6 < handle
 %   a weighted sum of normalised terminal deviations (all measurable at the PCC):
 %
 %       AGSI = w_V*J_V + w_f*J_f + w_R*J_R + w_P*J_P
+%              + w_SCR*J_SCR + w_lock*J_lock + w_GRA*J_GRA
 %       J_V = |V   - V_ref| / dV_base        (voltage deviation)
 %       J_f = |f   - f0    | / df_base        (frequency deviation)
 %       J_R = |df/dt       | / dR_base        (rate of change of frequency)
 %       J_P = |P_ref - P   | / dP_base        (active-power tracking error)
-%       w_V + w_f + w_R + w_P = 1
+%       J_SCR = max(0, 3/SCR - 1)              (weak-grid stress)
+%       J_lock = |v_q| / dvq_base              (PLL loss-of-lock stress)
+%       J_GRA = 1-GRA                          (missing-reference stress)
+%       sum(w_i) = 1
 %
-%   SWITCHING LOGIC (hysteresis + dwell, GRA = grid reference availability):
-%       GFL -> GFM : (AGSI >= AGSI_up) OR  (GRA == 0), held >= T_d_on
-%       GFM -> GFL : (AGSI <  AGSI_down) AND (GRA == 1), held >= T_d_off
-%   with AGSI_up > AGSI_down for hysteresis. GRA=0 means the grid voltage/
-%   frequency reference is lost (e.g. slack loss / islanding) and forces GFM.
-%   When 'latch'=true the switch is one-way (GFL->GFM only).
+%   DEFAULT SWITCHING LOGIC (hysteresis + dwell):
+%       GFL -> GFM : AGSI >= AGSI_up, held >= T_d_on
+%       GFM -> GFL : AGSI <  AGSI_down, held >= T_d_off
+%   GRA is one weighted AGSI++ input, not a hard command.  The optional
+%   gra_override=true route adds the legacy hard GRA rule.  When latch=true the
+%   switch is one-way (GFL->GFM only).
 %
-%   SOURCE / CLASSIFICATION: the AGSI equation, thresholds, dwell and GRA follow
-%   the EECON49-P4 (KMITL) mode-switching strategy, eq.(36) and section 4.1
-%   ("A Bayesian Optimization-Based GFL/GFM Mode Switching Strategy"). Here the
-%   paper is used as a DESIGN GUIDELINE (not an exact reproduction): the default
-%   weights/normalisation bases/thresholds/dwells are the paper's stated values,
-%   applied to this 2-IBR infinite-bus study WITHOUT the paper's offline Bayesian
-%   Optimization. Classification: PROJECT_DERIVED_SOURCE_GUIDED switching
-%   supervisor. The wrapped GFL/GFM branch equations keep their EECON49-P4
-%   provenance. No legacy code (dual_mode_ibr_model, IEEE14 auto-VSG) is used.
+%   SOURCE / CLASSIFICATION: the four-term plain AGSI route is source-guided.
+%   AGSI++ is PROJECT_DERIVED: it adds SCR, PLL-lock, and GRA terms and uses the
+%   user-approved equal seven-term average (1/7 each).  The EECON49 source case
+%   supplies data/events only; this supervisor is not a reproduction of the
+%   paper's Bayesian-optimisation method.  The wrapped GFL/GFM branch equations
+%   keep their own documented provenance.
 %
 %   Defaults (EECON49-P4 sec 4.1): w=[0.30,0.30,0.25,0.15];
 %   bases dV=0.10 pu, df=0.50 Hz, dR=1.00 Hz/s, dP=0.20 pu;
@@ -63,6 +64,7 @@ classdef SwitchableIbr6 < handle
         w_P = 0.15
         w_SCR = 0.0     % AGSI++ grid-strength weight (0 for plain AGSI)
         w_lock = 0.0    % AGSI++ PLL loss-of-lock weight (0 for plain AGSI)
+        w_GRA = 0.0     % AGSI++ missing-reference weight; J_GRA=1-GRA
         % --- AGSI normalisation bases --------------------------------------
         dV_base = 0.10  % pu
         df_base = 0.50  % Hz
@@ -125,6 +127,7 @@ classdef SwitchableIbr6 < handle
                 opts.w_P (1,1) double = NaN
                 opts.w_SCR (1,1) double = NaN
                 opts.w_lock (1,1) double = NaN
+                opts.w_GRA (1,1) double = NaN
                 opts.filtered_rocof (1,1) double = -1
                 opts.rocof_tau (1,1) double = 0.05
                 opts.SCR_crit (1,1) double = 3.0
@@ -150,18 +153,18 @@ classdef SwitchableIbr6 < handle
             if ~ismember(mode,{'agsi','agsi_pp'})
                 error('ibr:SwitchableIbr6:mode','index_mode must be "agsi" or "agsi_pp".');
             end
-            % Mode presets (weights sum to 1; AGSI++ adds J_SCR and J_lock and
+            % Mode presets (weights sum to 1; AGSI++ adds J_SCR, J_lock and J_GRA and
             % uses a filtered RoCoF). User-supplied weights override the preset.
             if strcmp(mode,'agsi_pp')
-                defw = [0.25 0.25 0.15 0.10 0.15 0.10];   % V f R P SCR lock
+                defw = repmat(1/7,1,7);   % V f R P SCR lock GRA (equal average)
                 deffilt = true;
             else
-                defw = [0.30 0.30 0.25 0.15 0.00 0.00];
+                defw = [0.30 0.30 0.25 0.15 0.00 0.00 0.00];
                 deffilt = false;
             end
-            uw = [opts.w_V opts.w_f opts.w_R opts.w_P opts.w_SCR opts.w_lock];
+            uw = [opts.w_V opts.w_f opts.w_R opts.w_P opts.w_SCR opts.w_lock opts.w_GRA];
             rw = defw; ok = ~isnan(uw); rw(ok) = uw(ok);
-            wv = rw(1); wf = rw(2); wr = rw(3); wp = rw(4); ws = rw(5); wl = rw(6);
+            wv = rw(1); wf = rw(2); wr = rw(3); wp = rw(4); ws = rw(5); wl = rw(6); wg = rw(7);
             if opts.filtered_rocof < 0
                 filt = deffilt;
             else
@@ -172,7 +175,7 @@ classdef SwitchableIbr6 < handle
                     'AGSI_down (%.4g) must be < AGSI_up (%.4g) for a hysteresis band.', ...
                     opts.AGSI_down, opts.AGSI_up);
             end
-            wsum = wv + wf + wr + wp + ws + wl;
+            wsum = wv + wf + wr + wp + ws + wl + wg;
             if abs(wsum - 1) > 1e-9
                 error('ibr:SwitchableIbr6:weights', ...
                     'AGSI weights must sum to 1 (got %.6g).', wsum);
@@ -186,7 +189,7 @@ classdef SwitchableIbr6 < handle
             obj.rocof_tau = opts.rocof_tau;
             obj.SCR_crit = opts.SCR_crit;
             obj.dvq_base = opts.dvq_base;
-            obj.w_SCR = ws; obj.w_lock = wl;
+            obj.w_SCR = ws; obj.w_lock = wl; obj.w_GRA = wg;
             obj.bus_id = bus_id;
             obj.bus_position = bus_position;
             obj.bus_ids = bus_ids(:).';
@@ -334,10 +337,14 @@ classdef SwitchableIbr6 < handle
             else
                 J_lock = 0;
             end
+            % J_GRA: binary missing-reference stress. GRA=1 means that an
+            % online SG or at least one committed GFM supplies a grid reference.
+            J_GRA = double(obj.GRA == 0);
             agsi = obj.w_V*J_V + obj.w_f*J_f + obj.w_R*J_R + obj.w_P*J_P ...
-                 + obj.w_SCR*J_SCR + obj.w_lock*J_lock;
+                 + obj.w_SCR*J_SCR + obj.w_lock*J_lock + obj.w_GRA*J_GRA;
             parts = struct('J_V',J_V,'J_f',J_f,'J_R',J_R,'J_P',J_P, ...
-                'J_SCR',J_SCR,'J_lock',J_lock,'rocof',rocof_used,'rocof_raw',rocof_raw, ...
+                'J_SCR',J_SCR,'J_lock',J_lock,'J_GRA',J_GRA,'GRA',obj.GRA, ...
+                'rocof',rocof_used,'rocof_raw',rocof_raw, ...
                 'Vmag',Vmag,'f_hz',f_hz,'P',P,'P_ref',P_ref,'scr',obj.grid_scr);
             if do_update
                 obj.f_prev = f_hz;

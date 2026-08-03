@@ -1,6 +1,6 @@
 function out = padiyar_switch_tds(sys, opt)
-%PADIYAR_SWITCH_TDS  Mixed SG + 3 switchable-IBR time-domain simulation on the
-%   Padiyar two-area network, with an SG-trip event and per-IBR AGSI/AGSI++
+%PADIYAR_SWITCH_TDS  Mixed SG + switchable-IBR time-domain simulation, with
+%   SG/topology/load events and per-IBR AGSI/AGSI++
 %   mode switching (index-driven, no dwell by default).
 %
 %   OUT = ibr.padiyar_switch_tds(SYS, OPT), SYS from ibr.build_padiyar_switch_system.
@@ -23,8 +23,14 @@ arguments
     opt.fault_bus (1,1) double = 3
     opt.fault_Zf (1,1) double = 0.5i
     opt.step_on (1,1) double = inf
+    opt.step_off (1,1) double = inf
     opt.step_bus (1,1) double = 13
     opt.step_factor (1,1) double = 0.10
+    opt.step_all_loads (1,1) logical = false
+    opt.line_trip_time (1,1) double = inf
+    opt.line_reclose_time (1,1) double = inf
+    opt.line_from_bus (1,1) double = NaN
+    opt.line_to_bus (1,1) double = NaN
     opt.newton_tol (1,1) double = 1e-8
     opt.newton_max_iter (1,1) double = 40
     opt.fd_eps (1,1) double = 1e-6
@@ -34,6 +40,7 @@ sg = sys.sg; devs = sys.devs; Y = sys.Y; nb = sys.nb;
 Yt = Y;                                   % time-varying admittance (fault/step)
 fault_bp = find(sys.bus_ids==opt.fault_bus,1);
 step_bp  = find(sys.bus_ids==opt.step_bus,1);
+line_stamp = zeros(nb);
 % FAIL-CLOSED event location: an unknown bus id must NOT be silently relocated to
 % network position 1 (that would apply the disturbance somewhere else and report
 % the result as if it were the requested one). The check is applied only when the
@@ -44,15 +51,30 @@ if isfinite(opt.fault_on) && isempty(fault_bp)
         'Scheduled fault bus %g is not in this system (bus ids: %s).', ...
         opt.fault_bus, mat2str(sys.bus_ids));
 end
-if isfinite(opt.step_on) && isempty(step_bp)
+if isfinite(opt.step_on) && ~opt.step_all_loads && isempty(step_bp)
     error('ibr:padiyar_switch_tds:stepBus', ...
         'Scheduled load-step bus %g is not in this system (bus ids: %s).', ...
         opt.step_bus, mat2str(sys.bus_ids));
 end
-if isfinite(opt.step_on) && ~isempty(step_bp) && abs(sys.load_adm(step_bp)) == 0
+if isfinite(opt.step_on) && ~opt.step_all_loads && ~isempty(step_bp) && abs(sys.load_adm(step_bp)) == 0
     warning('ibr:padiyar_switch_tds:stepBusNoLoad', ...
         ['Load step scheduled at bus %g, which carries NO load in this case: the ' ...
          'step admittance is zero, so the disturbance has no effect.'], opt.step_bus);
+end
+if isfinite(opt.line_trip_time)
+    if ~isfield(sys,'line_data') || size(sys.line_data,2) < 7
+        error('ibr:padiyar_switch_tds:lineTripUnsupported', ...
+            'This system does not publish line_data required for a line trip.');
+    end
+    ld = sys.line_data;
+    hit = find((ld(:,1)==opt.line_from_bus & ld(:,2)==opt.line_to_bus) | ...
+               (ld(:,1)==opt.line_to_bus & ld(:,2)==opt.line_from_bus));
+    if numel(hit) ~= 1
+        error('ibr:padiyar_switch_tds:lineTripBranch', ...
+            'Scheduled line trip %g-%g must identify exactly one branch.', ...
+            opt.line_from_bus,opt.line_to_bus);
+    end
+    line_stamp = branch_stamp(ld(hit,:),sys.bus_ids);
 end
 if isempty(fault_bp), fault_bp = 1; end   % unused (event disabled)
 if isempty(step_bp),  step_bp  = 1; end   % unused (event disabled)
@@ -73,6 +95,7 @@ Z(:,1) = z;
 
 % histories
 idx = zeros(nsteps+1, nib); md = zeros(nsteps+1, nib);
+graH = ones(nsteps+1,nib);
 fib = zeros(nsteps+1, nib); Vb = zeros(nsteps+1, nib);
 Pib = zeros(nsteps+1, nib); Qib = zeros(nsteps+1, nib);
 fsgH = zeros(nsteps+1,1); omsgH = zeros(nsteps+1,1); Vmin = zeros(nsteps+1,1);
@@ -86,6 +109,7 @@ conv_count = 0; maxres = zeros(nsteps,1);
 
 sg_online = true;
 set_scr(1);              % set IBR grid_scr for the current SG status
+update_gra();
 record(1, tg(1), true);
 
 diverged = false; nvalid = nsteps+1;    % divergence truncation bookkeeping
@@ -95,36 +119,34 @@ for k = 1:nsteps
     was_online = sg_online;
     sg_online = (t1 < opt.sg_trip_time) || (t1 >= opt.sg_reclose_time);
     if sg_online && ~was_online
-        % Synchronized reclose with a genuine reference HANDBACK to the SG:
-        %   - the SG returns synchronized to the present bus voltage and carrying
-        %     its scheduled (Pm,Q0), i.e. it re-takes the slack/reference role;
-        %   - each IBR still forming (GFM) hands the reference back and reverts to
-        %     its scheduled GFL dispatch (re-initialised at its present bus V).
-        % The network voltages are NOT reset: the composite then transients from
-        % the island state toward the restored SG-slack operating point. (Model
-        % 1.1 has no governor, so the SG carries its fixed Pm on reclose.)
+        % The SG returns synchronized to the present bus voltage and carrying
+        % its scheduled (Pm,Q0).  Do NOT force the IBRs to GFL at this instant:
+        % they remain forming while the restored system settles, then each local
+        % supervisor may hand back only after AGSI++ < Gamma_off for T_d_off.
+        % This preserves the declared state machine and avoids a simultaneous,
+        % pre-recovery loss of all forming support.
         y_prev = Z(iy,k);
         Vsg = complex(y_prev(2*sg_bp-1), y_prev(2*sg_bp));
         Z(isg,k) = sg.reinit(Vsg);
-        for j=1:nib
-            was_gfm = ~strcmp(devs{j}.mode,'gfl');
-            if was_gfm
-                Vbj = complex(y_prev(2*ibr_bp(j)-1), y_prev(2*ibr_bp(j)));
-                Z(iib{j},k) = devs{j}.gfl_dev.equilibrium_initialize( ...
-                    Vbj, devs{j}.P_ref0, devs{j}.Q_ref0, struct());
-                devs{j}.restore_to_gfl(t1);
-                switch_events = [switch_events; t1, j, NaN, 0]; %#ok<AGROW>
-            end
-        end
     end
+    update_gra();
     set_scr(k+1<=numel(tg));                % update SCR seen by the IBRs
-    % time-varying admittance: temporary shunt fault + (permanent) load step
+    % time-varying admittance.  A finite STEP_OFF and LINE_RECLOSE_TIME
+    % restore the source-case load and branch contracts; Inf retains the
+    % legacy permanent-event behaviour.
     Yt = Y;
     if t1 >= opt.fault_on && t1 < opt.fault_clear
         Yt(fault_bp,fault_bp) = Yt(fault_bp,fault_bp) + 1/opt.fault_Zf;
     end
-    if t1 >= opt.step_on
-        Yt(step_bp,step_bp) = Yt(step_bp,step_bp) + opt.step_factor*sys.load_adm(step_bp);
+    if t1 >= opt.step_on && t1 < opt.step_off
+        if opt.step_all_loads
+            Yt = Yt + opt.step_factor*diag(sys.load_adm);
+        else
+            Yt(step_bp,step_bp) = Yt(step_bp,step_bp) + opt.step_factor*sys.load_adm(step_bp);
+        end
+    end
+    if t1 >= opt.line_trip_time && t1 < opt.line_reclose_time
+        Yt = Yt - line_stamp;
     end
     x_sg0 = Z(isg,k); y_0 = Z(iy,k);
     f_sg0 = sg.f(x_sg0, y_0);
@@ -153,6 +175,7 @@ for k = 1:nsteps
             if did
                 Z(iib{j},k+1) = xn;
                 switch_events = [switch_events; t1, j, i1.J, double(i1.new_mode=="GFM")]; %#ok<AGROW>
+                update_gra();
             end
         end
     else
@@ -168,7 +191,7 @@ end
 if diverged
     kp = 1:nvalid;      % keep only physical points up to the divergence step
     tg=tg(kp); Z=Z(:,kp);
-    idx=idx(kp,:); md=md(kp,:); fib=fib(kp,:); Vb=Vb(kp,:); Pib=Pib(kp,:); Qib=Qib(kp,:);
+    idx=idx(kp,:); md=md(kp,:); graH=graH(kp,:); fib=fib(kp,:); Vb=Vb(kp,:); Pib=Pib(kp,:); Qib=Qib(kp,:);
     fsgH=fsgH(kp); omsgH=omsgH(kp); Vmin=Vmin(kp); sg_online_H=sg_online_H(kp);
     id_ibr=id_ibr(kp,:); iq_ibr=iq_ibr(kp,:); ang_ibr=ang_ibr(kp,:);
     sg_delta=sg_delta(kp); sg_id=sg_id(kp); sg_iq=sg_iq(kp);
@@ -177,9 +200,9 @@ if diverged
 end
 
 out = struct();
-out.classification = 'ASSUMED_DIAGNOSTIC_PADIYAR_1SG_3GFL_SWITCH_TDS';
+out.classification = sprintf('ASSUMED_DIAGNOSTIC_1SG_%dIBR_SWITCH_TDS',nib);
 out.tgrid = tg; out.Z = Z;
-out.index = idx; out.mode = md; out.f_ibr = fib; out.Vbus = Vb;
+out.index = idx; out.mode = md; out.GRA = graH; out.f_ibr = fib; out.Vbus = Vb;
 out.P_ibr = Pib; out.Q_ibr = Qib;
 out.f_sg = fsgH; out.omega_sg = omsgH; out.sg_online = sg_online_H;
 out.Vmin = Vmin;
@@ -190,6 +213,11 @@ out.ref_code = ref_code; out.ref_angle = ref_angle;
 out.sg_reclose_time = opt.sg_reclose_time;
 out.fault_on = opt.fault_on; out.fault_clear = opt.fault_clear; out.fault_bus = opt.fault_bus;
 out.step_on = opt.step_on; out.step_bus = opt.step_bus; out.step_factor = opt.step_factor;
+out.step_off = opt.step_off;
+out.step_all_loads = opt.step_all_loads;
+out.line_trip_time = opt.line_trip_time;
+out.line_reclose_time = opt.line_reclose_time;
+out.line_from_bus = opt.line_from_bus; out.line_to_bus = opt.line_to_bus;
 out.agsi_up = devs{1}.AGSI_up; out.agsi_down = devs{1}.AGSI_down;
 out.switch_events = switch_events;
 out.ibr_buses = sys.ibr_buses; out.sg_bus = sys.sg_bus;
@@ -200,7 +228,7 @@ out.max_resid = max(maxres);
 if diverged
     warning('ibr:padiyar_switch_tds:diverged', ...
         ['Simulation DIVERGED near t=%.3fs and was truncated there: the disturbance is ' ...
-         'too severe for this current-unlimited, governor-less model to ride through ' ...
+        'outside the validated domain of this reduced SG/IBR model ' ...
          '(states exploded to non-physical magnitudes). Use a milder fault (larger Zf), ' ...
          'a smaller load step, or a shorter fault.'], tg(end));
 elseif ~out.newton_all_converged
@@ -209,7 +237,7 @@ elseif ~out.newton_all_converged
     tfail = tg(min(kfail+1, numel(tg)));
     warning('ibr:padiyar_switch_tds:notConverged', ...
         ['%d of %d Newton steps did not fully converge (first near t=%.3fs) - the ' ...
-         'disturbance is too severe for this governor-less model to ride through; ' ...
+        'disturbance is outside the validated domain of this reduced model; ' ...
          'results past that point are approximate. Use a milder fault (larger Zf) ' ...
          'or smaller load step.'], nfail, nsteps, tfail);
 end
@@ -222,6 +250,13 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
             if sg_online, devs{jj}.grid_scr = sys.scr_strong;
             else, devs{jj}.grid_scr = sys.scr_bus(jj); end
         end
+    end
+
+    function update_gra()
+        % Common connected-grid reference availability for the AGSI++ J_GRA
+        % term: the SG or any already-committed GFM makes a reference available.
+        has_reference = sg_online || any(cellfun(@(d) ~strcmp(d.mode,'gfl'),devs));
+        for jj=1:nib, devs{jj}.GRA = double(has_reference); end
     end
 
     function r = resid(zz)
@@ -249,13 +284,21 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
     end
 
     function J = fd_jac(zz)
-        try, r0 = resid(zz); catch, r0 = zeros(nz,1); end
+        try
+            r0 = resid(zz);
+        catch
+            r0 = zeros(nz,1);
+        end
         if ~all(isfinite(r0)), r0 = zeros(nz,1); end
         J = zeros(nz);
         h = opt.fd_eps;
         for i=1:nz
             zp = zz; zp(i) = zp(i) + h;
-            try, rp = resid(zp); catch, rp = r0; end
+            try
+                rp = resid(zp);
+            catch
+                rp = r0;
+            end
             if ~all(isfinite(rp)), rp = r0; end
             J(:,i) = (rp - r0)/h;
         end
@@ -277,7 +320,11 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
     function [z1, info] = solve_step(z1)
         J = fd_jac(z1); converged=false; rn=Inf; rebuilt=false;
         for it=1:opt.newton_max_iter
-            try, r = resid(z1); catch, r = inf(nz,1); end
+            try
+                r = resid(z1);
+            catch
+                r = inf(nz,1);
+            end
             if ~all(isfinite(r)), break; end        % non-physical iterate -> stop (not converged)
             rn = norm(r, inf);
             if rn <= opt.newton_tol, converged=true; break; end
@@ -313,6 +360,7 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
             xj = Z(iib{jj},ix);
             idx(ix,jj) = devs{jj}.compute_index(xj, y1, tt);
             md(ix,jj)  = double(~strcmp(devs{jj}.mode,'gfl'));
+            graH(ix,jj)=devs{jj}.GRA;
             rj = devs{jj}.reconstruct(xj, y1);
             fib(ix,jj) = rj.f_hz; Pib(ix,jj)=rj.Pe; Qib(ix,jj)=rj.Qe;
             sc_i = sys.Mbase(jj)/100;                 % IBR dq current: inverter base -> 100 MVA system base
@@ -340,4 +388,20 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
             else, ref_code(ix)=gfm; ref_angle(ix)=ang_ibr(ix,gfm); end
         end
     end
+end
+
+
+function S = branch_stamp(line,bus_ids)
+%BRANCH_STAMP Tap-aware primitive admittance of one project line_data row.
+i=find(bus_ids==line(1),1); j=find(bus_ids==line(2),1);
+if isempty(i) || isempty(j)
+    error('ibr:padiyar_switch_tds:lineTripBus','Line endpoint is not in the system bus map.');
+end
+z=line(3)+1i*line(4);
+if abs(z)==0, error('ibr:padiyar_switch_tds:lineTripImpedance','Line impedance is zero.'); end
+ys=1/z; ysh=1i*line(5)/2; tap=line(6); if tap==0, tap=1; end
+a=tap*exp(1i*deg2rad(line(7)));
+S=zeros(numel(bus_ids),numel(bus_ids));
+S(i,i)=(ys+ysh)/(a*conj(a)); S(i,j)=-ys/conj(a);
+S(j,i)=-ys/a; S(j,j)=ys+ysh;
 end

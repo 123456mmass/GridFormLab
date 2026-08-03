@@ -28,6 +28,19 @@ for j = 1:4
     gc(sys.ibr_bus_positions(j)) = gc(sys.ibr_bus_positions(j)) ...
         + sys.devs{j}.current_injection(sys.x_ibr0{j}, y0);
 end
+
+function test_source_case_direct_hd_and_reversible_network_events(tc)
+sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp",sg_H=2.5,sg_D=1.0);
+verifyEqual(tc,sys.sg.par.H,2.5,'AbsTol',0);
+verifyEqual(tc,sys.sg.par.D,1.0,'AbsTol',0);
+o = ibr.padiyar_switch_tds(sys,T=0.12,dt=2e-3,sg_trip_time=inf, ...
+    step_on=0.02,step_off=0.06,step_factor=0.02,step_all_loads=true, ...
+    line_trip_time=0.02,line_reclose_time=0.06,line_from_bus=6,line_to_bus=13);
+verifyTrue(tc,o.newton_all_converged);
+verifyFalse(tc,o.diverged);
+verifyEqual(tc,o.step_off,0.06,'AbsTol',0);
+verifyEqual(tc,o.line_reclose_time,0.06,'AbsTol',0);
+end
 verifyLessThan(tc, max(abs(gc)), 1e-8);
 verifyLessThan(tc, max(abs(sys.sg.f(sys.x_sg0, y0))), 1e-8);
 end
@@ -116,6 +129,9 @@ verifyError(tc, @() ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=inf
 verifyError(tc, @() ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=inf, ...
     step_on=0.02, step_bus=777), ...
     'ibr:padiyar_switch_tds:stepBus');
+verifyError(tc, @() ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=inf, ...
+    line_trip_time=0.02,line_from_bus=6,line_to_bus=999), ...
+    'ibr:padiyar_switch_tds:lineTripBranch');
 % A DISABLED event (Inf time) may keep an inapplicable default bus: no error.
 o = ibr.padiyar_switch_tds(sys, T=0.1, dt=2e-3, sg_trip_time=99);
 verifyTrue(tc, o.newton_all_converged);

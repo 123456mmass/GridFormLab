@@ -17,8 +17,14 @@ arguments
     opts.fault_bus (1,1) double = 3
     opts.fault_Zf (1,1) double = 0.5i
     opts.step_on (1,1) double = inf
+    opts.step_off (1,1) double = inf
     opts.step_bus (1,1) double = 13
     opts.step_factor (1,1) double = 0.10
+    opts.step_all_loads (1,1) logical = false
+    opts.line_trip_time (1,1) double = inf
+    opts.line_reclose_time (1,1) double = inf
+    opts.line_from_bus (1,1) double = NaN
+    opts.line_to_bus (1,1) double = NaN
     opts.T (1,1) double = 8.0
     opts.dt (1,1) double = 2e-3
     opts.fig_dir (1,1) string = ""
@@ -28,6 +34,8 @@ arguments
     opts.T_d_on (1,1) double = 0.5     % dwell GFL->GFM (s): filters spurious marginal AGSI crossings
     opts.T_d_off (1,1) double = 1.0    % dwell GFM->GFL (s)
     opts.sg_droop_R (1,1) double = 0.05  % SG primary-governor droop (pu/pu); Inf=off
+    opts.sg_H (1,1) double = NaN          % direct case-data override [s]
+    opts.sg_D (1,1) double = NaN          % direct case-data override [pu]
     opts.gfm_ilim (1,1) double = 1.2     % converter current limit (x rated); Inf=off
     opts.ilim_mode (1,1) string = "clamp"  % current limiter: "clamp" (hard, default) | "vi" (soft virtual-impedance)
     opts.excitation (1,1) string = ""         % "" => per-system default (ieee14->manual, padiyar->avr)
@@ -38,18 +46,26 @@ if strcmpi(opts.system,"ieee14"), bld = @ibr.build_ieee14_switch_system; else, b
 if strlength(opts.excitation)==0
     if strcmpi(opts.system,"ieee14"), opts.excitation = "manual"; else, opts.excitation = "avr"; end
 end
-sys = bld(index_mode=opts.index_mode, ...
-    T_d_on=opts.T_d_on, T_d_off=opts.T_d_off, sg_droop_R=opts.sg_droop_R, gfm_ilim=opts.gfm_ilim, ...
-    ilim_mode=opts.ilim_mode, excitation=opts.excitation);
+common_build = {'index_mode',opts.index_mode,'T_d_on',opts.T_d_on, ...
+    'T_d_off',opts.T_d_off,'sg_droop_R',opts.sg_droop_R, ...
+    'gfm_ilim',opts.gfm_ilim,'ilim_mode',opts.ilim_mode,'excitation',opts.excitation};
+if strcmpi(opts.system,"ieee14")
+    sys = bld(common_build{:},sg_H=opts.sg_H,sg_D=opts.sg_D);
+else
+    sys = bld(common_build{:});
+end
 pfssa = ibr.padiyar_switch_pf_sssa(sys);
 print_pf_sssa(pfssa);
 out = ibr.padiyar_switch_tds(sys, T=opts.T, dt=opts.dt, ...
     sg_trip_time=opts.sg_trip_time, sg_reclose_time=opts.sg_reclose_time, ...
     fault_on=opts.fault_on, fault_clear=opts.fault_clear, fault_bus=opts.fault_bus, ...
-    fault_Zf=opts.fault_Zf, step_on=opts.step_on, step_bus=opts.step_bus, step_factor=opts.step_factor);
+    fault_Zf=opts.fault_Zf, step_on=opts.step_on, step_off=opts.step_off, step_bus=opts.step_bus, ...
+    step_factor=opts.step_factor, step_all_loads=opts.step_all_loads, ...
+    line_trip_time=opts.line_trip_time, line_reclose_time=opts.line_reclose_time, line_from_bus=opts.line_from_bus, ...
+    line_to_bus=opts.line_to_bus);
 if out.diverged
     fprintf('** NOTE: requested T=%.2fs NOT reached - simulation DIVERGED and was truncated at t=%.3fs.\n', opts.T, out.tgrid(end));
-    fprintf('   The disturbance is too severe for the current-unlimited / governor-less models to ride through.\n');
+    fprintf('   The trajectory left the validated domain of the reduced SG/IBR models.\n');
     fprintf('   Use a milder fault (LARGER Zf), a smaller load step, or an earlier clear time to reach the full T.\n');
 end
 
@@ -61,13 +77,21 @@ print_role_log(out);
 out.pf_summary = pfssa.pf; out.sssa = pfssa;
 
 if opts.compare
-    sysb = bld(index_mode="agsi", ...
-        T_d_on=opts.T_d_on, T_d_off=opts.T_d_off, sg_droop_R=opts.sg_droop_R, gfm_ilim=opts.gfm_ilim, ...
-        ilim_mode=opts.ilim_mode, excitation=opts.excitation);
+    compare_build = {'index_mode','agsi','T_d_on',opts.T_d_on, ...
+        'T_d_off',opts.T_d_off,'sg_droop_R',opts.sg_droop_R, ...
+        'gfm_ilim',opts.gfm_ilim,'ilim_mode',opts.ilim_mode,'excitation',opts.excitation};
+    if strcmpi(opts.system,"ieee14")
+        sysb = bld(compare_build{:},sg_H=opts.sg_H,sg_D=opts.sg_D);
+    else
+        sysb = bld(compare_build{:});
+    end
     ob = ibr.padiyar_switch_tds(sysb, T=opts.T, dt=opts.dt, ...
         sg_trip_time=opts.sg_trip_time, sg_reclose_time=opts.sg_reclose_time, ...
         fault_on=opts.fault_on, fault_clear=opts.fault_clear, fault_bus=opts.fault_bus, ...
-        fault_Zf=opts.fault_Zf, step_on=opts.step_on, step_bus=opts.step_bus, step_factor=opts.step_factor);
+        fault_Zf=opts.fault_Zf, step_on=opts.step_on, step_off=opts.step_off, ...
+        step_bus=opts.step_bus, step_factor=opts.step_factor, step_all_loads=opts.step_all_loads, ...
+        line_trip_time=opts.line_trip_time, line_reclose_time=opts.line_reclose_time, ...
+        line_from_bus=opts.line_from_bus, line_to_bus=opts.line_to_bus);
     fprintf('COMPARE baseline AGSI: n_switch=[%d %d %d] maxAGSI=%.2f | AGSI++ maxAGSI=%.2f\n', ...
         ob.dev_n_switch, max(ob.index(:)), max(out.index(:)));
     out.baseline = ob;
@@ -177,7 +201,8 @@ if isfinite(out.sg_reclose_time) && out.sg_reclose_time < out.tgrid(end)
         fprintf('[%.3f, %.3f) s : ISLAND -- GFM IBRs form the grid; nominal angle reference = IBR%d(bus%d)\n', ...
             out.sg_trip_time, out.sg_reclose_time, rc, out.ibr_buses(rc));
     end
-    fprintf('t=%.3f s : SG RECLOSED -> synchronized handback; SG re-takes slack, IBRs revert to scheduled GFL dispatch\n', out.sg_reclose_time);
+    fprintf(['t=%.3f s : SG RECLOSED -> SG reference is available; forming IBRs remain GFM ' ...
+        'until each local AGSI/down-dwell condition permits handback\n'], out.sg_reclose_time);
     gfl_l = find(out.dev_mode=="gfl"); gfm_l = find(out.dev_mode=="GFM");
     sgfl = strjoin(arrayfun(@(j) sprintf('IBR%d(bus%d)',j,out.ibr_buses(j)), gfl_l(:).','uni',0),', ');
     sgfm = strjoin(arrayfun(@(j) sprintf('IBR%d(bus%d)',j,out.ibr_buses(j)), gfm_l(:).','uni',0),', ');

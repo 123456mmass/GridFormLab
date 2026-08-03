@@ -87,6 +87,23 @@ verifyLessThan(tc, agsi, s.d1.AGSI_down);   % below the down-line => calm
 verifyGreaterThanOrEqual(tc, agsi, 0);
 end
 
+function test_agsipp_equal_seven_term_gra_weight(tc)
+% User-approved AGSI++ contract: the added missing-reference term is averaged
+% equally with the six existing terms; it is not a hard switching override.
+s = setup_common();
+d1 = ibr.SwitchableIbr6("GRA1",1,1,1,s.Vinf,s.params,s.Pref,s.Qref, ...
+    index_mode="agsi_pp", GRA=1);
+d0 = ibr.SwitchableIbr6("GRA0",1,1,1,s.Vinf,s.params,s.Pref,s.Qref, ...
+    index_mode="agsi_pp", GRA=0);
+x1 = d1.gfl_dev.equilibrium_initialize(s.Vpcc,s.Pref,s.Qref,struct());
+x0 = d0.gfl_dev.equilibrium_initialize(s.Vpcc,s.Pref,s.Qref,struct());
+w = [d1.w_V d1.w_f d1.w_R d1.w_P d1.w_SCR d1.w_lock d1.w_GRA];
+verifyEqual(tc,w,repmat(1/7,1,7),'AbsTol',1e-15);
+verifyEqual(tc,d0.compute_index(x0,s.y,0)-d1.compute_index(x1,s.y,0), ...
+    1/7,'AbsTol',1e-12);
+verifyFalse(tc,d0.gra_override);
+end
+
 function test_bumpless_continuity_both_directions(tc)
 % A mode transfer re-initialises to the equilibrium delivering the SAME (P,Q)
 % at the SAME terminal V; both branches reproduce I = conj((P+jQ)/V), so the

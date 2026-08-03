@@ -38,6 +38,8 @@ arguments
     opts.ilim_mode (1,1) string = "clamp"   % converter current limiter: "clamp" (hard, default) | "vi" (soft virtual-impedance)
     opts.sg_H_scale (1,1) double = 1.0      % scale SG inertia/damping (grid-strength / effective-penetration sweep knob)
     opts.sg_X_scale (1,1) double = 1.0      % scale SG internal reactances Xd,Xdp,Xq,Xqp (effective electrical-distance / coupling-strength knob; 1.0 = unchanged, re-equilibrated consistently)
+    opts.sg_H (1,1) double = NaN            % direct SOURCE_DEFINED override [s]
+    opts.sg_D (1,1) double = NaN            % direct SOURCE_DEFINED override [pu]
     opts.excitation (1,1) string = "manual"
 end
 pf_init_paths();
@@ -58,11 +60,12 @@ Y = pf.Ybus + diag(load_adm);
 y0 = zeros(2*nb,1); y0(1:2:end) = real(V0v); y0(2:2:end) = imag(V0v);
 
 % --- SG unit at the SG bus (Padiyar-1.1, Kodsi data, manual) --------------
-dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation), opts.sg_H_scale, opts.sg_X_scale);
+dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation), opts.sg_H_scale, ...
+    opts.sg_X_scale, opts.sg_H, opts.sg_D);
 sg = ibr.padiyar_sg_unit(dae, 1, opts.sg_droop_R);
 
 % --- network Thevenin impedance per bus (diagnostic SCR) ------------------
-Z = inv(Y);   %#ok<MINV>
+Z = inv(Y);
 
 % --- four switchable IBRs at the remaining generator buses ----------------
 nib = numel(opts.ibr_buses);
@@ -88,13 +91,13 @@ end
 sys = struct();
 sys.classification = 'ASSUMED_DIAGNOSTIC_IEEE14_1SG_4IBR_SWITCH';
 sys.sg = sg;
-sys.devs = {devs{:}};
+sys.devs = devs;
 sys.Y = Y;
 sys.bus_ids = bus_ids;
 sys.pf = pf;
 sys.y0 = y0;
 sys.x_sg0 = sg.x0;
-sys.x_ibr0 = {x_ibr0{:}};
+sys.x_ibr0 = x_ibr0;
 sys.sg_bus = opts.sg_bus;
 sys.sg_bus_position = sg.bus_position;
 sys.ibr_buses = opts.ibr_buses;
@@ -102,6 +105,7 @@ sys.ibr_bus_positions = ibr_bp;
 sys.scr_bus = scr_bus;
 sys.scr_strong = 20;
 sys.load_adm = load_adm;
+sys.line_data = c.line_data;
 sys.load_buses = bus_ids(abs(pf.P_load(:)).' + abs(pf.Q_load(:)).' > 0);
 sys.Mbase = Mbase;
 sys.nb = nb;
@@ -109,9 +113,11 @@ sys.base = c.base_values;
 end
 
 % =========================================================================
-function dae = build_sg_dae(c, pf, sg_bus, exc, H_scale, X_scale)
+function dae = build_sg_dae(c, pf, sg_bus, exc, H_scale, X_scale, H_direct, D_direct)
 if nargin < 5 || isempty(H_scale), H_scale = 1.0; end
 if nargin < 6 || isempty(X_scale), X_scale = 1.0; end
+if nargin < 7 || isempty(H_direct), H_direct = NaN; end
+if nargin < 8 || isempty(D_direct), D_direct = NaN; end
 % Minimal DAE-struct for ONE Padiyar model-1.1 machine at sg_bus, initialised
 % from the power-flow operating point, in the ABI ibr.padiyar_sg_unit expects.
 % X_scale multiplies the internal reactances (coupling-strength / electrical-
@@ -122,6 +128,11 @@ sZ = 100/615; sH = 615/100;                     % 615 MVA machine base -> 100 MV
 Ra=0.0; Xd=0.8979*sZ*X_scale; Xdp=0.2995*sZ*X_scale; Xq=0.646*sZ*X_scale; Xqp=Xq;
 Tpd0=7.4; Tpq0=0.033; KA=200; TA=0.02;
 H=5.148*sH*H_scale; D=2.0*sH*H_scale; fb=c.base_values.frequency_Hz;
+if isfinite(H_direct), H=H_direct; end
+if isfinite(D_direct), D=D_direct; end
+if ~(isfinite(H) && H>0 && isfinite(D) && D>=0)
+    error('ibr:build_ieee14_switch_system:sgHD','SG H must be positive and D non-negative.');
+end
 
 bp = find(pf.external_bus_ids==sg_bus,1);
 V  = pf.bus_voltage(bp)*exp(1i*deg2rad(pf.bus_angle_deg(bp)));

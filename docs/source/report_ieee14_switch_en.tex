@@ -1,430 +1,101 @@
-﻿\documentclass[12pt,a4paper]{article}
-\usepackage{graphicx,textcomp}
-\usepackage{amsmath,amssymb,float,caption,xcolor,hyperref,fancyhdr,tikz}
-\usetikzlibrary{arrows.meta,positioning}
-% Body text AND math are set in Times (newtx). The MATLAB figures are generated
-% with Times New Roman lettering at the same 12 pt size and are included at 1:1
-% scale, so graph text matches the report text exactly.
+\documentclass[12pt,a4paper]{article}
+\usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
 \usepackage{newtxtext,newtxmath}
-\usepackage{geometry,booktabs,array,tabularx}
+\usepackage{geometry,booktabs,tabularx}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
-\pagestyle{fancy}\fancyhf{}\lhead{\small IEEE 14-bus: 1 SG + 4 IBR, AGSI++ mode switching}\rhead{\small\thepage}
-\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
-\renewcommand{\arraystretch}{1.12}
-\linespread{1.08}
-\setlength{\emergencystretch}{3em}
-
-\title{\textbf{Automatic Grid-Following $\leftrightarrow$ Grid-Forming Mode Switching of One
-Synchronous Generator and Four IBRs on the IEEE 14-Bus System via AGSI++}\\
-\large Small-signal stability sweep, fault switching-outcome map, and time-domain
-trip/reclose switching (project-owned MATLAB, no external solver)}
+\pagestyle{fancy}\fancyhf{}\lhead{IEEE 14-bus: 1 SG + 4 IBR, AGSI++}\rhead{\thepage}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching with Project AGSI++}\\
+\large Source-case events, mode timeline, and present limitation}
 \date{3 August 2026}
-
 \begin{document}
 \maketitle
-
 \begin{abstract}
-This standalone report consolidates the IEEE 14-bus study of automatic grid-following (GFL)
-$\leftrightarrow$ grid-forming (GFM) mode switching driven by the Adaptive Grid-Support Index
-(AGSI++). The test system has \textbf{one synchronous generator} at bus~1 (Padiyar model-1.1,
-\emph{manual field, no AVR}, 4-state) sharing a \emph{meshed single-area} network with
-\textbf{four GFL IBRs} at buses~2, 3, 6 and 8 (reduced-6 \texttt{SwitchableIbr6}). The device
-models are identical to those of the companion Padiyar two-area switching study
-\cite{eecon49en}. The composite small-signal model has \textbf{28 states} and \textbf{zero
-right-half-plane eigenvalues} ($\max\operatorname{Re}(\lambda)\approx0$); the least-damped mode is
-$f=0.345$~Hz with $\zeta=+0.267$, so the operating point is \emph{small-signal stable} and
-satisfies the no-AVR / no-PSS, 1-SG + 4-IBR constraint. The report brings together (A)~an SSSA
-stability sweep over inertia and internal-reactance (coupling) scaling, (B)~a fault
-switching-outcome map over fault severity and location, and (C)~the power-flow operating point,
-the SSSA verdict, the time-domain SG trip/reclose switching cycle, and the AGSI++ weight-tuning
-provenance. All production dynamics are project-owned base MATLAB (audited \texttt{lu}/\texttt{eig}
-primitives only); external programs are never numerical acceptance targets.
+The EECON49 file supplies case data and events only; switching remains the project AGSI++.
+Grid-reference availability is added as a seventh term and all weights become $1/7$.
+All four local supervisors commit GFL$\to$GFM at 20.500~s after the SG trip.
+The restoration case is fail-closed at 147.020~s, so the reduced model does not yet
+support a successful reclose/recovery claim. Plots are raw, without noise, smoothing, or clipping.
 \end{abstract}
 
-\section{Scope and link to the companion report}
-This report is standalone but reuses, as the single source of truth, the reduced-6 IBR models
-(GFL, GFM), the \texttt{SwitchableIbr6} bumpless device, the Padiyar model-1.1 synchronous machine,
-and the AGSI++ supervisor documented and derived in full in the companion report
-\texttt{report\_two\_ibr\_}\allowbreak{}\texttt{switch\_en} \cite{eecon49en,ding2025e,liu2024e,gao2025e}. Here those
-models are applied to the meshed IEEE~14-bus system, and three connected artifacts are added: a
-small-signal stability sweep (\S\ref{sec:sssa}), a fault switching-outcome map (\S\ref{sec:map}),
-and the time-domain trip/reclose switching cycle (\S\ref{sec:ts}). Source discipline: the AGSI++
-structure follows the EECON49-P4 strategy \cite{eecon49en} as a design guideline
-(\texttt{PROJECT\_DERIVED\_SOURCE\_GUIDED}); the diagnostic time-domain driver and the two sweeps
-are \texttt{ASSUMED\_DIAGNOSTIC}; nothing was tuned to bias any result.
-
-\section{Models and the AGSI++ switching index}
-\label{sec:models}
-\paragraph{Switching index.} The AGSI++ merges six normalised per-IBR sub-indices into one
-dimensionless index, evaluated every step:
-\begin{equation}
-\begin{aligned}
-&J_V=\frac{|V-V_{ref}|}{0.10},\quad
-J_f=\frac{|f-60|}{0.50},\quad
-J_R=\frac{|\mathrm{d}f/\mathrm{d}t|}{1.0},\\
-&J_P=\frac{|P_{ref}-P|}{0.20},\quad
-J_{SCR}=\max\!\Big(0,\tfrac{3}{SCR}-1\Big),\quad
-J_{lock}=\frac{|v_q|}{0.10},
-\end{aligned}
-\end{equation}
-\begin{equation}
-\mathrm{AGSI}=w_V J_V + w_f J_f + w_R J_R + w_P J_P + w_{SCR}J_{SCR} + w_{lock}J_{lock},
-\end{equation}
-$V$ is the local PCC voltage magnitude ($V_{ref}=1$~pu); $f$ is PLL-estimated frequency in GFL
-and virtual-rotor frequency in GFM ($f_0=60$~Hz); $\mathrm{d}f/\mathrm{d}t$ is the accepted-sample
-backward-difference RoCoF, low-pass filtered in AGSI++; $P$ is injected active power on the system
-base with generator-positive sign and $P_{ref}$ its command; $SCR$ is the diagnostic local
-short-circuit ratio; and $v_q$ is the active-frame q-axis voltage (PLL frame in GFL, virtual-rotor
-frame in GFM). The denominators are frozen normalisation bases, not protection limits: $J_V=1$,
-for example, means a $0.10$~pu voltage deviation. Sub-indices and the aggregate are dimensionless,
-are not probabilities, are not clipped to $[0,1]$, and may exceed one.
-with weights (sum $=1$) $[w_V,w_f,w_R,w_P,w_{SCR},w_{lock}]=[0.25,0.25,0.15,0.10,0.15,0.10]$.
-Switching uses hysteresis and dwell: GFL$\to$GFM when $\mathrm{AGSI}\ge\Gamma_{on}=0.65$ (held
-$\ge T_{d,on}$); GFM$\to$GFL when $\mathrm{AGSI}<\Gamma_{off}=0.35$ (held $\ge T_{d,off}$). AGSI++
-low-pass filters the RoCoF term ($\tau_R=0.05$~s) to reject the one-sample RoCoF spike at a
-topology change, and adds the weak-grid strength term $J_{SCR}$ and the PLL loss-of-lock proxy
-$J_{lock}=|v_q|/0.10$.
-
-\paragraph{Code-level switching mechanism.}
-Each IBR is an independent hybrid two-state machine with committed mode
-$m_i\in\{0,1\}$ ($0=$GFL, $1=$GFM), not an online optimiser or a continuous blend of the two
-models. Its own AGSI++ and dwell timers determine the normal transitions, so devices switch at the
-same simulated time only when their local conditions mature together. The IEEE14 run has
-\texttt{gra\_override=false}: fault/trip transitions are purely index-driven. A synchronised SG
-reclose is the explicit exception---the event driver performs a coordinated reference handback to
-GFL without waiting for $\Gamma_{off}$; the index supervisor then resumes immediately.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  >=Latex,
-  state/.style={draw,rounded corners=3pt,minimum width=1.55in,minimum height=0.65in,align=center},
-  every node/.style={font=\normalsize}
-]
-\node[state,fill=blue!7] (gfl) {GFL\\$m_i=0$};
-\node[state,fill=orange!10,right=2.55in of gfl] (gfm) {GFM\\$m_i=1$};
-\draw[-{Latex[length=2.4mm]},thick,bend left=18] (gfl) to node[above,align=center] {$\mathrm{AGSI}_i\ge\Gamma_{on}$\\for $T_{d,on}$} (gfm);
-\draw[-{Latex[length=2.4mm]},thick,bend left=18] (gfm) to node[below,align=center] {$\mathrm{AGSI}_i<\Gamma_{off}$\\for $T_{d,off}$} (gfl);
-\draw[-{Latex[length=2.4mm]},dashed,very thick] ([yshift=-0.30in]gfm.south) to[out=-115,in=-65]
- node[below,align=center] {synchronised SG reclose:\\coordinated handback override}
- ([yshift=-0.30in]gfl.south);
-\end{tikzpicture}
-\caption{Per-device hybrid state machine. Solid transitions are AGSI++/hysteresis/dwell decisions;
-the dashed transition is the separately identified SG-reference handback policy.}
-\label{fig:fsm}
-\end{figure}
-
-\paragraph{Reduced-6 IBR models.} \textbf{GFL} state order
-$x=[\,i_d,\ i_q,\ \delta_{\mathrm{PLL}},\ \xi_{\mathrm{PLL}},\ \xi_P,\ \xi_Q\,]$ (L-filter dq
-currents, SRF-PLL angle and integrator, and $P/Q$ outer-loop integrators). \textbf{GFM} state
-order $x=[\,i_d,\ i_q,\ \omega,\ \delta,\ E,\ \xi_V\,]$ (currents, virtual-rotor speed and angle,
-internal voltage magnitude, and d-axis voltage integrator), with cross-paired terminals
-$v_{gd}=E+X i_q$, $v_{gq}=-X i_d$. Each IBR is one \texttt{SwitchableIbr6} device wrapping both
-branches; the active state is always 6-dimensional and a switch is \emph{bumpless} --- the target
-branch is re-initialised to the instantaneous terminal $(V,P,Q)$ so the injected current is
-continuous,
-\begin{equation}
-I^{+}=\overline{\left(\tfrac{S}{V}\right)}=I^{-}.
-\end{equation}
-
-\paragraph{Synchronous generator (Padiyar model-1.1, manual, 4-state).} State order
-$[\delta,\ \omega,\ E_q',\ E_d']$:
-\begin{equation}
-\dot\delta=\omega_B(\omega-1),\qquad
-\dot\omega=\frac{P_m-(\omega-1)/R-T_e-D(\omega-1)}{2H},
-\end{equation}
-with $E_{fd}=E_{fd0}$ constant (no AVR),
-$\dot E_q'=[E_{fd}-E_q'-(X_d-X_d')I_d]/T_{d0}'$ and $\dot E_d'=[-E_d'+(X_q-X_q')I_q]/T_{q0}'$.
-The manual (no-AVR, no-PSS) machine keeps the composite free of any excitation-control state, as
-required by the study constraint. Full derivations, the stator solution, and the network DAE are
-in the companion report.
-
-\section{Test system}
-\label{sec:system}
-Figure~\ref{fig:oneline} is the single-line diagram of the study system: the IEEE 14-bus network
-with the synchronous generator \textbf{SG$_1$} at bus~1 acting as slack (angle reference) and four
-inverter-based resources \textbf{IBR$_1$--IBR$_4$} at buses~2, 3, 6 and 8, each backed by an energy
-source and/or storage. In steady state every IBR is dispatched as a PQ (grid-following) unit; when
-the AGSI++ index commands a switch, the affected unit becomes a voltage-forming (PV / grid-forming)
-source. The remaining buses carry the standard IEEE 14-bus loads, and the transformer taps of
-branches 4--7, 4--9 and 5--6 are represented exactly by the tap-aware admittance matrix taken from
-the in-house power flow. This is the same one-line arrangement used in the EECON49-P4 study
-\cite{eecon49en}, which is why the device mapping (1~SG + 4~IBR at the original generator buses) is
-kept unchanged here.
+\section{Case and switching rule}
+The 100-MVA, 60-Hz IEEE 14-bus case has the SG at bus 1 and IBRs at buses 2, 3, 6, and 8.
+Source-case values are $H=2.5$~s and $D=1.0$~pu. The project index is
+\[
+J_V=\frac{|V-V_{ref}|}{0.10},\quad J_f=\frac{|f-60|}{0.50},\quad
+J_R=\frac{|\mathrm df/\mathrm dt|}{1.0},\quad J_P=\frac{|P_{ref}-P|}{0.20},
+\]
+\[
+J_{SCR}=\max(0,3/SCR-1),\quad J_{lock}=\frac{|v_q|}{0.10},\quad
+J_{GRA}=1-GRA,\qquad \mathrm{AGSI}^{++}=\frac{1}{7}\sum J_k .
+\]
+$GRA=1$ when the SG or a committed GFM reference is available. It is a weighted input,
+not a hard override. Each IBR uses local hysteresis/dwell:
+$\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$, $T_{d,on}=0.5$~s, $T_{d,off}=1.0$~s.
+The per-device state machine is
+\[
+\mathrm{GFL}\xrightarrow[\,T_{d,on}\,]{\mathrm{AGSI}^{++}_i\ge\Gamma_{on}}\mathrm{GFM},
+\qquad
+\mathrm{GFM}\xrightarrow[\,T_{d,off}\,]{\mathrm{AGSI}^{++}_i<\Gamma_{off},\ GRA=1}\mathrm{GFL}.
+\]
+Restoration makes the SG/line/load reference available but does not override this state machine.
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.86\textwidth]{figures/switch_ieee14/ieee14_oneline.png}
-\caption{Single-line diagram of the IEEE 14-bus test system used in this study: SG$_1$ (slack) at
-bus~1 and the four switchable IBRs at buses~2, 3, 6 and 8 (GFM: PV, GFL: PQ), each with an energy
-source and/or storage; arrows are loads (PQ). Reproduced from the EECON49-P4 study system
-\cite{eecon49en}.}
-\label{fig:oneline}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_oneline.png}
+\caption{IEEE 14-bus one-line used by the simulation.}
 \end{figure}
 
 \section{Power-flow operating point}
-\label{sec:pf}
-The base case is solved by the in-house Newton--Raphson power flow. The synchronous generator at
-bus~1 carries the bulk dispatch, $P_{g1}=2.324$~pu $=232.4$~MW (slack / angle reference). The IBR
-at bus~2 dispatches $P_{g}=0.40$~pu; the IBRs at buses~3, 6 and 8 are on voltage/reactive support
-duty with scheduled $P_g=0$. Load is distributed over the remaining IEEE~14-bus buses. This
-operating point is the initial condition for both the small-signal linearisation
-(\S\ref{sec:sssa}) and every time-domain run (\S\ref{sec:ts}); the pre-event active-power panel
-(Fig.~\ref{fig:p}) shows the SG holding $\approx2.32$~pu and IBR1 holding $\approx0.40$~pu,
-confirming the dispatch.
-
-\section{Small-signal stability and the stability sweep}
-\label{sec:sssa}
-Linearising the composite 28-state model about the base case gives \textbf{zero right-half-plane
-eigenvalues}: $\max\operatorname{Re}(\lambda)\approx0$ (only the $\approx0$ angle-reference gauge
-mode, at the $10^{-8}$ level), and the least-damped oscillatory mode is $f=0.345$~Hz with
-$\zeta=+0.267$. The meshed single-area IEEE~14-bus operating point is therefore
-\emph{small-signal stable}.
-
-To test how robust this verdict is, two one-parameter sweeps re-derive the equilibrium
-consistently and re-linearise at each point (Fig.~\ref{fig:sweep}, Table~\ref{tab:sweep}): an
-\emph{inertia} sweep on $H_{\times}$ (scaling SG $H$ and damping) and a \emph{coupling}
-sweep on $k_X$ (scaling SG internal reactances; larger $=$ weaker coupling). The
-inertia sweep is essentially flat and stable across $H_\times\in[0.02,2]$
-($\max\operatorname{Re}\sim10^{-8}$, $\zeta\approx0.267$, mode near $0.345$~Hz). The coupling
-sweep stays stable across $k_X\in[1,20]$: damping erodes \emph{monotonically}
-($\zeta:0.267\to0.150$ at $20\times$ internal reactance) but never crosses $\zeta=0$, and
-$\max\operatorname{Re}$ stays at the $10^{-8}$ gauge level. \textbf{No instability boundary is
-found on either knob.}
-
-\begin{figure}[H]\centering
-\includegraphics[width=6.14in]{figures/switch_ieee14/sssa_sweep.png}
-\caption{SSSA stability sweep of the IEEE 14-bus 1-SG + 4-IBR system: spectral abscissa
-$\max\operatorname{Re}(\lambda)$ and least-damped $\zeta$ versus inertia scaling (top,
-$H_{\times}$) and coupling/internal-reactance scaling (bottom, $k_X$).
-The IEEE 14-bus system stays stable throughout ($\max\operatorname{Re}\approx0$); the red dashed
-line marks the Padiyar two-area contrast at $\max\operatorname{Re}=+0.058\ \mathrm{s^{-1}}$
-(UNSTABLE, a different weak-tie topology).}
-\label{fig:sweep}
-\end{figure}
-
-\begin{table}[H]\centering\small
-\caption{SSSA stability sweep (inertia and coupling knobs) with the Padiyar two-area contrast.
-Generated entirely by \texttt{scripts/reporting/ieee14\_sssa\_sweep.m}.}
-\label{tab:sweep}
-\input{figures/switch_ieee14/table_sssa_sweep.tex}
+\begin{table}[H]\centering\caption{Bus power-flow results (pu)}
+\resizebox{\textwidth}{!}{\input{figures/switch_ieee14/table_pf_bus_results.tex}}
+\end{table}
+\begin{table}[H]\centering\caption{From-end line flows and losses (pu)}
+\resizebox{\textwidth}{!}{\input{figures/switch_ieee14/table_pf_line_results.tex}}
 \end{table}
 
-\paragraph{Interpretation (topology, not inertia or coupling).} The contrast with the Padiyar
-two-area system ($1$~SG $+3$~IBR, weak inter-area tie) is decisive: that operating point has one
-right-half-plane eigenvalue, $\max\operatorname{Re}=+0.058\ \mathrm{s^{-1}}$ ($\zeta=+0.122$,
-$f=0.677$~Hz), i.e.\ \emph{small-signal unstable}, whereas the meshed IEEE~14-bus stays stable
-even at $20\times$ internal reactance or $0.02\times$ inertia. The instability of the two-area
-case is therefore \textbf{topological} --- it comes from the weak inter-area tie, not from low
-inertia or coupling strength, which a meshed grid tolerates.
-
-\section{Time-domain switching: SG trip and reclose}
-\label{sec:ts}
-The demonstration run applies, over a $50$~s window: a temporary three-phase fault $Z_f=j0.1$~pu
-at bus~4 during $1.0$--$1.15$~s, an \textbf{SG trip at $6$~s}, and a synchronised \textbf{SG
-reclose at $9$~s}. The two disturbances are deliberately \emph{well separated}: the fault is
-cleared $4.85$~s before the breaker opens, so the post-fault transient has fully decayed and the
-IBR response to the trip is not contaminated by the fault. (This differs from the shorter $6$~s
-objective run used for weight tuning in \S\ref{sec:tune}, which trips at $1$~s and recloses at
-$4$~s.) Figures \ref{fig:agsi}--\ref{fig:p} show the AGSI++ per IBR, the bus voltages, the
-frequencies, and the active-power injections. The ordered timeline is:
-\begin{enumerate}\itemsep2pt
-\item $[0,1)$~s --- SG is the slack; all four IBRs run as GFL at their scheduled dispatch.
-\item $1.0$--$1.15$~s --- temporary fault $Z_f=j0.1$~pu; the IBRs \emph{ride through} it as GFL
-(AGSI spikes but the fault clears and no IBR reaches the dwell-confirmed $\Gamma_{on}$ crossing).
-\item $1.15$--$6$~s --- fault-free recovery; the trajectory settles back to the SG-slack operating
-point before the next event, so the trip is a clean, independent disturbance.
-\item $t=6$~s --- \textbf{SG trips}. All four IBRs cross $\Gamma_{on}$ ($\mathrm{AGSI}\approx
-1.88$--$2.07$) and \textbf{form GFM} after the $T_{d,on}=0.5$~s dwell, i.e.\ at $t=6.5$~s, so the
-island survives (network minimum voltage $\approx0.49$--$0.53$~pu on the formed island;
-$\min|V|=0.453$~pu at the trip transient).
-\item $t=9$~s --- \textbf{synchronised reclose}; the angle reference is handed back to the SG and
-all four IBRs revert to their scheduled GFL dispatch. The reclose transient briefly re-triggers
-forming at $t=9.5$~s, and AGSI++ peaks bounded at $\approx3.5$.
-\item $t\to50$~s --- the response \emph{stays bounded}: voltages recover ($V_{end}\approx0.941$~pu
-at the weakest bus, higher elsewhere), the frequency excursion peaks near $61.4$~Hz and then
-settles at $\approx59.6$~Hz (primary droop is present, but there is no secondary/integral frequency
-restoration to return exactly to $60$~Hz), the SG re-takes
-$\approx2.53$~pu, and three of the four IBRs revert to GFL as their index falls below
-$\Gamma_{off}$ at $t\approx22.3$--$23.1$~s (IBR2 at bus~3 remains GFM, supporting the weakest
-node). AGSI++ stays bounded ($\approx3.5$ peak) with no chatter.
-\end{enumerate}
-
-\begin{table}[H]\centering\small
-\caption{Main-run transition audit. ``All'' is an observed outcome of this case, not a group-switch rule.}
-\label{tab:switch_timeline}
-\begin{tabularx}{\textwidth}{@{}p{0.13\textwidth}p{0.20\textwidth}X p{0.19\textwidth}@{}}
-\toprule
-Time & Event & Index/timer & Committed transition \\
-\midrule
-$0$--$1.0$~s & no event & low AGSI++; timers idle & all remain GFL \\
-$1.0$--$1.15$~s & temporary fault & above-line excursion shorter than $T_{d,on}=0.5$~s & GFL$\to$GFL \\
-$6.0$~s & SG trip & AGSI++ $\approx1.88$--$2.07$; per-IBR up-timers start & remain GFL during dwell \\
-$6.5$~s & on-dwell matures & all local up-conditions persist & all GFL$\to$GFM, index-driven \\
-$9.0$~s & SG reclose & no down-threshold wait & all GFM$\to$GFL, handback override \\
-$9.5$~s & reclose transient & up-condition again matures & all GFL$\to$GFM, index-driven \\
-$22.3$--$23.1$~s & recovery & three down-conditions persist for $T_{d,off}=1.0$~s & three GFM$\to$GFL; bus~3 remains GFM \\
+\section{Event and mode evidence}
+\begin{table}[H]\centering
+\begin{tabularx}{\textwidth}{p{0.13\textwidth}X p{0.25\textwidth}}
+\toprule Time (s) & Event/index/timer & Committed mode \\ \midrule
+0 & normal, timers idle & all GFL \\
+20--20.5 & SG trip; each index exceeds $\Gamma_{on}$ for 0.5 s & all GFL$\to$GFM at 20.500 s \\
+50 & all loads +20\% & all GFM \\
+85--85.15 & three-phase bus-9 fault, $Z_f=0.01+j0.01$ pu & all GFM \\
+110 & line 6--13 trip & all GFM \\
+145 & SG/line restored and load returned to base; no forced handback & remain GFM pending off-dwell \\
+147.020 & fail-closed model-validity exit & no validated GFM$\to$GFL \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{figure}[H]\centering
-\includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_agsi.png}
-\caption{IEEE 14-bus: AGSI++ per IBR versus $\Gamma_{on}=0.65$ / $\Gamma_{off}=0.35$
-(fault $Z_f{=}j0.1$~pu at $1.0$--$1.15$~s, SG trip $6$~s, reclose $9$~s; $50$~s window).}
-\label{fig:agsi}
-\end{figure}
-\begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_mode.png}
-\caption{Recorded supervisor mode per device: $0=$GFL and $1=$GFM. Markers are committed
-transitions; the SG handback at $9$~s is an event override, while the other transitions are
-per-device AGSI++/hysteresis/dwell decisions.}
-\label{fig:mode}
-\end{figure}
-\begin{figure}[H]\centering
-\includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_voltage.png}
-\caption{IEEE 14-bus: bus-voltage magnitudes through the fault / trip / reclose cycle; the network
-minimum recovers to $\approx0.94$~pu.}
-\label{fig:volt}
-\end{figure}
-\begin{figure}[H]\centering
-\includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_freq.png}
-\caption{IEEE 14-bus: SG and IBR (PLL / VSG) frequencies; the post-trip excursion peaks near
-$61.4$~Hz and then settles.}
-\label{fig:freq}
-\end{figure}
-\begin{figure}[H]\centering
-\includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_p.png}
-\caption{IEEE 14-bus: active-power injections. Pre-event the SG holds $\approx2.32$~pu and IBR1
-(bus~2) holds $\approx0.40$~pu; after reclose the SG re-takes $\approx2.5$~pu.}
-\label{fig:p}
-\end{figure}
-
-\section{Fault switching-outcome map}
-\label{sec:map}
-The switching map is a fault-only sweep (\emph{no} SG trip, $T=4$~s): a temporary three-phase
-shunt fault during $1.0$--$1.15$~s is swept over fault reactance and fault bus,
-\[
-X_f\in\{0.02,0.05,0.10,0.20,0.30,0.50\}~\text{pu},\qquad \text{fault bus}\in\{3,4,5,9\},
-\]
-and each run is classified into one of four outcome regions (Fig.~\ref{fig:map},
-Table~\ref{tab:map}): \emph{ride-through} (stayed GFL, no switch), \emph{index-switch} (AGSI++
-crosses $\Gamma_{on}$ so $\ge1$ IBR forms GFM then reverts), \emph{diverge / no post-clear
-recovery} (the run diverged, or the minimum voltage \emph{measured after the fault is cleared}
-stays below the $0.25$~pu collapse floor), and \emph{non-converged} (fail-closed: the corrector
-did not converge, so no physical outcome is claimed). The collapse test deliberately uses the
-\textbf{post-clear} minimum voltage: while a low-impedance shunt fault is applied the faulted bus
-is pulled down \emph{by construction}, so the during-fault sag carries no information about
-survival. Over the 24 fault points the tally is \textbf{ride-through $=2$, index-switch $=22$,
-diverge $=0$, non-converged $=0$}: every swept fault is cleared successfully and the network
-recovers to $0.98$--$1.01$~pu, with the AGSI++ supervisor forming GFM on all but the two mildest
-points.
+Simultaneous switching is not a broadcast command. The common trip caused all local indices and
+timers to mature on the same sample. IBR1 is only the plotting-angle reference after the trip;
+the TDS solves full KCL and no IBR is an algebraic PF slack bus.
 
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/switching_map.png}
-\caption{IEEE 14-bus AGSI++ switching-outcome map: fault reactance $X_f$ (x, smaller $=$ more
-severe) versus fault bus (y); colour $=$ outcome class, annotation $=$ minimum $|V|$ (pu)
-\emph{after} the fault is cleared (the criterion used by the collapse test).}
-\label{fig:map}
+\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_supervisor.png}
+\caption{AGSI++, GRA, plotting reference, and separate 0=GFL/1=GFM timelines.}
+\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_response.png}
+\caption{Raw IBR $P,Q,|V|,f$ response ending at the fail-closed point.}
 \end{figure}
 
-\begin{table}[H]\centering\small
-\caption{Fault switching-outcome sweep (top, 24 points) and load-step sweep (bottom, permanent
-step at bus~4). Generated by \texttt{ieee14\_switching\_map.m}.}
-\label{tab:map}
-\input{figures/switch_ieee14/table_switching_map.tex}
-\end{table}
+\section{Present limitation}
+A physical system should recover after synchronized SG/line restoration and load reset.
+This study cannot yet demonstrate it: the SG has manual field, no AVR/PSS, no governor/turbine
+or synchronizer/breaker states, while reduced-6 IBRs omit DC-link and detailed inner/protection
+dynamics. Reinitializing the SG at the depressed island voltage produces an out-of-domain transient
+at 147.020~s. The trip-driven GFM entry is validated, but the reclose/recovery claim is withheld.
+No state reset, parameter tuning, or plot alteration is used to manufacture recovery.
 
-\paragraph{Physics of the map.} Once the collapse test is applied where it belongs --- after
-clearing --- a clean \emph{switching} gradient emerges rather than a collapse region. Every one of
-the 24 faults is survived: the deepest during-fault sags reach $\min|V|=0.075$--$0.14$~pu (bolted-ish
-$X_f=0.02$), yet after the breaker clears at $1.15$~s the network recovers to $0.98$--$0.99$~pu, so
-no point is a voltage collapse and every Newton step converged. What the severity actually decides
-is \emph{whether the AGSI++ supervisor commands forming}: from $X_f=0.02$ up to $0.30$ at every bus
-(and up to $0.50$ at IBR bus~3 and the electrically weak bus~9) the sag pushes AGSI++ over
-$\Gamma_{on}$, so at least one IBR forms GFM and then reverts $\Rightarrow$ \emph{index-switch}
-(22 points, $2$--$10$ transitions each). Only the two mildest cases ($X_f=0.50$ at the stiffer load
-buses~4 and 5) stay GFL with zero switches $\Rightarrow$ \emph{ride-through}. Fault location
-matters as expected: at the IBR bus~3 and the weak bus~9 even the mildest $X_f$ triggers switching,
-whereas the stiffer load buses~4/5 do not. The load-step sub-table confirms the interpretation:
-permanent $+10/30/50\%$ load steps at bus~4 (no SG trip)
-all ride through with min$|V|\ge0.999$~pu and zero switches --- a load step is far milder than a
-fault and never drives an IBR to form.
-
-\section{Event coverage and present model limits}
-\label{sec:limits}
-The existing evidence covers: no-event hold (no false switch); mild cleared faults (ride-through);
-stronger/weak-bus faults (22 of 24 points index-switch and return, with all 24 recovering); permanent
-$+10/30/50\%$ load steps at bus~4 (no switch); SG trip (index-driven forming); and SG reclose
-(coordinated handback followed by index-driven re-forming/recovery). A switch is not required for a
-test to pass: retaining GFL under a disturbance that never satisfies threshold and dwell is the
-correct supervisor outcome.
-
-The claims are bounded by the current model: positive-sequence RMS and balanced three-phase shunt
-faults, not EMT/PWM/harmonic or unbalanced-fault simulation; reduced-6 IBR branches without a full
-DC-link, LCL, SOC, thermal, vendor-protection or LVRT/anti-windup stack; a study-level $1.2$-rated
-current-magnitude limiter; a manual-field 4-state SG (no AVR/PSS, primary droop but no secondary
-frequency restoration); and constant-impedance dynamic loads. The scheduled reclose is made
-synchronous by re-initialisation and does not model a synchronism-check relay or failed close.
-Bumpless transfer proves $I^+=I^-$ only at the switching instant, not zero subsequent voltage,
-frequency or power transient. AGSI++ weights, thresholds and dwells are frozen diagnostic study
-choices, not certified protection settings; online BO/MPC, measurement noise/latency and broad
-parameter/topology uncertainty are not covered. Non-converged trajectories fail closed and support
-no physical claim.
-
-These statements were checked against the runtime mode/timer/transfer implementation in
-\texttt{SwitchableIbr6}, the accepted-step and coordinated-reclose path in
-\texttt{padiyar\_switch\_tds}, the IEEE14 builder, and the no-event/fault/bidirectional/hysteresis
-tests.
-
-\section{AGSI++ weight-tuning provenance}
-\label{sec:tune}
-The hand-set AGSI++ weights and thresholds were checked against an in-house, offline, design-time
-search (\texttt{scripts/reporting/optimize\_agsi\_weights.m}; project-owned base MATLAB,
-\textbf{no external optimization solver}, not on any production runtime path). Guided by the
-EECON49-P4 Bayesian-Optimization \emph{concept}, the search is a uniform-simplex random sampling
-of the six weights (each $\ge0$, sum $=1$) plus $\Gamma_{on}/\Gamma_{off}$, followed by a
-coordinate local refine, minimising, for the IEEE~14-bus SG-trip@$1$~s $+$ reclose@$4$~s run over
-$T=6$~s:
-\begin{equation}
-\begin{aligned}
-J = {}& 12\cdot\overline{|1-V_{\min}(t)|} \;+\; 0.6\cdot(\text{total mode switches})\\
-&{}+\; 0.05\cdot\max\mathrm{AGSI}\quad(+\,10^{5}\ \text{penalty on divergence}).
-\end{aligned}
-\end{equation}
-The search improves the objective by only \textbf{$0.4\%$} ($J:11.959\to11.906$), i.e.\ the
-hand-set weights and thresholds are \emph{already near-optimal} for this stable operating point.
-The optimum leans toward the grid-strength term ($w_{SCR}$) and drops $w_{lock}$, consistent with
-weak-grid GFL instability being the dominant stress, but the gain is negligible and the hand-set
-values are more physically interpretable and balanced. \textbf{Decision:} keep the frozen defaults
-$[w_V,w_f,w_R,w_P,w_{SCR},w_{lock}]=[0.25,0.25,0.15,0.10,0.15,0.10]$, $\Gamma_{on}=0.65$,
-$\Gamma_{off}=0.35$; the search is retained only as a reproducible tool that \emph{validates} the
-choice (\texttt{ASSUMED\_DIAGNOSTIC}; frozen before use).
-
-\section{Summary}
-On the meshed IEEE~14-bus system, one manual (no-AVR) synchronous generator and four GFL IBRs form
-a small-signal-stable operating point (28 states, zero RHP eigenvalues, least-damped $0.345$~Hz at
-$\zeta=+0.267$) that stays stable across the whole inertia and coupling sweep; the AGSI++
-supervisor rides through a temporary fault as GFL, forms GFM on the SG trip to hold the island, and
-hands the reference back on reclose while staying bounded and chatter-free. The switching-outcome
-map shows that all 24 swept faults are cleared and recovered (no collapse point), with fault
-severity and location deciding only whether AGSI++ commands forming (22 index-switch, 2
-ride-through), and the offline weight search confirms the hand-set AGSI++ weights are near-optimal and
-frozen. The stark contrast with the small-signal-unstable Padiyar two-area case
-($\max\operatorname{Re}=+0.058\ \mathrm{s^{-1}}$) shows the difference is topological.
-
-\begin{thebibliography}{9}
-\bibitem{eecon49en} EECON49-P4 (KMITL), ``A Bayesian Optimization-Based GFL/GFM Mode Switching
-Strategy,'' The 49th Electrical Engineering Conference (EECON-49), 2026.
-\bibitem{ding2025e} H. Ding \emph{et al.}, ``A novel design for switchable grid-following and
-grid-forming control,'' \emph{IEEE Trans. Sustain. Energy}, vol.~16, no.~2, pp.~1301--1314, 2025.
-\bibitem{liu2024e} P. Liu, X. Xie, and J. Shair, ``Adaptive hybrid grid-forming and grid-following
-control of IBRs under varying SCRs,'' \emph{IEEE Trans. Power Electron.}, vol.~39, no.~6,
-pp.~6603--6607, 2024.
-\bibitem{gao2025e} X. Gao \emph{et al.}, ``Seamless switching method between grid-following and
-grid-forming control,'' \emph{IEEE Trans. Ind. Appl.}, vol.~61, no.~1, pp.~597--606, 2025.
-\bibitem{entsoe_rocof2} ENTSO-E, ``Rate of Change of Frequency (RoCoF) withstand capability,''
-Network Code RfG implementation guidance document, 2018.
-\end{thebibliography}
-
+\section{Reproduction}
+\begin{verbatim}
+pf_init_paths;
+addpath(fullfile('scripts','reporting'));
+generate_ieee14_switch_report_figures;
+\end{verbatim}
+The generator uses project-owned MATLAB and $\Delta t=0.005$~s. SSSA and fault-map sections were
+removed to keep this report focused on IBR switching.
 \end{document}

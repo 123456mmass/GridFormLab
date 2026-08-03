@@ -110,6 +110,12 @@ yline(ax,out.agsi_down,'k--','LineWidth',1.0,'Label','\Gamma_{off}','HandleVisib
 yl=ylim(ax); ylim(ax,[0 max(yl(2),1.3)]);   % floor at 0, never clip the peaks
 fps{end+1}=finfig(ax,'AGSI switching index per IBR vs reference lines','AGSI',od,'agsi',tt,tr,out,cols);
 
+% A discrete mode timeline is deliberately separate from the AGSI plot.  The
+% index is a continuous diagnostic, while mode is the supervisor's binary
+% state (0=GFL, 1=GFM).  Keeping four panels prevents coincident switches from
+% hiding one another and makes per-device, non-coordinated decisions visible.
+fps{end+1}=mode_timeline_figure(t,out,nb3,od,tt,tr,cols,vis);
+
 ax=newtab(tabs,'angle');
 for j=1:nib, plot(ax,t,wrap(out.ang_ibr(:,j)-out.ref_angle)*180/pi,'-','Color',cols(j,:),'LineWidth',1.4,'DisplayName',sprintf('\\delta IBR%d - \\delta_{ref}',j)); end
 plot(ax,t,wrap(out.sg_delta-out.ref_angle)*180/pi,'k-','LineWidth',1.4,'DisplayName','\delta SG - \delta_{ref}');
@@ -224,6 +230,56 @@ xlabel(ax,'time (s)','FontName','Times New Roman','FontSize',12);
 lg = legend(ax,'Location','best'); set(lg,'FontName','Times New Roman','FontSize',11);
 fp = fullfile(od, sprintf('padiyar_switch_%s.png', key));
 exportgraphics(ax, fp, 'Resolution', 200);
+end
+
+function fp = mode_timeline_figure(t,out,buses,od,tt,tr,cols,vis)
+%MODE_TIMELINE_FIGURE  Four explicit binary mode traces (0=GFL, 1=GFM).
+% Dense multi-panel report figure: Times New Roman 11 pt at a physical width
+% of 5.90 in, included by the reports at exactly 5.90 in (1:1 scale).
+nib = numel(buses);
+fig = figure('Color','w','Units','inches','Position',[1 1 5.90 4.70], ...
+    'NumberTitle','off','Name','Per-IBR binary mode timeline', ...
+    'Visible',matlab.lang.OnOffSwitchState(vis), ...
+    'DefaultAxesFontName','Times New Roman','DefaultAxesFontSize',11, ...
+    'DefaultTextFontName','Times New Roman','DefaultTextFontSize',11);
+tl = tiledlayout(fig,nib,1,'TileSpacing','compact','Padding','compact');
+title(tl,'Per-IBR supervisor mode: 0 = GFL, 1 = GFM', ...
+    'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
+ev = out.switch_events;
+for j=1:nib
+    ax = nexttile(tl); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+    stairs(ax,t,out.mode(:,j),'-','Color',cols(j,:),'LineWidth',1.5);
+    ylim(ax,[-0.12 1.12]); yticks(ax,[0 1]); yticklabels(ax,{'GFL (0)','GFM (1)'});
+    ylabel(ax,sprintf('IBR%d\nbus %d',j,buses(j)), ...
+        'FontName','Times New Roman','FontSize',11);
+    xline(ax,tt,':','Color',[.35 .35 .35],'LineWidth',1.0, ...
+        'HandleVisibility','off');
+    if isfinite(tr) && tr<t(end)
+        xline(ax,tr,'--','Color',[.20 .20 .20],'LineWidth',1.0, ...
+            'HandleVisibility','off');
+    end
+    if isfield(out,'fault_on') && isfinite(out.fault_on) && out.fault_on<t(end)
+        xline(ax,out.fault_on,':','Color',[.75 .10 .10],'LineWidth',0.9, ...
+            'HandleVisibility','off');
+        if isfinite(out.fault_clear) && out.fault_clear<t(end)
+            xline(ax,out.fault_clear,':','Color',[.75 .10 .10],'LineWidth',0.9, ...
+                'HandleVisibility','off');
+        end
+    end
+    jev = ev(ev(:,2)==j,:);
+    if ~isempty(jev)
+        scatter(ax,jev(:,1),jev(:,4),24,cols(j,:),'filled', ...
+            'MarkerEdgeColor','k','LineWidth',0.5);
+    end
+    if j<nib
+        set(ax,'XTickLabel',[]);
+    else
+        xlabel(ax,'time (s)','FontName','Times New Roman','FontSize',11);
+    end
+end
+fp = fullfile(od,'padiyar_switch_mode.png');
+exportgraphics(fig,fp,'Resolution',200);
+if ~vis, close(fig); end
 end
 
 function a = wrap(x)

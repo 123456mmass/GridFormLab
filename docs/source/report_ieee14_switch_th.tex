@@ -18,7 +18,8 @@
 
 \usepackage{graphicx}
 \usepackage{textcomp}
-\usepackage{amsmath,amssymb,float,caption,subcaption,xcolor,hyperref,fancyhdr}
+\usepackage{amsmath,amssymb,float,caption,subcaption,xcolor,hyperref,fancyhdr,tikz}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage{geometry,booktabs,array,tabularx}
 \geometry{margin=1in}
 \setlength{\headheight}{19pt}
@@ -42,7 +43,7 @@
 ไฟฟ้าซิงโครนัสหนึ่งเครื่องและ IBR สี่ตัวบนระบบ IEEE 14 บัส ด้วยดัชนี AGSI++}\\
 \large การกวาดเสถียรภาพสัญญาณเล็ก (SSSA) แผนที่ผลลัพธ์การสลับเมื่อเกิดฟอลต์ และการสลับเชิงเวลา
 เมื่อ SG ปลด/สับกลับ (MATLAB ของโครงการล้วน ไม่มี external solver)}
-\date{24 กรกฎาคม 2569}
+\date{3 สิงหาคม 2569}
 
 \begin{document}
 \maketitle
@@ -77,9 +78,9 @@ $f=0.345$~Hz, $\zeta=+0.267$ จุดทำงานจึง \emph{เสถ�
 (\S\ref{sec:map}) และวงจรการสลับเชิงเวลาเมื่อ SG ปลด/สับกลับ (\S\ref{sec:ts})
 
 \textbf{วินัยด้านแหล่งอ้างอิง (source discipline).} โครงสร้าง AGSI++ ยึด \emph{แนวทาง} กลยุทธ์
-EECON49-P4~\cite{eecon49th} (จัดชั้น {\small\texttt{PROJECT\_DERIVED\_}\allowbreak{}\texttt{SOURCE\_GUIDED}} ไม่ได้ทำ Bayesian
+EECON49-P4~\cite{eecon49th} (จัดชั้น {\small\nolinkurl{PROJECT_DERIVED_SOURCE_GUIDED}} ไม่ได้ทำ Bayesian
 Optimization ซ้ำ); ตัวขับจำลองเชิงเวลาเชิงวินิจฉัยและการกวาดทั้งสองแบบจัดชั้น
-\texttt{ASSUMED\_DIAGNOSTIC}; และ \emph{ไม่มี} การปรับค่าใด ๆ เพื่อบิดผลลัพธ์
+{\small\nolinkurl{ASSUMED_DIAGNOSTIC}}; และ \emph{ไม่มี} การปรับค่าใด ๆ เพื่อบิดผลลัพธ์
 
 \section{แบบจำลองและดัชนีการสลับ AGSI++}
 \label{sec:models}
@@ -102,6 +103,41 @@ $1.0$~Hz/s, $0.20$~pu, $SCR_{crit}=3$, $0.10$) ความหมายทีล
 \mathrm{AGSI}=w_V J_V + w_f J_f + w_R J_R + w_P J_P + w_{SCR}J_{SCR} + w_{lock}J_{lock},
 \label{eq:agsipp}
 \end{equation}
+
+\subsubsection{ความหมายของตัวแปรและวิธีตอบเมื่อถูกถาม}
+ทุกพจน์คำนวณ \emph{แยกต่อ IBR} จากปริมาณที่ปลายต่อร่วม (PCC) ของตัวนั้น แล้วหารด้วยค่าฐานเพื่อให้
+ไร้หน่วย ตาราง~\ref{tab:agsi_symbols} คือความหมายที่ตรงกับโค้ด runtime
+
+\begin{table}[H]
+\centering
+\small
+\caption{นิยามตัวแปรและดัชนีย่อย AGSI++}
+\label{tab:agsi_symbols}
+\begin{tabularx}{\textwidth}{@{}p{0.10\textwidth}p{0.25\textwidth}p{0.16\textwidth}X@{}}
+\toprule
+พจน์ & ตัวแปรที่วัด/คำนวณ & ค่าฐาน & ความหมายเชิงกายภาพและการตีความ \\
+\midrule
+$J_V$ & $V=|V_i|$ คือขนาดแรงดันที่บัสของ IBR; $V_{ref}=1.0$~pu & $0.10$~pu &
+ความเครียดด้านแรงดัน ใช้ค่าสัมบูรณ์จึงตอบทั้ง undervoltage และ overvoltage; $J_V=1$ หมายถึงแรงดันเบี่ยงจากค่าอ้างอิง $0.10$~pu \\
+$J_f$ & $f$ คือความถี่ภายในที่อุปกรณ์ reconstruct ได้: GFL ใช้ค่าที่ PLL ประมาณ ส่วน GFM ใช้ความถี่โรเตอร์เสมือน; $f_0=60$~Hz & $0.50$~Hz &
+ความเครียดด้านความถี่; $J_f=1$ หมายถึงเบี่ยง $0.50$~Hz ไม่ว่าด้านสูงหรือต่ำ \\
+$J_R$ & $\mathrm{d}f/\mathrm{d}t$ คือ RoCoF จากผลต่างถอยหลังระหว่าง accepted samples สองจุด; AGSI++ กรองอันดับหนึ่งด้วย $\tau_R=0.05$~s & $1.0$~Hz/s &
+บอกความเร็วที่ความถี่กำลังเปลี่ยน ซึ่งสัมพันธ์กับเหตุการณ์ฉับพลัน/ความเฉื่อยต่ำ; $J_R=1$ หมายถึง RoCoF ที่ใช้ตัดสินมีขนาด $1$~Hz/s \\
+$J_P$ & $P$ คือกำลังจริงที่ IBR ฉีดเข้าโครงข่ายตาม generator sign convention บนฐานระบบ; $P_{ref}$ คือคำสั่งกำลังจริงของ IBR เดียวกัน & $0.20$~pu &
+tracking stress ของวงกำลัง; $J_P=1$ หมายถึงกำลังจริงคลาดคำสั่ง $0.20$~pu \\
+$J_{SCR}$ & $SCR$ คือ local short-circuit ratio เชิงวินิจฉัยที่บัส IBR; $SCR_{crit}=3$ & รูป $\max(0,3/SCR-1)$ &
+บอกความอ่อนของกริดโดยตรง: เป็นศูนย์เมื่อ $SCR\ge3$ และเพิ่มเมื่อ $SCR<3$; ตัวอย่าง $SCR=1.5$ ให้ $J_{SCR}=1$ \\
+$J_{lock}$ & $v_q$ คือแรงดันแกน q ในกรอบ active ของอุปกรณ์: GFL ใช้ PLL-q voltage; GFM ใช้ $v_{gq}$ ในกรอบโรเตอร์เสมือน & $0.10$~pu &
+proxy ของการเยื้องแกน/PLL loss-of-lock; $J_{lock}=1$ เมื่อ $|v_q|=0.10$~pu ไม่ใช่สัญญาณ boolean ว่า PLL หลุดแล้ว \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+ค่าฐานในคอลัมน์ที่สามเป็น \emph{normalisation bases} ที่ตรึงไว้ ไม่ใช่ protection limits
+การได้ $J_k=1$ เพียงแปลว่าปริมาณนั้นเท่ากับค่าฐาน ไม่ได้แปลว่า ``ล้มเหลว 100\%'' และดัชนีย่อยไม่ได้ถูก clip
+ให้อยู่ในช่วง $[0,1]$ จึงอาจมากกว่า 1 ได้ เช่นเดียวกับ AGSI++ รวม เกณฑ์สลับจริงยังต้องผ่าน
+$\Gamma_{on/off}$ และ dwell ตามสมการถัดไป น้ำหนัก $w_k$ ระบุความสำคัญสัมพัทธ์ แต่ไม่เปลี่ยนหน่วยของดัชนี
+
 โดยน้ำหนัก default (ผลรวม $=1$) คือ
 \[
 [w_V,w_f,w_R,w_P,w_{SCR},w_{lock}]=[0.25,0.25,0.15,0.10,0.15,0.10].
@@ -117,6 +153,66 @@ $1.0$~Hz/s, $0.20$~pu, $SCR_{crit}=3$, $0.10$) ความหมายทีล
 โครงสร้าง (ต้นเหตุของการสั่น/chatter เมื่อไม่มี dwell); (๒)~เพิ่ม $J_{SCR}$ ที่วัด \emph{ต้นเหตุ}
 ความอ่อนของกริดโดยตรง (เป็นบวกเมื่อ $SCR<3$); และ (๓)~เพิ่ม $J_{lock}=|v_q|/0.10$ ที่ใช้แรงดันแกน q
 เป็นตัวชี้การหลุด lock ของ PLL
+
+\subsection{คำตอบต่อข้อซักถาม: รู้โหมดอย่างไร และสลับด้วยวิธีใด}
+\label{sec:feedback}
+\textbf{คำถาม: ``IBR อยู่โหมดไหน ตอนไหน และรู้ได้อย่างไร?''}
+ในโค้ด IBR แต่ละตัวมีตัวแปรโหมดไม่ต่อเนื่องของตนเอง
+$m_i(t)\in\{0,1\}$ โดยกำหนด $m_i=0$ หมายถึง GFL และ $m_i=1$ หมายถึง GFM
+ตัวแปรนี้เป็น \emph{สถานะที่ supervisor commit จริง} ไม่ใช่การเดาจากรูปร่างกราฟ AGSI++
+ผลจำลองบันทึก $m_i(t)$ ทุกสเต็ปในเมทริกซ์ \texttt{mode} และบันทึกเวลา หมายเลข IBR
+ค่าดัชนี และโหมดปลายทางของทุก transition ใน \texttt{switch\_events}
+ดังนั้นการรายงานโหมดต้องอ่านจาก mode timeline ในรูปที่~\ref{fig:mode} ส่วนกราฟ AGSI++
+ใช้ตอบว่า \emph{เหตุใด} supervisor จึงสั่งเปลี่ยนโหมด
+
+\textbf{คำถาม: ``เป็น binary หรือใช้ method อะไร?''}
+วิธีปัจจุบันคือ \textbf{hybrid two-state finite-state machine แบบกระจายรายอุปกรณ์}
+ไม่ใช่การ blend สมการ GFL/GFM อย่างต่อเนื่อง และไม่ใช่ Bayesian optimisation หรือ MPC ที่รันออนไลน์
+ภายในแต่ละโหมดยังคงแก้สมการ DAE ต่อเนื่อง 6 สถานะของโหมดนั้น แต่ supervisor เลือก branch ที่ active
+ด้วยสถานะไบนารี $m_i$ รูปที่~\ref{fig:fsm} แสดง state machine ที่ตรงกับ runtime
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  >=Latex,
+  state/.style={draw,rounded corners=3pt,minimum width=1.55in,minimum height=0.70in,align=center},
+  every node/.style={font=\normalsize},
+  every edge/.style={draw,thick,-{Latex[length=2.4mm]}}
+]
+\node[state,fill=blue!7] (gfl) {GFL\\$m_i=0$\\ติดตามกริดด้วย PLL};
+\node[state,fill=orange!10,right=2.55in of gfl] (gfm) {GFM\\$m_i=1$\\สร้างแรงดัน/ความถี่};
+\draw[-{Latex[length=2.4mm]},thick,bend left=18] (gfl) to node[above,align=center] {$\mathrm{AGSI}_i\ge\Gamma_{on}$ ต่อเนื่อง\\อย่างน้อย $T_{d,on}$} (gfm);
+\draw[-{Latex[length=2.4mm]},thick,bend left=18] (gfm) to node[below,align=center] {$\mathrm{AGSI}_i<\Gamma_{off}$ ต่อเนื่อง\\อย่างน้อย $T_{d,off}$} (gfl);
+\draw[-{Latex[length=2.4mm]},dashed,very thick] ([yshift=-0.36in]gfm.south) to[out=-115,in=-65]
+ node[below,align=center] {SG reclose แบบกำหนดให้ซิงโครไนซ์\\coordinated reference handback (override)}
+ ([yshift=-0.36in]gfl.south);
+\end{tikzpicture}
+\caption{กลไก hybrid state machine ต่อ IBR เส้นทึบคือการสลับอัตโนมัติจาก AGSI++/hysteresis/dwell
+ส่วนเส้นประคือ coordinated SG-reference handback ซึ่งเป็น event override และไม่ได้อ้างว่าเกิดจากดัชนี}
+\label{fig:fsm}
+\end{figure}
+
+\textbf{คำถาม: ``ทุกตัวสลับพร้อมกันหรือไม่?''}
+ไม่จำเป็นต้องพร้อมกัน เพราะ IBR แต่ละตัวคำนวณ $\mathrm{AGSI}_i$ จากแรงดัน ความถี่ RoCoF กำลัง SCR
+และ $v_q$ ที่บัสของตนเอง พร้อมตัวจับเวลา \texttt{up\_since}/\texttt{down\_since} แยกกัน
+ถ้าเงื่อนไขหลุดจากเส้นก่อนครบ dwell ตัวจับเวลาของตัวนั้นถูก reset ทันที การตัดสินจะทำเฉพาะหลัง Newton
+ลู่เข้าที่ accepted step แล้วเท่านั้น จึงไม่ใช้ state ที่ไม่น่าเชื่อถือ ในการรันแบบ $\Delta t=0.002$~s
+หากหลายตัวข้ามเส้นและครบ dwell ที่ accepted timestamp เดียวกัน จะเห็นว่าสลับพร้อมกันเชิงเวลาจำลอง
+แต่ไม่ได้เกิดจาก broadcast ``สลับทุกตัว''; หากตัวใดไม่ข้ามเส้นหรืออยู่ไม่ครบ dwell ตัวนั้นจะไม่สลับ
+
+\textbf{ข้อยกเว้นที่ต้องแยกให้ชัด.}
+เส้นทาง IEEE14 นี้ตั้ง \texttt{gra\_override=false} ดังนั้นช่วง fault และ SG trip เป็น
+\emph{pure index-driven}: การหายไปของ SG ไม่ได้บังคับทุก IBR ให้เป็น GFM โดยตรง
+แต่เมื่อ SG reclose ที่กำหนดให้ซิงโครไนซ์ ตัวขับเหตุการณ์ทำ \emph{coordinated reference handback}
+โดยคืน slack/reference ให้ SG และย้าย IBR ที่ยังเป็น GFM กลับแผน GFL พร้อมกันโดยไม่รอ $\Gamma_{off}$
+หลัง transaction นี้ supervisor แบบ index-driven กลับมาทำงานตามปกติทันที จึงอาจสั่ง GFL$\to$GFM
+อีกครั้งได้หากทรานเซียนต์หลัง reclose ยังทำให้ AGSI++ สูงกว่า $\Gamma_{on}$ ครบ dwell
+
+\textbf{คำถาม: ``ใช้เกณฑ์อื่นนอกจากเส้น index หรือไม่?''}
+คำตอบสำหรับ automatic transition ปกติคือใช้ \emph{ดัชนีเดียว} แต่ดัชนีนั้นรวมเกณฑ์วัดได้หกพจน์ตาม
+สมการ~\eqref{eq:agsipp} ร่วมกับ hysteresis, dwell และเงื่อนไขว่า numerical step ต้องลู่เข้า
+ส่วน coordinated handback เป็น event policy แยกต่างหาก ไม่ใช่พจน์ที่เจ็ดใน AGSI++
+น้ำหนักและ threshold ถูกตรึงก่อนรัน ไม่มี optimiser ออนไลน์เปลี่ยนค่าเพื่อให้ได้ผลลัพธ์ที่ต้องการ
 
 \subsection{แบบจำลอง IBR ลดรูป 6 สถานะ}
 \textbf{GFL (grid-following)} ลำดับสถานะ
@@ -241,17 +337,46 @@ $9$~s} โดยเจตนาให้สองเหตุการณ์ \em
 ทรานเซียนต์ตอนสับกลับกระตุ้นการฟอร์มตัวอีกครั้งสั้น ๆ ที่ $t=9.5$~s และ AGSI++ พุ่งถึงยอดแบบมีขอบเขต
 $\approx3.5$
 \item $t\to50$~s --- การตอบสนอง \emph{มีขอบเขต}: แรงดันฟื้น ($V_{end}\approx0.941$~pu ที่บัสอ่อนสุด
-สูงกว่าที่บัสอื่น) ความถี่แกว่งขึ้นสูงสุดใกล้ $61.4$~Hz แล้วนิ่งที่ $\approx59.6$~Hz (ไม่มีกัฟเวอร์เนอร์
-ดึงกลับ $60$~Hz พอดี), SG รับกำลังคืน $\approx2.53$~pu และ IBR สามในสี่ตัวกลับสู่ GFL เมื่อดัชนีตกต่ำกว่า
+สูงกว่าที่บัสอื่น) ความถี่แกว่งขึ้นสูงสุดใกล้ $61.4$~Hz แล้วนิ่งที่ $\approx59.6$~Hz (SG มี droop
+ปฐมภูมิ แต่ไม่มี secondary/integral frequency restoration จึงไม่ดึงกลับ $60$~Hz พอดี), SG รับกำลังคืน
+$\approx2.53$~pu และ IBR สามในสี่ตัวกลับสู่ GFL เมื่อดัชนีตกต่ำกว่า
 $\Gamma_{off}$ ที่ $t\approx22.3$--$23.1$~s (IBR2 ที่บัส~3 ยังคงเป็น GFM เพื่อค้ำโนดที่อ่อนสุด);
 AGSI++ ยังคงมีขอบเขต (ยอด $\approx3.5$ ไม่มีการสั่น)
 \end{enumerate}
+
+\begin{table}[H]
+\centering
+\small
+\caption{ลำดับเวลาและเหตุผลการเปลี่ยนโหมดในการรันหลัก เครื่องหมาย ``ทุกตัว'' หมายถึงผลที่เกิดใน
+scenario นี้ ไม่ใช่กฎที่บังคับให้ IBR ต้องสลับพร้อมกันเสมอ}
+\label{tab:switch_timeline}
+\begin{tabularx}{\textwidth}{@{}p{0.13\textwidth}p{0.18\textwidth}X p{0.18\textwidth}@{}}
+\toprule
+เวลา & เหตุการณ์ & ดัชนีและตัวจับเวลา & โหมดก่อน $\to$ หลัง / เหตุผล \\
+\midrule
+$0$--$1.0$~s & ไม่มีเหตุการณ์ & AGSI++ ต่ำ; timer ไม่ทำงาน & GFL$\to$GFL ทุกตัว \\
+$1.0$--$1.15$~s & fault $Z_f=j0.1$ & ดัชนีพุ่งชั่วคราว แต่ไม่อยู่เหนือ $\Gamma_{on}$ ครบ $T_{d,on}=0.5$~s & GFL$\to$GFL; index ride-through \\
+$6.0$~s & SG trip & AGSI++ $\approx1.88$--$2.07$; เริ่มจับเวลา \texttt{up\_since} แยกต่อ IBR & ยังเป็น GFL ระหว่าง dwell \\
+$6.5$~s & ครบ on-dwell & ทุกตัวอยู่เหนือ $\Gamma_{on}$ ต่อเนื่องครบ $0.5$~s & GFL$\to$GFM ทุกตัว; index-driven \\
+$9.0$~s & SG reclose & ไม่รอ $\Gamma_{off}$ และไม่ใช้ down-timer & GFM$\to$GFL ทุกตัว; coordinated handback \\
+$9.0$--$9.5$~s & transient หลัง reclose & AGSI++ กลับเหนือ $\Gamma_{on}$ และครบ on-dwell & GFL$\to$GFM ทุกตัว; index-driven อีกครั้ง \\
+$22.3$--$23.1$~s & ฟื้นตัวระยะยาว & สามตัวต่ำกว่า $\Gamma_{off}$ ต่อเนื่องครบ $T_{d,off}=1.0$~s & GFM$\to$GFL สามตัว; IBR2 บัส~3 ยัง GFM \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \begin{figure}[H]\centering
 \includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_agsi.png}
 \caption{IEEE 14 บัส: ดัชนี AGSI++ ต่อ IBR เทียบ $\Gamma_{on}=0.65$ / $\Gamma_{off}=0.35$
 (ฟอลต์ $Z_f{=}j0.1$~pu ที่ $1.0$--$1.15$~s, SG ปลด $6$~s, สับกลับ $9$~s; กรอบ $50$~s)}
 \label{fig:agsi}
+\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_mode.png}
+\caption{mode timeline ที่บันทึกจาก supervisor โดยตรง แยก IBR1--IBR4: $0=$GFL และ $1=$GFM
+จุดวงกลมคือ transition ที่ commit แล้ว เส้นประ SG handback ที่ $9$~s เป็น coordinated override;
+transition อื่นเกิดจาก AGSI++/hysteresis/dwell รายอุปกรณ์}
+\label{fig:mode}
 \end{figure}
 \begin{figure}[H]\centering
 \includegraphics[width=5.54in]{figures/switch_ieee14/padiyar_switch_voltage.png}
@@ -344,6 +469,70 @@ $0.98$--$1.01$~pu
 ตีความนี้: สเต็ปโหลดถาวร
 $+10/30/50\%$ ที่บัส~4 (ไม่มีการปลด SG) ขี่ผ่านทั้งหมด (min$|V|\ge0.999$~pu, ไม่มีการสลับ) เพราะสเต็ป
 โหลดเบากว่าฟอลต์มากและไม่ผลักให้ IBR ต้องฟอร์มตัว
+
+\section{สรุปหลายเหตุการณ์และข้อจำกัดของแบบจำลองปัจจุบัน}
+\label{sec:limits}
+\subsection{เหตุการณ์ที่ตรวจแล้ว}
+ตาราง~\ref{tab:scenario_coverage} แยกสิ่งที่มีหลักฐานแล้วออกจากสิ่งที่ยังไม่ควรกล่าวอ้าง
+จุดประสงค์ของการทดสอบหลายเหตุการณ์ไม่ใช่บังคับให้ทุกกรณีต้องสลับ แต่ตรวจว่า supervisor
+\emph{ไม่สลับเมื่อไม่ควรสลับ} และสลับไป--กลับตามกติกาเมื่อ disturbance มากพอ
+
+\begin{table}[H]
+\centering
+\small
+\caption{scenario coverage ของกลไกสลับในรายงานนี้}
+\label{tab:scenario_coverage}
+\begin{tabularx}{\textwidth}{@{}p{0.20\textwidth}p{0.26\textwidth}X@{}}
+\toprule
+เหตุการณ์ & ผลที่สังเกต & สิ่งที่พิสูจน์ได้ในขอบเขตนี้ \\
+\midrule
+ไม่มีเหตุการณ์ & GFL ทั้งสี่คงเดิม ไม่มี switch & equilibrium hold และไม่เกิด false trigger \\
+fault เบา & $X_f=0.50$ ที่บัส~4/5: ride-through ไม่มี switch & threshold/dwell ไม่บังคับสลับเมื่อ disturbance ไม่พอ \\
+fault รุนแรง/บัสอ่อน & 22 จาก 24 จุดเกิด index-switch แล้วกลับ; ทุกจุดฟื้นหลัง clear & ตำแหน่งและความรุนแรงทำให้ IBR รายตัวตอบต่างกัน; ไม่ใช่ group command \\
+load step & $+10/30/50\%$ ที่บัส~4: ไม่มี switch & load step ชุดที่ทดสอบยังไม่ผลัก AGSI++ ข้ามเกณฑ์ \\
+SG trip & ทุกตัว GFL$\to$GFM หลัง on-dwell ในการรันหลัก & autonomous index-driven forming เมื่อแหล่งอ้างอิงหลักหาย \\
+SG reclose & coordinated GFM$\to$GFL; จากนั้น index อาจสั่ง GFM และกลับ GFL รายตัว & แยก event handback ออกจาก automatic index logic และแสดงวงจรไป--กลับ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{ข้อจำกัดที่ต้องบอกพร้อมผล}
+\begin{enumerate}\itemsep3pt
+\item \textbf{เป็น positive-sequence RMS ไม่ใช่ EMT.} แบบจำลองแทนเฉพาะ fundamental-frequency phasor
+และ fault สามเฟสสมดุลแบบ shunt จึงไม่ครอบคลุม switching harmonic, PWM, unbalanced fault,
+DC offset หรือ electromagnetic transient ระดับไมโครวินาที
+\item \textbf{IBR ลดรูป 6 สถานะ.} ไม่มีรายละเอียด DC-link, semiconductor, LCL resonance,
+energy-storage state of charge, thermal limit, communication delay/noise หรือ vendor firmware เต็มรูป
+ดังนั้นผลนี้พิสูจน์กลไก supervisory switching ใน model family ที่ระบุ ไม่ใช่ certification ของ inverter จริง
+\item \textbf{current limit ยังเป็น study wrapper.} การรันใช้ขีดจำกัดขนาดกระแส $1.2$ เท่าพิกัดแบบ
+hard clamp หรือ virtual-impedance-style soft roll-off ที่เลือกได้ แต่ reduced branch ไม่มี protection stack,
+LVRT, anti-windup และ priority logic แบบผู้ผลิตครบชุด จึงห้ามตีความเป็นผลผ่าน grid code
+\item \textbf{SG และโหลดถูกลดรูป.} SG เป็น Padiyar model-1.1 สนามคงที่ ไม่มี AVR/PSS
+มีเพียง primary droop และไม่มี secondary frequency restoration; โหลดใน time-domain เป็น constant impedance
+จึงยังไม่ครอบคลุม governor/turbine หลายลำดับเวลา excitation limiter หรือ composite ZIP/motor load
+\item \textbf{reclose แบบซิงโครไนซ์เป็นเงื่อนไขที่กำหนดให้.} ตัวขับ re-initialise SG ให้ตรงกับแรงดันบัส
+ณ เวลาสั่ง reclose แล้วคืน reference แบบ coordinated ไม่ได้จำลอง synchronism-check relay, breaker pole
+หรือความล้มเหลวในการปิดที่มุม/ความถี่ไม่ตรง ผลจึงพิสูจน์ handback transaction ภายใต้สมมติฐานว่า reclose
+ซิงโครไนซ์แล้ว ไม่ได้พิสูจน์กระบวนการ synchronisation จริง
+\item \textbf{bumpless มีขอบเขตเฉพาะกระแส ณ transition.} สมการ $I^+=I^-$ ยืนยันว่า current injection
+ไม่กระโดดที่จังหวะย้าย branch แต่ไม่ได้รับประกันว่าแรงดัน ความถี่ หรือกำลังจะไม่มี transient หลังจากนั้น
+\item \textbf{ค่า AGSI++ เป็นค่าศึกษาที่ตรึงไว้.} น้ำหนัก normalisation, $\Gamma_{on/off}$ และ dwell
+เป็น {\small\nolinkurl{PROJECT_DERIVED_SOURCE_GUIDED}} และ
+{\small\nolinkurl{ASSUMED_DIAGNOSTIC}}; ไม่มี online BO/MPC
+และยังไม่ได้รับรองความทนทานต่อ measurement noise, latency, parameter uncertainty หรือ topology
+นอกชุดที่กวาด
+\item \textbf{readiness.} ผล SSSA, fault map และ TDS นี้เป็นหลักฐานเชิงวินิจฉัยของ IEEE14 ที่ระบุ
+ไม่ใช่ production protection setting หรือคำรับรองเสถียรภาพของทุก operating condition หาก Newton ไม่ลู่เข้า
+ตัวขับจะหยุด/จัดเป็น non-converged แบบ fail-closed และไม่ใช้ trajectory นั้นอ้างผลทางกายภาพ
+\end{enumerate}
+
+\textbf{การตรวจคำตอบกับโค้ด.} นิยามโหมด ดัชนี timer และ transition อยู่ใน
+\texttt{+ibr/SwitchableIbr6.m}; ลำดับ accepted-step และ coordinated reclose อยู่ใน
+\texttt{+ibr/padiyar\_switch\_tds.m}; การ map อุปกรณ์/พารามิเตอร์ IEEE14 อยู่ใน
+\texttt{+ibr/build\_ieee14\_switch\_system.m}; และ falsification tests ของ no-event,
+fault, bidirectional switching, hysteresis/dwell และ latch อยู่ใน
+\texttt{tests/test\_ibr\_switchable6.m}, \texttt{tests/test\_ieee14\_switch.m} และ
+\texttt{tests/test\_padiyar\_switch.m}
 
 \section{ที่มาของการปรับน้ำหนัก AGSI++}
 \label{sec:tune}

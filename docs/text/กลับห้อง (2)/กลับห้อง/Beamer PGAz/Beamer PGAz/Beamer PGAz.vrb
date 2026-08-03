@@ -1,0 +1,34 @@
+\frametitle{State-Space Representation of nth-Order Systems of ODEs}
+\textcolor{blue}{\textbf{Given Transfer Function:}}
+		\[
+		\frac{\mathbf{Y}(s)}{\mathbf{U}(s)} = \frac{s}{s^3 + 14s^2 + 56s + 160}
+		\]
+		
+		\textbf{MATLAB Code:}
+		\begin{lstlisting}[style=Matlab]
+			% Transfer Function to State-Space Representation
+			num = [1 0];
+			den = [1 14 56 160];
+			[A, B, C, D] = tf2ss(num, den);
+			
+			% Display Results
+			A, B, C, D
+		\end{lstlisting}
+		
+		\textcolor{magenta}{\textbf{Output:}}
+		\[
+		\mathbf{A} = \begin{bmatrix}
+			-14 & -56 & -160 \\
+			1 &   0 &    0 \\
+			0 &   1 &    0
+		\end{bmatrix}, \quad
+		\mathbf{B} = \begin{bmatrix}
+			1 \\ 0 \\ 0
+		\end{bmatrix}
+		\]
+		\[
+		\mathbf{C} = \begin{bmatrix}
+			0 & 1 & 0
+		\end{bmatrix}, \quad
+		\mathbf{D} = 0
+		\]

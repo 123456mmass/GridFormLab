@@ -67,7 +67,10 @@ function test_demo_route_ieee14(tc)
 o = ibr.padiyar_switch_demo(system="ieee14", T=6.0, dt=2e-3, visible=false);
 verifyEqual(tc, numel(o.dev_n_switch), 4);
 verifyFalse(tc, o.diverged);
-verifyEqual(tc, numel(o.fig_paths), 8);
+% The reporting contract includes eight continuous-signal figures plus the
+% per-device binary mode timeline requested for switching auditability.
+verifyEqual(tc, numel(o.fig_paths), 9);
+verifyTrue(tc, any(endsWith(string(o.fig_paths), "padiyar_switch_mode.png")));
 verifyTrue(tc, isfield(o,'sssa') && o.sssa.n_unstable==0);
 end
 

@@ -50,16 +50,24 @@ if ~isfinite(V0) || abs(V0) <= 0
 end
 
 % --- Build the EMF6 machine model (single machine, base-converted) -------------
-% Reuse synchronous_emf6_ssa machine_parameters + initialize_equilibrium by
-% running the full SSSA builder once on a single-machine case and extracting the
-% machine/init structs. This guarantees the SAME audited coefficients as the
-% production EMF6 SSSA path (no equation duplication).
-emf_opt = struct('fd_eps', 3e-6, 'equilibrium_tolerance', 1e-10, ...
-    'newton_max_iterations', 300, 'load_model', 'cz_p_cz_q');
-emf = stability.synchronous_emf6_ssa(case_data, emf_opt);
-machine = emf.machine;
-units = emf.units;
-init = emf.init;
+% The normal route reuses synchronous_emf6_ssa machine_parameters and
+% initialize_equilibrium.  A mixed IEEE14 driver may provide an audited
+% coefficient override when its tap-aware network is not representable by the
+% standalone SSSA network_model; this still enters the SAME local EMF6 equations
+% below and never imports an external solution.
+if isfield(params,'emf6_machine') && isfield(params,'emf6_units') && isfield(params,'emf6_init')
+    machine = params.emf6_machine;
+    units = params.emf6_units;
+    init = params.emf6_init;
+else
+    emf_opt = struct('fd_eps', 3e-6, 'equilibrium_tolerance', 1e-10, ...
+        'newton_max_iterations', 300, 'load_model', 'cz_p_cz_q');
+    emf = stability.synchronous_emf6_ssa(case_data, emf_opt);
+    machine = emf.machine;
+    units = emf.units;
+    init = emf.init;
+end
+if ~isfield(machine,'ng'), machine.ng=1; end
 ng = machine.ng;
 if ng ~= 1
     error('stability:sg_composite_device:singleMachineOnly', ...

@@ -7,21 +7,25 @@
 \pagestyle{fancy}\fancyhf{}\lhead{IEEE 14-bus: 1 SG + 4 IBR, AGSI++}\rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
 \title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching with Project AGSI++}\\
-\large Source-case events, mode timeline, and present limitation}
-\date{3 August 2026}
+\large Full-state implementation and present evidence}
+\date{4 August 2026}
 \begin{document}
 \maketitle
+
 \begin{abstract}
-The EECON49 file supplies case data and events only; switching remains the project AGSI++.
-Grid-reference availability is added as a seventh term and all weights become $1/7$.
-All four local supervisors commit GFL$\to$GFM at 20.500~s after the SG trip.
-The restoration case is fail-closed at 147.020~s, so the reduced model does not yet
-support a successful reclose/recovery claim. Plots are raw, without noise, smoothing, or clipping.
+The study uses the configured IEEE 14-bus case, device parameters, and event chronology;
+switching remains the project AGSI++. The study profile uses a six-state operational EMF6 SG and 12-state
+GFL/GFM switching supersets. A compressed ideal-SG reclose gate converges and returns all
+four IBRs to GFL. The 160-s chronology remains fail-closed at 36.040~s because the paper
+does not publish the DC-source, post-trip active-power dispatch, or multi-GFM coordination
+laws needed to reproduce its islanded trajectory. No values or plots are altered to force recovery.
 \end{abstract}
 
-\section{Case and switching rule}
-The 100-MVA, 60-Hz IEEE 14-bus case has the SG at bus 1 and IBRs at buses 2, 3, 6, and 8.
-Source-case values are $H=2.5$~s and $D=1.0$~pu. The project index is
+\section{Case, index, and switching}
+The 100-MVA, 60-Hz IEEE 14-bus case has one SG at bus 1 and IBRs at buses 2, 3, 6, and 8.
+The configured apparent-power dispatch is mapped to $P/Q$ with a documented common angle
+(\texttt{PROJECT\_DERIVED}); all device values are read from the source table.
+The project index is
 \[
 J_V=\frac{|V-V_{ref}|}{0.10},\quad J_f=\frac{|f-60|}{0.50},\quad
 J_R=\frac{|\mathrm df/\mathrm dt|}{1.0},\quad J_P=\frac{|P_{ref}-P|}{0.20},
@@ -30,21 +34,30 @@ J_R=\frac{|\mathrm df/\mathrm dt|}{1.0},\quad J_P=\frac{|P_{ref}-P|}{0.20},
 J_{SCR}=\max(0,3/SCR-1),\quad J_{lock}=\frac{|v_q|}{0.10},\quad
 J_{GRA}=1-GRA,\qquad \mathrm{AGSI}^{++}=\frac{1}{7}\sum J_k .
 \]
-$GRA=1$ when the SG or a committed GFM reference is available. It is a weighted input,
-not a hard override. Each IBR uses local hysteresis/dwell:
-$\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$, $T_{d,on}=0.5$~s, $T_{d,off}=1.0$~s.
-The per-device state machine is
-\[
-\mathrm{GFL}\xrightarrow[\,T_{d,on}\,]{\mathrm{AGSI}^{++}_i\ge\Gamma_{on}}\mathrm{GFM},
-\qquad
-\mathrm{GFM}\xrightarrow[\,T_{d,off}\,]{\mathrm{AGSI}^{++}_i<\Gamma_{off},\ GRA=1}\mathrm{GFL}.
-\]
-Restoration makes the SG/line/load reference available but does not override this state machine.
+Each IBR has its own timer. It commits GFL$\to$GFM above $\Gamma_{on}=0.65$ for
+$T_{d,on}=0.10$~s and GFM$\to$GFL below $\Gamma_{off}=0.35$ with $GRA=1$ for
+$T_{d,off}=1.00$~s. In the full run, IBR1--2 switch at 20.130~s and IBR3--4 at
+20.150~s; the action is local, not broadcast. Coordinated SG-reference handback is a
+separate declared override used only by the reclose gate.
 
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_oneline.png}
-\caption{IEEE 14-bus one-line used by the simulation.}
+\caption{Network and resource locations used by the simulation.}
 \end{figure}
+
+\section{Dynamic model}
+The SG state is
+$x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T$ with the operational
+Kundur/EMF6 stator and flux equations. $T_m$ and $E_{fd}$ are equilibrium controls held
+constant; governor, AVR, synchronizer, and breaker transients are not claimed.
+
+The GFL superset contains filter current, DC-link, PLL, $P/Q$ PI, current PI, and command-delay
+states. GFM contains filter current, DC-link, virtual angle/speed/EMF, voltage PI, current PI,
+and delay states. Source values include $L_f=0.15$, $R_f=0.015$, $C_{dc}=0.10$,
+$I_{max}=1.2$, $T_d=0.02$, $k_{p,Idq}=0.30$, and $k_{i,Idq}=4.00$.
+The paper does not publish the energy-source $I_{dc}$ law, so the implementation closes that
+port with ideal instantaneous power balance; this preserves $V_{dc}$ but cannot establish
+long-duration energy headroom.
 
 \section{Power-flow operating point}
 \begin{table}[H]\centering\caption{Bus power-flow results (pu)}
@@ -54,41 +67,37 @@ Restoration makes the SG/line/load reference available but does not override thi
 \resizebox{\textwidth}{!}{\input{figures/switch_ieee14/table_pf_line_results.tex}}
 \end{table}
 
-\section{Event and mode evidence}
+\section{Mode and recovery evidence}
 \begin{table}[H]\centering
-\begin{tabularx}{\textwidth}{p{0.13\textwidth}X p{0.25\textwidth}}
-\toprule Time (s) & Event/index/timer & Committed mode \\ \midrule
-0 & normal, timers idle & all GFL \\
-20--20.5 & SG trip; each index exceeds $\Gamma_{on}$ for 0.5 s & all GFL$\to$GFM at 20.500 s \\
-50 & all loads +20\% & all GFM \\
-85--85.15 & three-phase bus-9 fault, $Z_f=0.01+j0.01$ pu & all GFM \\
-110 & line 6--13 trip & all GFM \\
-145 & SG/line restored and load returned to base; no forced handback & remain GFM pending off-dwell \\
-147.020 & fail-closed model-validity exit & no validated GFM$\to$GFL \\
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}X p{0.25\textwidth}@{}}
+\toprule Time & Event/index/timer & Committed mode \\ \midrule
+20.000--20.130~s & SG trip; local on-timers run & IBR1--2 become GFM \\
+20.150~s & remaining local timers mature & IBR3--4 become GFM \\
+36.040~s & full chronology exits the validity domain & fail-closed before later events \\
+1.000--1.140~s (gate) & compressed SG trip and local timers & all GFL$\to$GFM \\
+3.000~s (gate) & ideal SG reference and coordinated handback & all GFM$\to$GFL \\
+4.000~s (gate) & Newton converged; $\min|V|=1.033013$ pu & all remain GFL \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Simultaneous switching is not a broadcast command. The common trip caused all local indices and
-timers to mature on the same sample. IBR1 is only the plotting-angle reference after the trip;
-the TDS solves full KCL and no IBR is an algebraic PF slack bus.
-
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_supervisor.png}
-\caption{AGSI++, GRA, plotting reference, and separate 0=GFL/1=GFM timelines.}
+\caption{Full-run AGSI++, GRA, reference, and separate 0=GFL/1=GFM timelines.}
 \end{figure}
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_response.png}
-\caption{Raw IBR $P,Q,|V|,f$ response ending at the fail-closed point.}
+\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_recovery_supervisor.png}
+\caption{Compressed recovery gate: local switch-up and coordinated SG handback.}
+\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_recovery_response.png}
+\caption{Raw recovery-gate $P,Q,|V|,f$ traces; no noise, smoothing, or clipping.}
 \end{figure}
 
-\section{Present limitation}
-A physical system should recover after synchronized SG/line restoration and load reset.
-This study cannot yet demonstrate it: the SG has manual field, no AVR/PSS, no governor/turbine
-or synchronizer/breaker states, while reduced-6 IBRs omit DC-link and detailed inner/protection
-dynamics. Reinitializing the SG at the depressed island voltage produces an out-of-domain transient
-at 147.020~s. The trip-driven GFM entry is validated, but the reclose/recovery claim is withheld.
-No state reset, parameter tuning, or plot alteration is used to manufacture recovery.
+Existing tests separately cover no-event, light/severe faults, load steps, SG trip, and SG
+reclose. The long full-state run currently reaches only the SG-trip portion; it does not validate
+the scheduled 50-s load step, 85-s fault, 110-s line trip, or 145-s restoration. The remaining
+gap is a missing dispatch/energy/reference-coordination contract, not merely SG state order.
 
 \section{Reproduction}
 \begin{verbatim}
@@ -96,6 +105,6 @@ pf_init_paths;
 addpath(fullfile('scripts','reporting'));
 generate_ieee14_switch_report_figures;
 \end{verbatim}
-The generator uses project-owned MATLAB and $\Delta t=0.005$~s. SSSA and fault-map sections were
-removed to keep this report focused on IBR switching.
+The generator and all solvers are project-owned MATLAB. SSSA and fault-map sections are omitted
+to keep the report focused on IBR switching.
 \end{document}

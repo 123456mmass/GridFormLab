@@ -91,11 +91,16 @@ end
 
 % =========================================================================
 function x = sg_reinit(V, par)
-% Synchronized reclose CARRYING its scheduled load: rotor states consistent with
-% the present terminal voltage V delivering (Pm, Q0), via the Padiyar model-1.1
-% initialization (same as stability.padiyar_model11_dae). omega=1 (in sync).
-% Used together with the IBR reference handback so that the returning SG becomes
-% the slack while the IBRs revert to their scheduled GFL dispatch.
+% Synchronized reclose at omega=1.  With AVR, Efd is a state and the machine can
+% be initialized at scheduled (Pm,Q0).  With manual excitation Efd is fixed;
+% imposing Pm, Q0 and Efd0 simultaneously at an arbitrary restored voltage is
+% over-specified and produces a non-equilibrium electromagnetic state.  The
+% manual route therefore preserves the physical inputs (Pm,Efd0), solves the
+% scalar torque equilibrium, and lets Q be the resulting output.
+if par.ns < 5
+    x = manual_reclose_equilibrium(V, par);
+    return;
+end
 S = par.Pm + 1i*par.Q0;
 I = conj(S/V);
 delta = angle(V + (par.Ra + 1i*par.Xq)*I);          % seed
@@ -111,12 +116,46 @@ end
 [Id,Iq] = to_dq(I,delta); [Vd,Vq] = to_dq(V,delta); %#ok<ASGLU>
 Edp = (par.Xq-par.Xqp)*Iq;
 Eqp = Vq + par.Ra*Iq + par.Xdp*Id;
-if par.ns>=5
-    Efd = Eqp + (par.Xd-par.Xdp)*Id;
-    x = [delta;1;Eqp;Edp;Efd];
-else
-    x = [delta;1;Eqp;Edp];        % manual: field fixed at Efd0 (no Efd state)
+Efd = Eqp + (par.Xd-par.Xdp)*Id;
+x = [delta;1;Eqp;Edp;Efd];
 end
+
+function x = manual_reclose_equilibrium(V, par)
+% Project-owned scalar Newton solve of the cited model-1.1 steady equations.
+% For a trial rotor angle, the stator and fixed-field equations reduce to
+%   [Vd; Vq-Efd0] = [-Ra Xq; -Xd -Ra]*[Id;Iq].
+% The remaining residual is air-gap torque Te-Pm=0.
+delta = angle(V) + 0.5;
+for it = 1:60
+    [r, Id, Iq] = torque_residual(delta, V, par);
+    if abs(r) < 1e-12, break; end
+    h = 1e-7;
+    rp = torque_residual(delta+h, V, par);
+    dr = (rp-r)/h;
+    if ~isfinite(dr) || abs(dr) < 1e-10
+        error('ibr:padiyar_sg_unit:reinitJacobian', ...
+            'Manual-excitation reclose torque Jacobian is singular.');
+    end
+    step = max(-0.25,min(0.25,-r/dr));
+    delta = delta + step;
+end
+[r, Id, Iq] = torque_residual(delta, V, par);
+if abs(r) > 1e-9
+    error('ibr:padiyar_sg_unit:reinitNoEquilibrium', ...
+        'No manual-excitation reclose equilibrium found (|Te-Pm|=%.3g).',abs(r));
+end
+Eqp = par.Efd0 - (par.Xd-par.Xdp)*Id;
+Edp = (par.Xq-par.Xqp)*Iq;
+x = [atan2(sin(delta),cos(delta));1;Eqp;Edp];
+end
+
+function [r,Id,Iq] = torque_residual(delta,V,par)
+[Vd,Vq] = to_dq(V,delta);
+A = [-par.Ra, par.Xq; -par.Xd, -par.Ra];
+ii = A \ [Vd; Vq-par.Efd0];
+Id=ii(1); Iq=ii(2);
+Te=Vd*Id+Vq*Iq+par.Ra*(Id^2+Iq^2);
+r=Te-par.Pm;
 end
 
 % =========================================================================

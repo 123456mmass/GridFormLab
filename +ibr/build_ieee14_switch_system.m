@@ -41,10 +41,19 @@ arguments
     opts.sg_H (1,1) double = NaN            % direct SOURCE_DEFINED override [s]
     opts.sg_D (1,1) double = NaN            % direct SOURCE_DEFINED override [pu]
     opts.excitation (1,1) string = "manual"
+    opts.case_profile (1,1) string = "ieee14_baseline"
 end
 pf_init_paths();
 
-c = cases.case_ieee14bus();
+switch lower(opts.case_profile)
+    case "ieee14_baseline"
+        c = cases.case_ieee14bus();
+    case "eecon49_figure4"
+        c = cases.case_ieee14bus_eecon49_switch();
+    otherwise
+        error('ibr:build_ieee14_switch_system:caseProfile', ...
+            'Unknown case_profile "%s".',opts.case_profile);
+end
 pf = pfsolver.powerflow_newton_raphson(c, struct('verbose',false,'plot_results',false, ...
     'tolerance',1e-10,'max_iter',100,'enforce_q_limits',false));
 if ~pf.converged
@@ -59,10 +68,23 @@ load_adm = (pf.P_load(:) - 1i*pf.Q_load(:))./(abs(V0v).^2);
 Y = pf.Ybus + diag(load_adm);
 y0 = zeros(2*nb,1); y0(1:2:end) = real(V0v); y0(2:2:end) = imag(V0v);
 
-% --- SG unit at the SG bus (Padiyar-1.1, Kodsi data, manual) --------------
-dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation), opts.sg_H_scale, ...
-    opts.sg_X_scale, opts.sg_H, opts.sg_D);
-sg = ibr.padiyar_sg_unit(dae, 1, opts.sg_droop_R);
+% --- SG unit at the SG bus --------------------------------------------------
+% EECON49 uses the operational Kundur/GENTPJ sixth-order SG state.  The
+% standalone EMF6 SSSA network model does not include IEEE14 transformer taps,
+% so this profile supplies the same audited EMF6 coefficients with the
+% tap-aware PF operating point; all SG equations remain in
+% stability.sg_composite_device.
+if lower(opts.case_profile) == "eecon49_figure4"
+    emfp = build_emf6_override(c, pf, opts.sg_bus, opts.sg_H, opts.sg_D);
+    raw = stability.sg_composite_device(c, "SG1", opts.sg_bus, ...
+        find(bus_ids==opts.sg_bus,1), bus_ids, ...
+        complex(y0(2*find(bus_ids==opts.sg_bus,1)-1),y0(2*find(bus_ids==opts.sg_bus,1))), emfp);
+    sg = emf6_sg_adapter(raw, c.base_values.frequency_Hz, opts.sg_bus);
+else
+    dae = build_sg_dae(c, pf, opts.sg_bus, char(opts.excitation), opts.sg_H_scale, ...
+        opts.sg_X_scale, opts.sg_H, opts.sg_D);
+    sg = ibr.padiyar_sg_unit(dae, 1, opts.sg_droop_R);
+end
 
 % --- network Thevenin impedance per bus (diagnostic SCR) ------------------
 Z = inv(Y);
@@ -76,8 +98,32 @@ for j = 1:nib
     if isempty(bp), error('ibr:build_ieee14_switch_system:ibrBus','IBR bus %d not found.',b); end
     V0 = complex(y0(2*bp-1), y0(2*bp));
     P = pf.P_generation(bp); Q = pf.Q_generation(bp);
-    Mb = 100*max(abs(P + 1i*Q), 0.20);                 % machine rating (MVA); floor for P=0 units
+    if lower(opts.case_profile) == "eecon49_figure4"
+        % SOURCE_DEFINED base contract: EECON49-P4 declares one 100-MVA pu
+        % base and does not publish separate converter MVA bases.  The Figure-4
+        % operating-point injections are dispatch values, not unit ratings.
+        % Therefore Imax=1.2 pu means 1.2 pu on the common 100-MVA base for
+        % every IBR; inferring Mbase from the initial |S| incorrectly derates
+        % the four converters precisely when the SG is disconnected.
+        Mb = 100;
+    else
+        Mb = 100*max(abs(P + 1i*Q), 0.20);             % legacy diagnostic rating inference
+    end
     params = struct('Sbase',100,'Mbase',Mb,'fbase',c.base_values.frequency_Hz);
+    if lower(opts.case_profile) == "eecon49_figure4"
+        % EECON49-P4 parameter table.  The full-state route keeps the
+        % source blocks (AC filter, DC link, PLL/VSG, outer voltage/power PI,
+        % inner current PI and command delay) explicit.  The paper parameter
+        % table specifies kp_Idq=0.30 and ki_Idq=4.00.
+        params.ibr_model_family = 'eecon49_full';
+        params.gfl_eecon49 = struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
+            'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'kpPLL',1.20,'kiPLL',5.00, ...
+            'kpP',0.80,'kiP',2.50,'kpQ',0.80,'kiQ',2.50,'kpI',0.30,'kiI',4.00);
+        params.gfm_eecon49 = struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
+            'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'M',0.08,'Dv',1.50, ...
+            'tauE',0.05,'kQ',0.25,'kE',8.00,'kpV',1.20,'kiV',4.50, ...
+            'kpI',0.30,'kiI',4.00);
+    end
     d = ibr.SwitchableIbr6(sprintf("IBR%d",b), b, bp, bus_ids, V0, params, P, Q, ...
         index_mode=opts.index_mode, AGSI_up=opts.AGSI_up, AGSI_down=opts.AGSI_down, ...
         T_d_on=opts.T_d_on, T_d_off=opts.T_d_off);
@@ -110,6 +156,68 @@ sys.load_buses = bus_ids(abs(pf.P_load(:)).' + abs(pf.Q_load(:)).' > 0);
 sys.Mbase = Mbase;
 sys.nb = nb;
 sys.base = c.base_values;
+sys.case_profile = opts.case_profile;
+if isfield(c,'eecon49_mapping'), sys.eecon49_mapping = c.eecon49_mapping; end
+end
+
+% =========================================================================
+function params = build_emf6_override(c, pf, sg_bus, H_direct, D_direct)
+% Build the operational EMF6 coefficient/init structs on the tap-aware PF
+% operating point.  This is the same coefficient mapping used by
+% synchronous_emf6_ssa, isolated here because its standalone network_model
+% intentionally omits IEEE transformer taps.
+M = c.machines; sc = c.base_values.S_base_MVA/M.base.S_MVA;
+R=M.reactances; T=M.time_constants;
+machine = struct();
+for nm={'Xd','Xdp','Xdpp','Xq','Xqp','Xqpp','Ra'}
+    name=nm{1}; machine.(name)=R.(name)*sc;
+end
+machine.Tpd0=T.Tpd0; machine.Tppd0=T.Tppd0; machine.Tpq0=T.Tpq0; machine.Tppq0=T.Tppq0;
+machine.c_d=(machine.Xd-machine.Xdp)/(machine.Xdp-machine.Xdpp);
+machine.d_d=(machine.Xd-machine.Xdpp)/(machine.Xdp-machine.Xdpp);
+machine.c_q=(machine.Xq-machine.Xqp)/(machine.Xqp-machine.Xqpp);
+machine.d_q=(machine.Xq-machine.Xqpp)/(machine.Xqp-machine.Xqpp);
+machine.w0=2*pi*c.base_values.frequency_Hz; machine.ng=1;
+bp=find(pf.external_bus_ids==sg_bus,1);
+V=pf.bus_voltage(bp)*exp(1i*deg2rad(pf.bus_angle_deg(bp)));
+S=pf.P_generation(bp)+1i*pf.Q_generation(bp); I=conj(S/V);
+delta=angle(V+(machine.Ra+1i*machine.Xq)*I);
+[Id,Iq]=to_dq(I,delta); [Vd,Vq]=to_dq(V,delta);
+Eqpp=Vq+machine.Ra*Iq+machine.Xdpp*Id;
+Edpp=Vd+machine.Ra*Id-machine.Xqpp*Iq;
+Eqp=Eqpp+(machine.Xdp-machine.Xdpp)*Id;
+Edp=Edpp-(machine.Xqp-machine.Xqpp)*Iq;
+Efd=machine.d_d*Eqp-machine.c_d*Eqpp;
+Te=Vd*Id+Vq*Iq+machine.Ra*(Id^2+Iq^2);
+Hmach=M.units.H; Dmach=M.units.D;
+if isfinite(H_direct), Hmach=H_direct/sc; end
+if isfinite(D_direct), Dmach=D_direct/sc; end
+units=struct('bus_idx',bp,'H_system',Hmach*sc,'D_system',Dmach*sc, ...
+    'H_machine',Hmach,'D_machine',Dmach,'id',{{'SG1'}});
+init=struct('x0',[delta;0;Eqp;Edp;Eqpp;Edpp], ...
+    'Tm',Te,'Efd',Efd,'Id',Id,'Iq',Iq,'ng',1);
+params=struct('emf6_machine',machine,'emf6_units',units,'emf6_init',init);
+end
+
+function sg = emf6_sg_adapter(dev, fbase, bus_id)
+% Adapt the audited composite EMF6 device to the compact mixed TDS ABI.
+sg=struct('name','SG1','device_type','sg_emf6','excitation','emf6', ...
+    'nx',dev.nx,'bus_position',dev.bus_position,'x0',dev.x0(:),'u0',dev.u0(:), ...
+    'par',struct('fbase',fbase),'device',dev);
+sg.f=@(x,y) dev.f(0,x,y,dev.u0,struct());
+sg.current_injection=@(x,y) dev.current_injection(0,x,y,dev.u0,struct());
+sg.electrical_power=@(x,y) dev.electrical_power(0,x,y,dev.u0,struct());
+sg.reconstruct=@(x,y) emf6_reconstruct_adapter(dev,x,y,fbase);
+sg.reinit=@(V) dev.equilibrium_initialize(V,dev.u0(1),0,struct());
+end
+
+function out = emf6_reconstruct_adapter(dev,x,y,fbase)
+out=dev.reconstruct(0,x,y,dev.u0,struct());
+out.f_hz=fbase*(1+out.omega); out.omega_pu=1+out.omega;
+out.Pe=dev.electrical_power(0,x,y,dev.u0,struct());
+V=complex(y(2*dev.bus_position-1),y(2*dev.bus_position));
+out.Qe=imag(V*conj(dev.current_injection(0,x,y,dev.u0,struct())));
+out.Vbus=abs(V);
 end
 
 % =========================================================================

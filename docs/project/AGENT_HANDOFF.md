@@ -7,6 +7,22 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-04 — EECON49 full-state switch/reclose evidence
+
+The EECON49 IEEE14 report route now uses the project operational six-state EMF6 SG and
+source-mapped 12-state GFL/GFM switching supersets. A positive-feedback current-error defect
+(`i-iref`) was corrected to `iref-i`; dedicated equilibrium and fixed-bus eigenvalue gates pass.
+The compressed ideal-SG trip/reclose gate converges through 4 s, returns IBR1--IBR4 to GFL,
+and ends at `min|V|=1.033013253` pu. The 160-s source chronology remains
+`OPEN_MODEL_LIMITATION`: it stops fail-closed at 36.040 s after the SG trip because the source
+does not publish the DC-energy law, post-trip active-power redistribution, or multi-GFM sharing
+contract. No full 145-s recovery claim is made. Details and reproduction are in
+`docs/project/defects/2026-08-03-ieee14-source-case-restoration.md`.
+Fresh targeted verification: 31/31 PASS (new full-state route, all-GFL equilibrium consumer,
+IEEE14 switch consumer, and EMF6 contract/physics suites). EN/TH XeLaTeX builds pass and all
+7+12 rendered pages were visually reviewed. Full regression intentionally omitted under the
+risk policy; no unexplained targeted failure remains.
+
 ## 2026-07-21 — Separate SMIB TDS current and power plots
 
 The ideal-SMIB TDS diagnostic now preserves the perturbed algebraic-voltage

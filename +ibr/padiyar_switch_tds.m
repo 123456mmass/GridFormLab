@@ -18,6 +18,9 @@ arguments
     opt.dt (1,1) double = 2e-3
     opt.sg_trip_time (1,1) double = 1.0
     opt.sg_reclose_time (1,1) double = inf
+    opt.sg_reclose_mode (1,1) string = "dynamic"
+    opt.coordinated_reclose_handback (1,1) logical = false
+    opt.coordinated_gfm_reference (1,1) logical = false
     opt.fault_on (1,1) double = inf
     opt.fault_clear (1,1) double = inf
     opt.fault_bus (1,1) double = 3
@@ -37,6 +40,12 @@ arguments
 end
 
 sg = sys.sg; devs = sys.devs; Y = sys.Y; nb = sys.nb;
+if ~ismember(lower(opt.sg_reclose_mode),["dynamic","ideal_slack"])
+    error('ibr:padiyar_switch_tds:recloseMode', ...
+        'sg_reclose_mode must be "dynamic" or "ideal_slack".');
+end
+ideal_slack_reclose = lower(opt.sg_reclose_mode) == "ideal_slack";
+V_slack = complex(sys.y0(2*sys.sg_bus_position-1),sys.y0(2*sys.sg_bus_position));
 Yt = Y;                                   % time-varying admittance (fault/step)
 fault_bp = find(sys.bus_ids==opt.fault_bus,1);
 step_bp  = find(sys.bus_ids==opt.step_bus,1);
@@ -78,7 +87,17 @@ if isfinite(opt.line_trip_time)
 end
 if isempty(fault_bp), fault_bp = 1; end   % unused (event disabled)
 if isempty(step_bp),  step_bp  = 1; end   % unused (event disabled)
-nib = numel(devs); nsg = sg.nx; nxi = 6;
+nib = numel(devs); nsg = sg.nx;
+if isempty(devs)
+    error('ibr:padiyar_switch_tds:noIBR','At least one switchable IBR is required.');
+end
+nxi = devs{1}.nx();
+for jj=2:nib
+    if devs{jj}.nx() ~= nxi
+        error('ibr:padiyar_switch_tds:ibrStateDimension', ...
+            'All switchable IBR branches must share one state dimension.');
+    end
+end
 sg_bp = sys.sg_bus_position; ibr_bp = sys.ibr_bus_positions;
 % state layout
 isg = 1:nsg;
@@ -126,8 +145,29 @@ for k = 1:nsteps
         % This preserves the declared state machine and avoids a simultaneous,
         % pre-recovery loss of all forming support.
         y_prev = Z(iy,k);
-        Vsg = complex(y_prev(2*sg_bp-1), y_prev(2*sg_bp));
-        Z(isg,k) = sg.reinit(Vsg);
+        if ideal_slack_reclose && opt.coordinated_reclose_handback
+            % The paper states that the returning SG resumes the slack role and
+            % the line/load are restored at the same event.  Apply that restored
+            % algebraic operating point before rebuilding the GFL controller
+            % states; otherwise the GFL map is initialized on the low-voltage
+            % island and then hit by a second discontinuity one equation later.
+            y_prev=sys.y0(:); Z(iy,k)=y_prev;
+        end
+        if ~ideal_slack_reclose
+            Vsg = complex(y_prev(2*sg_bp-1), y_prev(2*sg_bp));
+            Z(isg,k) = sg.reinit(Vsg);
+        end
+        % Coordinated SG-reference handback is explicitly separate from the
+        % ordinary index-driven transition.
+        for j=1:nib
+            devs{j}.handback_scheduled_reference();
+            if ideal_slack_reclose && opt.coordinated_reclose_handback
+                Vj=complex(y_prev(2*ibr_bp(j)-1),y_prev(2*ibr_bp(j)));
+                Z(iib{j},k)=devs{j}.gfl_dev.equilibrium_initialize( ...
+                    Vj,devs{j}.P_ref0,devs{j}.Q_ref0,struct());
+                devs{j}.restore_to_gfl(t1);
+            end
+        end
     end
     update_gra();
     set_scr(k+1<=numel(tg));                % update SCR seen by the IBRs
@@ -171,6 +211,14 @@ for k = 1:nsteps
         % converged (trustworthy) state so decisions never use garbage.
         y1 = Z(iy,k+1);
         for j=1:nib
+            if opt.coordinated_reclose_handback && ideal_slack_reclose && ...
+                    sg_online && t1 >= opt.sg_reclose_time
+                % Coordinated SG-reference handback is an explicit override,
+                % separate from index-driven switching: while the restored SG
+                % remains the ideal slack, the IBRs stay GFL and must not
+                % immediately re-enter GFM because of a residual local index.
+                continue;
+            end
             [xn, did, i1] = devs{j}.maybe_switch(Z(iib{j},k+1), y1, t1);
             if did
                 Z(iib{j},k+1) = xn;
@@ -211,6 +259,9 @@ out.sg_delta = sg_delta; out.sg_id = sg_id; out.sg_iq = sg_iq;
 out.sg_P = sg_P; out.sg_Q = sg_Q;
 out.ref_code = ref_code; out.ref_angle = ref_angle;
 out.sg_reclose_time = opt.sg_reclose_time;
+out.sg_reclose_mode = opt.sg_reclose_mode;
+out.coordinated_reclose_handback = opt.coordinated_reclose_handback;
+out.coordinated_gfm_reference = opt.coordinated_gfm_reference;
 out.fault_on = opt.fault_on; out.fault_clear = opt.fault_clear; out.fault_bus = opt.fault_bus;
 out.step_on = opt.step_on; out.step_bus = opt.step_bus; out.step_factor = opt.step_factor;
 out.step_off = opt.step_off;
@@ -228,7 +279,7 @@ out.max_resid = max(maxres);
 if diverged
     warning('ibr:padiyar_switch_tds:diverged', ...
         ['Simulation DIVERGED near t=%.3fs and was truncated there: the disturbance is ' ...
-        'outside the validated domain of this reduced SG/IBR model ' ...
+        'outside the validated domain of the selected SG/IBR model ' ...
          '(states exploded to non-physical magnitudes). Use a milder fault (larger Zf), ' ...
          'a smaller load step, or a shorter fault.'], tg(end));
 elseif ~out.newton_all_converged
@@ -237,7 +288,7 @@ elseif ~out.newton_all_converged
     tfail = tg(min(kfail+1, numel(tg)));
     warning('ibr:padiyar_switch_tds:notConverged', ...
         ['%d of %d Newton steps did not fully converge (first near t=%.3fs) - the ' ...
-        'disturbance is outside the validated domain of this reduced model; ' ...
+        'disturbance is outside the validated domain of the selected dynamic model; ' ...
          'results past that point are approximate. Use a milder fault (larger Zf) ' ...
          'or smaller load step.'], nfail, nsteps, tfail);
 end
@@ -265,7 +316,7 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
         gc = -Yt*V1;
         % SG differential + injection
         xs1 = zz(isg);
-        if sg_online
+        if sg_online && ~(ideal_slack_reclose && t1 >= opt.sg_reclose_time)
             fs1 = sg.f(xs1, y1);
             r(isg) = xs1 - x_sg0 - 0.5*opt.dt*(f_sg0 + fs1);
             gc(sg_bp) = gc(sg_bp) + sg.current_injection(xs1, y1);
@@ -279,8 +330,40 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
             r(iib{jj}) = xj - xib0{jj} - 0.5*opt.dt*(fib0{jj} + fj);
             gc(ibr_bp(jj)) = gc(ibr_bp(jj)) + devs{jj}.current_injection(xj, y1);
         end
+        if ~sg_online && opt.coordinated_gfm_reference
+            % Paper-case common forming reference.  The first committed GFM
+            % owns the island angle/frequency; other GFM swing coordinates are
+            % constrained to that common reference while retaining their own
+            % electrical, voltage, current, delay and DC-link states.  This is
+            % PROJECT_DERIVED coordination because EECON49 does not publish a
+            % multi-GFM reference-election/synchronizer equation.
+            gfm_idx=find(cellfun(@(d) ~strcmp(d.mode,'gfl'),devs));
+            if numel(gfm_idx)>1
+                leader=gfm_idx(1); [ithL,iomL]=gfm_state_indices(devs{leader});
+                xL=zz(iib{leader}); a0L=angle(complex(sys.y0(2*ibr_bp(leader)-1),sys.y0(2*ibr_bp(leader))));
+                for kk=2:numel(gfm_idx)
+                    jj=gfm_idx(kk); [ith,iom]=gfm_state_indices(devs{jj}); xj=zz(iib{jj});
+                    a0=angle(complex(sys.y0(2*ibr_bp(jj)-1),sys.y0(2*ibr_bp(jj))));
+                    r(iib{jj}(ith))=(xj(ith)-xL(ithL))-(a0-a0L);
+                    r(iib{jj}(iom))=xj(iom)-xL(iomL);
+                end
+            end
+        end
         r(iy(1:2:end)) = real(gc);
         r(iy(2:2:end)) = imag(gc);
+        if ideal_slack_reclose && sg_online && t1 >= opt.sg_reclose_time
+            % EECON49 case statement: after reconnection SG1 "acts as slack".
+            % Replace only the bus-1 KCL pair by the ideal voltage-reference
+            % constraint; the resulting slack P/Q are outputs, not imposed data.
+            r(iy(2*sg_bp-1)) = real(V1(sg_bp)-V_slack);
+            r(iy(2*sg_bp))   = imag(V1(sg_bp)-V_slack);
+        end
+    end
+
+    function [ith,iom]=gfm_state_indices(dev)
+        p=dev.gfm_dev.provenance;
+        if isfield(p,'theta_index'), ith=p.theta_index; else, ith=4; end
+        if isfield(p,'omega_index'), iom=p.omega_index; else, iom=3; end
     end
 
     function J = fd_jac(zz)
@@ -369,7 +452,19 @@ out.dev_mode = cellfun(@(d) string(d.mode), devs);
             elseif isfield(rj,'delta'), ang_ibr(ix,jj)=rj.delta; else, ang_ibr(ix,jj)=NaN; end
             Vb(ix,jj)  = abs(complex(y1(2*ibr_bp(jj)-1), y1(2*ibr_bp(jj))));
         end
-        if online
+        if online && ideal_slack_reclose && tt >= opt.sg_reclose_time
+            Iother = 0;
+            for kk=1:nib
+                if ibr_bp(kk)==sg_bp
+                    Iother = Iother + devs{kk}.current_injection(Z(iib{kk},ix),y1);
+                end
+            end
+            Islack = (Yt*Vc); Islack = Islack(sg_bp)-Iother;
+            Sslack = Vc(sg_bp)*conj(Islack);
+            fsgH(ix)=sg.par.fbase; omsgH(ix)=1;
+            sg_delta(ix)=angle(Vc(sg_bp)); sg_id(ix)=NaN; sg_iq(ix)=NaN;
+            sg_P(ix)=real(Sslack); sg_Q(ix)=imag(Sslack);
+        elseif online
             rs = sg.reconstruct(Z(isg,ix), y1);
             fsgH(ix)=rs.f_hz; omsgH(ix)=rs.omega;
             sg_delta(ix)=rs.delta; sg_id(ix)=rs.Id; sg_iq(ix)=rs.Iq;

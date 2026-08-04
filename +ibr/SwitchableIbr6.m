@@ -1,17 +1,19 @@
 classdef SwitchableIbr6 < handle
-%SWITCHABLEIBR6  Two-mode (GFL<->GFM) 6-state IBR whose switching is governed by
+%SWITCHABLEIBR6  Two-mode (GFL<->GFM) IBR whose switching is governed by
 %   the AGSI equation (an always-evaluated reference equation), bumpless and
 %   BIDIRECTIONAL.
 %
 %   obj = ibr.SwitchableIbr6(DEVICE_ID, BUS_ID, BUS_POSITION, BUS_IDS, V0,
-%       PARAMS, P_REF, Q_REF, Name=Value) wraps the two reduced 6-state study
-%   models as the SINGLE SOURCE OF TRUTH for the branch equations:
-%       GFL branch -> ibr.gfl_reduced6_model  (i_d,i_q,delta_PLL,xi_PLL,xi_P,xi_Q)
-%       GFM branch -> ibr.gfm_reduced6_model  (i_d,i_q,omega,delta,E,xi_V)
+%       PARAMS, P_REF, Q_REF, Name=Value) wraps the selected branch models as
+%   the SINGLE SOURCE OF TRUTH for the equations.  The legacy default is the
+%   reduced-6 pair.  An EECON49 profile can request the source-mapped full-state
+%   pair with params.ibr_model_family='eecon49_full':
+%       GFL -> ibr.gfl_eecon49_full_model, GFM -> ibr.gfm_eecon49_full_model.
 %   This class dispatches the ACTIVE branch, evaluates the switching EQUATION,
 %   and performs a current-continuous ("bumpless") transfer in either direction.
-%   Active state dimension is ALWAYS 6 (a switch re-initialises the same 6 slots
-%   to the target-branch equilibrium at the instantaneous terminal (V,P,Q)).
+%   Both branches in one object have the same fixed state dimension; a switch
+%   re-initialises those slots to the target-branch equilibrium at the
+%   instantaneous terminal (V,P,Q).
 %
 %   ================= SWITCHING EQUATION: AGSI ==============================
 %   The switch decision ALWAYS compares a single reference equation, the
@@ -208,12 +210,21 @@ classdef SwitchableIbr6 < handle
             obj.P_ref0 = P_ref;
             obj.Q_ref0 = Q_ref;
             obj.u = [P_ref; Q_ref];
-            obj.gfl_dev = ibr.gfl_reduced6_model(string(device_id), bus_id, ...
-                bus_position, bus_ids, V0, params, P_ref, Q_ref);
-            obj.gfm_dev = ibr.gfm_reduced6_model(string(device_id), bus_id, ...
-                bus_position, bus_ids, V0, params, P_ref, Q_ref);
-            if obj.gfl_dev.nx ~= 6 || obj.gfm_dev.nx ~= 6
-                error('ibr:SwitchableIbr6:nx','Both branches must be 6-state.');
+            full_family = isfield(params,'ibr_model_family') && ...
+                strcmpi(string(params.ibr_model_family),'eecon49_full');
+            if full_family
+                obj.gfl_dev = ibr.gfl_eecon49_full_model(string(device_id), bus_id, ...
+                    bus_position, bus_ids, V0, params, P_ref, Q_ref);
+                obj.gfm_dev = ibr.gfm_eecon49_full_model(string(device_id), bus_id, ...
+                    bus_position, bus_ids, V0, params, P_ref, Q_ref);
+            else
+                obj.gfl_dev = ibr.gfl_reduced6_model(string(device_id), bus_id, ...
+                    bus_position, bus_ids, V0, params, P_ref, Q_ref);
+                obj.gfm_dev = ibr.gfm_reduced6_model(string(device_id), bus_id, ...
+                    bus_position, bus_ids, V0, params, P_ref, Q_ref);
+            end
+            if obj.gfl_dev.nx ~= obj.gfm_dev.nx
+                error('ibr:SwitchableIbr6:nx','GFL/GFM branches must share one state dimension.');
             end
             obj.mode = 'gfl';
         end
@@ -226,8 +237,8 @@ classdef SwitchableIbr6 < handle
             end
         end
 
-        function n = nx(obj) %#ok<MANU>
-            n = 6;
+        function n = nx(obj)
+            n = obj.gfl_dev.nx;
         end
 
         function x0 = x0_gfl(obj)
@@ -442,6 +453,17 @@ classdef SwitchableIbr6 < handle
             obj.f_prev = NaN; obj.t_prev = NaN; obj.rocof_filt = NaN;
         end
 
+        function handback_scheduled_reference(obj)
+            %HANDBACK_SCHEDULED_REFERENCE Restore the pre-event P/Q schedule.
+            %   This is deliberately separate from a mode command: after the SG
+            %   reference returns, the IBR remains GFM until its local AGSI++ is
+            %   below Gamma_off for T_d_off.  Restoring the dispatch at reclose
+            %   prevents the island-support setpoint and the returning SG dispatch
+            %   from being applied simultaneously (coordinated reference handback).
+            obj.u = [obj.P_ref0; obj.Q_ref0];
+            obj.down_since = NaN;
+        end
+
         function reset(obj)
             %RESET  Return to the constructed GFL state (for reuse in tests).
             obj.mode = 'gfl';
@@ -476,7 +498,11 @@ classdef SwitchableIbr6 < handle
                 % Zero-derivative GFM start: P_ref=P (d_omega=0),
                 % Q_ref=Q+kE*(E0-|V|)/(kQ*kappa) (d(E)/dt=0).
                 p = obj.gfm_dev.provenance.params;
-                E0 = x_new(5);
+                Eidx = 5;
+                if isfield(obj.gfm_dev.provenance,'E_index')
+                    Eidx = obj.gfm_dev.provenance.E_index;
+                end
+                E0 = x_new(Eidx);
                 obj.u = [P; Q + p.kE*(E0 - abs(V))/(p.kQ*p.kappa)];
                 obj.switched = true;
             case 'gfl'

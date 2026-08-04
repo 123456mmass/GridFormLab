@@ -3,7 +3,10 @@ function out = generate_ieee14_switch_report_figures(opts)
 %   Case data and event times follow docs/text/EECON49_[Nui].pdf.  The
 %   switching method remains the project AGSI++ supervisor: seven equally
 %   weighted terms [J_V,J_f,J_R,J_P,J_SCR,J_lock,J_GRA], with J_GRA=1-GRA.
-%   No noise, smoothing, clipping, or external numerical result is applied.
+%   The EECON49 profile uses the operational six-state SG and source-mapped
+%   full-state IBR branches.  A PROJECT_DERIVED common GFM reference elects
+%   the first committed GFM as the island angle/frequency leader.  No noise,
+%   smoothing, clipping, or external numerical result is applied.
 
 arguments
     opts.reuse_cache (1,1) logical = false
@@ -14,15 +17,18 @@ outdir = fullfile('docs','source','figures','switch_ieee14');
 if ~exist(outdir,'dir'), mkdir(outdir); end
 
 sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
-    sg_H=2.5, sg_D=1.0, T_d_on=0.5, T_d_off=1.0);
+    case_profile="eecon49_figure4", sg_H=2.5, sg_D=1.0, ...
+    T_d_on=0.10, T_d_off=1.0);
 cachefile=fullfile('output','diagnostics','ieee14_switch_report_result.mat');
 if opts.reuse_cache && exist(cachefile,'file')
     cached=load(cachefile,'out'); out=cached.out;
 else
     out = ibr.padiyar_switch_tds(sys, ...
-        T=160.0, dt=5e-3, ...
+        T=160.0, dt=1e-2, ...
         sg_trip_time=20.0, sg_reclose_time=145.0, ...
-        step_on=50.0, step_off=145.0, step_factor=0.20, step_all_loads=true, ...
+        sg_reclose_mode="ideal_slack", coordinated_reclose_handback=true, ...
+        coordinated_gfm_reference=true, ...
+        step_on=50.0, step_off=145.0, step_factor=0.20, step_all_loads=false, ...
         fault_on=85.0, fault_clear=85.15, fault_bus=9, fault_Zf=0.01+0.01i, ...
         line_trip_time=110.0, line_reclose_time=145.0, line_from_bus=6, line_to_bus=13);
 end
@@ -35,16 +41,40 @@ elseif ~out.newton_all_converged
         'The source-data trajectory has unexplained non-converged steps.');
 end
 
+% A separate compressed gate isolates the reclose/handback contract.  It is
+% not presented as the 160-s source chronology and does not replace its
+% fail-closed result.
+% SwitchableIbr6 contains committed-mode/timer state, so a second run must
+% receive fresh device objects rather than the objects mutated by the long run.
+sys_recovery = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
+    case_profile="eecon49_figure4", sg_H=2.5, sg_D=1.0, ...
+    T_d_on=0.10, T_d_off=1.0);
+recovery = ibr.padiyar_switch_tds(sys_recovery, ...
+    T=4.0, dt=1e-2, sg_trip_time=1.0, sg_reclose_time=3.0, ...
+    sg_reclose_mode="ideal_slack", coordinated_reclose_handback=true, ...
+    coordinated_gfm_reference=true);
+if recovery.diverged || ~recovery.newton_all_converged
+    error('report:ieee14Switch:recoveryGate', ...
+        'The compressed ideal-slack recovery gate did not converge.');
+end
+out.recovery_gate=recovery;
+
 write_pf_tables(sys.pf,outdir);
-supervisor_figure(out,outdir);
-response_figure(out,outdir);
+supervisor_figure(out,outdir,'padiyar_switch_supervisor.png', ...
+    'Full chronology: raw valid prefix (fail-closed)');
+response_figure(out,outdir,'padiyar_switch_response.png', ...
+    'Full chronology: raw valid prefix - no added noise, smoothing, or clipping');
+supervisor_figure(recovery,outdir,'padiyar_switch_recovery_supervisor.png', ...
+    'Compressed SG trip/reclose recovery gate');
+response_figure(recovery,outdir,'padiyar_switch_recovery_response.png', ...
+    'Compressed recovery response - no added noise, smoothing, or clipping');
 cachedir=fullfile('output','diagnostics');
 if ~exist(cachedir,'dir'), mkdir(cachedir); end
 save(cachefile,'out','-v7.3');
 fprintf('IEEE14_SWITCH_REPORT_FIGURES_DONE: %s\n',outdir);
 end
 
-function supervisor_figure(o,outdir)
+function supervisor_figure(o,outdir,filename,figure_title)
 t=o.tgrid; buses=o.ibr_buses; c=lines(numel(buses));
 f=figure('Color','w','Units','inches','Position',[1 1 5.90 6.35], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
@@ -52,7 +82,7 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 6.35], ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
     'DefaultLegendFontSize',10);
 tl=tiledlayout(f,4,2,'TileSpacing','compact','Padding','compact');
-title(tl,'AGSI++ supervisor, GRA, committed modes, and plotting reference', ...
+title(tl,figure_title, ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
 
 ax=nexttile(tl,[1 2]); hold(ax,'on');
@@ -79,11 +109,11 @@ for j=1:numel(buses)
     ylabel(ax,sprintf('IBR%d bus %d',j,buses(j))); event_lines(ax,o,false);
     if j>2, xlabel(ax,'time (s)'); end
 end
-exportgraphics(f,fullfile(outdir,'padiyar_switch_supervisor.png'),'Resolution',220);
+exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
 close(f);
 end
 
-function response_figure(o,outdir)
+function response_figure(o,outdir,filename,figure_title)
 t=o.tgrid; buses=o.ibr_buses; c=lines(numel(buses));
 f=figure('Color','w','Units','inches','Position',[1 1 5.90 5.15], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
@@ -91,7 +121,7 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 5.15], ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
     'DefaultLegendFontSize',9);
 tl=tiledlayout(f,2,2,'TileSpacing','compact','Padding','compact');
-title(tl,'Raw per-IBR response - no added noise, smoothing, or clipping', ...
+title(tl,figure_title, ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
 h=panel(nexttile(tl),t,o.P_ibr,c,buses,'P (pu)','(a) Active power');
 panel(nexttile(tl),t,o.Q_ibr,c,buses,'Q (pu)','(b) Reactive power');
@@ -105,7 +135,7 @@ lg=legend(h, ...
     'Orientation','horizontal','NumColumns',4);
 lg.Layout.Tile='south';
 set(lg,'FontName','Times New Roman','FontSize',9);
-exportgraphics(f,fullfile(outdir,'padiyar_switch_response.png'),'Resolution',220);
+exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
 close(f);
 end
 

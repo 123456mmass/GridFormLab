@@ -28,12 +28,12 @@
 \path{docs/text/EECON49_[Nui].pdf} แต่ยังใช้ AGSI++ ของโครงการเป็นตัวตัดสินโหมด
 โดยเพิ่ม grid-reference availability (GRA) เป็นพจน์ที่เจ็ดและเฉลี่ยใหม่ด้วยน้ำหนัก $1/7$ เท่ากัน
 SG ใช้ operational EMF6/Kundur หก state ส่วน IBR ใช้ full-state GFL/GFM ที่มี filter,
-DC-link, PI controller, delay และ current limit ตามค่าที่เอกสารให้ ผลที่ยืนยันได้คือจุดทำงานเป็น
-equilibrium, วงควบคุมกระแสมี negative feedback ถูกทิศ, IBR สลับตาม local index/timer ของตนเอง
-และ gate แบบย่อสามารถคืน ideal SG reference แล้วพา IBR1--IBR4 กลับ GFL ได้ครบ
-อย่างไรก็ตาม chronology 160~s ยังหยุดแบบ fail-closed ที่ 36.040~s หลัง SG trip เพราะเอกสารไม่ให้
-กฎ $I_{dc}$, active-power dispatch/energy reserve และการประสานหลาย GFM อย่างครบถ้วน
-จึงไม่อ้างว่าจำลองผล 145~s ของ paper ได้ตรงทั้งหมด และไม่เติม noise หรือจูนค่าเพื่อทำให้กราฟดูสำเร็จ
+DC-link, PI controller, delay และ current limit ตามค่าที่เอกสารให้ AGSI++ ถูก saturate ให้อยู่ใน
+$[0,1]$ ทั้งใน switching logic และข้อมูลที่นำไปพล็อต ขอบเวลาผลหลักกำหนดเป็น 0--160~s เท่านั้น
+ผลทดสอบแบบย่อ 4~s และ trajectory ที่ fail จะไม่ถูกอ้างเป็นผล recovery หลัก การรัน chronology จริง
+ออกจาก validity domain ที่ 36.040~s หลัง SG trip และก่อนเหตุการณ์ถัดไป จึงแสดงเฉพาะ raw valid prefix
+เป็นหลักฐานวิเคราะห์การสลับโหมด โดยยังไม่เพิ่ม Bayesian Optimization (BO) หรือ controller ใหม่
+measurement-noise overlay ใช้ seed คงที่เฉพาะชั้นแสดงผล ไม่ป้อนกลับเข้า state, AGSI, timer หรือ mode decision
 \end{abstract}
 \tableofcontents
 \newpage
@@ -44,7 +44,7 @@ equilibrium, วงควบคุมกระแสมี negative feedback ถ
 รู้ได้อย่างไรว่า IBR อยู่โหมดใด & อ่านค่า committed mode ของแต่ละอุปกรณ์โดยตรง: 0=GFL, 1=GFM ไม่อนุมานจากกราฟ $P$ หรือ $V$ \\
 สลับด้วยวิธีใด & binary hybrid state machine; เงื่อนไขเป็น AGSI++ ร่วมกับ hysteresis และ dwell timer แยก IBR \\
 ใช้เกณฑ์อะไร & GFL$\to$GFM เมื่อ $\mathrm{AGSI}^{++}_i\ge\Gamma_{on}$ ต่อเนื่องครบ $T_{d,on}$; GFM$\to$GFL เมื่อ index ต่ำกว่า $\Gamma_{off}$, มี grid reference และครบ $T_{d,off}$ \\
-สลับพร้อมกันหรือไม่ & ไม่บังคับพร้อมกัน ผล full-state ล่าสุด IBR1--2 สลับที่ 20.130~s และ IBR3--4 ที่ 20.150~s เพราะ index/timer ต่างกัน \\
+สลับพร้อมกันหรือไม่ & ไม่บังคับพร้อมกัน เพราะแต่ละ IBR มี index/timer ของตัวเอง เวลาสลับจริงต้องอ่านจากผล 160~s ที่ผ่าน gate แล้วเท่านั้น \\
 ตัวไหนเป็น slack bus & ระหว่าง island ไม่มี IBR ใดเป็น algebraic PF slack; IBR1 เป็น reference leader ที่เลือกตามลำดับเพื่อประสานมุม/ความถี่เท่านั้น ทุก IBR ยังฉีดกระแสผ่าน full KCL \\
 กลับ GFL อย่างไร & การกลับตาม index เป็น local decision; ส่วน gate ตอน SG reclose ใช้ coordinated SG-reference handback ซึ่งเป็น override ที่ประกาศชัดและแยกจาก AGSI \\
 \bottomrule
@@ -73,7 +73,8 @@ J_{lock}&=\frac{|v_q|}{0.10},\\
 J_{GRA}&=1-GRA,
 \end{align}
 \begin{equation}
-\mathrm{AGSI}^{++}_i=\frac{J_V+J_f+J_R+J_P+J_{SCR}+J_{lock}+J_{GRA}}{7}.
+\mathrm{AGSI}^{++}_i=\min\!\left(1,\max\!\left(0,
+\frac{J_V+J_f+J_R+J_P+J_{SCR}+J_{lock}+J_{GRA}}{7}\right)\right).
 \end{equation}
 
 \noindent\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}X@{}}
@@ -92,8 +93,8 @@ $T_{d,on/off}$ & dwell time เท่ากับ 0.10~s และ 1.00~s \\
 \bottomrule
 \end{tabularx}
 
-พจน์ย่อยไม่ถูก clip ให้อยู่ใน $[0,1]$ จึงเป็นไปได้ที่ AGSI++ สูงกว่า 1 และ GRA เป็นเพียง
-หนึ่งพจน์น้ำหนัก $1/7$ ไม่ใช่ hard switch เมื่อ index แตะ threshold timer จะเริ่มนับ;
+พจน์ย่อยอาจสูงกว่า 1 เพื่อเก็บระดับ stress ดิบ แต่ผลรวมที่ใช้ตัดสินและพล็อตถูก saturate ให้อยู่ใน
+$[0,1]$ เสมอ ส่วน GRA เป็นเพียงหนึ่งพจน์น้ำหนัก $1/7$ ไม่ใช่ hard switch เมื่อ index แตะ threshold timer จะเริ่มนับ;
 ถ้าหลุดเงื่อนไขก่อนครบ dwell timer ถูกยกเลิก ดังนั้นการ ``ชนเส้น'' ชั่วคราวยังไม่เท่ากับการ commit
 
 \section{State machine: index-driven กับ coordinated handback}
@@ -127,6 +128,16 @@ subtransient internal EMF บนแกน d/q สมการแกนกลม�
 \dot\delta=\omega_0\Delta\omega,\qquad
 2H\dot{\Delta\omega}=T_m-T_e-D\Delta\omega,
 \]
+โดย $T_e=V_dI_d+V_qI_q+R_a(I_d^2+I_q^2)$ และสมการ flux ที่เรียกใช้จริงคือ
+\begin{align}
+T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,\\
+T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
+T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,\\
+T''_{q0}\dot E''_d&=E'_d-E''_d+(X'_q-X''_q)I_q.
+\end{align}
+$c_d,d_d,c_q,d_q$ เป็นสัมประสิทธิ์ operational EMF ที่คำนวณจาก $X_d,X'_d,X''_d$
+และ $X_q,X'_q,X''_q$ ตาม mapping ของอุปกรณ์ SG ในโค้ด; กระแส $I_d,I_q$
+ใช้ทิศ generator injection ในกรอบโรเตอร์
 และ state flux ใช้ $T'_{d0},T'_{q0},T''_{d0},T''_{q0}$, reactance และ stator current
 $I_d,I_q$ ตาม operational EMF6 ใน repo โดย $T_m,E_{fd}$ ถูก solve จาก equilibrium แล้วตรึงคงที่
 งานนี้จึงเพิ่มหก state ของเครื่องจริงแล้ว แต่ยังไม่ได้เพิ่ม governor, turbine, AVR, PSS,
@@ -141,6 +152,42 @@ GFM ใช้
 \[
 [i_d,i_q,V_{dc},\theta,\omega,E,\xi_{Vd},\xi_{Vq},\xi_{Id},\xi_{Iq},v_{cd,del},v_{cq,del}]^T.
 \]
+กำหนด $V_{dq}=Ve^{-j\theta}=v_d+jv_q$ และ $P+jQ=V I^*$ บน generator-injection sign
+สมการ plant ร่วมของทั้งสองโหมดคือ
+\begin{align}
+\frac{L_f}{\omega_b}\dot i_d&=v_{cd,del}-v_d-R_fi_d+\omega L_fi_q,\\
+\frac{L_f}{\omega_b}\dot i_q&=v_{cq,del}-v_q-R_fi_q-\omega L_fi_d,\\
+C_{dc}\dot V_{dc}&=I_{dc}-\frac{P_{ac}}{V_{dc}},\\
+T_d\dot v_{cd,del}&=v_{cd}^*-v_{cd,del},\qquad
+T_d\dot v_{cq,del}=v_{cq}^*-v_{cq,del}.
+\end{align}
+สำหรับ GFL ให้ $\theta=\theta_{PLL}$, $\omega=1+\Delta\omega_{PLL}/\omega_b$ และ
+\begin{align}
+\dot\theta_{PLL}&=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},&
+\dot\xi_{PLL}&=v_q,\\
+e_P&=P_{ref}-P,&e_Q&=Q_{ref}-Q,\\
+i_d^*&=k_{p,P}e_P+k_{i,P}\xi_P,&
+i_q^*&=-(k_{p,Q}e_Q+k_{i,Q}\xi_Q),\\
+\dot\xi_P&=e_P,&\dot\xi_Q&=e_Q.
+\end{align}
+สำหรับ GFM ใช้ virtual swing และ voltage-forming loop
+\begin{align}
+\dot\theta&=\omega_b(\omega-1),&
+M\dot\omega&=P_{ref}-P-D_v(\omega-1),\\
+\tau_E\dot E&=k_Q(Q_{ref}-Q)-k_E(E-|V|),\\
+i_d^*&=k_{p,V}(E-v_d)+k_{i,V}\xi_{Vd},&
+i_q^*&=k_{p,V}(-v_q)+k_{i,V}\xi_{Vq},\\
+\dot\xi_{Vd}&=E-v_d,&\dot\xi_{Vq}&=-v_q.
+\end{align}
+ทั้งสองโหมดใช้ current PI แบบ negative feedback
+\begin{align}
+e_d&=i_d^*-i_d,&e_q&=i_q^*-i_q,\\
+v_{cd}^*&=v_d+R_fi_d-\omega L_fi_q+k_{p,I}e_d+k_{i,I}\xi_{Id},\\
+v_{cq}^*&=v_q+R_fi_q+\omega L_fi_d+k_{p,I}e_q+k_{i,I}\xi_{Iq},\\
+\dot\xi_{Id}&=e_d,&\dot\xi_{Iq}&=e_q.
+\end{align}
+ก่อนใช้ $i_d^*,i_q^*$ จะผ่าน radial limiter $\sqrt{i_d^{*2}+i_q^{*2}}\le I_{max}$ และ
+integrator ใช้ anti-windup เมื่อ limiter ทำงาน
 ความหมายหลักคือ $i_d,i_q$ เป็นกระแส filter, $V_{dc}$ เป็นแรงดัน DC-link, $\theta_{PLL}$ และ
 $\xi_{PLL}$ เป็น PLL, $\theta,\omega,E$ เป็น virtual angle/speed/EMF, $\xi$ เป็น integrator ของ PI
 และ $v_{c*,del}$ เป็น delayed converter-voltage command พารามิเตอร์ที่ใช้คือ
@@ -156,42 +203,48 @@ energy port แบบ ideal instantaneous balance $I_{dc}=P_{ac}/V_{dc}$ เพ�
 \section{ผล Power Flow}
 PF ใช้ in-house Newton--Raphson ของโครงการ ตารางต่อไปสร้างจากผล solver โดยตรง
 \begin{table}[H]\centering\caption{ผล PF รายบัส (pu, ฐาน 100 MVA)}
-\resizebox{\textwidth}{!}{\input{figures/switch_ieee14/table_pf_bus_results.tex}}
+\input{figures/switch_ieee14/table_pf_bus_results.tex}
 \end{table}
 \begin{table}[H]\centering\caption{line flow ด้าน from และ line loss (pu)}
-\resizebox{\textwidth}{!}{\input{figures/switch_ieee14/table_pf_line_results.tex}}
+\input{figures/switch_ieee14/table_pf_line_results.tex}
 \end{table}
 
-\section{หลักฐานเวลา เหตุการณ์ index timer และโหมด}
+\section{ลำดับเหตุการณ์ 160 วินาทีและ publication gate}
 \begin{table}[H]\centering
-\caption{audit table ของ full chronology และ recovery gate}
-\begin{tabularx}{\textwidth}{p{0.12\textwidth}p{0.23\textwidth}X p{0.22\textwidth}}
-\toprule เวลา (s) & เหตุการณ์ & AGSI++/timer & โหมดก่อน--หลังและเหตุผล \\ \midrule
-0 & no event & index ต่ำ, timer idle & ทุกตัว GFL$\to$GFL \\
-20 & SG1 trip & GRA หายชั่วขณะและ on-timer เริ่มตาม local index & ยัง GFL ระหว่าง dwell \\
-20.130 & local dwell ครบ & IBR1--2 ผ่านเงื่อนไขก่อน & IBR1--2 GFL$\to$GFM \\
-20.150 & local dwell ครบ & IBR3--4 ผ่านเงื่อนไขถัดมา 20 ms & IBR3--4 GFL$\to$GFM \\
-36.040 & long-run limit & frequency ลดถึงประมาณ 43.69 Hz และ state ออก validity domain & fail-closed; ยังไม่ถึง load/fault/line/reclose \\
-1.000 (gate) & compressed SG trip & local on-timer เริ่ม & ทุกตัวเริ่มจาก GFL \\
-1.120 (gate) & local dwell & IBR1--2 commit & GFL$\to$GFM \\
-1.140 (gate) & local dwell & IBR3--4 commit & GFL$\to$GFM \\
-3.000 (gate) & ideal SG reclose & coordinated reference handback & ทุกตัว GFM$\to$GFL พร้อมกันเพราะ override \\
-4.000 (gate) & end & Newton converged, $\min|V|=1.033013$ pu & ทุกตัวคง GFL, switch count 2 ต่อตัว \\
+\caption{event schedule ที่ผล dynamic ฉบับนำเสนอต้องจำลองครบ}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}X p{0.32\textwidth}}
+\toprule เวลา (s) & เหตุการณ์ที่กำหนด & สถานะหลักฐาน \\ \midrule
+0--20 & base operation; IBR ทุกตัวเริ่ม GFL & จุดทำงาน PF/equilibrium ผ่าน \\
+20 & SG1 trip & ถึงเหตุการณ์; IBR ทั้งสี่ commit เป็น GFM \\
+36.040 & trajectory ออกจาก state-validity domain & จบ diagnostic prefix; ยังไม่ถึงเหตุการณ์ถัดไป \\
+50 & เพิ่ม $P_j^{load},Q_j^{load}$ ของทุกโหลด 20\% & ยังไปไม่ถึง \\
+85--85.15 & temporary three-phase fault ที่บัส 9 & ยังไปไม่ถึง \\
+110 & line 6--13 trip & ยังไปไม่ถึง \\
+145 & คืน SG1, สาย 6--13 และโหลดทุกตัวสู่ค่าฐาน & ยังไปไม่ถึง \\
+160 & เวลาสิ้นสุดที่ต้องรายงาน & ยังไปไม่ถึง; recovery ยังไม่พิสูจน์ \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
+เงื่อนไขก่อนอ้างว่า recovery สำเร็จคือ trajectory เดียวยาว 0--160~s ต้องผ่าน Newton convergence,
+state-validity, event landing, AGSI $[0,1]$, mode timeline แยก IBR1--IBR4 และ final recovery gate
+ทั้งหมด ผล 4~s เก็บเป็น unit/integration test ภายในเท่านั้น ไม่ใช่ตัวแทนผล 160~s รูปต่อไปนี้เป็น
+diagnostic prefix ของการรันจริง จึงใช้ตอบได้ว่า switching ทำงานอย่างไร แต่ใช้ยืนยัน recovery ไม่ได้
+
+\section{กราฟ switching และ electrical response จาก diagnostic prefix}
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_supervisor.png}
-\caption{full chronology: AGSI++, GRA, reference และ mode timeline 0=GFL/1=GFM แยก IBR1--IBR4 ถึงจุด fail-closed}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_supervisor.png}
+\caption{AGSI++, GRA, ตัวอ้างอิงที่เลือก และ mode timeline แยก IBR1--IBR4 หลัง SG trip
+ทุก IBR ข้าม $\Gamma_{on}$ และ commit เป็น GFM ด้วย local index/timer ของตนเอง การรันหยุดแบบ
+fail-closed ที่ 36.040~s จึงยังไม่มีผลของ load step, fault, line trip และ reclose ใน chronology นี้}
 \end{figure}
+
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_recovery_supervisor.png}
-\caption{compressed recovery gate: timeline แสดง local GFL$\to$GFM และ coordinated GFM$\to$GFL ที่ SG reclose}
-\end{figure}
-\begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/padiyar_switch_recovery_response.png}
-\caption{ผล $P,Q,|V|,f$ ของ recovery gate จากข้อมูลดิบ ไม่มี noise, smoothing, filtering หรือ clipping}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_electrical.png}
+\caption{กราฟของ IBR และ SG: $P,Q,i_d,i_q,f$, มุม, แรงดัน PCC และแรงดันต่ำสุดของโครงข่ายจาก trajectory เดียวกัน
+เส้น continuous มี synthetic measurement overlay แบบ seed คงที่เพื่อการนำเสนอเท่านั้น ส่วน raw state,
+AGSI, timer และ mode decision ไม่ถูกเปลี่ยน การลดลงของความถี่และมุมที่ drift คือหลักฐานของ power-balance/
+energy-coordination gap ไม่ใช่ recovery}
 \end{figure}
 
 \section{สรุปหลายเหตุการณ์ที่มีหลักฐานแล้ว}
@@ -200,10 +253,10 @@ PF ใช้ in-house Newton--Raphson ของโครงการ ตาร�
 no-event & full-state equilibrium residual ต่ำกว่า $10^{-9}$ และไม่มี false switch \\
 fault เบา & switching-map เดิมมี ride-through เมื่อ index ไม่อยู่เหนือเส้นครบ dwell \\
 fault รุนแรง & switching-map เดิมแสดง index-driven switch ได้ แต่ convergence ไม่เท่ากับ recovery \\
-load step & test เดิมรองรับ +10, +30, +50\% โดยไม่สลับ; chronology EECON49 กำหนด +20\% แต่ long run ปัจจุบันล้มก่อนถึง 50~s \\
-SG trip & full-state run ทำให้ IBR สลับเป็น GFM แบบ 2+2 ไม่พร้อมกันเป๊ะ \\
-SG reclose & compressed ideal-slack gate ผ่านและคืน GFL ครบ; ยังไม่ใช่หลักฐาน chronology 145~s \\
-line trip/reclose & event contract มีแล้ว แต่ full-state long run ยังไปไม่ถึง 110/145~s \\
+load step & test เดิมรองรับ +10, +30, +50\%; ผลใน event schedule 160~s ยังรอ control ที่อนุมัติ \\
+SG trip & logic local index/hysteresis/dwell มี test แยก; ยังไม่เผยแพร่เวลา switching จาก chronology หลัก \\
+SG reclose & short gate เป็น test ภายในเท่านั้น ไม่นำมาใช้แทนผลที่ 145~s \\
+line trip/reclose & event contract มีแล้ว แต่ยังไม่มี trajectory 160~s ที่ผ่าน publication gate \\
 \bottomrule
 \end{tabularx}
 
@@ -218,10 +271,12 @@ line trip/reclose & event contract มีแล้ว แต่ full-state long 
 หลัง SG trip และ (4) logic เปลี่ยน reference กลับ SG อย่างละเอียด การเดากฎเหล่านี้แล้วปรับจนกราฟ
 เหมือน paper จะขัด numerical-integrity contract ดังนั้นผลที่ถูกต้องที่สุดตอนนี้คือ:
 \begin{itemize}
-\item \textbf{พิสูจน์แล้ว}: full-state equilibrium, local stability gate, local mode switching และ compressed coordinated handback;
+\item \textbf{พิสูจน์แล้ว}: full-state equilibrium, local stability gate และ switching/reclose software contracts แยกส่วน;
 \item \textbf{ยังไม่พิสูจน์}: trajectory เหตุการณ์เต็มถึง 160~s และ recovery ที่ 145~s;
 \item \textbf{สาเหตุปัจจุบัน}: missing dispatch/energy/reference-coordination contract ไม่ใช่จำนวน state ของ SG เพียงอย่างเดียว;
-\item \textbf{ไม่ทำ}: เติม noise, reset trajectory, เปลี่ยน threshold, smooth หรือ clip เพื่อสร้างผลสำเร็จเทียม
+\item \textbf{ยังไม่เพิ่ม}: Bayesian Optimization หรือ coordinated controller อื่นก่อนตกลงวิธีกับอาจารย์;
+\item \textbf{ชั้นนำเสนอ}: diagnostic continuous traces ใช้ measurement-noise overlay แบบ seed คงที่
+โดยเก็บ raw trace แยก ติดป้าย synthetic overlay และห้ามใช้ noise เปลี่ยน state, threshold, timer หรือข้อสรุป
 \end{itemize}
 
 \section{การสร้างซ้ำและสถานะการตรวจสอบ}
@@ -230,8 +285,9 @@ pf_init_paths;
 addpath(fullfile('scripts','reporting'));
 generate_ieee14_switch_report_figures;
 \end{verbatim}
-generator ใช้ project-owned MATLAB และ $\Delta t=0.01$~s ทั้ง long diagnostic และ short recovery gate
-SSSA sweep และ fault-outcome table ถูกตัดออกจากรายงานนี้เพื่อเน้น switching เท่านั้น
+generator ปัจจุบันสร้าง PF bus/line tables และ diagnostic prefix ของ exact 160-s attempt พร้อมกราฟ supervisor/
+electrical response ส่วนคำอ้าง recovery 160~s ยังถูก fail-closed ไว้จนกว่าจะอนุมัติ coordinated-control contract
+SSSA sweep และ fault-outcome table ถูกตัดออกเพื่อเน้น switching
 targeted tests ครอบคลุม full-state route/equilibrium, fixed-bus eigenvalues, coordinated handback,
 legacy IEEE14 switching และ EMF6 contracts ส่วน full repository regression ไม่จำเป็นสำหรับ scope นี้
 ตาม risk policy ของโครงการ

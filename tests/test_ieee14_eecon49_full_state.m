@@ -21,6 +21,21 @@ end
 verifyLessThan(testCase,norm(s.sg.f(s.x_sg0,s.y0),inf),1e-9);
 end
 
+function testExact160SecondEventContract(testCase)
+s=ibr.build_ieee14_switch_system(case_profile="eecon49_figure4",index_mode="agsi_pp", ...
+    T_d_on=0.10,T_d_off=1.0);
+e=s.switching_event_contract;
+verifyEqual(testCase,e.T_end,160,'AbsTol',0);
+verifyEqual(testCase,e.sg_trip_time,20,'AbsTol',0);
+verifyEqual(testCase,e.step_on,50,'AbsTol',0);
+verifyEqual(testCase,e.step_factor,0.20,'AbsTol',0);
+verifyTrue(testCase,e.step_all_loads);
+verifyEqual(testCase,[e.fault_on e.fault_clear e.fault_bus],[85 85.15 9],'AbsTol',0);
+verifyEqual(testCase,[e.line_trip_time e.line_from_bus e.line_to_bus],[110 6 13],'AbsTol',0);
+verifyEqual(testCase,e.restore_time,145,'AbsTol',0);
+verifyTrue(testCase,e.restore_sg && e.restore_line && e.restore_base_loads);
+end
+
 function testFixedBusBranchesHaveNoUnstableLocalPole(testCase)
 for mode=["gfl","GFM"]
     if mode=="gfl"

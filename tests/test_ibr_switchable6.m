@@ -170,7 +170,7 @@ verifyEqual(tc, size(r.switch_events,1), 4);
 verifyEqual(tc, r.metadata.device_count, 2);
 end
 
-function test_agsipp_no_chatter_vs_baseline(tc)
+function test_agsipp_no_chatter_and_bounded_index(tc)
 % AGSI++ (filtered RoCoF + J_SCR + J_lock) switches cleanly (2 transitions per
 % device) with NO dwell, where the baseline AGSI chatters (>2) without dwell,
 % and AGSI++ keeps the index bounded (no one-sample RoCoF spike).
@@ -181,8 +181,10 @@ verifyTrue(tc, o_pp.newton_all_converged);
 verifyGreaterThan(tc, o_base.dev1_n_switch, 2);   % baseline chatters
 verifyEqual(tc, o_pp.dev1_n_switch, 2);           % AGSI++ clean 2-switch cycle
 verifyEqual(tc, char(o_pp.dev1_mode), 'gfl');
-verifyLessThan(tc, max(o_pp.index1), 5);          % AGSI++ index bounded
-verifyGreaterThan(tc, max(o_base.index1), 10);    % baseline has a RoCoF spike
+verifyGreaterThanOrEqual(tc,min(o_pp.index1),0);
+verifyLessThanOrEqual(tc,max(o_pp.index1),1);     % normalized decision index
+verifyGreaterThanOrEqual(tc,min(o_base.index1),0);
+verifyLessThanOrEqual(tc,max(o_base.index1),1);   % raw RoCoF stays diagnostic
 end
 
 function o = run_switch_cfg(mode, ton, toff)

@@ -89,13 +89,16 @@ verifyGreaterThan(tc, r.Vmin_end, 0.9);          % restored
 verifyEqual(tc, numel(r.figure_files), 0);       % plot_results=false
 end
 
-function test_agsipp_bounded_vs_baseline(tc)
+function test_agsi_decision_index_is_bounded(tc)
 sysp = ibr.build_padiyar_switch_system(index_mode="agsi_pp");
 op = ibr.padiyar_switch_tds(sysp, T=2.0, dt=2e-3, sg_trip_time=1.0);
 sysb = ibr.build_padiyar_switch_system(index_mode="agsi");
 ob = ibr.padiyar_switch_tds(sysb, T=2.0, dt=2e-3, sg_trip_time=1.0);
 verifyTrue(tc, op.newton_all_converged && ob.newton_all_converged);
-% AGSI++ (filtered RoCoF) keeps the index bounded; baseline spikes higher
-verifyLessThan(tc, max(op.index(:)), 3);
-verifyGreaterThan(tc, max(ob.index(:)), max(op.index(:)));
+% Both routes publish the normalized decision index.  The unbounded raw
+% weighted stress remains available only from compute_agsi diagnostics.
+verifyGreaterThanOrEqual(tc,min(op.index(:)),0);
+verifyLessThanOrEqual(tc,max(op.index(:)),1);
+verifyGreaterThanOrEqual(tc,min(ob.index(:)),0);
+verifyLessThanOrEqual(tc,max(ob.index(:)),1);
 end

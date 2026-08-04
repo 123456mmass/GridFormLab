@@ -29,6 +29,7 @@ classdef SwitchableIbr6 < handle
 %       J_SCR = max(0, 3/SCR - 1)              (weak-grid stress)
 %       J_lock = |v_q| / dvq_base              (PLL loss-of-lock stress)
 %       J_GRA = 1-GRA                          (missing-reference stress)
+%       AGSI = sat_[0,1](sum_i w_i*J_i)         (bounded decision index)
 %       sum(w_i) = 1
 %
 %   DEFAULT SWITCHING LOGIC (hysteresis + dwell):
@@ -351,10 +352,14 @@ classdef SwitchableIbr6 < handle
             % J_GRA: binary missing-reference stress. GRA=1 means that an
             % online SG or at least one committed GFM supplies a grid reference.
             J_GRA = double(obj.GRA == 0);
-            agsi = obj.w_V*J_V + obj.w_f*J_f + obj.w_R*J_R + obj.w_P*J_P ...
+            agsi_raw = obj.w_V*J_V + obj.w_f*J_f + obj.w_R*J_R + obj.w_P*J_P ...
                  + obj.w_SCR*J_SCR + obj.w_lock*J_lock + obj.w_GRA*J_GRA;
+            % The supervisor publishes and compares a normalized decision
+            % index.  Retain the raw weighted stress only as a diagnostic.
+            agsi = min(1,max(0,agsi_raw));
             parts = struct('J_V',J_V,'J_f',J_f,'J_R',J_R,'J_P',J_P, ...
                 'J_SCR',J_SCR,'J_lock',J_lock,'J_GRA',J_GRA,'GRA',obj.GRA, ...
+                'raw_total',agsi_raw,'bounded_total',agsi, ...
                 'rocof',rocof_used,'rocof_raw',rocof_raw, ...
                 'Vmag',Vmag,'f_hz',f_hz,'P',P,'P_ref',P_ref,'scr',obj.grid_scr);
             if do_update

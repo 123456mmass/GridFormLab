@@ -158,6 +158,9 @@ sys.nb = nb;
 sys.base = c.base_values;
 sys.case_profile = opts.case_profile;
 if isfield(c,'eecon49_mapping'), sys.eecon49_mapping = c.eecon49_mapping; end
+if isfield(c,'switching_event_contract')
+    sys.switching_event_contract = c.switching_event_contract;
+end
 end
 
 % =========================================================================

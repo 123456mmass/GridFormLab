@@ -190,33 +190,71 @@ owner คือ angle/frequency reference ของ island; ทุกอุป�
 
 \begin{frame}{6. ลำดับการทำงานของ ET-FCSPS}
 \centering
-\begin{tikzpicture}[node distance=5mm and 7mm,>=Latex,
-box/.style={rounded corners=3pt,draw=blue,thick,fill=light,minimum width=2.3cm,minimum height=1.0cm,align=center},
-decision/.style={diamond,aspect=2.1,draw=orange,thick,fill=orange!8,align=center,inner sep=2pt}]
-\node[box] (measure) {รับ accepted state\\และ event};
-\node[decision,right=of measure] (trigger) {AGSI/event\\trigger?};
-\node[box,right=of trigger] (enum) {สร้าง admissible\\candidate set};
-\node[box,below=of enum] (screen) {algebraic\\feasibility screen};
-\node[box,left=of screen] (predict) {short-horizon\\prediction};
-\node[box,left=of predict] (rank) {คำนวณ cost\\และจัดอันดับ};
-\node[decision,below=of rank] (feasible) {มี candidate\\ผ่านหรือไม่?};
-\node[box,right=of feasible] (commit) {dwell/guard\\atomic commit};
-\node[box,right=of commit,draw=red] (fallback) {fail-closed\\safe fallback};
-\draw[->,thick] (measure)--(trigger);
-\draw[->,thick] (trigger)--node[above]{yes}(enum);
-\draw[->,thick] (enum)--(screen);
-\draw[->,thick] (screen)--(predict);
-\draw[->,thick] (predict)--(rank);
-\draw[->,thick] (rank)--(feasible);
-\draw[->,thick] (feasible)--node[above]{yes}(commit);
-\draw[->,thick] (feasible.south) -- ++(0,-3mm) -| node[pos=.18,below]{no} (fallback.south);
-\draw[->,thick] (trigger.south) |- node[pos=.2,right]{no} (measure.south);
+\begin{tikzpicture}[x=1cm,y=1cm,>=Latex,
+stage/.style={rounded corners=3pt,draw=blue,thick,fill=light,
+  minimum width=2.65cm,minimum height=.88cm,align=center},
+check/.style={rounded corners=3pt,draw=orange,thick,fill=orange!8,
+  minimum width=2.65cm,minimum height=.88cm,align=center}]
+\node[stage] (s1) at (0,1.15) {\textbf{1} รับ accepted state\\และ event};
+\node[check] (s2) at (3.25,1.15) {\textbf{2} AGSI/event\\trigger};
+\node[stage] (s3) at (6.50,1.15) {\textbf{3} enumerate + prune\\candidate};
+\node[stage] (s4) at (9.75,1.15) {\textbf{4} algebraic\\feasibility screen};
+\node[stage] (s5) at (9.75,-.55) {\textbf{5} short-horizon\\prediction};
+\node[stage] (s6) at (6.50,-.55) {\textbf{6} cost + ranking};
+\node[check] (s7) at (3.25,-.55) {\textbf{7} feasible winner?};
+\node[stage,draw=green] (s8) at (0,-.55) {\textbf{8} dwell/guard\\atomic commit};
+\node[stage,draw=red,fill=red!5] (safe) at (3.25,-1.95) {fail-closed safe fallback};
+\node[rounded corners=2pt,fill=navy!6,draw=navy!35,inner xsep=5pt,inner ysep=2pt]
+  (wait) at (3.25,2.15) {no event: monitor ต่อ};
+\draw[->,thick] (s1)--(s2);
+\draw[->,thick] (s2)--(s3);
+\draw[->,thick] (s2)--(wait);
+\draw[->,thick] (s3)--(s4);
+\draw[->,thick] (s4)--(s5);
+\draw[->,thick] (s5)--(s6);
+\draw[->,thick] (s6)--(s7);
+\draw[->,thick] (s7)--node[above]{yes}(s8);
+\draw[->,thick] (s7)--node[right]{no}(safe);
 \end{tikzpicture}
-\par\vspace{.25cm}
+\par\vspace{.12cm}
 {\small ใช้เฉพาะ accepted production states; candidate trial ห้ามแก้ state จริงก่อน transaction commit\par}
 \end{frame}
 
-\begin{frame}{7. ชั้นที่ 1: feasibility gates ก่อนจัดอันดับ}
+\begin{frame}[shrink=3]{7. ผลลัพธ์ที่คาดหวัง: ประโยชน์ที่ต้องพิสูจน์}
+\begin{columns}[T,onlytextwidth]
+\column{.49\textwidth}
+\textbf{1. ลดการสลับที่ไม่จำเป็น}\par
+เลือกชุดที่ผ่าน gate โดยลงโทษ $N_{GFM},N_{switch}$\par
+\textcolor{blue}{วัด: switch count, GFM-on time, chatter}\par\vspace{.25cm}
+
+\textbf{2. ลด voltage/frequency transient}\par
+ทำนายก่อน commit และ reject ชุดที่ excursion สูง\par
+\textcolor{blue}{วัด: peak $|\Delta f|$, RoCoF, $V$ violation, settling}\par\vspace{.25cm}
+
+\textbf{3. ลด current/limiter stress}\par
+ตรวจ current limit และ reserve ก่อนจัดอันดับ\par
+\textcolor{blue}{วัด: $\max |I|/I_{max}$, limiter dwell, reserve margin}
+
+\column{.49\textwidth}
+\textbf{4. ทำ switch/handback ให้นุ่มขึ้น}\par
+เปรียบเทียบ jump ของ candidate ก่อน atomic commit\par
+\textcolor{blue}{วัด: $\Delta P,\Delta Q,\Delta I,\Delta\theta$ ที่ event}\par\vspace{.25cm}
+
+\textbf{5. รักษา reference continuity}\par
+บังคับทุก energized island มี owner หนึ่งตัว\par
+\textcolor{blue}{วัด: no-reference duration ต้องเป็นศูนย์}\par\vspace{.25cm}
+
+\textbf{6. อธิบายคำสั่งย้อนหลังได้}\par
+บันทึก gate, prediction, cost และ tie-break ทุกชุด\par
+\textcolor{blue}{วัด: decision table reproduce ได้จาก accepted state}
+\end{columns}
+\vspace{.25cm}
+\begin{alertblock}{สถานะของข้อความข้างบน}
+เป็น \textbf{testable hypotheses} ไม่ใช่ผลลัพธ์: ต้องเทียบกับ AGSI-only baseline โดยใช้ case, event, parameter, $\Delta t$ และ gate เดียวกัน
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{8. ชั้นที่ 1: feasibility gates ก่อนจัดอันดับ}
 Candidate $c=(\mathbf m,r)$ ต้องผ่านทุก hard constraint:
 \begin{align*}
 g_{KCL}(c)&:\quad \|F(x,y,c)\|_\infty\le\varepsilon_{KCL},\\
@@ -231,7 +269,7 @@ g_{hyb}(c)&:\quad \text{ไม่ละเมิด dwell, lockout และ sta
 \end{alertblock}
 \end{frame}
 
-\begin{frame}{8. ชั้นที่ 2: prediction และ objective}
+\begin{frame}{9. ชั้นที่ 2: prediction และ objective}
 สำหรับ candidate ที่ผ่าน gate ทำนายช่วง $T_p$ แล้วคำนวณ
 \[
 J(c)=w_VJ_V+w_fJ_f+w_RJ_{RoCoF}+w_PJ_{\Delta P}
@@ -257,7 +295,7 @@ J(c)=w_VJ_V+w_fJ_f+w_RJ_{RoCoF}+w_PJ_{\Delta P}
 \end{block}
 \end{frame}
 
-\begin{frame}{9. Reference leader และ coordinated transaction}
+\begin{frame}{10. Reference leader และ coordinated transaction}
 \begin{columns}[T,onlytextwidth]
 \column{.48\textwidth}
 \begin{block}{เมื่อ SG trip / $GRA=0$}
@@ -285,7 +323,7 @@ J(c)=w_VJ_V+w_fJ_f+w_RJ_{RoCoF}+w_PJ_{\Delta P}
 \textbf{AGSI ไม่ได้ถูกยกเลิก:} เป็น local evidence; transaction coordinator เป็นผู้อนุมัติคำสั่งระดับระบบ
 \end{frame}
 
-\begin{frame}[shrink=6]{10. ตัวอย่างการตอบสนองที่คาดหวัง (ยังไม่ใช่ผล)}
+\begin{frame}[shrink=6]{11. ตัวอย่างการตอบสนองที่คาดหวัง (ยังไม่ใช่ผล)}
 \begin{tabularx}{\textwidth}{>{\bfseries}p{.19\textwidth}XXX}
 \toprule
 เหตุการณ์ & AGSI local & การประเมินระบบ & คำสั่งที่เป็นไปได้ \\
@@ -303,7 +341,7 @@ SG reclose & index อาจยังสูง & sync guard + predicted handback
 \end{alertblock}
 \end{frame}
 
-\begin{frame}[shrink=12]{11. ทำไมเหมาะกว่าการใช้ BO เป็น online switcher?}
+\begin{frame}[shrink=12]{12. ทำไมเหมาะกว่าการใช้ BO เป็น online switcher?}
 \small
 \begin{tabularx}{\textwidth}{>{\bfseries}p{.22\textwidth}XX}
 \toprule
@@ -323,7 +361,7 @@ traceability & ต้องอธิบาย surrogate และ uncertainty & 
 \end{block}
 \end{frame}
 
-\begin{frame}{12. ลดเวลาคำนวณอย่างไรให้ใช้งานได้}
+\begin{frame}{13. ลดเวลาคำนวณอย่างไรให้ใช้งานได้}
 \begin{tikzpicture}[remember picture,overlay]
 \node[anchor=north east,draw=cyan,rounded corners,fill=cyan!8,align=center,inner sep=8pt]
 at ([xshift=-.6cm,yshift=-1.55cm]current page.north east) {16 candidates\\$\Downarrow$\\3--5 finalists\\$\Downarrow$\\short TDS};
@@ -341,7 +379,7 @@ production 160-s ปัจจุบันใช้เวลาประมาณ
 \end{alertblock}
 \end{frame}
 
-\begin{frame}{13. Roadmap การพัฒนา}
+\begin{frame}{14. Roadmap การพัฒนา}
 \begin{tikzpicture}[x=2.1cm,y=1cm,>=Latex]
 \foreach \x/\num/\title/\col in {
 0/1/Freeze contract/blue,
@@ -373,7 +411,7 @@ production 160-s ปัจจุบันใช้เวลาประมาณ
 \end{columns}
 \end{frame}
 
-\begin{frame}{14. Predeclared verification matrix}
+\begin{frame}{15. Predeclared verification matrix}
 \small
 \begin{tabularx}{\textwidth}{>{\bfseries}p{.22\textwidth}XX}
 \toprule
@@ -393,7 +431,7 @@ Runtime & deadline และจำนวน candidate TDS & percentile runtime +
 \gate{ผ่านทั้งหมดก่อนเทียบ performance กับ BO}
 \end{frame}
 
-\begin{frame}{15. สิ่งที่ต้องตกลงกับอาจารย์ก่อน implement}
+\begin{frame}{16. สิ่งที่ต้องตกลงกับอาจารย์ก่อน implement}
 \begin{enumerate}
   \item นิยาม ``system recovery'' และ operating limits ที่ใช้เป็น hard constraints
   \item prediction horizon $T_p$ และ controller invocation/deadline
@@ -407,7 +445,7 @@ Runtime & deadline และจำนวน candidate TDS & percentile runtime +
 \end{alertblock}
 \end{frame}
 
-\begin{frame}{16. ข้อเสนอสำหรับการประชุม}
+\begin{frame}{17. ข้อเสนอสำหรับการประชุม}
 \begin{block}{One-sentence proposal}
 ใช้ AGSI++ เป็น local event indicator แล้วให้ ET-FCS predictive supervisor ประเมิน mode combination ของ IBR จาก full-network feasibility และ short-horizon response ก่อน commit การสลับ
 \end{block}

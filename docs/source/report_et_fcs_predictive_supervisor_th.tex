@@ -1,0 +1,692 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[Path={fonts/TH Sarabun PSK V-1/TH Sarabun PSK V-1/},Extension=.ttf,
+  UprightFont={*},BoldFont={* Bold},ItalicFont={* Italic},BoldItalicFont={* BoldItalic}]{THSarabun}
+\setmonofont{Latin Modern Mono}
+\usepackage{amsmath,amssymb,graphicx,booktabs,longtable,tabularx,array}
+\usepackage{geometry,fancyhdr,hyperref,xcolor,tikz,float,enumitem}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit}
+\geometry{margin=0.82in}
+\setlength{\headheight}{19pt}
+\pagestyle{fancy}\fancyhf{}
+\lhead{ET-FCSPS สำหรับการสลับ GFL/GFM ระดับระบบ}
+\rhead{\thepage}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\definecolor{navy}{HTML}{17365D}
+\definecolor{blue}{HTML}{2F75B5}
+\definecolor{cyan}{HTML}{00A6A6}
+\definecolor{green}{HTML}{2E8B57}
+\definecolor{orange}{HTML}{E67E22}
+\definecolor{red}{HTML}{C0392B}
+\definecolor{light}{HTML}{F3F6FA}
+\renewcommand{\abstractname}{บทคัดย่อ}
+\renewcommand{\contentsname}{สารบัญ}
+\renewcommand{\figurename}{รูปที่}
+\renewcommand{\tablename}{ตารางที่}
+\renewcommand{\arraystretch}{1.18}
+\setlist[itemize]{leftmargin=1.45em,itemsep=.2em}
+\setlist[enumerate]{leftmargin=1.65em,itemsep=.2em}
+\newcommand{\currenttag}{\textcolor{green}{\textbf{VERIFIED CURRENT}}}
+\newcommand{\proposedtag}{\textcolor{orange}{\textbf{\shortstack[l]{PROJECT-DERIVED\\PROPOSAL}}}}
+\newcommand{\diagtag}{\textcolor{red}{\textbf{NOT YET IMPLEMENTED}}}
+\newcommand{\sat}{\operatorname{sat}_{[0,1]}}
+\newcommand{\R}{\mathbb{R}}
+
+\title{\textbf{วิธีการควบคุมการสลับโหมด GFL/GFM ระดับระบบ}\\[.2em]
+\large Event-Triggered Finite-Control-Set Predictive Supervisor (ET-FCSPS)\\[.3em]
+\normalsize แนวทางทางเทคนิคสำหรับ IEEE 14-bus: 1 SG + 4 IBR}
+\author{เอกสารข้อเสนอวิธีวิจัยและแผนพัฒนา}
+\date{4 สิงหาคม 2569}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+ระบบปัจจุบันใช้ AGSI++ เป็นดัชนีความเครียดราย IBR ร่วมกับ hysteresis และ dwell timer
+ในการเปลี่ยนโหมด GFL/GFM วิธีนี้ตรวจจับความผิดปกติเฉพาะจุดได้ แต่ยังไม่ได้ตอบคำถามระดับระบบว่า
+ควรเปลี่ยน IBR ตัวใด จำนวนเท่าใด และตัวใดควรเป็น angle/frequency reference leader
+เพื่อให้สภาวะของโครงข่ายทั้งระบบเหมาะสมก่อนสั่งสลับจริง รายงานนี้เสนอ ET-FCSPS ซึ่งใช้ AGSI++
+เป็น event indicator แล้วแจกแจง binary mode vector ของ IBR ทั้งสี่ตัว ตรวจ hard constraints
+จาก full-network KCL และ reserve contract ทำนายผลของ candidate ที่ผ่านในช่วงเวลาสั้น
+จากนั้นเลือกคำสั่งด้วย objective และ tie-break ที่กำหนดไว้ล่วงหน้า
+
+เอกสารฉบับนี้อธิบายสมการ ตัวแปร ลำดับข้อมูล candidate isolation, feasibility gate,
+cost function, reference transaction, fail-closed fallback, computational complexity,
+pseudocode, interface และแผนทดสอบโดยละเอียด วิธีที่เสนอยังไม่ได้ implement และยังไม่มีผล
+closed-loop จึงกล่าวเฉพาะประโยชน์ที่คาดหวังในรูป testable hypotheses เท่านั้น ไม่เพิ่ม AVR,
+ไม่ใช้ LLM หรือ BO ในวงรอบสั่งสลับ และไม่เปลี่ยนสมการ SG/IBR ที่ผ่านการตรวจแล้ว
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{สถานะของเอกสารและขอบเขตหลักฐาน}
+
+ตาราง~\ref{tab:status} แยกสิ่งที่มีหลักฐานใน repository ออกจากวิธีที่กำลังเสนอ เพื่อป้องกัน
+การนำ architecture ไปกล่าวเหมือนเป็นผลทดลองแล้ว
+
+\begin{table}[H]
+\centering
+\caption{สถานะขององค์ประกอบที่กล่าวถึงในรายงาน}
+\label{tab:status}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{.27\textwidth}p{.22\textwidth}X}
+\toprule
+องค์ประกอบ & สถานะ & ความหมาย \\
+\midrule
+AGSI++ ราย IBR & \currenttag & มีสมการ bounded index, threshold, hysteresis และ dwell ใน production code \\
+GFL/GFM full-state และ full KCL & \currenttag & มี route การจำลองและ transaction ที่ตรวจด้วย targeted tests \\
+SG-trip override/SG handback & \currenttag & มี chronology ที่สลับ reference และ mode แบบ coordinated \\
+ET-FCSPS system decision & \proposedtag & architecture, equations และ test plan ในรายงานนี้ \\
+ผลว่าลด transient/จำนวน switch & \diagtag & ต้อง implement และเปรียบเทียบกับ baseline บน contract เดียวกัน \\
+AVR, LLM/BO online switching & นอกขอบเขต & ไม่ถูกเพิ่มหรือใช้เป็น decision authority \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+คำว่า ``adaptive'' ในรายงานนี้หมายถึงการเลือก mode vector ตาม accepted system state,
+topology และ reserve ณ เหตุการณ์นั้น ไม่ได้หมายถึง online parameter identification หรือการปรับ weight
+โดยอัตโนมัติ ส่วนคำว่า finite-control-set ใช้หลักการประเมิน action set แบบจำกัดที่แจกแจงได้
+โดยประยุกต์จากแนวคิด FCS-MPC~\cite{rodriguez2013}; ไม่ได้หมายถึงการสั่ง semiconductor switch
+ระดับ converter โดยตรง
+
+\section{ปัญหาของ AGSI++ แบบ local-only}
+
+\subsection{สมการที่ใช้อยู่ปัจจุบัน}
+
+สำหรับ IBR ตัวที่ $i$ production class คำนวณ sub-index ที่ PCC ดังนี้
+\begin{align}
+J_{V,i} &= \frac{\left||V_i|-V_{ref,i}\right|}{\Delta V_{base}}, &
+J_{f,i} &= \frac{|f_i-f_0|}{\Delta f_{base}},\\
+J_{R,i} &= \frac{|\dot f_i|}{\Delta R_{base}}, &
+J_{P,i} &= \frac{|P_{ref,i}-P_i|}{\Delta P_{base}},\\
+J_{SCR,i} &= \max\!\left(0,\frac{3}{SCR_i}-1\right), &
+J_{lock,i} &= \frac{|v_{q,i}|}{\Delta v_{q,base}},\\
+J_{GRA,i} &= \begin{cases}0,&GRA_i=1,\\1,&GRA_i=0.\end{cases}
+\end{align}
+ดัชนีรวมคือ
+\begin{equation}
+A_i=\sat\!\left(
+w_VJ_{V,i}+w_fJ_{f,i}+w_RJ_{R,i}+w_PJ_{P,i}
++w_{SCR}J_{SCR,i}+w_{lock}J_{lock,i}+w_{GRA}J_{GRA,i}
+\right),
+\label{eq:agsi}
+\end{equation}
+โดย $\sum w=1$ และ AGSI++ preset ใช้ค่าเฉลี่ยเท่ากัน $1/7$ สำหรับเจ็ดพจน์
+RoCoF ผ่าน first-order low-pass ก่อนเข้าดัชนี ส่วน raw weighted sum ถูกเก็บเพื่อวิเคราะห์แต่
+decision index ถูกจำกัดให้อยู่ใน $[0,1]$ เสมอ
+
+logic การสลับ local คือ
+\begin{align}
+\mathrm{GFL}\rightarrow\mathrm{GFM}:&\quad A_i\ge\Gamma_{on}
+\ \text{ต่อเนื่องอย่างน้อย}\ T_{d,on},\\
+\mathrm{GFM}\rightarrow\mathrm{GFL}:&\quad A_i<\Gamma_{off}
+\ \text{ต่อเนื่องอย่างน้อย}\ T_{d,off},
+\end{align}
+โดย $\Gamma_{off}<\Gamma_{on}$ สร้าง hysteresis band ป้องกัน chatter ค่าใน report route ปัจจุบันคือ
+$\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$, $T_{d,on}=0.10$~s และ $T_{d,off}=1.00$~s
+ค่าดังกล่าวจะถูก freeze เป็น baseline; รายงานนี้ไม่อนุญาตให้เปลี่ยนเพื่อทำให้ผลของวิธีใหม่ดีขึ้น
+
+\subsection{AGSI++ มองเห็นอะไรและยังไม่เห็นอะไร}
+
+AGSI++ ไม่ใช่ข้อมูลน้อย: มันมี voltage, frequency, RoCoF, active-power tracking, SCR,
+PLL alignment และ reference availability แต่ทุกพจน์ผูกกับ IBR ตัวเดียวหรือ PCC ของตัวนั้น
+จึงยังไม่มีการประเมินพร้อมกันว่า
+\begin{itemize}
+  \item voltage violation เกิดที่บัสอื่นหรือมีขอบเขตกว้างเพียงใด;
+  \item topology ปัจจุบันทำให้ IBR ตัวใดอยู่ใกล้พื้นที่อ่อนในความหมายทางไฟฟ้า;
+  \item active/reactive reserve ของชุด IBR ที่จะเปลี่ยนโหมดเพียงพอหรือไม่;
+  \item การสลับหนึ่งตัวหรือหลายตัวจะเพิ่ม current-limit exposure ที่จุดอื่นหรือไม่;
+  \item energized island ทุกเกาะมี reference owner และ owner ที่เลือกมี headroom หรือไม่;
+  \item candidate หนึ่งจะให้ transient หลัง commit ดีกว่า candidate อื่นหรือไม่
+\end{itemize}
+ดังนั้นข้อจำกัดไม่ใช่ ``AGSI ไม่มีแรงดันหรือกำลัง'' แต่คือมันยังไม่ได้ใช้ full-network consequence
+เป็น decision authority ก่อน commit
+
+\section{แนวคิดหลักของ ET-FCSPS}
+
+ET-FCSPS วางชั้นตัดสินใจระดับระบบเหนือ local state machine โดยไม่ยกเลิก AGSI++
+โครงสร้างเป็นไปตามรูป~\ref{fig:architecture}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=8mm,
+box/.style={rounded corners=3pt,draw=blue,thick,fill=light,minimum width=10.4cm,
+minimum height=.85cm,align=center},
+side/.style={rounded corners=3pt,draw=orange,thick,fill=orange!8,minimum width=3.1cm,
+minimum height=.8cm,align=center}]
+\node[box] (meas) {accepted production state: $x_k,y_k$, topology, modes, timers, limits, reserve metadata};
+\node[box,below=of meas] (local) {AGSI++ ราย IBR + scheduled/topology/reference events $\Rightarrow$ event request};
+\node[box,below=of local] (sup) {ET-FCSPS: enumerate $\rightarrow$ prune $\rightarrow$ KCL screen $\rightarrow$ predict $\rightarrow$ rank};
+\node[box,below=of sup] (txn) {hybrid transaction: state mapping + right-limit KCL + dwell/guard + atomic commit};
+\node[side,right=10mm of sup] (fail) {ไม่มี feasible candidate\\fail-closed fallback};
+\draw[->,thick] (meas)--(local);
+\draw[->,thick] (local)--(sup);
+\draw[->,thick] (sup)--(txn);
+\draw[->,thick,red] (sup)--(fail);
+\end{tikzpicture}
+\caption{สถาปัตยกรรมที่เสนอ: AGSI++ เป็น local evidence ส่วน ET-FCSPS เป็นผู้อนุมัติคำสั่งระดับระบบ}
+\label{fig:architecture}
+\end{figure}
+
+หลักสำคัญมีสี่ข้อ
+\begin{enumerate}
+  \item \textbf{Event-triggered}: ไม่รัน candidate search ทุก integration step แต่รันเมื่อมี local request,
+  topology/reference event หรือ post-event re-evaluation ตาม contract
+  \item \textbf{Finite action set}: แจกแจง mode vector ที่เป็นไปได้ทั้งหมด จึง audit ได้ว่าได้ตรวจตัวเลือกใด
+  \item \textbf{Constraint first}: candidate ที่ผิด KCL, limit, reserve หรือ reference gate ถูกตัดก่อนดู cost
+  \item \textbf{Predict before commit}: candidate trial ทำงานบนสำเนา state; state จริงเปลี่ยนเฉพาะ atomic commit
+\end{enumerate}
+
+\section{นิยามข้อมูลเข้าและ system snapshot}
+
+เมื่อ controller ถูกเรียกที่ accepted sample $k$ ให้สร้าง snapshot
+\begin{equation}
+\mathcal Z_k=\{t_k,x_k,y_k,\mathcal T_k,\mathbf m_k,\boldsymbol\tau_k,
+\mathcal L_k,\mathcal R_k,\mathcal E_k\},
+\end{equation}
+โดยตัวแปรมีความหมายตามตาราง~\ref{tab:snapshot}
+
+\begin{longtable}{>{\bfseries}p{.17\textwidth}p{.76\textwidth}}
+\caption{ข้อมูลใน accepted system snapshot}\label{tab:snapshot}\\
+\toprule
+สัญลักษณ์ & ความหมาย \\
+\midrule\endfirsthead
+\toprule สัญลักษณ์ & ความหมาย \\
+\midrule\endhead
+$t_k$ & เวลาของ accepted sample; ห้ามใช้ rejected parent trial \\
+$x_k$ & differential states ของ SG และ IBR ตาม production state order \\
+$y_k$ & algebraic network voltages/currents ของ full-KCL solve \\
+$\mathcal T_k$ & topology, energized islands, line/breaker status และ event side \\
+$\mathbf m_k$ & committed mode vector ของ IBR ณ ปัจจุบัน \\
+$\boldsymbol\tau_k$ & up/down dwell timers, lockout และ last-switch time ราย IBR \\
+$\mathcal L_k$ & voltage/current/operating limits ที่มี provenance \\
+$\mathcal R_k$ & active/reactive reserve และ current headroom; ถ้าไม่ทราบต้องเป็น unknown ไม่ใช่ $\infty$ \\
+$\mathcal E_k$ & event identity, AGSI parts, GRA และ reference owner ปัจจุบัน \\
+\bottomrule
+\end{longtable}
+
+global metrics ที่ controller ใช้ต้องคำนวณจาก base และ sign convention เดียวกับ KCL เช่น
+\begin{align}
+V_{min,k}&=\min_b |V_{b,k}|,& V_{max,k}&=\max_b |V_{b,k}|,\\
+\Delta P_{avail,k}&=P_{SG}^{avail}+\sum_iP_i^{avail}-P_{load}-P_{loss},\\
+\Delta Q_{avail,k}&=Q_{SG}^{avail}+\sum_iQ_i^{avail}-Q_{load}-Q_{loss}.
+\end{align}
+ต้องไม่ใช้ $\sum P_{electrical}-P_{load}-P_{loss}$ จาก algebraic solution เป็น reserve metric เพราะ KCL
+ทำให้ผลรวมนั้นใกล้ศูนย์โดยนิยาม สิ่งที่ต้องใช้คือ available/commandable source power และ headroom
+ซึ่งต้องมี source/case contract หาก energy-source model ยังไม่ระบุ candidate ที่ต้องพึ่ง reserve ดังกล่าว
+ต้องถูกจัดเป็น ``ไม่ทราบ'' และไม่อาจผ่าน production gate ด้วยการสมมติค่าเอง
+
+\section{decision variables และ candidate universe}
+
+สำหรับ IBR สี่ตัว กำหนด
+\begin{equation}
+\mathbf m=[m_1,m_2,m_3,m_4]\in\{0,1\}^4,
+\qquad m_i=0:\mathrm{GFL},\quad m_i=1:\mathrm{GFM}.
+\end{equation}
+จึงมี mode vector $2^4=16$ รูปแบบ ถ้า SG online และเป็น reference owner คงที่ candidate universe
+มีไม่เกิน 16 รูปแบบ ถ้า SG offline และยอมให้ GFM ทุกตัวในชุดเป็น owner candidate ได้ จำนวนคู่
+$(\mathbf m,r)$ สูงสุดคือ
+\begin{equation}
+\sum_{\emptyset\ne S\subseteq\{1,2,3,4\}}|S|
+=4\,2^{4-1}=32.
+\end{equation}
+นี่เป็นขนาดเล็กพอให้แจกแจงครบโดยไม่ต้องใช้ black-box optimiser อย่างไรก็ตาม candidate ที่มี
+mode เดิม, ติด dwell/lockout, ไม่มี owner หรือไม่มี state mapping ที่ valid จะถูก prune ก่อน prediction
+
+reference variable นิยามเป็น
+\begin{equation}
+r\in\{\mathrm{SG},1,2,3,4\}.
+\end{equation}
+ถ้า $r=i$ ต้องมี $m_i=1$ และ energized island นั้นต้องมี owner เพียงหนึ่งตัว คำว่า owner หมายถึง
+ผู้ให้ angle/frequency reference ใน formulation ของ island ไม่ใช่การเปลี่ยน IBR ให้เป็น algebraic PF slack;
+ทุกอุปกรณ์ยังอยู่ใน full-network KCL
+
+\section{event trigger และ candidate generation}
+
+supervisor ถูกเรียกเมื่ออย่างน้อยหนึ่งเงื่อนไขเป็นจริง
+\begin{enumerate}
+  \item local state machine รายงาน pending GFL$\rightarrow$GFM หรือ GFM$\rightarrow$GFL request;
+  \item SG/breaker/reference availability เปลี่ยน;
+  \item topology หรือ load event ถูก apply/restore;
+  \item fault apply/clear;
+  \item synchronism guard ครบ dwell และต้องประเมิน handback;
+  \item post-commit verification interval ถึงเวลาตาม contract
+\end{enumerate}
+ไม่มีการสร้าง threshold ใหม่เพื่อเรียก controller หากยังไม่มี source/approved derivation; ในเฟสแรกให้ reuse
+event identities และ local requests ที่มีอยู่
+
+candidate generation ทำตามลำดับ
+\begin{enumerate}
+  \item ระบุ energized islands จาก $\mathcal T_k$
+  \item แจกแจง $\mathbf m$ และ owner $r$
+  \item ตัด candidate ที่ขัดกับ device capability, dwell, lockout และ reference rule
+  \item map state บนสำเนา $x_k$ ตาม GFL/GFM transfer contract
+  \item สร้าง candidate fingerprint จาก snapshot identity, mode vector, owner และ option contract
+\end{enumerate}
+
+\section{hard feasibility gates}
+
+candidate $c=(\mathbf m,r)$ ต้องผ่านทุก gate ก่อนคำนวณ soft cost
+\begin{align}
+g_{finite}(c)&:\quad x^{(c)},y^{(c)}\ \text{finite},\\
+g_{KCL}(c)&:\quad \|F(x^{(c)},y^{(c)},c)\|_\infty\le\varepsilon_{KCL},\\
+g_V(c)&:\quad V_{min}^{lim}\le |V_b^{(c)}|\le V_{max}^{lim}\quad\forall b,\\
+g_I(c)&:\quad |I_i^{(c)}|\le I_{i,max}\quad\forall i,\\
+g_{ref}(c)&:\quad \text{ทุก energized island มี authenticated owner หนึ่งตัว},\\
+g_{reserve}(c)&:\quad \Delta P_{avail}^{(c)}\ge0,\quad\Delta Q_{avail}^{(c)}\ge0,\\
+g_{hyb}(c)&:\quad \text{state mapping, dwell, lockout และ transaction identity valid}.
+\end{align}
+ค่าขอบเขตและ tolerance ต้องมาจาก production/case contract และถูก freeze ก่อนเห็นผล comparison
+ห้ามเลือก candidate ที่ผิด hard constraint เพียงเพราะ cost ต่ำกว่า
+
+\subsection{algebraic screening}
+
+ชั้นแรกใช้ project-owned PF/full-KCL solver ประเมิน right-limit ของ candidate โดยไม่ advance เวลา
+ผลลัพธ์ต้องเก็บ converged flag, residual, voltage range, current margin, reserve status และ rejection reason
+candidate ที่ Newton ไม่ converge ต้องถูก reject ไม่ใช่แทนด้วยค่าจาก candidate ก่อนหน้า
+
+\subsection{สิ่งที่ยังไม่ใช่ feasibility proof}
+
+PF convergence อย่างเดียวไม่พิสูจน์ transient stability และ local eigenvalue อย่างเดียวไม่พิสูจน์ผลของ
+multi-IBR island ดังนั้น candidate ที่ผ่าน algebraic gate ยังต้องผ่าน short-horizon prediction และ runtime
+domain gates การที่ objective ต่ำก็ไม่ใช่ข้อยกเว้นให้ข้ามขั้นเหล่านี้
+
+\section{short-horizon prediction}
+
+สำหรับ candidate ที่ผ่าน algebraic screen ให้สร้าง isolated trial context
+\begin{equation}
+(\hat x_0^{(c)},\hat y_0^{(c)})=\mathcal M_c(x_k,y_k),
+\end{equation}
+โดย $\mathcal M_c$ คือ audited mode-state mapping แล้วจำลอง
+\begin{align}
+\dot{\hat x}^{(c)} &= f(\hat x^{(c)},\hat y^{(c)},c,u_k),\\
+0 &= F(\hat x^{(c)},\hat y^{(c)},c,\mathcal T_k),
+\qquad t\in[t_k,t_k+T_p].
+\end{align}
+$T_p$ เป็น prediction horizon ที่ต้องประกาศก่อน experiment ในเฟสแรกให้ทดสอบหลายค่าที่ predeclared
+เพื่อรายงาน sensitivity ไม่เลือกค่าหลังเห็นว่า candidate ใดชนะ
+
+กฎ isolation คือ
+\begin{itemize}
+  \item trial ทุกตัวเริ่มจาก accepted snapshot เดียวกัน;
+  \item ห้ามแก้ production device object, timer, RoCoF memory หรือ event log ระหว่าง trial;
+  \item trial ที่ออกจาก validity domain, residual gate หรือ limit ต้องหยุดและบันทึก fail reason;
+  \item หลังประเมินแล้วทิ้ง trial state ทั้งหมด; commit ได้เพียง winner หลังตรวจ fingerprint ซ้ำ
+\end{itemize}
+
+\section{objective function และ normalization}
+
+ให้ $\mathcal C_k^{feas}$ เป็นชุด candidate ที่ผ่าน hard gates เลือก
+\begin{equation}
+c_k^*=\arg\min_{c\in\mathcal C_k^{feas}}J(c;\mathcal Z_k),
+\end{equation}
+โดยตัวอย่าง objective ที่เสนอคือ
+\begin{align}
+J(c)=&\;w_VJ_V(c)+w_fJ_f(c)+w_RJ_{RoCoF}(c)+w_PJ_{P,res}(c)
++w_QJ_{Q,res}(c)\notag\\
+&+w_IJ_I(c)+w_HJ_{hand}(c)+w_NJ_{GFM}(c)+w_SJ_{switch}(c).
+\label{eq:cost}
+\end{align}
+พจน์ทั้งหมดต้อง dimensionless ก่อนถ่วงน้ำหนัก ตัวอย่างนิยามคือ
+\begin{align}
+J_V(c)&=\max_{t,b}\left[
+\frac{(|V_b|-V_{max}^{lim})_+ +(V_{min}^{lim}-|V_b|)_+}{\Delta V_{norm}}
+\right],\\
+J_f(c)&=\max_t\frac{|f_{ref}(t)-f_0|}{\Delta f_{norm}},\\
+J_{RoCoF}(c)&=\max_t\frac{|\dot f_{ref}(t)|}{\Delta R_{norm}},\\
+J_I(c)&=\max_{t,i}\frac{|I_i(t)|}{I_{i,max}},\\
+J_{GFM}(c)&=\frac{1}{4}\sum_i m_i,\\
+J_{switch}(c)&=\frac{1}{4}\sum_i|m_i-m_{i,k}|,\\
+J_{hand}(c)&=\max\left(
+\frac{|\Delta P|}{\Delta P_{norm}},
+\frac{|\Delta Q|}{\Delta Q_{norm}},
+\frac{|\Delta I|}{\Delta I_{norm}},
+\frac{|\Delta\theta|}{\Delta\theta_{norm}}
+\right).
+\end{align}
+เมื่อ $(a)_+=\max(a,0)$ ส่วน $J_{P,res}$ และ $J_{Q,res}$ วัดระยะใกล้ขอบ reserve ไม่ใช่
+electrical KCL mismatch
+
+\subsection{กติกาการกำหนด weight}
+
+weight ทุกตัวต้องไม่ติดลบและ $\sum w=1$ การกำหนดต้องจัดประเภท SOURCE\_DEFINED,
+CASE\_DEFINED หรือ PROJECT\_DERIVED และ freeze ก่อนผล comparison หากยังไม่มีเหตุผลรองรับ
+ให้รายงาน sensitivity grid ที่กำหนดล่วงหน้าแทนการหา weight ที่ทำให้ผลสวยที่สุด
+BO อาจใช้เป็น offline comparison ได้ในอนาคต แต่ไม่ใช่ส่วนจำเป็นของ ET-FCSPS และ output ของ BO
+ห้าม feed production ก่อนผ่าน provenance และ validation contract
+
+\section{deterministic ranking และ tie-break}
+
+เพื่อให้ทำซ้ำได้ candidate ordering ใช้ลำดับต่อไปนี้
+\begin{enumerate}
+  \item ผ่าน hard gates ทุกข้อก่อน candidate ที่ไม่ผ่าน;
+  \item $J(c)$ ต่ำกว่า;
+  \item จำนวน switching actions ต่ำกว่า;
+  \item จำนวน GFM ต่ำกว่า;
+  \item reserve margin ต่ำสุดของ candidate สูงกว่า;
+  \item accepted residual ต่ำกว่า;
+  \item lexicographic mode vector และ owner ID เป็น tie-break สุดท้าย
+\end{enumerate}
+ต้องกำหนด floating-point comparison tolerance ล่วงหน้าและเก็บ ordering key ของทุก candidate
+ห้ามพึ่ง iteration order ของ cell/struct หรือ random seed
+
+\section{reference leader และ transaction semantics}
+
+\subsection{SG trip หรือ reference loss}
+
+เมื่อ SG เปิดและ $GRA=0$ controller ต้องเลือก $(\mathbf m,r)$ ที่มีอย่างน้อยหนึ่ง GFM
+จากนั้น commit เป็น transaction เดียว
+\begin{enumerate}
+  \item freeze accepted left-limit state;
+  \item authenticate event และ candidate fingerprint;
+  \item map ทุก branch ตาม mode vector;
+  \item กำหนด owner $r$ และ reference frame;
+  \item solve right-limit KCL;
+  \item ถ้าผ่านทุก gate จึงเปลี่ยน committed state/mode/timer พร้อมกัน;
+  \item ถ้าไม่ผ่าน rollback ทั้ง transaction
+\end{enumerate}
+
+\subsection{SG reclose และ handback}
+
+การคืน reference ต้องตรวจ synchronism guard
+\begin{equation}
+|\Delta V|\le\Delta V_{max},\qquad
+|\Delta f|\le\Delta f_{max},\qquad
+|\Delta\theta|\le\Delta\theta_{max}
+\end{equation}
+ครบ dwell ก่อน close จากนั้น controller ประเมิน candidate ที่ SG เป็น owner ซึ่งอาจเป็น all-GFL
+หรือคงบาง IBR เป็น GFM ชั่วคราว หาก policy อนุญาต การ handback ต้องใช้ state mapping และ right-limit
+KCL เดียวกับ forward switch เพื่อลด jump และป้องกัน partial commit
+
+\section{fail-closed fallback}
+
+ถ้า $\mathcal C_k^{feas}=\emptyset$ ห้ามเลือก candidate ที่ผิด constraint แผน fallback เฟสแรกคือ
+\begin{enumerate}
+  \item ถ้า current committed configuration ยังผ่าน hold gate ให้คง mode เดิมและบันทึก no-decision;
+  \item เมื่อเกิด authenticated SG/reference loss ให้ลอง current verified atomic all-GFM emergency route
+  เฉพาะเมื่อ route นั้นผ่าน right-limit gates;
+  \item ถ้า emergency route ไม่ผ่าน ให้ simulation/controller return explicit infeasible status;
+  \item ห้ามเติม trajectory, freeze graph หรือแทน state ด้วย candidate อื่น;
+  \item protection action ของระบบจริงอยู่นอก model และต้องออกแบบแยกต่างหาก
+\end{enumerate}
+
+\section{pseudocode ของ controller}
+
+\begin{figure}[H]
+\small
+\begin{minipage}{.94\textwidth}
+\ttfamily
+01  function decision = et\_fcs\_supervisor(accepted\_snapshot, event)\par
+02  assert(snapshot is accepted, finite, fingerprinted)\par
+03  if not local\_request and not authenticated\_event: return HOLD\par
+04  C = enumerate\_mode\_owner\_pairs(snapshot)\par
+05  C = prune\_by\_capability\_dwell\_lockout\_reference(C)\par
+06  feasible = []\par
+07  for each c in C in canonical order\par
+08      trial = deep\_copy(snapshot)\par
+09      trial = map\_states\_for\_candidate(trial,c)\par
+10      a = solve\_right\_limit\_full\_KCL(trial,c)\par
+11      if not algebraic\_gates\_pass(a): log reject; continue\par
+12      p = simulate\_short\_horizon\_isolated(a,c,Tp)\par
+13      if not dynamic\_gates\_pass(p): log reject; continue\par
+14      feasible.append(c, metrics(p), cost(p), ordering\_key)\par
+15  end\par
+16  if feasible is empty: return declared\_fail\_closed\_fallback()\par
+17  winner = canonical\_argmin(feasible)\par
+18  revalidate(snapshot\_fingerprint, event, winner)\par
+19  return atomic\_commit\_request(winner, evidence\_table)\par
+20  end\par
+\end{minipage}
+\caption{pseudocode ที่เสนอ; ชื่อฟังก์ชันเป็น interface plan ยังไม่ใช่ไฟล์ production}
+\end{figure}
+
+\section{computational complexity และการลด runtime}
+
+ถ้าประเมินครบ $N_c$ candidates และแต่ละ prediction ใช้ $N_p=T_p/\Delta t$ steps ต้นทุนโดยคร่าวคือ
+\begin{equation}
+\mathcal O\!\left(N_c\,[C_{KCL}+N_pC_{step}]\right),
+\end{equation}
+โดย $N_c\le16$ เมื่อ SG เป็น owner และ $N_c\le32$ เมื่อเลือก IBR owner ด้วย วิธีลดเวลาโดยไม่ลด
+numerical integrity คือ
+\begin{enumerate}
+  \item logical pruning ก่อนเรียก solver;
+  \item algebraic screen ก่อน dynamic prediction;
+  \item หยุด candidate ทันทีเมื่อผิด hard gate;
+  \item ทำนายเฉพาะ event-trigger ไม่ใช่ทุก time step;
+  \item parallel candidate evaluation ได้เมื่อ trial object แยกกันจริงและผล sorting deterministic;
+  \item cache ได้เฉพาะ immutable equilibrium ที่ fingerprint ตรงทุก input
+\end{enumerate}
+production chronology ปัจจุบันใช้เวลาระดับหลายสิบนาที จึงยังห้ามอ้าง real-time capability
+ก่อนมี profiling ของ controller deadline, worst-case candidate count และ solver iteration distribution
+
+\section{ผลลัพธ์ที่คาดหวังและวิธีพิสูจน์}
+
+ผลที่คาดหวังในตาราง~\ref{tab:expected} เป็น hypotheses ไม่ใช่ผลทดลอง
+
+\begin{longtable}{>{\bfseries}p{.23\textwidth}p{.37\textwidth}p{.32\textwidth}}
+\caption{ประโยชน์ที่คาดหวัง กลไก และ metric}\label{tab:expected}\\
+\toprule
+ผลที่คาดหวัง & กลไก & metric \\
+\midrule\endfirsthead
+\toprule ผลที่คาดหวัง & กลไก & metric \\
+\midrule\endhead
+ลดการสลับที่ไม่จำเป็น & objective คำนึงถึงจำนวน GFM และจำนวนครั้งที่เปลี่ยน mode & switch count, chatter, GFM-on time \\
+ลด voltage/frequency transient & ทำนายก่อน commit และตัด candidate ที่ excursion สูง & peak $|\Delta f|$, RoCoF, voltage violation, settling time \\
+ลด current/limiter stress & current/reserve เป็น hard gate และ cost margin & $\max |I|/I_{max}$, limiter dwell, reserve margin \\
+ทำ handback ให้นุ่มขึ้น & เปรียบเทียบ jump ของ candidate ก่อน atomic commit & $\Delta P,\Delta Q,\Delta I,\Delta\theta$ ที่ event \\
+รักษา reference continuity & บังคับทุก energized island มี owner & no-reference duration ต้องเป็นศูนย์ \\
+อธิบายย้อนหลังได้ & เก็บ candidate evidence และ deterministic ordering & decision table reproduce ได้จาก snapshot \\
+\bottomrule
+\end{longtable}
+
+การพิสูจน์ต้องใช้ baseline AGSI-only และ ET-FCSPS บน case, event, parameter, $\Delta t$,
+solver options และ gates เดียวกัน รายงานทั้ง improvement และ regression ห้ามเลือกเฉพาะเหตุการณ์ที่ method ใหม่ชนะ
+
+\section{การเปรียบเทียบกับ Bayesian optimisation}
+
+BO สร้าง probabilistic surrogate ของ expensive black-box objective แล้วใช้ acquisition function เลือกจุดทดลอง
+ถัดไป~\cite{frazier2018,snoek2012} จึงเหมาะกับ offline parameter/hyperparameter search ที่ evaluation แพง
+ขณะที่ constrained MPC ใช้ current state เป็น initial condition แก้ finite-horizon problem และใช้ action แรก
+โดยมีจุดเด่นด้าน state/control constraints~\cite{mayne2000}
+
+\begin{table}[H]
+\centering
+\caption{บทบาทของ BO และ ET-FCSPS ในโจทย์นี้}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{.22\textwidth}XX}
+\toprule
+ประเด็น & BO & ET-FCSPS \\
+\midrule
+โจทย์หลัก & ค้น parameter ของ expensive black-box objective & เลือก action จาก finite mode/owner set ณ accepted state \\
+ข้อมูล & evaluations เพื่อสร้าง surrogate/uncertainty & project plant model + full-network snapshot \\
+constraint & ต้องออกแบบ constrained BO เพิ่ม & reject hard-constraint violation ก่อน ranking \\
+traceability & ต้องอธิบาย surrogate, kernel และ acquisition & แสดง gate/metric/cost ของทุก candidate \\
+ต้นทุนหลัก & จำนวน expensive samples & จำนวน candidate คูณ prediction horizon \\
+บทบาทที่เหมาะ & offline design/tuning study & event-time supervisory action selection \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+จึงควรอธิบายว่า ET-FCSPS ``เหมาะกับ decision set เล็กและต้อง audit ได้ในงานนี้'' ไม่ใช่ ``ดีกว่า BO
+ทุกกรณี'' หากงานรุ่นก่อนใช้ BO เพื่อปรับ weight offline ทั้งสองวิธีกำลังทำคนละหน้าที่ และ comparison ที่เป็นธรรม
+ต้องใช้ objective/data budget/event set เดียวกัน
+
+\section{แผน interface สำหรับ implementation}
+
+ชื่อไฟล์ในตาราง~\ref{tab:interfaces} เป็นข้อเสนอ ยังไม่มี production implementation
+
+\begin{table}[H]
+\centering
+\caption{interface ที่เสนอและหน้าที่}
+\label{tab:interfaces}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{.42\textwidth}X}
+\toprule
+ชื่อที่เสนอ & หน้าที่ \\
+\midrule
+\texttt{+stability/et\_fcs\_snapshot.m} & สร้าง immutable accepted snapshot และ fingerprint \\
+\texttt{+stability/et\_fcs\_enumerate.m} & แจกแจง mode/owner pairs และ canonical IDs \\
+\texttt{+stability/et\_fcs\_screen.m} & state mapping, right-limit KCL และ hard gates \\
+\texttt{+stability/et\_fcs\_predict.m} & isolated short-horizon trial \\
+\texttt{+stability/et\_fcs\_metrics.m} & global voltage/frequency/current/reserve metrics \\
+\texttt{+stability/et\_fcs\_rank.m} & normalization, cost และ deterministic tie-break \\
+\texttt{+stability/et\_fcs\_supervisor.m} & orchestration และ fail-closed decision \\
+\texttt{tests/test\_et\_fcs\_*.m} & unit/oracle/integration/falsification tests \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+output schema ขั้นต่ำต้องมี event ID, snapshot fingerprint, candidate ID, mode vector, owner,
+prune/reject reason, right-limit residual, predicted metrics, normalized costs, ordering key,
+winner identity, runtime และ commit/rollback result
+
+\section{แผนพัฒนาเป็นเฟส}
+
+\begin{enumerate}
+  \item \textbf{Freeze contract}: state order, base/sign, limits, reserve semantics, event identity และ baseline outputs
+  \item \textbf{Global metrics}: implement voltage/topology/reference/current metrics พร้อม independent identities
+  \item \textbf{Enumeration oracle}: พิสูจน์ 16 mode vectors และ 32 mode-owner pairs ไม่ซ้ำและ ordering deterministic
+  \item \textbf{Algebraic screening}: clone/mapping/right-limit KCL โดยไม่มี side effect
+  \item \textbf{Prediction and cost}: short-horizon isolation, metric normalization และ predeclared weight set
+  \item \textbf{Transaction integration}: atomic commit, fingerprint revalidation, rollback และ fallback
+  \item \textbf{Falsification}: no-event, load, fault, line trip, SG trip/reclose, dt/horizon/runtime sensitivity
+  \item \textbf{Baseline comparison}: AGSI-only vs ET-FCSPS บน identical contracts
+\end{enumerate}
+
+\section{verification matrix}
+
+\begin{longtable}{>{\bfseries}p{.20\textwidth}p{.39\textwidth}p{.33\textwidth}}
+\caption{เกณฑ์ตรวจที่ต้องประกาศก่อนผล}\label{tab:verification}\\
+\toprule
+Gate & สิ่งที่ตรวจ & หลักฐาน \\
+\midrule\endfirsthead
+\toprule Gate & สิ่งที่ตรวจ & หลักฐาน \\
+\midrule\endhead
+Enumeration & mode/owner universe ครบ ไม่ซ้ำ & independent combinatorial oracle \\
+Snapshot isolation & trial ไม่เปลี่ยน production object/state/timer & before/after fingerprint bit identity \\
+Metric identity & $P,Q,loss,current,reserve$ ใช้ base/sign ถูกต้อง & direct KCL/power identities \\
+Feasibility & candidate ผิด constraint ถูก reject & injected counterexamples ทุก gate \\
+Ranking & winner เป็น canonical minimum & independent sorted table oracle \\
+Hybrid transaction & mapping/right-limit/rollback atomic & no partial commit และ finite residual \\
+Reference security & ทุก energized island มี owner & zero no-reference accepted duration \\
+Behaviour & no-event/load/fault/line/SG events & ไม่มี false switch/chatter และ log มีเหตุผล \\
+Numerical & $\Delta t,T_p$, finite-difference sensitivity & รายงานความต่างโดยไม่ tune tolerance \\
+Runtime & candidate count, solver iterations, deadline & percentile/worst-case พร้อม timeout fallback \\
+Comparison & baseline และ proposal ใช้ contract เดียวกัน & paired scenario table ไม่คัดเฉพาะผลดี \\
+\bottomrule
+\end{longtable}
+
+full repository regression ไม่จำเป็นทุก edit ระหว่างพัฒนา แต่ targeted gates ต้องครอบคลุม producer,
+consumer และ failure path ทุกเฟส หลัง integration ที่เปลี่ยน shared runtime ให้ใช้ risk policy ของ repository
+กำหนดว่าต้องขยาย regression หรือไม่
+
+\section{ตัวอย่างลำดับการตัดสินใจ}
+
+\subsection{SG trip}
+
+ที่ event SG trip, $GRA$ เปลี่ยนเป็นศูนย์และ controller ถูก trigger สมมติ logical pruning เหลือ candidate
+ที่มี GFM อย่างน้อยหนึ่งตัวและ owner อยู่ใน GFM set จากนั้น KCL screen อาจตัดชุดที่ voltage/current gate
+ไม่ผ่าน prediction เปรียบเทียบชุดที่เหลือ หาก $(1000,r=1)$ ผ่านและ cost ต่ำที่สุด controller จึง commit
+IBR1 เป็น GFM owner ส่วน IBR2--4 คง GFL ไม่ใช่สั่ง all-GFM อัตโนมัติ แต่ถ้าชุดหนึ่งตัวไม่ผ่านและ
+$(1111,r=1)$ เป็นชุดเดียวที่ feasible การเลือก all-GFM ก็มีเหตุผลจาก evidence table ไม่ใช่เพราะ AGSI ชนพร้อมกัน
+
+\subsection{fault เฉพาะจุด}
+
+AGSI ของ IBR ใกล้ fault อาจ trigger ก่อนตัวอื่น แต่ supervisor ยังประเมิน bus-voltage violation,
+electrical position, current headroom และ predicted transient ของทุก admissible set ผลอาจเลือก IBR ใกล้ fault,
+เลือก IBR ที่มี reserve มากกว่า หรือไม่สลับเลยถ้า ride-through configuration ผ่านทุก gate ทั้งหมดเป็น hypothesis
+จนกว่าจะรัน predictor จริง
+
+\subsection{SG reclose}
+
+เมื่อ synchronism guard ผ่าน supervisor สร้าง candidate ที่ SG กลับเป็น owner เปรียบเทียบ all-GFL กับชุดที่
+คง GFM ชั่วคราวโดยพิจารณา handback jump และ transient ถ้า all-GFL ผ่านและมี cost ต่ำจึง commit คืนโหมด
+หากไม่มี candidate ผ่านต้อง hold/fail-closed ไม่บังคับกลับเพียงเพราะ $A_i<\Gamma_{off}$
+
+\section{แนวตอบคำถามทางเทคนิค}
+
+\subsection*{ถาม: ยังใช้ AGSI++ อยู่หรือไม่?}
+ใช้ แต่เปลี่ยนบทบาทจากผู้สั่งโดยตรงเป็น local event indicator และ evidence ราย IBR การอนุมัติคำสั่งอยู่ที่
+system-level supervisor
+
+\subsection*{ถาม: adaptive ตรงไหนถ้า weight ไม่เปลี่ยน?}
+คำสั่ง mode/owner ปรับตาม accepted network state, topology, limits และ predicted consequences ทุก event
+จึงเป็น state-adaptive action selection ไม่ใช่ adaptive parameter identification
+
+\subsection*{ถาม: ทำไมไม่ใช้ LLM?}
+คำสั่งต้อง deterministic, bounded, replayable และ fail-closed LLM ไม่มี numerical/constraint guarantee
+จึงเหมาะกับการอธิบาย log แบบ offline ไม่ใช่ decision authority
+
+\subsection*{ถาม: ทำไมไม่ใช้ BO เหมือนงานเดิม?}
+BO เหมาะกับการหา parameter ของ objective ที่ประเมินแพงแบบ offline ส่วนงานนี้มี discrete action set เพียง
+16 mode vectors และต้อง enforce hard constraints ณ event จึงแจกแจงครบและ audit ได้ตรงกว่า
+
+\subsection*{ถาม: วิธีนี้รับประกันลด transient หรือไม่?}
+ยังไม่รับประกัน เป็น hypothesis ที่ต้องเทียบ peak frequency/RoCoF, voltage violation, current stress,
+settling time และ handback jump กับ AGSI-only baseline บน input contract เดียวกัน
+
+\subsection*{ถาม: IBR1 กลายเป็น slack bus หรือไม่?}
+ไม่ IBR1 อาจเป็น reference owner ใน island แต่ยังเป็น dynamic current-injection device ใน full KCL
+PF slack เป็นคนละความหมาย
+
+\subsection*{ถาม: ถ้าไม่มี candidate ผ่านจะทำอย่างไร?}
+ใช้ declared fail-closed fallback: hold current safe configuration หรือ verified emergency transaction
+ถ้าผ่าน right-limit gates มิฉะนั้นคืน infeasible status ไม่ปลอม trajectory
+
+\subsection*{ถาม: พร้อม real-time หรือยัง?}
+ยัง ต้องมี runtime profiling และ deadline gate เพราะ short-horizon full-KCL prediction มีต้นทุนสูง
+
+\section{ข้อจำกัดและ non-goals}
+
+\begin{enumerate}
+  \item ET-FCSPS ยังไม่ถูก implement และไม่มี closed-loop performance result
+  \item ไม่เพิ่ม AVR; $E_{fd}$ และ voltage control contract ของ SG คงตาม model ปัจจุบัน
+  \item ไม่แก้สมการ SG/IBR, AGSI++, threshold, case data หรือ event chronology ในขั้นรายงาน
+  \item reserve/energy availability ต้องมี source/case definition ก่อนใช้เป็น production gate
+  \item short horizon ไม่รับประกัน infinite-horizon stability โดยตัวมันเอง; ต้องมี falsification และ stability analysis เพิ่ม
+  \item model mismatch, communication delay, protection hardware และ cyber-security อยู่นอกผลจำลองปัจจุบัน
+  \item วิธีนี้ไม่ถูกกล่าวว่าดีกว่า BO ทุกกรณี และไม่ใช้ BO/LLM เป็น online switching authority
+\end{enumerate}
+
+\section{สรุป}
+
+ET-FCSPS แก้ช่องว่างของ AGSI-only switching โดยแยก ``การตรวจพบความเครียดเฉพาะจุด'' ออกจาก
+``การอนุมัติคำสั่งระดับระบบ'' AGSI++ ยังคงตรวจ local condition และ dwell ขณะที่ supervisor แจกแจง
+mode/owner set, ตัด candidate ที่ผิด hard constraints, ทำนายผลช่วงสั้น แล้วเลือกคำสั่งที่ทำซ้ำและอธิบายได้
+สำหรับสี่ IBR ขนาด candidate สูงสุด 16 mode vectors หรือ 32 mode-owner pairs ทำให้ exhaustive evaluation
+เป็นทางเลือกที่ตรวจสอบได้โดยไม่ต้องใช้ black-box online optimiser
+
+ประโยชน์ที่คาดหวังคือใช้ GFM เท่าที่จำเป็น ลด switching/transient/current stress ทำ handback นุ่มขึ้น
+รักษา reference continuity และสร้าง evidence table ของทุกการตัดสินใจ แต่ทั้งหมดต้องพิสูจน์ด้วย implementation
+และ paired comparison บน numerical contract เดียวกันก่อนจึงจะกล่าวเป็นผลของงานได้
+
+\begin{thebibliography}{9}
+\bibitem{rodriguez2013}
+J. Rodriguez, M. P. Kazmierkowski, J. R. Espinoza, P. Zanchetta, H. Abu-Rub,
+H. A. Young, and C. A. Rojas,
+``State of the Art of Finite Control Set Model Predictive Control in Power Electronics,''
+\emph{IEEE Transactions on Industrial Informatics}, vol. 9, no. 2, pp. 1003--1016, 2013.
+DOI: 10.1109/TII.2012.2221469.
+
+\bibitem{mayne2000}
+D. Q. Mayne, J. B. Rawlings, C. V. Rao, and P. O. M. Scokaert,
+``Constrained Model Predictive Control: Stability and Optimality,''
+\emph{Automatica}, vol. 36, no. 6, pp. 789--814, 2000.
+DOI: 10.1016/S0005-1098(99)00214-9.
+
+\bibitem{frazier2018}
+P. I. Frazier, ``A Tutorial on Bayesian Optimization,'' arXiv:1807.02811, 2018.
+
+\bibitem{snoek2012}
+J. Snoek, H. Larochelle, and R. P. Adams,
+``Practical Bayesian Optimization of Machine Learning Algorithms,''
+\emph{Advances in Neural Information Processing Systems 25}, 2012.
+
+\bibitem{projectcode}
+Power-flow repository: \path{+ibr/SwitchableIbr6.m},
+\path{+stability/ibr_selector_table.m}, and the audited full-KCL hybrid runtime.
+Accessed 4 August 2026.
+\end{thebibliography}
+
+\end{document}

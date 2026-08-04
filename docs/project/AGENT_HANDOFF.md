@@ -7,6 +7,25 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-04 — detailed ET-FCSPS technical report
+
+Documentation-only follow-on to the 18-slide proposal deck. A 14-page Thai A4 report now
+documents the proposed Event-Triggered Finite-Control-Set Predictive Supervisor in technical
+detail: the exact current bounded AGSI++ equation and local hysteresis/dwell behaviour, accepted
+system snapshot, 16 mode vectors and up to 32 mode-owner pairs, event/candidate generation,
+full-KCL and reserve hard gates, isolated short-horizon prediction, normalized objective,
+deterministic tie-break, reference-owner transaction, fail-closed fallback, pseudocode,
+complexity, expected outcomes as falsifiable hypotheses, fair BO role comparison, proposed
+interfaces, phased implementation, verification matrix, examples, and technical Q&A. The report
+marks existing behaviour `VERIFIED CURRENT` and the supervisor `PROJECT-DERIVED PROPOSAL / NOT
+YET IMPLEMENTED`; it does not claim closed-loop improvements. AVR, LLM/BO online authority,
+SG/IBR equations, thresholds, case data, numerical results, and production runtime are unchanged.
+XeLaTeX builds twice with no error, overfull, undefined-reference, or missing-character warning;
+all 14 rendered pages were visually inspected. Source:
+`docs/source/report_et_fcs_predictive_supervisor_th.tex`. Final artifact:
+`output/pdf/report_et_fcs_predictive_supervisor_th.pdf`. Full regression was intentionally omitted
+because the change is documentation-only; static/build/render checks cover the changed scope.
+
 ## 2026-08-04 — ET-FCS predictive-supervisor proposal deck
 
 Documentation-only follow-on at starting commit `f78ea00`: an 18-slide Thai Beamer deck proposes

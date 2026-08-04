@@ -1,14 +1,14 @@
 function out = generate_ieee14_switch_report_figures(opts)
 %GENERATE_IEEE14_SWITCH_REPORT_FIGURES Reproduce publishable IEEE14 evidence.
-%   Case data and event times follow docs/text/EECON49_[Nui].pdf.  The
-%   switching method remains the project AGSI++ supervisor: seven equally
-%   weighted terms [J_V,J_f,J_R,J_P,J_SCR,J_lock,J_GRA], with J_GRA=1-GRA.
-%   The EECON49 profile uses the operational six-state SG and source-mapped
-%   full-state IBR branches.  The exact 160-s event contract is attempted with
-%   the deterministic coordinated-reference route (no BO).  If the model exits
-%   its validity domain, figures are explicitly diagnostic and stop at the last
-%   accepted point.  Continuous presentation traces receive a seeded synthetic
-%   measurement overlay; the saved raw trajectory and all decisions are intact.
+%   The source-data profile is simulated by the production all-KCL hybrid
+%   engine: six-state EMF6 SG, registered full-state dual-mode IBR devices,
+%   exact event landing, synchronism guard, and coordinated SG handback.
+%   AGSI++ is reconstructed from the accepted raw production signals using
+%   the project seven equally weighted terms.  It is evidence for the index;
+%   the SG-trip and SG-reference-handback transactions remain explicitly
+%   separate CASE_DEFINED overrides.  A seeded band-limited display-only
+%   measurement ripple is drawn beside the raw trace and never feeds the
+%   solver, AGSI, timers, gates, or mode decisions.
 
 arguments
     opts.reuse_cache (1,1) logical = false
@@ -22,35 +22,251 @@ sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
     case_profile="eecon49_figure4", sg_H=2.5, sg_D=1.0, ...
     T_d_on=0.10, T_d_off=1.0);
 write_pf_tables(sys.pf,outdir);
-cachefile=fullfile('output','diagnostics','ieee14_switch_160_exact.mat');
-if opts.reuse_cache && exist(cachefile,'file')
-    cached=load(cachefile,'o'); out=cached.o;
+production_cache=fullfile('output','diagnostics','regfm_post_trip_probe.mat');
+figure_cache=fullfile('output','diagnostics','ieee14_switch_160_exact.mat');
+if opts.reuse_cache && exist(production_cache,'file')
+    cached=load(production_cache,'r'); r=cached.r;
 else
-    out=ibr.padiyar_switch_tds(sys,T=160,dt=1e-2, ...
-        sg_trip_time=20,sg_reclose_time=145,sg_reclose_mode="ideal_slack", ...
-        coordinated_reclose_handback=true,coordinated_gfm_reference=true, ...
-        step_on=50,step_off=145,step_factor=0.20,step_all_loads=true, ...
-        fault_on=85,fault_clear=85.15,fault_bus=9,fault_Zf=0.01+0.01i, ...
-        line_trip_time=110,line_reclose_time=145,line_from_bus=6,line_to_bus=13);
-    cachedir=fileparts(cachefile); if ~exist(cachedir,'dir'), mkdir(cachedir); end
-    o=out; save(cachefile,'o','-v7.3');
+    [scenario,opt]=production_request();
+    r=stability.run_hybrid_case(scenario,opt);
+    if ~r.converged || r.t(end)<160
+        error('generate_ieee14_switch_report_figures:productionRun', ...
+            'Production run failed closed at %.6f s: %s %s', ...
+            r.t(end),string(r.failure_id),string(r.failure_reason));
+    end
+    cachedir=fileparts(production_cache);
+    if ~exist(cachedir,'dir'), mkdir(cachedir); end
+    save(production_cache,'r','-v7.3');
 end
+out=adapt_production_result(r,sys);
+o=out; save(figure_cache,'o','-v7.3');
 out.pf=sys.pf;
 out.event_contract=sys.switching_event_contract;
 out.requested_horizon_s=160;
 out.bo_controller_added=false;
-out.presentation_noise=struct('kind','seeded synthetic measurement overlay', ...
+out.presentation_noise=struct('kind','seeded band-limited measurement ripple overlay', ...
     'seed_base',4901,'affects_solver_or_switching',false);
 if out.diverged || ~out.newton_all_converged || out.tgrid(end)<160
     out.dynamic_status='DIAGNOSTIC_PREFIX_ONLY_FAIL_CLOSED';
     figure_title=sprintf('Diagnostic raw prefix to %.3f s (requested 160 s; fail-closed)',out.tgrid(end));
 else
     out.dynamic_status='FULL_160_S_GATE_PASSED';
-    figure_title='Full 160-s chronology';
+    figure_title='Production all-KCL response: full 160-s chronology';
 end
+write_event_table(out,outdir);
 supervisor_figure(out,outdir,'ieee14_switch_160_supervisor.png',figure_title);
 electrical_figure(out,outdir,'ieee14_switch_160_electrical.png',figure_title);
+angle_figure(out,outdir,'ieee14_switch_160_angles.png');
 fprintf('IEEE14_SWITCH_REPORT_FIGURES_DONE: %s [%s]\n',outdir,out.dynamic_status);
+end
+
+function [s,opt]=production_request()
+s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
+ev=struct('enabled',true,'event_profile','chronology', ...
+    'sg_trip',20,'load_step',50,'load_step_factor',0.20, ...
+    'fault_on',85,'fault_clear',85.15,'fault_bus',9,'Zf',0.01+0.01i, ...
+    'line_trip',110,'line_from_bus',6,'line_to_bus',13, ...
+    'restore_time',145,'sg_on',145,'coordinated_handback',true, ...
+    'selected_gfm_indices',2:5,'reference_resource_index',2, ...
+    'automatic_gfm_switching',true, ...
+    'delays_overrides',struct('timeout_s',5,'dwell_s',0.5));
+opt=struct('t_end',160,'dt',0.0125,'verbose',false, ...
+    'ibr_events',ev,'plot_results',false);
+end
+
+function o=adapt_production_result(r,sys)
+% Reporting adapter only: no reconstructed signal feeds a production gate.
+t=r.t(:); nt=numel(t); nibr=4; didx=2:5;
+V=complex(r.y_traj(1:2:end,:),r.y_traj(2:2:end,:));
+buspos=zeros(1,nibr);
+for j=1:nibr
+    buspos(j)=find(r.bus_ids==r.device_bus_ids(didx(j)),1);
+end
+Vibr=V(buspos,:).'; busang=unwrap(angle(Vibr),[],1);
+busfreq=angle_frequency(t,busang,60);
+
+devs=r.equilibrium.devices;
+xoff=[0 cumsum([devs.nx])];
+modes=string(r.device_modes_history(didx,:)).';
+angle_ibr=busang; f_ibr=busfreq;
+for j=1:nibr
+    d=devs(didx(j)); names=string(d.state_names);
+    iw=find(names=="gfm_omega_m",1);
+    ipll=find(names=="gfm_delta_PLL",1);
+    iit=find(names=="gfm_delta_IT",1);
+    xr=r.x_traj(xoff(didx(j))+(1:d.nx),:).';
+    isgfm=strcmpi(modes(:,j),"gfm");
+    if ~isempty(iw), f_ibr(isgfm,j)=60*(1+xr(isgfm,iw)); end
+    if ~isempty(ipll) && ~isempty(iit)
+        angle_ibr(isgfm,j)=xr(isgfm,ipll)+xr(isgfm,iit);
+    end
+end
+
+Iibr=r.device_currents(didx,:).';
+Idq=Iibr.*exp(-1i*angle_ibr);
+sg_delta=r.x_traj(1,:).'; sg_omega=r.x_traj(2,:).';
+sg_id=zeros(nt,1); sg_iq=zeros(nt,1);
+sg=devs(1); uoff=[0 cumsum([devs.nu])];
+for k=1:nt
+    rec=sg.reconstruct(t(k),r.x_traj(1:sg.nx,k),r.y_traj(:,k), ...
+        r.u_history(uoff(1)+(1:sg.nu),k),r.event_context_history{k});
+    sg_id(k)=rec.Id; sg_iq(k)=rec.Iq;
+end
+
+sgonline=logical(r.device_online_history(1,:)).';
+gra=sgonline | any(strcmpi(modes,"gfm"),2);
+GRA=repmat(double(gra),1,nibr);
+% Reference ownership is read from the accepted hybrid-state history.  It is
+% deliberately not inferred from "the first GFM", because mode and reference
+% ownership are different contracts when several GFM units are online.
+ref_code=-ones(nt,1);
+for k=1:nt
+    hs=struct();
+    if isfield(r,'event_context_history') && numel(r.event_context_history)>=k && ...
+            isstruct(r.event_context_history{k}) && ...
+            isfield(r.event_context_history{k},'hybrid_state')
+        hs=r.event_context_history{k}.hybrid_state;
+    end
+    if isfield(hs,'reference_owner_indices') && ~isempty(hs.reference_owner_indices)
+        owner=hs.reference_owner_indices(1);
+        if owner==1
+            ref_code(k)=0;                  % SG device index
+        elseif any(owner==didx)
+            ref_code(k)=find(didx==owner,1); % IBR1..IBR4
+        end
+    elseif sgonline(k)
+        ref_code(k)=0;
+    end
+end
+
+index=zeros(nt,nibr); raw_index=zeros(nt,nibr);
+for j=1:nibr
+    d=sys.devs{j}; Vmag=abs(Vibr(:,j));
+    rocof=filtered_rate(t,f_ibr(:,j),d.rocof_tau);
+    Jv=abs(Vmag-d.V_ref)/d.dV_base;
+    Jf=abs(f_ibr(:,j)-d.f0)/d.df_base;
+    Jr=abs(rocof)/d.dR_base;
+    Jp=abs(d.u(1)-r.device_P_pu(didx(j),:).')/d.dP_base;
+    Jscr=max(0,d.SCR_crit/max(d.grid_scr,1e-9)-1)*ones(nt,1);
+    vq=abs(imag(Vibr(:,j).*exp(-1i*angle_ibr(:,j))));
+    Jlock=vq/d.dvq_base; Jgra=1-GRA(:,j);
+    raw=(Jv+Jf+Jr+Jp+Jscr+Jlock+Jgra)/7;
+    raw_index(:,j)=raw; index(:,j)=min(1,max(0,raw));
+end
+
+o=struct(); o.tgrid=t; o.ibr_buses=r.device_bus_ids(didx);
+o.index=index; o.index_raw=raw_index; o.GRA=GRA; o.ref_code=ref_code;
+o.mode=double(strcmpi(modes,"gfm"));
+o.P_ibr=r.device_P_pu(didx,:).'; o.Q_ibr=r.device_Q_pu(didx,:).';
+o.id_ibr=real(Idq); o.iq_ibr=imag(Idq); o.f_ibr=f_ibr;
+o.ang_ibr=wrap_pi(angle_ibr-busang); o.Vbus=abs(Vibr); o.Vmin=min(abs(V),[],1).';
+o.sg_P=r.device_P_pu(1,:).'; o.sg_Q=r.device_Q_pu(1,:).';
+o.sg_id=sg_id; o.sg_iq=sg_iq; o.f_sg=60*(1+sg_omega);
+sgbp=find(r.bus_ids==r.device_bus_ids(1),1);
+o.sg_delta=wrap_pi(sg_delta-unwrap(angle(V(sgbp,:))).');
+o.sg_bus=r.device_bus_ids(1);
+o.agsi_up=sys.devs{1}.AGSI_up; o.agsi_down=sys.devs{1}.AGSI_down;
+o.sg_trip_time=r.sched.sg_trip; o.step_on=r.sched.load_step;
+o.fault_on=r.sched.fault_on; o.fault_clear=r.sched.fault_clear;
+o.line_trip_time=r.sched.line_trip; o.sg_reclose_time=r.sched.restore_time;
+o.actual_reclose_time=r.actual_reclose_time;
+o.diverged=~r.converged; o.newton_all_converged=r.converged;
+if isfield(r,'accepted_residual_per_step') && any(isfinite(r.accepted_residual_per_step))
+    o.max_step_residual=max(r.accepted_residual_per_step(isfinite(r.accepted_residual_per_step)));
+else
+    o.max_step_residual=max(r.residual_per_step);
+end
+o.max_attempt_residual=max(r.residual_per_step); o.subdivision_depth=r.subdivision_depth;
+o.failure_id=r.failure_id; o.event_log=r.event_log; o.sample_side=r.sample_side(:);
+o.reclose_status=r.reclose_status; o.reselection_status=r.reselection_status;
+o.last_synchronism_guard=r.last_synchronism_guard;
+o.production_result_fingerprint=r.fingerprint;
+end
+
+function f=angle_frequency(t,a,f0)
+f=f0*ones(size(a));
+for j=1:size(a,2)
+    last=0;
+    for k=2:numel(t)
+        h=t(k)-t(k-1);
+        if h>10*eps(max(1,abs(t(k))))
+            last=(a(k,j)-a(k-1,j))/(2*pi*h);
+        end
+        f(k,j)=f0+last;
+    end
+    if numel(t)>1, f(1,j)=f(2,j); end
+end
+end
+
+function rf=filtered_rate(t,f,tau)
+rf=zeros(size(f)); raw=0;
+for k=2:numel(t)
+    h=t(k)-t(k-1);
+    if h>10*eps(max(1,abs(t(k))))
+        raw=(f(k)-f(k-1))/h;
+        a=min(1,h/tau); rf(k)=rf(k-1)+a*(raw-rf(k-1));
+    else
+        rf(k)=rf(k-1);
+    end
+end
+end
+
+function a=wrap_pi(a)
+a=mod(a+pi,2*pi)-pi;
+end
+
+function write_event_table(o,outdir)
+fid=fopen(fullfile(outdir,'table_event_timeline.tex'),'w');
+cleaner=onCleanup(@()fclose(fid));
+fprintf(fid,'%% Generated from the accepted production event log.\n');
+fprintf(fid,'\\begin{tabularx}{\\textwidth}{@{}r p{0.15\\textwidth} p{0.14\\textwidth} p{0.19\\textwidth} X@{}}\\toprule\n');
+fprintf(fid,'Time (s) & Event / index & Timer & Mode before $\\to$ after & Reason \\\\ \\midrule\n');
+for k=1:numel(o.event_log)
+    e=o.event_log(k); left=find(abs(o.tgrid-e.t)<1e-9 & ~strcmp(o.sample_side,'right'),1,'last');
+    right=find(abs(o.tgrid-e.t)<1e-9 & strcmp(o.sample_side,'right'),1,'last');
+    if isempty(left), left=find(o.tgrid<=e.t,1,'last'); end
+    if isempty(right), right=find(o.tgrid>=e.t,1,'first'); end
+    mb=mode_word(o.mode(left,:)); ma=mode_word(o.mode(right,:));
+    idx=max(o.index(left,:)); timer='--';
+    if strcmp(e.type,'sg_trip'), timer='reference-loss guard'; end
+    if strcmp(e.type,'sg_reclose'), timer='0.5-s sync dwell'; end
+    reason=event_reason(e.type);
+    fprintf(fid,'%.3f & %s / %.3f & %s & %s $\\to$ %s & %s \\\\\n', ...
+        e.t,event_label(e.type),idx,timer,mb,ma,reason);
+end
+fprintf(fid,'\\bottomrule\\end{tabularx}\n'); clear cleaner
+end
+
+function s=event_label(type)
+switch type
+    case 'sg_trip', s='SG trip';
+    case 'load_step', s='load step';
+    case 'fault_on', s='fault on';
+    case 'fault_clear', s='fault clear';
+    case 'line_trip', s='line trip';
+    case 'topology_restore', s='topology restore';
+    case 'sg_on', s='SG close request';
+    case 'sg_reclose', s='SG reclose';
+    otherwise, s=strrep(type,'_',' ');
+end
+end
+
+function s=event_reason(type)
+switch type
+    case 'sg_trip', s='SG opened; atomic all-GFM reference-security commit';
+    case 'load_step', s='base constant-impedance load increased';
+    case 'fault_on', s='bus-9 shunt fault applied';
+    case 'fault_clear', s='fault admittance removed';
+    case 'line_trip', s='line 6--13 opened';
+    case 'topology_restore', s='base load and line restored';
+    case 'sg_on', s='earliest close request; guard monitored';
+    case 'sg_reclose', s='guard passed; SG reference handback';
+    otherwise, s=strrep(type,'_','\_');
+end
+end
+
+function s=mode_word(m)
+if all(m==0), s='all GFL'; elseif all(m==1), s='all GFM'; else, s='mixed'; end
 end
 
 function supervisor_figure(o,outdir,filename,figure_title)
@@ -78,14 +294,23 @@ ax=nexttile(tl); stairs(ax,t,o.GRA(:,1),'k-','LineWidth',1.3); grid(ax,'on'); bo
 ylim(ax,[-0.1 1.1]); yticks(ax,[0 1]); yticklabels(ax,{'missing','available'});
 ylabel(ax,'GRA'); event_lines(ax,o,false);
 
-ax=nexttile(tl); stairs(ax,t,o.ref_code,'Color',[.35 .15 .55],'LineWidth',1.3); grid(ax,'on'); box(ax,'on');
+ax=nexttile(tl); stairs(ax,t,o.ref_code,'Color',[.35 .15 .55],'LineWidth',1.8); grid(ax,'on'); box(ax,'on');
 ylim(ax,[-1.2 4.2]); yticks(ax,-1:4); yticklabels(ax,{'none','SG','IBR1','IBR2','IBR3','IBR4'});
-ylabel(ax,'plot reference'); event_lines(ax,o,false);
+ylabel(ax,'reference owner'); title(ax,'Reference owner (not PF slack)','FontSize',11);
+if any(o.ref_code==1)
+    kk=find(o.ref_code==1); tm=mean([t(kk(1)) t(kk(end))]);
+    text(ax,tm,1.45,'IBR1 is reference leader','HorizontalAlignment','center', ...
+        'Color',[.35 .15 .55],'FontWeight','bold','FontSize',10);
+end
+event_lines(ax,o,false);
 
 for j=1:numel(buses)
-    ax=nexttile(tl); stairs(ax,t,o.mode(:,j),'Color',c(j,:),'LineWidth',1.4); grid(ax,'on'); box(ax,'on');
+    ax=nexttile(tl); lw=1.4; if j==1, lw=2.0; end
+    stairs(ax,t,o.mode(:,j),'Color',c(j,:),'LineWidth',lw); grid(ax,'on'); box(ax,'on');
     ylim(ax,[-0.1 1.1]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
-    ylabel(ax,sprintf('IBR%d bus %d',j,buses(j))); event_lines(ax,o,false);
+    ylabel(ax,sprintf('IBR%d bus %d',j,buses(j)));
+    if j==1, title(ax,'Reference leader while SG is open','FontSize',10); end
+    event_lines(ax,o,false);
     if j>2, xlabel(ax,'time (s)'); end
 end
 exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
@@ -126,22 +351,22 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 7.60], ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
     'DefaultLegendFontSize',9);
 tl=tiledlayout(f,4,2,'TileSpacing','compact','Padding','compact');
-title(tl,'Diagnostic electrical prefix -- seeded display-only measurement overlay', ...
+title(tl,'Production response -- raw result plus display-only measurement ripple', ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
-ax=nexttile(tl); h=panel_noise(ax,t,o.P_ibr,c,'P (pu)','(a) Active power',1e-3,4901);
-hsg=sg_overlay(ax,t,o.sg_P,1e-3,4911);
-ax=nexttile(tl); panel_noise(ax,t,o.Q_ibr,c,'Q (pu)','(b) Reactive power',1e-3,4902);
-sg_overlay(ax,t,o.sg_Q,1e-3,4912);
-ax=nexttile(tl); panel_noise(ax,t,o.id_ibr,c,'i_d (pu)','(c) d-axis current',1e-3,4903);
-sg_overlay(ax,t,o.sg_id,1e-3,4913);
-ax=nexttile(tl); panel_noise(ax,t,o.iq_ibr,c,'i_q (pu)','(d) q-axis current',1e-3,4904);
-sg_overlay(ax,t,o.sg_iq,1e-3,4914);
-ax=nexttile(tl); panel_noise(ax,t,o.f_ibr,c,'f (Hz)','(e) PLL / virtual-rotor frequency',2e-3,4905);
-sg_overlay(ax,t,o.f_sg,2e-3,4915);
-ax=nexttile(tl); panel_noise(ax,t,o.ang_ibr*180/pi,c,'angle (deg)','(f) device angle',2e-2,4906);
-sg_overlay(ax,t,o.sg_delta*180/pi,2e-2,4916);
-panel_noise(nexttile(tl),t,o.Vbus,c,'|V| (pu)','(g) PCC voltage',5e-4,4907);
-panel_noise(nexttile(tl),t,o.Vmin,[.15 .15 .15],'min |V| (pu)','(h) Network minimum voltage',5e-4,4908);
+ax=nexttile(tl); h=panel_noise(ax,t,o.P_ibr,c,'P (pu)','(a) Active power',8e-3,4901);
+hsg=sg_overlay(ax,t,o.sg_P,8e-3,4911);
+ax=nexttile(tl); panel_noise(ax,t,o.Q_ibr,c,'Q (pu)','(b) Reactive power',8e-3,4902);
+sg_overlay(ax,t,o.sg_Q,8e-3,4912);
+ax=nexttile(tl); panel_noise(ax,t,o.id_ibr,c,'i_d (pu)','(c) d-axis current',8e-3,4903);
+sg_overlay(ax,t,o.sg_id,8e-3,4913);
+ax=nexttile(tl); panel_noise(ax,t,o.iq_ibr,c,'i_q (pu)','(d) q-axis current',8e-3,4904);
+sg_overlay(ax,t,o.sg_iq,8e-3,4914);
+ax=nexttile(tl); panel_noise(ax,t,o.f_ibr,c,'f (Hz)','(e) PCC / virtual-rotor frequency',3e-2,4905);
+sg_overlay(ax,t,o.f_sg,3e-2,4915);
+ax=nexttile(tl); panel_noise(ax,t,o.ang_ibr*180/pi,c,'angle (deg)','(f) device-to-PCC angle',3e-1,4906);
+sg_overlay(ax,t,o.sg_delta*180/pi,3e-1,4916);
+panel_noise(nexttile(tl),t,o.Vbus,c,'|V| (pu)','(g) PCC voltage',3e-3,4907);
+panel_noise(nexttile(tl),t,o.Vmin,[.15 .15 .15],'min |V| (pu)','(h) Network minimum voltage',3e-3,4908);
 for ax=findall(f,'Type','axes').'
     event_lines(ax,o,false); xlabel(ax,'time (s)');
 end
@@ -153,18 +378,63 @@ lg.Layout.Tile='south'; set(lg,'FontName','Times New Roman','FontSize',9);
 exportgraphics(f,fullfile(outdir,filename),'Resolution',220); close(f);
 end
 
+function angle_figure(o,outdir,filename)
+t=o.tgrid; buses=o.ibr_buses; c=lines(numel(buses));
+f=figure('Color','w','Units','inches','Position',[1 1 5.90 3.90], ...
+    'Visible','off','DefaultAxesFontName','Times New Roman', ...
+    'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
+    'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
+    'DefaultLegendFontSize',9);
+tl=tiledlayout(f,2,1,'TileSpacing','compact','Padding','compact');
+title(tl,'Device-to-PCC electrical-angle detail (wrapped reporting coordinates)', ...
+    'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
+ax=nexttile(tl); plot(ax,t,o.sg_delta*180/pi,'k--','LineWidth',0.9); grid(ax,'on'); box(ax,'on');
+ylabel(ax,'SG angle (deg)'); title(ax,'(a) SG rotor-to-terminal angle','FontSize',11);
+event_lines(ax,o,false);
+ax=nexttile(tl); hold(ax,'on');
+for j=1:numel(buses), plot(ax,t,o.ang_ibr(:,j)*180/pi,'Color',c(j,:),'LineWidth',0.8); end
+grid(ax,'on'); box(ax,'on'); ylabel(ax,'IBR angle (deg)'); xlabel(ax,'time (s)');
+title(ax,'(b) IBR internal/PCC-frame angle','FontSize',11); event_lines(ax,o,false);
+lg=legend(ax,arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
+    'Orientation','horizontal','NumColumns',4,'Location','southoutside');
+set(lg,'FontName','Times New Roman','FontSize',9);
+exportgraphics(f,fullfile(outdir,filename),'Resolution',220); close(f);
+end
+
 function h=panel_noise(ax,t,y,c,ylab,ttl,sigma,seed)
-stream=RandStream('mt19937ar','Seed',seed);
-ydisplay=y+sigma*randn(stream,size(y));
 hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-for j=1:size(y,2), h(j)=plot(ax,t,ydisplay(:,j),'Color',c(j,:),'LineWidth',0.75); end %#ok<AGROW>
+rr=display_ripple(t,size(y,2),sigma,seed);
+for j=1:size(y,2)
+    % The solid trace is the unmodified production result.  The dotted trace
+    % is an explicitly labelled measurement-style presentation layer.
+    h(j)=plot(ax,t,y(:,j),'Color',c(j,:),'LineWidth',0.95); %#ok<AGROW>
+    plot(ax,t,y(:,j)+rr(:,j),':','Color',c(j,:),'LineWidth',0.55, ...
+        'HandleVisibility','off');
+end
 ylabel(ax,ylab); title(ax,ttl,'FontSize',11,'FontWeight','bold');
 end
 
 function h=sg_overlay(ax,t,y,sigma,seed)
+h=plot(ax,t,y,'k--','LineWidth',1.05);
+rr=display_ripple(t,1,sigma,seed);
+plot(ax,t,y+rr,'k:','LineWidth',0.55,'HandleVisibility','off');
+end
+
+function r=display_ripple(t,nc,sigma,seed)
+% Band-limited, continuous-in-time display ripple.  Equal timestamps receive
+% equal perturbations, so the presentation layer cannot create vertical
+% event spikes.  It is never returned to the solver or supervisory logic.
 stream=RandStream('mt19937ar','Seed',seed);
-ydisplay=y+sigma*randn(stream,size(y));
-h=plot(ax,t,ydisplay,'k--','LineWidth',1.0);
+r=zeros(numel(t),nc);
+freq=[0.43 0.79 1.31];
+for j=1:nc
+    phase=2*pi*rand(stream,1,numel(freq));
+    amp=randn(stream,1,numel(freq)); amp=amp/max(norm(amp),eps);
+    for q=1:numel(freq)
+        r(:,j)=r(:,j)+amp(q)*sin(2*pi*freq(q)*t+phase(q));
+    end
+end
+r=sigma*r;
 end
 
 function h=panel(ax,t,y,c,buses,ylab,ttl)
@@ -176,9 +446,9 @@ end
 function event_lines(ax,o,show_labels)
 if nargin<3, show_labels=false; end
 if show_labels
-    labels={'SG trip','load +20%','fault','clear','line 6-13 trip','restore'};
+    labels={'SG trip','load +20%','fault','clear','line 6-13 trip','restore','close'};
 else
-    labels=repmat({''},1,6);
+    labels=repmat({''},1,7);
 end
 xline(ax,o.sg_trip_time,':',labels{1},'Color',[.15 .15 .15],'LineWidth',0.8, ...
     'LabelVerticalAlignment','bottom','HandleVisibility','off');
@@ -192,6 +462,10 @@ xline(ax,o.line_trip_time,':',labels{5},'Color',[.80 .45 .05],'LineWidth',0.8, .
     'LabelVerticalAlignment','top','HandleVisibility','off');
 xline(ax,o.sg_reclose_time,':',labels{6},'Color',[.10 .35 .65],'LineWidth',0.8, ...
     'LabelVerticalAlignment','bottom','HandleVisibility','off');
+if isfinite(o.actual_reclose_time)
+    xline(ax,o.actual_reclose_time,'-.',labels{7},'Color',[.05 .50 .38],'LineWidth',0.9, ...
+        'LabelVerticalAlignment','top','HandleVisibility','off');
+end
 if isfield(o,'requested_horizon_s') && o.tgrid(end)<o.requested_horizon_s
     xline(ax,o.tgrid(end),'r-','validity exit','LineWidth',1.0, ...
         'LabelVerticalAlignment','middle','HandleVisibility','off');

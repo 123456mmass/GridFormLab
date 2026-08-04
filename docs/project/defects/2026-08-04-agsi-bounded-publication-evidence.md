@@ -1,6 +1,6 @@
 # SWITCH-2026-08-04-01 — bounded AGSI and publication-evidence correction
 
-- **Status:** RESOLVED_WITH_OPEN_160S_CONTROL_GAP
+- **Status:** RESOLVED_DIAGNOSTIC_160S_WITH_CONTROLLER_LIMITATION
 - **Area:** switch supervisor, IEEE14 report producer, TH/EN reports
 - **Starting commit:** `7304460`
 - **Environment:** Windows, MATLAB, branch `main`
@@ -94,10 +94,35 @@ fail-closed 36.040-s evidence rather than silently replacing it with an unvalida
 
 ## Verification
 
-Targeted gates: 25/25 PASS (24 combined IBR/IEEE14/full-state tests plus the isolated bounded Padiyar
-index test). The full regression was intentionally omitted under the repository risk policy. EN/TH
-XeLaTeX builds pass; 7 English and 10 Thai pages were rendered and visually reviewed. The exact
-160-s dynamic gate remains OPEN for the material control-law choice above.
+Targeted gates at this intermediate point were 25/25 PASS (24 combined IBR/IEEE14/full-state tests
+plus the isolated bounded Padiyar index test). The full regression was intentionally omitted under
+the repository risk policy.
+
+## 2026-08-04 diagnostic 160-s resolution
+
+The earlier 36.040-s observation remains valid for the retired report driver and is retained above
+as defect history. The report producer now routes the chronology through the audited REGFM_B1
+all-KCL hybrid engine. It adds a frozen `PROJECT_DERIVED` post-trip active-power allocation, an
+`ASSUMED_DIAGNOSTIC` deterministic offline phase planner/voltage matcher, and a project-owned
+two-state Sauer--Pai Type-A primary governor. These assumptions close the previously missing
+diagnostic workflow; they do not constitute controller identification, protection validation, or
+hardware readiness.
+
+The primary fixed-step run (`dt=0.0125 s`) reaches 160.000 s with maximum accepted-step residual
+`9.98175508801e-9`, maximum attempted parent residual `3.19889806266e-4`, and subdivision depth 1.
+The SG passes the declared synchronism guard and closes at 147.175 s; the coordinated transaction
+then returns all four IBRs to GFL. At the endpoint, `f_SG=60.046773383 Hz`, the last-2-s slope is
+`+0.007391996 Hz/s`, the voltage range is `0.984909456--1.055630216 pu`, and
+`P_e=1.048198640 pu`, `P_m=1.046208344 pu`. Recovery therefore means completion of the declared
+topology/reference/mode/voltage transaction, not exact steady-state restoration.
+
+A `dt=0.025 s` comparison also reaches 160 s but closes at 148.175 s, one second later. The report
+therefore does not claim time-step-independent controller timing. Seeded band-limited ripple is
+display-only: solid raw traces remain visible and the overlay never enters states, equations,
+AGSI, timers, gates, or event decisions. Final targeted verification is 108/108 PASS; the full
+repository regression remains intentionally omitted under the documented risk policy. English
+and Thai reports build without overfull/error warnings and all 8+12 rendered pages were visually
+reviewed.
 
 ## Related files
 

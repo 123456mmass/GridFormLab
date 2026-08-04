@@ -236,6 +236,29 @@ catch me
     return;
 end
 
+% Reject an inconsistent caller-supplied frozen state before any mode-aware
+% warm-start is allowed to replace dae.x0.  Otherwise an initializer can
+% silently sanitize corrupted physical state input and bypass the existing
+% post-initialization consistency gate below.
+for dk=1:numel(dae.devices)
+    dev=dae.devices(dk);
+    if ~isfield(dev,'frozen_state_indices') || isempty(dev.frozen_state_indices)
+        continue;
+    end
+    off=dae.device_offsets(dk);
+    fsi=dev.frozen_state_indices(:)'; fsv=dev.frozen_state_values(:)';
+    for fi=1:numel(fsi)
+        gidx=off+fsi(fi);
+        if abs(dae.x0(gidx)-fsv(fi))>1e-12
+            result.failure_id='mixed_equilibrium_solve:frozenStateConsistency';
+            result.failure_reason=sprintf( ...
+                'Device "%s" frozen state index %d (global %d): expected %.15g, got %.15g.', ...
+                dev.device_id,fsi(fi),gidx,fsv(fi),dae.x0(gidx));
+            return;
+        end
+    end
+end
+
 % SG-on all-GFL uses P/Q-controlled buses, whereas the original network PF
 % warm start retains the source PV labels.  Seed the coupled Newton with a
 % project-owned mode-aware PQ PF and exact GFL branch states.  This is only an

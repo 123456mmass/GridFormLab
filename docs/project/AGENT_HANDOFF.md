@@ -7,7 +7,37 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-04 — final 160-s REGFM_B1/EMF6 chronology
+
+Starting HEAD was `d3e448c` on `main`. The IEEE14 1-SG + 4-IBR report chronology now runs through
+the project-owned REGFM_B1 all-KCL hybrid engine for the full 0--160 s sequence. The primary
+`dt=0.0125 s` run completed in 4820.172442 s with maximum accepted-step residual
+`9.98175508801e-9`, maximum attempted parent residual `3.19889806266e-4`, and subdivision depth 1.
+The SG passed `Delta V=0.012765179 pu`, `Delta f=0.000779556 pu`, and
+`Delta theta=3.401986499 deg` at the synchronism guard, closed at 147.175 s, and the coordinated
+transaction returned IBR1--IBR4 from GFM to GFL. At 160 s, voltage spans
+0.984909456--1.055630216 pu, `P_e,SG=1.048198640 pu`, `P_m,SG=1.046208344 pu`, and
+`f_SG=60.046773383 Hz`; its last-2-s slope remains `+0.007391996 Hz/s`, so exact steady state is
+not claimed.
+
+The closure uses frozen `PROJECT_DERIVED` post-trip dispatch, an `ASSUMED_DIAGNOSTIC` deterministic
+offline phase planner/voltage matcher, and a project-owned two-state Sauer--Pai Type-A primary
+governor. There is no Bayesian-optimisation controller. A `dt=0.025 s` comparison completed in
+1853.621603 s but closed at 148.175 s, so the report exposes 1.000-s event-time sensitivity and
+does not claim time-step-independent controller validation. Seeded band-limited ripple is a
+display-only dotted overlay; solid raw traces remain visible and all solver/AGSI/timer/mode data
+remain untouched.
+
+Targeted production/consumer/failure-path verification is 108/108 PASS. The full repository
+regression was intentionally omitted under the risk policy. Thai and English reports compile to
+12 and 8 pages with no overfull/error warnings; all pages were rendered and visually reviewed.
+The English report contains no example-report author/title reference. See
+`docs/project/defects/2026-08-04-agsi-bounded-publication-evidence.md` for the historical failed
+route and the diagnostic evidence boundary.
+
 ## 2026-08-04 — EECON49 full-state switch/reclose evidence
+
+Historical intermediate status; superseded by the final REGFM_B1/EMF6 section above.
 
 The EECON49 IEEE14 report route now uses the project operational six-state EMF6 SG and
 source-mapped 12-state GFL/GFM switching supersets. A positive-feedback current-error defect

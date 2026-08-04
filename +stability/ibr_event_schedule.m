@@ -77,13 +77,14 @@ event_profile = 'combined';
 if isfield(ibr_events,'event_profile') && ~isempty(ibr_events.event_profile)
     if ~(ischar(ibr_events.event_profile) || isstring(ibr_events.event_profile))
         error('stability:ibr_event_schedule:badEventProfile', ...
-            'event_profile must be combined, fault_only, or sg_cycle.');
+            'event_profile must be combined, fault_only, sg_cycle, or chronology.');
     end
     event_profile = validatestring(char(ibr_events.event_profile), ...
-        {'combined','fault_only','sg_cycle'});
+        {'combined','fault_only','sg_cycle','chronology'});
 end
-has_fault = any(strcmp(event_profile,{'combined','fault_only'}));
-has_sg_cycle = any(strcmp(event_profile,{'combined','sg_cycle'}));
+has_fault = any(strcmp(event_profile,{'combined','fault_only','chronology'}));
+has_sg_cycle = any(strcmp(event_profile,{'combined','sg_cycle','chronology'}));
+has_chronology = strcmp(event_profile,'chronology');
 
 % Normalize ibr_events FIRST to determine selection_request.mode, THEN decide
 % which fields are required based on that mode. This closes the defect where
@@ -121,6 +122,10 @@ if has_fault
 end
 if has_sg_cycle
     required = [required, {'sg_trip','sg_on'}];
+end
+if has_chronology
+    required = [required, {'load_step','load_step_factor','line_trip', ...
+        'line_from_bus','line_to_bus','restore_time'}];
 end
 switch selection_request.mode
     case 'manual_override'
@@ -246,6 +251,25 @@ end
 if strcmp(event_profile,'combined') && ~(fault_clear <= sg_trip + tol)
     error('stability:ibr_event_schedule:badOrdering', ...
         'Require fault_clear <= sg_trip for the combined profile.');
+end
+if has_chronology && ~(sg_trip < ibr_events.load_step && ...
+        ibr_events.load_step < fault_on && fault_clear < ibr_events.line_trip && ...
+        ibr_events.line_trip < ibr_events.restore_time && ...
+        ibr_events.restore_time == sg_on && sg_on <= t_end + tol)
+    error('stability:ibr_event_schedule:badOrdering', ...
+        ['Chronology requires sg_trip < load_step < fault_on < fault_clear ' ...
+         '< line_trip < restore_time = sg_on <= t_end.']);
+end
+if has_chronology && (~isscalar(ibr_events.load_step_factor) || ...
+        ~isfinite(ibr_events.load_step_factor) || ibr_events.load_step_factor<=0)
+    error('stability:ibr_event_schedule:badLoadStep', ...
+        'load_step_factor must be one finite positive fraction.');
+end
+if has_chronology && (~ismember(ibr_events.line_from_bus,bus_ids) || ...
+        ~ismember(ibr_events.line_to_bus,bus_ids) || ...
+        ibr_events.line_from_bus==ibr_events.line_to_bus)
+    error('stability:ibr_event_schedule:badLineTrip', ...
+        'line_from_bus/line_to_bus must be distinct case bus IDs.');
 end
 
 % Duplicate / coincident ambiguous (except fault_clear==sg_trip allowed)
@@ -376,10 +400,15 @@ if has_sg_cycle
     ev(end+1) = struct('type','sg_trip','t',sg_trip,'index',numel(ev)+1); %#ok<AGROW>
     ev(end+1) = struct('type','sg_on','t',sg_on,'index',numel(ev)+1); %#ok<AGROW>
 end
+if has_chronology
+    ev(end+1) = struct('type','load_step','t',ibr_events.load_step,'index',numel(ev)+1); %#ok<AGROW>
+    ev(end+1) = struct('type','line_trip','t',ibr_events.line_trip,'index',numel(ev)+1); %#ok<AGROW>
+    % Insert restoration before the same-time sg_on request.  Stable sorting
+    % preserves this explicit transaction order.
+    ev(end+1) = struct('type','topology_restore','t',ibr_events.restore_time,'index',numel(ev)+1); %#ok<AGROW>
+end
 % Already ordered per validation, but sort to be safe (stable for allowed equality)
-[~,order] = sort([ev.t]);
-% Preserve logical order for allowed equality: fault_clear before sg_trip when equal
-% (stable sort already)
+[~,order] = sortrows([[ev.t].',event_priority({ev.type}).'],[1 2]);
 ev = ev(order);
 
 sched = struct();
@@ -387,6 +416,7 @@ sched.enabled = true;
 sched.event_profile = event_profile;
 sched.has_fault = has_fault;
 sched.has_sg_cycle = has_sg_cycle;
+sched.has_chronology = has_chronology;
 sched.t_end = t_end;
 sched.dt = dt;
 sched.fault_bus = fault_bus;
@@ -397,6 +427,18 @@ sched.fault_clear = fault_clear;
 sched.sg_trip = sg_trip;
 sched.sg_on = sg_on;
 sched.sg_id = sg_id;
+if has_chronology
+    sched.load_step=ibr_events.load_step;
+    sched.load_step_factor=ibr_events.load_step_factor;
+    sched.line_trip=ibr_events.line_trip;
+    sched.line_from_bus=ibr_events.line_from_bus;
+    sched.line_to_bus=ibr_events.line_to_bus;
+    sched.restore_time=ibr_events.restore_time;
+    sched.coordinated_handback=false;
+    if isfield(ibr_events,'coordinated_handback')
+        sched.coordinated_handback=logical(ibr_events.coordinated_handback);
+    end
+end
 sched.automatic_gfm_switching = norm_opt.automatic_gfm_switching;
 sched.events = ev;
 sched.tol = tol;
@@ -414,4 +456,17 @@ sched.audit = struct('legacy_selected_gfm_indices', selected, ...
 sched.provenance = struct('source','ibr_event_schedule validation',...
     'fault','Yfault(fb,fb)+=1/Zf SOURCE_DEFINED','ordering','CASE_DEFINED',...
     'selection_mode', selection_request.mode);
+end
+
+function p=event_priority(types)
+p=zeros(1,numel(types));
+for k=1:numel(types)
+    switch types{k}
+        case 'topology_restore', p(k)=1;
+        case 'fault_clear', p(k)=2;
+        case 'sg_trip', p(k)=3;
+        case 'sg_on', p(k)=4;
+        otherwise, p(k)=2;
+    end
+end
 end

@@ -21,6 +21,21 @@ end
 verifyLessThan(testCase,norm(s.sg.f(s.x_sg0,s.y0),inf),1e-9);
 end
 
+function testOperationalEmf6SingularLimitIsFinite(testCase)
+s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
+[devices,~]=stability.build_mixed_resource_devices( ...
+    s.case_data,s.resources,s.scenario_opt);
+eq=stability.mixed_equilibrium_solve(s.case_data,struct('devices',devices), ...
+    struct('verbose',false));
+verifyTrue(testCase,eq.converged,eq.failure_reason);
+verifyLessThan(testCase,eq.residual_norm,1e-8);
+verifyEqual(testCase,eq.x0(4),0,'AbsTol',0);
+dae=stability.composite_dae(s.case_data,eq.devices,struct('load_model','cz_p_cz_q'));
+f0=dae.dae_f(0,eq.x0,eq.y0,eq.u_eq,struct());
+verifyTrue(testCase,all(isfinite(f0)));
+verifyEqual(testCase,f0(4),0,'AbsTol',0);
+end
+
 function testExact160SecondEventContract(testCase)
 s=ibr.build_ieee14_switch_system(case_profile="eecon49_figure4",index_mode="agsi_pp", ...
     T_d_on=0.10,T_d_off=1.0);

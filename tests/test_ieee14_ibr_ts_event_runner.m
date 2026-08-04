@@ -53,6 +53,11 @@ end
 function test_events_have_exact_left_right_and_finite_kcl(tc)
 r=event_run_with_table(tc.TestData,2:5,2,struct(),tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
+tc.verifyNumElements(r.accepted_residual_per_step,numel(r.residual_per_step));
+tc.verifyTrue(all(isfinite(r.accepted_residual_per_step)));
+tc.verifyLessThanOrEqual(r.accepted_residual_per_step, ...
+    r.residual_per_step+10*eps(max(1,r.residual_per_step)), ...
+    'An accepted-leaf residual cannot exceed the attempt-inclusive residual.');
 for te=[0.02 0.03 0.04 0.06]
     tc.verifyEqual(sum(abs(r.t-te)<1e-12),2, ...
         sprintf('Event %.3f must publish one left and one right sample.',te));

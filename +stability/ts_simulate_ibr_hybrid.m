@@ -38,6 +38,16 @@ if sched.enabled && sched.has_fault
 end
 Ypost = Ypre;
 Ycurr = Ypre;
+Ybase_current = Ypre;
+Yload_delta = zeros(size(Ypre));
+Yline_stamp = zeros(size(Ypre));
+if sched.enabled && isfield(sched,'has_chronology') && sched.has_chronology
+    Vpf=dae.pf.bus_voltage(:);
+    Sload=(case_data.mpc.bus(:,3)+1i*case_data.mpc.bus(:,4))/case_data.mpc.baseMVA;
+    Yload_delta=sched.load_step_factor*diag(conj(Sload)./(abs(Vpf).^2+eps));
+    Yline_stamp=chronology_branch_stamp(case_data.mpc,sched.line_from_bus, ...
+        sched.line_to_bus,dae.bus_ids);
+end
 topology = 'pre';
 x = x0(:);
 y = y0(:);
@@ -45,6 +55,7 @@ t = 0.0;
 active = stability.ts_dynamic_state_indices(dae,ec);
 pre_event_input = u;
 pre_event_input_fp = sprintf('pre_event_input|%s', mat2str(pre_event_input(:).'));
+sync_ctl=initialize_sync_controller(dae,u,sched,case_data);
 
 samples = new_samples(x,y,u,ec,active,topology);
 event_log = repmat(new_event_log('',NaN),0,1);
@@ -76,6 +87,7 @@ total_iterations = 0;
 max_residual = 0;
 step_iterations = [];
 step_residuals = [];
+accepted_step_residuals = [];
 step_attempts = 0;
 accepted_steps = 0;
 internal_substeps = 0;
@@ -107,13 +119,18 @@ while t < settings.t_end-settings.event_tol
     if h <= settings.event_tol
         t = target;
     else
+        u_step=u; sync_candidate=sync_ctl;
+        if sync_ctl.active
+            [u_step,sync_candidate]=advance_sync_controller( ...
+                sync_ctl,x,y,t,h,dae,ec,u,case_data);
+        end
         active = stability.ts_dynamic_state_indices(dae,ec);
         step_opt = struct('newton_tol',settings.newton_tol, ...
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
             'verbose',settings.verbose,'full_kcl',true,'t_now',t, ...
             'domain_preserving_trials',true);
         [step,retry_stats] = advance_with_subdivision( ...
-            x,y,t,h,dae,Ycurr,u,ec,active,step_opt,settings,0);
+            x,y,t,h,dae,Ycurr,u_step,ec,active,step_opt,settings,0);
         step_attempts=step_attempts+retry_stats.attempts;
         internal_substeps=internal_substeps+retry_stats.accepted_leaf_steps;
         domain_rejected_total = domain_rejected_total + retry_stats.domain_rejected_trials;
@@ -122,6 +139,7 @@ while t < settings.t_end-settings.event_tol
         max_residual = max(max_residual,step.residual_norm);
         step_iterations(end+1)=step.iterations; %#ok<AGROW>
         step_residuals(end+1)=step.residual_norm; %#ok<AGROW>
+        accepted_step_residuals(end+1)=retry_stats.accepted_residual_norm; %#ok<AGROW>
         if ~step.converged || ~step.finite
             converged = false;
             failure_id = 'ts_simulate_ibr_hybrid:stepNewton';
@@ -130,6 +148,10 @@ while t < settings.t_end-settings.event_tol
         end
         x = step.x_full;
         y = step.y_full;
+        if sync_ctl.active
+            sync_ctl=sync_candidate;
+            u=sync_ctl.u_end;
+        end
         t = target;
         accepted_steps=accepted_steps+1;
         is_event_left = event_cursor<=numel(events) && ...
@@ -158,7 +180,11 @@ while t < settings.t_end-settings.event_tol
         end
         switch ev.type
         case 'fault_on'
-            [ok,y_new,reason,right_norm] = right_limit(x,y,Yfault,dae,u,ec,t,settings.kcl_tol);
+            Yfault=Ybase_current;
+            fp=sched.fault_bus_position;
+            Yfault(fp,fp)=Yfault(fp,fp)+1/sched.Zf;
+            [ok,y_new,reason,right_norm] = fault_right_limit_homotopy( ...
+                x,y,Ybase_current,sched,dae,u,ec,t,settings.kcl_tol);
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
             if ok
@@ -169,6 +195,7 @@ while t < settings.t_end-settings.event_tol
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
             end
         case 'fault_clear'
+            Ypost=Ybase_current;
             [ok,y_new,reason,right_norm] = right_limit(x,y,Ypost,dae,u,ec,t,settings.kcl_tol);
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
@@ -177,6 +204,39 @@ while t < settings.t_end-settings.event_tol
                 log.applied = true; log.details = 'Pre-fault network restored after fault clear.';
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
+                    'ts_simulate_ibr_hybrid:rightLimit',reason,log);
+            end
+        case 'load_step'
+            Ycandidate=Ybase_current+Yload_delta;
+            [ok,y_new,reason,right_norm]=right_limit(x,y,Ycandidate,dae,u,ec,t,settings.kcl_tol);
+            log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
+            if ok
+                y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='load_step';
+                log.applied=true; log.details='All base constant-impedance loads increased by the frozen factor.';
+            else
+                [converged,failure_id,failure_reason,log]=transition_failure( ...
+                    'ts_simulate_ibr_hybrid:rightLimit',reason,log);
+            end
+        case 'line_trip'
+            Ycandidate=Ybase_current-Yline_stamp;
+            [ok,y_new,reason,right_norm]=right_limit(x,y,Ycandidate,dae,u,ec,t,settings.kcl_tol);
+            log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
+            if ok
+                y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='line_trip';
+                log.applied=true; log.details='Scheduled branch stamp removed.';
+            else
+                [converged,failure_id,failure_reason,log]=transition_failure( ...
+                    'ts_simulate_ibr_hybrid:rightLimit',reason,log);
+            end
+        case 'topology_restore'
+            Ycandidate=Ypre;
+            [ok,y_new,reason,right_norm]=right_limit(x,y,Ycandidate,dae,u,ec,t,settings.kcl_tol);
+            log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
+            if ok
+                y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='restored';
+                log.applied=true; log.details='Base loads and scheduled branch restored before SG reclose request.';
+            else
+                [converged,failure_id,failure_reason,log]=transition_failure( ...
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
             end
         case 'sg_trip'
@@ -207,6 +267,7 @@ while t < settings.t_end-settings.event_tol
             end
             if ok
                 x=x_new; y=y_new; u=u_new; ec=ec_new; active=active_new;
+                sync_ctl=activate_sync_controller(sync_ctl,u,t);
                 log.applied=true; log.details=handler_log.details;
                 t_trip=t;
             else
@@ -242,7 +303,6 @@ while t < settings.t_end-settings.event_tol
             end
         case 'sg_on'
             pending_reclose = true;
-            good_since = NaN;
             reclose_status = 'PENDING';
             log = new_event_log(ev.type,t);
             log.applied = true;
@@ -268,6 +328,16 @@ while t < settings.t_end-settings.event_tol
     if event_applied
         active = stability.ts_dynamic_state_indices(dae,ec);
         samples = append_sample(samples,t,x,y,u,ec,active,topology,'right',group_tx_id);
+    end
+
+    if sync_ctl.active && ~pending_reclose && isfield(sched,'sg_on') && ...
+            isfinite(sched.sg_on) && t>=sched.sg_on-settings.sync_dwell
+        [prequalified,last_guard]=reclose_guard(t,x,y,u,ec,dae,sched,case_data,settings);
+        if prequalified
+            if ~isfinite(good_since), good_since=t; end
+        else
+            good_since=NaN;
+        end
     end
 
     % sg_on is an earliest request. Check after every accepted sample, enforce
@@ -370,17 +440,40 @@ while t < settings.t_end-settings.event_tol
             log.dispatch_after_pu=dispatch_after;
             if ok
                 x=x_new; y=y_new; u=u_new; ec=ec_new;
+                % The breaker close ends the offline phase planner but does
+                % not remove the prime-mover dynamics.  Re-enter the sourced
+                % Sauer-Pai non-reheat turbine/governor at the restored
+                % equilibrium input so Tm is bumpless and frequency remains
+                % regulated after the SG resumes network power balance.
+                sync_ctl=enter_online_governor(sync_ctl,u_new,t);
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 log.applied=true; log.details=handler_log.details;
                 samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reclose_tx_id);
-                % Begin Phase-2 reselection (F4/F5). The SG_ON table lookup and
-                % T_down derivation happen in the reselection block below.
-                pending_reselection=true;
-                reselection_status='PENDING';
-                reselection_good_since=NaN;
-                reselection_deadline=NaN;
-                sg_on_cand=[];  % reset: re-authenticate on the next reselection block
+                if isfield(sched,'coordinated_handback') && sched.coordinated_handback
+                    [hb_ok,hb_x,hb_y,hb_ec,hb_reason,hb_norm]= ...
+                        coordinated_sg_handback(t,x,y,Ycurr,u,ec,dae,settings.kcl_tol);
+                    if hb_ok
+                        x=hb_x; y=hb_y; ec=hb_ec;
+                        active=stability.ts_dynamic_state_indices(dae,ec);
+                        actual_mode_reselection=t;
+                        reselection_status='COORDINATED_SG_REFERENCE_HANDBACK';
+                        pending_reselection=false;
+                        log.details=[log.details ' Coordinated SG-reference handback committed all IBRs to GFL.'];
+                        log.right_kcl_norm=max(log.right_kcl_norm,hb_norm);
+                        samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reclose_tx_id);
+                    else
+                        [converged,failure_id,failure_reason,log]=transition_failure( ...
+                            'ts_simulate_ibr_hybrid:coordinatedHandback',hb_reason,log);
+                    end
+                else
+                    % Begin Phase-2 selector-driven reselection (F4/F5).
+                    pending_reselection=true;
+                    reselection_status='PENDING';
+                    reselection_good_since=NaN;
+                    reselection_deadline=NaN;
+                    sg_on_cand=[];
+                end
             else
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:recloseTransaction',reason,log);
@@ -541,6 +634,7 @@ else
 end
 res.iter_per_step=step_iterations;
 res.residual_per_step=step_residuals;
+res.accepted_residual_per_step=accepted_step_residuals;
 res.step_attempts=step_attempts;
 res.accepted_steps=accepted_steps;
 res.internal_substeps=internal_substeps;
@@ -574,6 +668,7 @@ if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
     res.selector_table_fingerprint=opt.selector_table.selector_table_fingerprint;
 end
 res.pre_event_input_fingerprint=pre_event_input_fp;
+res.sg_sync_controller=sync_ctl;
 
 try
     % Publish diagnostics for every accepted sample even when a later step or
@@ -666,10 +761,12 @@ step_opt.t_now=t0;
 trial=stability.ts_step_composite(x0,y0,h,dae,Ynet,u,ec,active,step_opt);
 stats=struct('attempts',1, ...
     'accepted_leaf_steps',double(trial.converged&&trial.finite), ...
+    'accepted_residual_norm',NaN, ...
     'domain_rejected_trials',step_domain_rejects(trial), ...
     'subdivision_depth',depth, ...
     'terminal_domain_failure',step_terminal_failure(trial));
 if trial.converged && trial.finite
+    stats.accepted_residual_norm=trial.residual_norm;
     step=trial;
     return;
 end
@@ -697,6 +794,10 @@ end
     left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
 stats.attempts=stats.attempts+right_stats.attempts;
 stats.accepted_leaf_steps=left_stats.accepted_leaf_steps+right_stats.accepted_leaf_steps;
+if right.converged && right.finite
+    stats.accepted_residual_norm=max( ...
+        left_stats.accepted_residual_norm,right_stats.accepted_residual_norm);
+end
 stats.domain_rejected_trials=stats.domain_rejected_trials+right_stats.domain_rejected_trials;
 stats.subdivision_depth=max(stats.subdivision_depth,right_stats.subdivision_depth);
 % The terminal failed leaf governs the failure report. A successful left
@@ -1489,6 +1590,7 @@ res=struct('t',[],'x_traj',[],'y_traj',[],'sample_side',{{}}, ...
     'bus_voltage_magnitude',[],'device_currents',[],'device_current_magnitude',[], ...
     'device_P',[],'device_Q',[],'sg_omega',[],'sg_freq',[],'sg_indices',[], ...
     'device_modes_history',{{}},'Y_log',{{}},'residual_per_step',[], ...
+    'accepted_residual_per_step',[], ...
     'iter_per_step',[],'step_attempts',0,'accepted_steps',0,'status_log',[], ...
     'actual_mode_reselection_time',NaN,'reselection_status','NOT_REQUESTED', ...
     'reference_owner_indices',[],'gfm_reference_resource_indices',[], ...
@@ -1612,7 +1714,273 @@ for k = 1:size(br, 1)
     Y(i, j) = Y(i, j) - yser / conj(a);
     Y(j, i) = Y(j, i) - yser / a;
 end
+
 if size(bus, 2) >= 6 && isfield(mpc,'baseMVA') && mpc.baseMVA ~= 0
     Y = Y + diag((bus(:, 5) + 1i * bus(:, 6)) / mpc.baseMVA);
+end
+end
+
+function [ok,xr,yr,ecr,reason,norm_right]=coordinated_sg_handback( ...
+        t,x,y,Y,u,ec,dae,kcl_tol)
+% CASE_DEFINED chronology override: once the SG breaker transaction has
+% succeeded, return reference ownership to the SG and transfer every online
+% dual-mode IBR to GFL atomically.  This is intentionally separate from the
+% index/SSSA selector path and is accepted only by device transfer + full KCL.
+ok=false; xr=x; yr=y; ecr=ec; reason=''; norm_right=Inf;
+if ~isfield(ec,'hybrid_state') || ~isstruct(ec.hybrid_state)
+    reason='Missing hybrid_state for coordinated handback.'; return;
+end
+hs=ec.hybrid_state;
+for k=1:numel(dae.devices)
+    dev=dae.devices(k); key=matlab.lang.makeValidName(char(dev.device_id), ...
+        'ReplacementStyle','underscore');
+    is_ibr=isfield(dev,'capabilities') && ...
+        strcmpi(char(dev.capabilities.resource_type),'ibr');
+    if is_ibr && isfield(hs.device_online,key) && logical(hs.device_online.(key))
+        hs.device_modes.(key)='gfl';
+    end
+end
+hs.selected_gfm_indices=[]; hs.n_gfm_required=0;
+hs.gfm_reference_resource_indices=[];
+if isfield(hs,'reference_owner_indices') && isempty(hs.reference_owner_indices)
+    sgidx=find(arrayfun(@(d)isfield(d,'capabilities') && ...
+        strcmpi(char(d.capabilities.resource_type),'sg'),dae.devices));
+    hs.reference_owner_indices=sgidx;
+end
+ecr=ec; ecr.hybrid_state=stability.ts_hybrid_state_snapshot(hs);
+try
+    xr=apply_device_transfers(x,y,u,ec,ecr,dae);
+catch me
+    reason=sprintf('%s: %s',me.identifier,me.message); return;
+end
+[ok,yr,reason,norm_right]=right_limit(xr,y,Y,dae,u,ecr,t,kcl_tol);
+end
+
+function stamp=chronology_branch_stamp(mpc,from_bus,to_bus,bus_ids)
+br=mpc.branch;
+hit=find(((br(:,1)==from_bus & br(:,2)==to_bus) | ...
+    (br(:,1)==to_bus & br(:,2)==from_bus)) & br(:,11)~=0);
+if numel(hit)~=1
+    error('ts_simulate_ibr_hybrid:lineTripBranch', ...
+        'Chronology branch %g-%g must identify exactly one online branch.',from_bus,to_bus);
+end
+b=br(hit,:); z=b(3)+1i*b(4);
+if abs(z)==0
+    error('ts_simulate_ibr_hybrid:lineTripBranch','Chronology branch impedance is zero.');
+end
+ys=1/z; bc=b(5); tap=b(9); if tap==0, tap=1; end
+tap=tap*exp(1i*pi/180*b(10));
+Yff=(ys+1i*bc/2)/(abs(tap)^2);
+Yft=-ys/conj(tap); Ytf=-ys/tap; Ytt=ys+1i*bc/2;
+i=find(bus_ids==b(1),1); j=find(bus_ids==b(2),1);
+stamp=zeros(numel(bus_ids));
+stamp(i,i)=Yff; stamp(i,j)=Yft; stamp(j,i)=Ytf; stamp(j,j)=Ytt;
+end
+
+function [ok,y_right,reason,norm_right]=fault_right_limit_homotopy( ...
+        x,y0,Ybase,sched,dae,u,ec,t,kcl_tol)
+% Adaptive bisection of an a-priori 1/16 admittance increment is a
+% NUMERICAL_METHOD initial-guess strategy only.  Failed substeps are halved
+% down to 1/1024; the accepted endpoint still uses the exact sourced Zf and
+% unchanged physical KCL tolerance.
+y_right=y0; ok=false; reason=''; norm_right=Inf;
+fp=sched.fault_bus_position;
+lambda=0; dlambda=1/16; min_dlambda=1/1024;
+while lambda < 1-10*eps
+    target=min(1,lambda+dlambda);
+    Yq=Ybase;
+    Yq(fp,fp)=Yq(fp,fp)+target/sched.Zf;
+    [stage_ok,y_next,stage_reason,stage_norm]=right_limit( ...
+        x,y_right,Yq,dae,u,ec,t,kcl_tol);
+    if ~stage_ok
+        dlambda=dlambda/2;
+        if dlambda < min_dlambda
+            reason=sprintf('Fault homotopy failed near lambda=%.6f: %s',target,stage_reason);
+            norm_right=stage_norm;
+            return;
+        end
+        continue;
+    end
+    y_right=y_next; lambda=target;
+    dlambda=min(1/16,2*dlambda);
+end
+norm_right=kcl_norm(dae,t,x,y_right,Yq,u,ec);
+ok=isfinite(norm_right) && norm_right<=kcl_tol;
+if ~ok, reason=sprintf('Exact-fault endpoint KCL %.3e exceeds %.3e.',norm_right,kcl_tol); end
+end
+
+function c=initialize_sync_controller(dae,u,sched,case_data)
+c=struct('enabled',false,'active',false,'online',false,'sg_index',NaN,'x_delta',NaN, ...
+    'x_omega',NaN,'u_tm',NaN,'u_efd',NaN,'bus_position',NaN,'restore_time',NaN, ...
+    'H',NaN,'D',NaN,'w0',2*pi*case_data.base_values.frequency_Hz, ...
+    'Tsv',0.2,'Tch',0.4,'TA',0.02,'R',0.05,'Pref',NaN, ...
+    'Tmax',NaN,'Efdmax',3.0, ...
+    'Psv',NaN,'Pm',NaN,'Efd',NaN,'u_end',u, ...
+    'plan_ready',false,'plan_command',0,'plan_pulse_end',NaN,'plan_target',NaN, ...
+    'history_t',[],'history_Psv',[],'history_Pm',[],'history_command',[], ...
+    'history_phase_error',[],'history_grid_omega',[], ...
+    'history_Efd',[],'history_Efd_command',[],'history_Vopen',[]);
+if ~sched.enabled || ~isfield(sched,'has_chronology') || ~sched.has_chronology
+    return;
+end
+k=find(strcmp({dae.devices.device_id},sched.sg_id));
+if numel(k)~=1 || dae.devices(k).nx~=6
+    error('ts_simulate_ibr_hybrid:syncControllerSg', ...
+        'Chronology synchronizer requires one six-state SG.');
+end
+slot=find(strcmpi(string(dae.devices(k).input_names),'Tm'));
+efdslot=find(strcmpi(string(dae.devices(k).input_names),'Efd'));
+if numel(slot)~=1 || numel(efdslot)~=1
+    error('ts_simulate_ibr_hybrid:syncControllerTm','SG must expose one Tm and one Efd input.');
+end
+M=case_data.machines; scale=case_data.base_values.S_base_MVA/M.base.S_MVA;
+c.enabled=true; c.sg_index=k; c.x_delta=dae.device_offsets(k)+1;
+c.x_omega=dae.device_offsets(k)+2; c.u_tm=dae.u_offsets(k)+slot;
+c.bus_position=dae.devices(k).bus_position; c.restore_time=sched.sg_on;
+c.H=M.units.H/scale; c.D=M.units.D/scale;
+c.u_efd=dae.u_offsets(k)+efdslot;
+c.Tmax=max([u(c.u_tm),1.3462]);
+c.Pref=u(c.u_tm);
+end
+
+function c=activate_sync_controller(c,u,t)
+if ~c.enabled, return; end
+c.active=true; c.online=false; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm); c.Efd=u(c.u_efd); c.u_end=u;
+c.plan_ready=false; c.plan_command=0; c.plan_pulse_end=NaN; c.plan_target=NaN;
+c.history_t=t; c.history_Psv=c.Psv; c.history_Pm=c.Pm;
+c.history_command=c.Pm; c.history_phase_error=NaN; c.history_grid_omega=NaN;
+c.history_Efd=c.Efd; c.history_Efd_command=c.Efd; c.history_Vopen=NaN;
+end
+
+function c=enter_online_governor(c,u,t)
+% Bumpless transition to the Sauer-Pai Type-A non-reheat turbine and
+% droop-governor equations after breaker close.  Pref is the frozen
+% pre-event equilibrium mechanical input; the six EMF6 machine states are
+% unchanged by this supervisory two-state prime-mover model.
+if ~c.enabled, return; end
+c.active=true; c.online=true; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm);
+c.Efd=u(c.u_efd); c.u_end=u;
+c.history_t(end+1)=t; c.history_Psv(end+1)=c.Psv;
+c.history_Pm(end+1)=c.Pm; c.history_command(end+1)=c.Pref;
+c.history_phase_error(end+1)=NaN; c.history_grid_omega(end+1)=NaN;
+c.history_Efd(end+1)=c.Efd; c.history_Efd_command(end+1)=c.Efd;
+c.history_Vopen(end+1)=NaN;
+end
+
+function [u_step,c]=advance_sync_controller(c,x,y,t,h,dae,ec,u,case_data)
+delta=x(c.x_delta); omega=x(c.x_omega); wgrid=reference_grid_omega(dae,x,y,u,ec);
+vb=complex(y(2*c.bus_position-1),y(2*c.bus_position));
+if c.online
+    % Sauer-Pai (4.100), (4.116):
+    %   Tsv*dPsv/dt = -Psv + Pc - Delta_omega/R
+    %   Tch*dPm/dt  = -Pm + Psv
+    % Pc=Pref is frozen from the accepted pre-event equilibrium.  No AGC
+    % or secondary integral is introduced.
+    gp=struct('Tsv',c.Tsv,'Tch',c.Tch,'R',c.R,'Pref',c.Pref, ...
+        'Pmin',0,'Pmax',c.Tmax);
+    [Psv1,Pm1,command]=stability.sg_turbine_governor_step( ...
+        c.Psv,c.Pm,omega,h,gp);
+    u_step=u; u_step(c.u_tm)=0.5*(c.Pm+Pm1);
+    % Retain the restored equilibrium field input.  The offline voltage
+    % matcher is a synchronizer aid, not an online AVR claim.
+    u_step(c.u_efd)=c.Efd;
+    c.Psv=Psv1; c.Pm=Pm1; c.u_end=u;
+    c.u_end(c.u_tm)=Pm1; c.u_end(c.u_efd)=c.Efd;
+    c.history_t(end+1)=t+h; c.history_Psv(end+1)=Psv1;
+    c.history_Pm(end+1)=Pm1; c.history_command(end+1)=command;
+    c.history_phase_error(end+1)=NaN; c.history_grid_omega(end+1)=wgrid;
+    c.history_Efd(end+1)=c.Efd; c.history_Efd_command(end+1)=c.Efd;
+    c.history_Vopen(end+1)=NaN;
+    if any(~isfinite([Psv1 Pm1 command]))
+        error('ts_simulate_ibr_hybrid:onlineGovernorNonFinite', ...
+            'Post-reclose SG governor produced a non-finite state.');
+    end
+    return;
+end
+theta=angle(vb); tau=max(c.restore_time-t,0);
+coast_time=5*(2*c.H/c.D);
+prepare_horizon=coast_time+10*c.Tch;
+if ~c.plan_ready && tau<=prepare_horizon && tau>coast_time
+    c.plan_pulse_end=c.restore_time-coast_time;
+    [d0,~]=predict_sync_final(c,delta,omega,c.Psv,c.Pm,t,c.restore_time, ...
+        c.plan_pulse_end,0);
+    [d1,~]=predict_sync_final(c,delta,omega,c.Psv,c.Pm,t,c.restore_time, ...
+        c.plan_pulse_end,1);
+    sensitivity=d1-d0;
+    theta_target=theta+c.w0*wgrid*tau;
+    n0=ceil((d0-theta_target)/(2*pi)); found=false;
+    for n=n0:n0+ceil(abs(sensitivity)*c.Tmax/(2*pi))+2
+        target=theta_target+2*pi*n;
+        trial=(target-d0)/sensitivity;
+        if isfinite(trial) && trial>=0 && trial<=c.Tmax
+            c.plan_command=trial; c.plan_target=target; found=true; break;
+        end
+    end
+    if ~found
+        c.plan_command=0; c.plan_target=theta_target+2*pi*n0;
+    end
+    c.plan_ready=true;
+end
+command=0;
+if c.plan_ready && t<c.plan_pulse_end, command=c.plan_command; end
+phase_error=NaN;
+if c.plan_ready, phase_error=c.plan_target-delta; end
+esv=exp(-h/c.Tsv); ech=exp(-h/c.Tch);
+Psv1=command+(c.Psv-command)*esv;
+Pm1=command+(c.Pm-command)*ech+ ...
+    (c.Psv-command)*c.Tsv/(c.Tsv-c.Tch)*(esv-ech);
+dev=dae.devices(c.sg_index); xi=dae.device_offsets(c.sg_index)+(1:dev.nx);
+ui=dae.u_offsets(c.sg_index)+(1:dev.nu);
+rec=dev.reconstruct(t,x(xi),y,u(ui),ec);
+Vopen=NaN; if isfield(rec,'V_open_circuit'), Vopen=abs(rec.V_open_circuit); end
+Efd_command=c.Efd;
+if isfinite(Vopen) && Vopen>1e-8
+    Efd_command=min(c.Efdmax,max(0,c.Efd*abs(vb)/Vopen));
+end
+ea=exp(-h/c.TA); Efd1=Efd_command+(c.Efd-Efd_command)*ea;
+u_step=u; u_step(c.u_tm)=0.5*(c.Pm+Pm1); u_step(c.u_efd)=0.5*(c.Efd+Efd1);
+c.Psv=Psv1; c.Pm=Pm1; c.Efd=Efd1; c.u_end=u;
+c.u_end(c.u_tm)=Pm1; c.u_end(c.u_efd)=Efd1;
+c.history_t(end+1)=t+h; c.history_Psv(end+1)=Psv1;
+c.history_Pm(end+1)=Pm1; c.history_command(end+1)=command;
+c.history_phase_error(end+1)=phase_error;
+c.history_grid_omega(end+1)=wgrid;
+c.history_Efd(end+1)=Efd1; c.history_Efd_command(end+1)=Efd_command;
+c.history_Vopen(end+1)=Vopen;
+if any(~isfinite([Psv1 Pm1 command Efd1]))
+    error('ts_simulate_ibr_hybrid:syncControllerNonFinite', ...
+        'SG synchronizer produced a non-finite controller state.');
+end
+
+if case_data.base_values.frequency_Hz<=0
+    error('ts_simulate_ibr_hybrid:syncControllerFrequency','Invalid frequency base.');
+end
+end
+
+function [delta,omega]=predict_sync_final(c,delta,omega,Psv,Pm,t,tend,pulse_end,A)
+dt0=0.01;
+while t<tend-10*eps
+    h=min(dt0,tend-t); cmd=0; if t<pulse_end, cmd=A; end
+    esv=exp(-h/c.Tsv); ech=exp(-h/c.Tch);
+    Psv1=cmd+(Psv-cmd)*esv;
+    Pm1=cmd+(Pm-cmd)*ech+(Psv-cmd)*c.Tsv/(c.Tsv-c.Tch)*(esv-ech);
+    Pav=0.5*(Pm+Pm1); a=c.D/(2*c.H); winf=Pav/c.D;
+    ea=exp(-a*h);
+    delta=delta+c.w0*(winf*h+(omega-winf)*(1-ea)/a);
+    omega=winf+(omega-winf)*ea;
+    Psv=Psv1; Pm=Pm1; t=t+h;
+end
+end
+
+function w=reference_grid_omega(dae,x,y,u,ec)
+w=0;
+for k=1:numel(dae.devices)
+    dev=dae.devices(k); xi=dae.device_offsets(k)+(1:dev.nx);
+    ui=dae.u_offsets(k)+(1:dev.nu);
+    out=dev.reconstruct(0,x(xi),y,u(ui),ec);
+    if isfield(out,'online') && logical(out.online) && isfield(out,'gfm') && ...
+            isstruct(out.gfm) && isfield(out.gfm,'omega_m') && isfinite(out.gfm.omega_m)
+        w=out.gfm.omega_m; return;
+    end
 end
 end

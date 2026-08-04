@@ -28,7 +28,19 @@ arguments
 end
 
 % --- Immutable IEEE14 case data (network/base + SG dynamics + contracts) ---
-case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
+case_profile = 'mission';
+if isfield(scenario_opt,'case_profile') && ~isempty(scenario_opt.case_profile)
+    case_profile = lower(char(scenario_opt.case_profile));
+end
+switch case_profile
+    case 'mission'
+        case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
+    case 'eecon49_figure4'
+        case_data = cases.case_ieee14bus_eecon49_switch();
+    otherwise
+        error('cases:scenario_ieee14_1sg_4ibr:badCaseProfile', ...
+            'Unknown case_profile "%s".',case_profile);
+end
 
 % Normal operation uses the frozen pre-fault dispatch from the mission case.
 % Previously an omitted scenario_opt.dispatch silently constructed all four
@@ -85,6 +97,9 @@ resource_spec = [sg1, ibr2, ibr3, ibr6, ibr8];
 scenario = stability.build_hybrid_scenario(case_data, resources, scenario_opt);
 scenario.resource_schema = schema;
 scenario.scenario_id = 'ieee14_1sg_4ibr';
+if strcmp(case_profile,'eecon49_figure4')
+    scenario.scenario_id = 'ieee14_eecon49_1sg_4ibr';
+end
 scenario.provenance = struct( ...
     'case_source', case_data.reference.network, ...
     'sg_dynamics', case_data.reference.sg_dynamics, ...

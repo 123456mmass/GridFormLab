@@ -349,6 +349,11 @@ result.sg_indices = ts_res.sg_indices;
 result.device_modes_history = ts_res.device_modes_history;
 result.Y_log = ts_res.Y_log;
 result.residual_per_step = ts_res.residual_per_step;
+if isfield(ts_res,'accepted_residual_per_step')
+    result.accepted_residual_per_step = ts_res.accepted_residual_per_step;
+else
+    result.accepted_residual_per_step = [];
+end
 result.iter_per_step = ts_res.iter_per_step;
 result.requested_sg_on_time = ts_res.requested_sg_on_time;
 result.actual_reclose_time = ts_res.actual_reclose_time;
@@ -398,6 +403,7 @@ copy_fields = {'sample_side','topology_history','active_state_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
     'device_P_pu','device_Q_pu','device_P_MW','device_Q_MVAr', ...
     'device_current_limit_sys','device_ids','device_bus_ids','bus_ids', ...
+    'sg_sync_controller','resync_diagnostics', ...
     'last_synchronism_guard','transaction_id'};
 for k = 1:numel(copy_fields)
     name = copy_fields{k};

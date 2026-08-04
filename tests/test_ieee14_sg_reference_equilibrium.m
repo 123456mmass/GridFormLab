@@ -43,12 +43,20 @@ expected_unknowns=expected_active+(2*nb-numel(eq.vcon_vars))+ ...
 testCase.verifyEqual(eq.partition.newton_dimension,expected_unknowns,'AbsTol',0);
 testCase.verifyEqual(eq.partition.residual_rows,expected_rows,'AbsTol',0);
 testCase.verifyEqual(expected_unknowns,expected_rows,'AbsTol',0);
-testCase.verifyNotEqual(eq.reference.Tm_solved_pu, ...
-    eq.reference.Tm_scheduled_pu, ...
-    'Tm is a solved REF output, not silently frozen to the old PF dispatch.');
-testCase.verifyNotEqual(eq.reference.Efd_solved_pu, ...
-    eq.reference.Efd_scheduled_pu, ...
-    'Efd is solved to retain the case REF voltage magnitude.');
+% A converged Newton solution may equal an exact PF-port warm start.  Prove
+% the two controls are genuine equilibrium unknowns through the partition,
+% accepted residual, and sensitivity to independent perturbations instead
+% of requiring the initializer to be numerically different from the answer.
+testCase.verifyEqual(eq.reference.Tm_solved_pu,eq.u_eq(1),'AbsTol',0);
+testCase.verifyEqual(eq.reference.Efd_solved_pu,eq.u_eq(2),'AbsTol',0);
+dae=stability.composite_dae(testCase.TestData.case_data,eq.devices, ...
+    struct('load_model','cz_p_cz_q'));
+for slot=1:2
+    up=eq.u_eq; up(slot)=up(slot)+1e-3;
+    fp=dae.dae_f(0,eq.x0,eq.y0,up,eq.equilibrium_context);
+    testCase.verifyGreaterThan(norm(fp(eq.active_state_indices),inf),1e-5, ...
+        'Perturbing solved SG control input must violate differential equilibrium.');
+end
 end
 
 function test_swing_and_excitation_use_exact_solved_inputs(testCase)

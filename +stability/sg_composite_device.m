@@ -60,12 +60,12 @@ if isfield(params,'emf6_machine') && isfield(params,'emf6_units') && isfield(par
     units = params.emf6_units;
     init = params.emf6_init;
 else
-    emf_opt = struct('fd_eps', 3e-6, 'equilibrium_tolerance', 1e-10, ...
-        'newton_max_iterations', 300, 'load_model', 'cz_p_cz_q');
-    emf = stability.synchronous_emf6_ssa(case_data, emf_opt);
-    machine = emf.machine;
-    units = emf.units;
-    init = emf.init;
+    % A mixed-resource case has one modeled SG plus independently modeled
+    % IBR injections.  Running the SG-only network SSSA initializer here is
+    % invalid because its KCL omits those IBR devices.  Build the identical
+    % local EMF6 coefficients and initialize this SG from its PF terminal
+    % port instead; the later mixed equilibrium remains the acceptance gate.
+    [machine,units,init] = local_emf6_data(case_data,bus_position,V0);
 end
 if ~isfield(machine,'ng'), machine.ng=1; end
 ng = machine.ng;
@@ -174,6 +174,51 @@ dev.active_state_indices = active_state_indices;
 % flux/coast equations implemented by dev.f.
 dev.dynamic_state_indices_for_context = @(~) active_state_indices;
 dev.frozen_state_classification = 'SOURCE_DEFINED singular limit';
+end
+
+function [machine,units,init] = local_emf6_data(case_data,bp,V0)
+M=case_data.machines;
+if numel(M.units)~=1
+    error('stability:sg_composite_device:singleMachineOnly', ...
+        'The local mixed-resource initializer requires exactly one SG unit.');
+end
+Sbase=case_data.base_values.S_base_MVA;
+Sm=M.base.S_MVA;
+scale=Sbase/Sm;
+R=M.reactances; T=M.time_constants;
+machine=struct();
+for name={'Xd','Xdp','Xdpp','Xq','Xqp','Xqpp','Ra'}
+    machine.(name{1})=R.(name{1})*scale;
+end
+for name={'Tpd0','Tppd0','Tpq0','Tppq0'}
+    machine.(name{1})=T.(name{1});
+end
+machine.c_d=(machine.Xd-machine.Xdp)/(machine.Xdp-machine.Xdpp);
+machine.d_d=(machine.Xd-machine.Xdpp)/(machine.Xdp-machine.Xdpp);
+machine.c_q=(machine.Xq-machine.Xqp)/(machine.Xqp-machine.Xqpp);
+machine.d_q=(machine.Xq-machine.Xqpp)/(machine.Xqp-machine.Xqpp);
+machine.w0=2*pi*case_data.base_values.frequency_Hz;
+machine.ng=1;
+units=struct('bus_idx',bp,'H_system',M.units.H/scale, ...
+    'D_system',M.units.D/scale,'H_machine',M.units.H, ...
+    'D_machine',M.units.D,'id',{{M.units.gen_id}});
+pf=pfsolver.powerflow_newton_raphson(case_data,struct('verbose',false, ...
+    'plot_results',false,'tolerance',1e-10,'max_iter',300, ...
+    'enforce_q_limits',false));
+if ~pf.converged
+    error('stability:sg_composite_device:powerFlow', ...
+        'In-house PF failed during local SG initialization.');
+end
+P=pf.P_generation(bp); Q=pf.Q_generation(bp);
+x0=sg_equilibrium_initialize(V0,P,Q,machine,units);
+V=pf.bus_voltage(:).*exp(1i*deg2rad(pf.bus_angle_deg(:)));
+y=zeros(2*numel(V),1); y(1:2:end)=real(V); y(2:2:end)=imag(V);
+[Id,Iq,Vd,Vq]=sg_machine_algebraic(x0,y,bp,machine,1);
+Efd=machine.d_d*x0(3)-machine.c_d*x0(5);
+Tm=Vd*Id+Vq*Iq+machine.Ra*(Id^2+Iq^2);
+init=struct('ng',1,'bus_idx',bp,'Efd',Efd,'Tm',Tm,'Id',Id,'Iq',Iq, ...
+    'x0',x0,'y0',y,'state_names',{{'delta';'omega';'Eqp';'Edp';'Eqpp';'Edpp'}}, ...
+    'newton_iterations',NaN);
 end
 
 % =========================================================================

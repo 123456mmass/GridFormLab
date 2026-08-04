@@ -26,7 +26,7 @@ g=@(x,y) network_residual(x,y,init,m,Ynet,load,options);
 g_with_network=@(x,y,Y) network_residual(x,y,init,m,Y,load,options);
 rf=f(x0,y0); rg=g(x0,y0);
 nr=norm([rf;rg],inf);
-if nr>100*options.equilibrium_tolerance
+if ~isfinite(nr) || nr>100*options.equilibrium_tolerance
     error('synchronous_emf6_ssa:equilibrium', ...
         'EMF6 equilibrium residual %.3e exceeds tolerance.',nr);
 end
@@ -130,7 +130,14 @@ for k=1:ng
     Eqpp=Vq+m.Ra(k)*Iq+m.Xdpp(k)*Id;
     Edpp=Vd+m.Ra(k)*Id-m.Xqpp(k)*Iq;
     Eqp=Eqpp+(m.Xdp(k)-m.Xdpp(k))*Id;
-    Edp=Edpp-(m.Xqp(k)-m.Xqpp(k))*Iq;
+    if m.Tpq0(k) == 0
+        % IEEE 1110 round-rotor singular limit used by the operational
+        % composite route: E'd is algebraically eliminated.  For the Kodsi
+        % coefficients c_q=0,d_q=1, hence E'd=0 exactly.
+        Edp=0;
+    else
+        Edp=Edpp-(m.Xqp(k)-m.Xqpp(k))*Iq;
+    end
     Efd=m.d_d(k)*Eqp-m.c_d(k)*Eqpp;
     Te=Vd*Id+Vq*Iq+m.Ra(k)*(Id^2+Iq^2);
     ii=(k-1)*6; x0(ii+(1:6))=[delta;0;Eqp;Edp;Eqpp;Edpp];
@@ -158,7 +165,11 @@ for k=1:m.ng
     dx(ii+1)=m.w0*w;
     dx(ii+2)=(init.Tm(k)-Te-u.D_system(k)*w)/(2*u.H_system(k));
     dx(ii+3)=(init.Efd(k)+m.c_d(k)*Eqpp-m.d_d(k)*Eqp)/m.Tpd0(k);
-    dx(ii+4)=(m.c_q(k)*Edpp-m.d_q(k)*Edp)/m.Tpq0(k);
+    if m.Tpq0(k) == 0
+        dx(ii+4)=0;
+    else
+        dx(ii+4)=(m.c_q(k)*Edpp-m.d_q(k)*Edp)/m.Tpq0(k);
+    end
     dx(ii+5)=(Eqp-Eqpp-(m.Xdp(k)-m.Xdpp(k))*Id)/m.Tppd0(k);
     dx(ii+6)=(Edp-Edpp+(m.Xqp(k)-m.Xqpp(k))*Iq)/m.Tppq0(k);
 end

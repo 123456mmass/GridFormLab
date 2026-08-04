@@ -1,95 +1,89 @@
 \documentclass[12pt,a4paper]{article}
 \usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
 \usepackage{newtxtext,newtxmath}
-\usepackage{geometry,booktabs,tabularx}
+\usepackage{geometry,booktabs,tabularx,array}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
 \pagestyle{fancy}\fancyhf{}\lhead{IEEE 14-bus: 1 SG + 4 IBR, AGSI++}\rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\renewcommand{\arraystretch}{1.12}
 \title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching with Project AGSI++}\\
-\large Full-state implementation and present evidence}
+\large Production all-KCL 160-s switching and SG-reference handback}
 \date{4 August 2026}
 \begin{document}
 \maketitle
 
 \begin{abstract}
-The study uses the configured IEEE 14-bus case, device parameters, and event chronology;
-switching remains the project AGSI++. The study profile uses a six-state operational EMF6 SG and
-12-state GFL/GFM switching supersets. The decision index is saturated to $[0,1]$. The required
-publication horizon is 160~s; no shorter verification gate or failed trajectory is presented as
-that result. The exact run exits the model-validity domain at 36.040~s after the SG trip, before
-the later scheduled events. Its raw accepted prefix is shown only as diagnostic switching evidence.
-No Bayesian-optimisation controller or altered numerical result is introduced. The requested
-measurement-noise overlay is seeded, presentation-only, explicitly labelled, and kept separate
-from switching decisions and the saved raw trajectory.
+One six-state EMF6 synchronous generator (SG) and four registered full-state dual-mode IBRs are
+simulated by the project-owned fixed-step, all-KCL hybrid engine for 160~s. The exact chronology is
+SG trip at 20~s, load increase at 50~s, bus-9 fault at 85--85.15~s, line 6--13 trip at 110~s,
+topology restoration and SG-close request at 145~s, and endpoint at 160~s. The run converges with
+maximum accepted-step residual $9.98\times10^{-9}$ and at most one subdivision level. The synchronism
+guard accepts the SG at 147.175~s; all IBRs then return from GFM to GFL through the separately declared
+coordinated SG-reference handback. Final SG frequency is 60.0468~Hz and is still settling. No
+Bayesian-optimisation controller is used. A seeded band-limited display ripple is drawn beside,
+not instead of, each raw trace and affects figures only.
 \end{abstract}
 
-\section{Case, index, and switching}
-The 100-MVA, 60-Hz IEEE 14-bus case has one SG at bus 1 and IBRs at buses 2, 3, 6, and 8.
-The configured apparent-power dispatch is mapped to $P/Q$ with a documented common angle
-(\texttt{PROJECT\_DERIVED}); all device values are read from the source table.
-The project index is
-\[
-J_V=\frac{|V-V_{ref}|}{0.10},\quad J_f=\frac{|f-60|}{0.50},\quad
-J_R=\frac{|\mathrm df/\mathrm dt|}{1.0},\quad J_P=\frac{|P_{ref}-P|}{0.20},
-\]
-\[
-J_{SCR}=\max(0,3/SCR-1),\quad J_{lock}=\frac{|v_q|}{0.10},\quad J_{GRA}=1-GRA,
-\]
-\[
-\mathrm{AGSI}^{++}=\min\!\left(1,\max\!\left(0,\frac{1}{7}\sum J_k\right)\right).
-\]
-Each IBR has its own timer. It commits GFL$\to$GFM above $\Gamma_{on}=0.65$ for
-$T_{d,on}=0.10$~s and GFM$\to$GFL below $\Gamma_{off}=0.35$ with $GRA=1$ for
-$T_{d,off}=1.00$~s. The action is local, not broadcast: each IBR owns its index and timer.
-Coordinated SG-reference handback is separate from index-driven switching. A future coordinated
-controller will be selected with the project advisor; no Bayesian-optimisation block is used here.
+\section{Case, decision index, and switching semantics}
+The system base is 100~MVA and 60~Hz. The SG is at bus 1; IBR1--IBR4 are at buses 2, 3, 6, and 8.
+The project AGSI++ index is
+\begin{align}
+J_V&=\frac{|V-V_{ref}|}{0.10}, & J_f&=\frac{|f-60|}{0.50}, &
+J_R&=\frac{|\mathrm df/\mathrm dt|}{1.0},\\
+J_P&=\frac{|P_{ref}-P|}{0.20}, &
+J_{SCR}&=\max(0,3/SCR-1), & J_{lock}&=\frac{|v_q|}{0.10},\\
+J_{GRA}&=1-GRA, &
+\mathrm{AGSI}^{++}_i&=\min\!\left(1,\max\!\left(0,\frac{1}{7}\sum J_k\right)\right).
+\end{align}
+Here $GRA=1$ when an online SG or committed GFM supplies a reference. The generic local state
+machine uses $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$, $T_{d,on}=0.10$~s, and
+$T_{d,off}=1.00$~s. In this declared chronology, however, the SG-trip transaction is a
+\texttt{CASE\_DEFINED} all-GFM override, and the return at SG close is a coordinated handback.
+Neither transaction is presented as an index-threshold crossing.
 
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_oneline.png}
 \caption{Network and resource locations used by the simulation.}
 \end{figure}
 
-\section{Dynamic model}
-The SG state is
-$x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T$ with the operational
-Kundur/EMF6 stator and flux equations. $T_m$ and $E_{fd}$ are equilibrium controls held
-constant; governor, AVR, synchronizer, and breaker transients are not claimed.
-The implemented core is
+\section{Dynamic equations}
+The operational SG state is
+$x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T$:
+\begin{align}
+\dot\delta&=\omega_0\Delta\omega,&
+2H\dot{\Delta\omega}&=P_m-P_e-D\Delta\omega,\\
+T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,&
+T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
+T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,&
+T''_{q0}\dot E''_d&=E'_d-E''_d+(X'_q-X''_q)I_q.
+\end{align}
+The source singular limit $T'_{q0}=0$ freezes $E'_d=0$ exactly. Two prime-mover states remain
+outside the six-state electromagnetic order:
 \[
-\dot\delta=\omega_0\Delta\omega,\quad
-2H\dot{\Delta\omega}=T_m-T_e-D\Delta\omega,
+T_{SV}\dot P_{SV}=-P_{SV}+P_c-\Delta\omega/R,\qquad
+T_{CH}\dot P_m=-P_m+P_{SV}.
 \]
-\[
-T'_{d0}\dot E'_q=E_{fd}+c_dE''_q-d_dE'_q,\quad
-T'_{q0}\dot E'_d=c_qE''_d-d_qE'_d,
-\]
-\[
-T''_{d0}\dot E''_q=E'_q-E''_q-(X'_d-X''_d)I_d,\quad
-T''_{q0}\dot E''_d=E'_d-E''_d+(X'_q-X''_q)I_q.
-\]
+They provide offline runback/phase preparation and post-close primary regulation. The numerical
+mapping is diagnostic and is not a machine-specific governor validation.
 
-The GFL superset contains filter current, DC-link, PLL, $P/Q$ PI, current PI, and command-delay
-states. GFM contains filter current, DC-link, virtual angle/speed/EMF, voltage PI, current PI,
-and delay states. Source values include $L_f=0.15$, $R_f=0.015$, $C_{dc}=0.10$,
-$I_{max}=1.2$, $T_d=0.02$, $k_{p,Idq}=0.30$, and $k_{i,Idq}=4.00$.
-The paper does not publish the energy-source $I_{dc}$ law, so the implementation closes that
-port with ideal instantaneous power balance; this preserves $V_{dc}$ but cannot establish
-long-duration energy headroom.
-With $V_{dq}=Ve^{-j\theta}=v_d+jv_q$, the common filter/DC plant is
-\[
-\frac{L_f}{\omega_b}\dot i_d=v_{cd,del}-v_d-R_fi_d+\omega L_fi_q,\quad
-\frac{L_f}{\omega_b}\dot i_q=v_{cq,del}-v_q-R_fi_q-\omega L_fi_d,
-\]
-\[
-C_{dc}\dot V_{dc}=I_{dc}-P_{ac}/V_{dc},\qquad
-T_d\dot v_{c,del}=v_c^*-v_{c,del}.
-\]
-GFL uses the PLL and $P/Q$ PI states; GFM uses
-$\dot\theta=\omega_b(\omega-1)$,
-$M\dot\omega=P_{ref}-P-D_v(\omega-1)$, and
-$\tau_E\dot E=k_Q(Q_{ref}-Q)-k_E(E-|V|)$. Both modes use current error
-$e_{dq}=i_{dq}^*-i_{dq}$, radial $I_{max}$ limiting, and anti-windup.
+Each IBR retains the explicit 20-state switching superset
+\begin{align}
+x_{GFM}={}&[\Delta\omega_m,\delta_{IT},x_w,x_E,\delta_{PLL},x_{PLL},P_{inv,f},
+I_{d,f},Q_{inv,f},V_{inv,f},I_{q,f},\delta_{IT,max},\delta_{IT,min}]^T,\\
+x_{GFL}={}&[V_{t,f},P_f,I_{q,cmd,f},P_{ord},V_{LVPL,f},I_{p,reg},I_{q,reg}]^T.
+\end{align}
+The GFM branch contains the sourced VSM swing, PLL, voltage integrator, five measurement filters,
+and dynamic current-angle bounds; for example
+\begin{align}
+2H\dot{\Delta\omega}_m&=P_{ref,inv}-P_{inv,f}-(1/m_p+D_1)\Delta\omega_m
+-D_2(\Delta\omega_m-x_w),\\
+T_{pf}\dot P_{inv,f}&=\kappa P-P_{inv,f},&
+T_{Vf}\dot V_{inv,f}&=|V|-V_{inv,f}.
+\end{align}
+The GFL branch uses the registered WECC REGC\_A and REEC\_A models. Its states represent
+voltage and power filters, power order, LVPL, and regulated-current dynamics. Only the active branch enters the dynamic solve. Atomic state
+mapping is followed by a full-KCL right-limit solve; a failed solve rolls the transaction back.
 
 \section{Power-flow operating point}
 \begin{table}[H]\centering\caption{Bus power-flow results (pu)}
@@ -99,49 +93,53 @@ $e_{dq}=i_{dq}^*-i_{dq}$, radial $I_{max}$ limiting, and anti-windup.
 \input{figures/switch_ieee14/table_pf_line_results.tex}
 \end{table}
 
-\section{Declared 160-s study and publication gate}
-\begin{table}[H]\centering
-\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}X p{0.28\textwidth}@{}}
-\toprule Time (s) & Declared event & Publication status \\ \midrule
-0--20 & base operation, all IBRs initially GFL & operating point verified \\
-20 & SG1 trip & reached; all four IBRs commit GFM \\
-36.040 & state-domain validity exit & diagnostic prefix ends; later events not reached \\
-50 & every configured $P_j^{load},Q_j^{load}$ increased by 20\% & not reached \\
-85--85.15 & temporary three-phase bus-9 fault & not reached \\
-110 & line 6--13 trip & not reached \\
-145 & SG1 and line 6--13 reclose; all loads restored to base & not reached \\
-160 & required simulation endpoint & not reached; recovery unproven \\
-\bottomrule
-\end{tabularx}
+\section{160-s event and mode evidence}
+\begin{table}[H]\centering\small
+\caption{Accepted event transactions; AGSI++ is reported but overrides are explicit.}
+\input{figures/switch_ieee14/table_event_timeline.tex}
 \end{table}
 
-Existing tests separately cover no-event, light/severe faults, load steps, SG trip, and SG
-reclose. A 4-s compressed reclose case remains an internal software gate only and is deliberately
-omitted. The figures below are the accepted prefix of the exact run, not a 160-s recovery claim.
-
-\section{Switching and electrical diagnostic evidence}
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_supervisor.png}
-\caption{AGSI++, GRA, elected reference, and separate IBR1--IBR4 mode timelines. All four
-IBRs cross $\Gamma_{on}$ after the SG trip and commit GFM locally. The run is fail-closed at
-36.040~s; events at 50~s and later are therefore not claimed.}
+\caption{Bounded AGSI++, GRA, reference ownership, and separate IBR1--IBR4 mode timelines.
+The owner trace identifies IBR1 at bus 2 as the grid-forming angle/frequency leader while the SG
+is open. All IBRs are GFL before 20~s, GFM until the accepted handback, and GFL thereafter.}
 \end{figure}
 
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_electrical.png}
-\caption{Diagnostic IBR and SG $P,Q,i_d,i_q,f$, angle, PCC voltage, and network-minimum-voltage traces.
-The thin seeded synthetic measurement overlay is visual only; solver states, AGSI, timers,
-mode decisions, and the saved raw data are unchanged. The frequency and angle drift expose the
-missing long-duration dispatch/energy coordination rather than recovery.}
+\caption{IBR and SG active/reactive power, frame currents, frequency, device-to-PCC angle,
+PCC voltage, and network minimum voltage. Solid traces are raw production results; dotted
+band-limited ripple is display-only and does not enter any equation or decision. Remaining vertical
+event excursions belong to the raw switching transient, not to the ripple.}
 \end{figure}
 
-\section{Reproduction}
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_angles.png}
+\caption{Angle detail. The offline SG rotor slips relative to the energized grid; the plotted
+coordinate is wrapped to $[-180,180)$ degrees.}
+\end{figure}
+
+At the accepted close, the synchronism mismatch is $\Delta V=0.01277$~pu,
+$\Delta f=7.796\times10^{-4}$~pu, and $\Delta\theta=3.402^\circ$. At 160~s the bus-voltage
+range is 0.9849--1.0556~pu, SG electrical power is 1.0482~pu, mechanical input is 1.0462~pu,
+and SG frequency is 60.0468~Hz with a nonzero settling slope. Thus the trajectory demonstrates
+a successful declared handback, but not exact steady-state restoration at the endpoint.
+
+\section{Evidence boundary and reproduction}
+The primary run uses $\Delta t=0.0125$~s. A $\Delta t=0.025$~s refinement comparison closes at
+148.175~s rather than 147.175~s, so event-time independence is not claimed. The run proves numerical
+execution of the declared chronology, atomic mode transfer, full KCL,
+synchronism-gated close, and return to all GFL. It does not validate the diagnostic synchronizer,
+governor parameters, energy reserve, or a general protection design against field measurements.
+The dotted display ripple is never used as model evidence; the solid raw traces remain visible.
 \begin{verbatim}
 pf_init_paths;
 addpath(fullfile('scripts','reporting'));
-generate_ieee14_switch_report_figures;
+generate_ieee14_switch_report_figures(reuse_cache=true);
 \end{verbatim}
-The generator reproduces the PF tables and the exact-run diagnostic prefix. A complete 160-s
-recovery result remains fail-closed pending the advisor-approved coordinated-control contract.
-All solvers are project-owned MATLAB.
+All production solvers are project-owned MATLAB. The targeted numerical, producer and consumer,
+hybrid event, fail-closed, and external-solver-prohibition suites pass 108/108 tests. The full repository
+regression was intentionally omitted under the repository risk policy because these targeted gates
+cover the changed producer, consumers, and failure paths.
 \end{document}

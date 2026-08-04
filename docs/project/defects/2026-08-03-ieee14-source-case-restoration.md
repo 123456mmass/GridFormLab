@@ -1,6 +1,6 @@
 # SWITCH-2026-08-03-02 — IEEE14 source-case restoration and missing island dispatch contract
 
-- **Status:** OPEN_MODEL_LIMITATION (event and current-feedback defects resolved; full chronology unvalidated)
+- **Status:** RESOLVED_DIAGNOSTIC_WORKFLOW (controller/general-readiness claim remains out of scope)
 - **Area:** IEEE 14-bus 1-SG + 4-IBR AGSI++ EECON49 report case
 - **Environment:** Windows, MATLAB, branch `main`, working tree based on `4a94bc5`
 
@@ -86,6 +86,29 @@ built without overfull/math/error warnings and all 19 rendered PDF pages were vi
 The full repository regression was intentionally omitted because the targeted producer, consumer,
 and failure-path gates cover this scope. The full chronology remains intentionally fail-closed at
 36.040 s; it is not a reproduction of the paper's 145-s recovery.
+
+## 2026-08-04 resolution on the production all-KCL route
+
+The 36.040-s result above belongs to the retired report driver and is retained as history. The
+chronology was migrated to the project REGFM_B1 all-KCL hybrid engine, which now supports the exact
+load, fault, line-trip, restoration, SG-close-request, and coordinated-handback sequence. A valid
+mixed-resource EMF6 initializer, exact `T'_{q0}=0` handling, frozen-state consistency gate,
+accepted-leaf residual provenance, deterministic frozen post-trip dispatch, two-state primary
+governor, and an explicitly diagnostic synchronizer/voltage matcher close the workflow without an
+external solver or Bayesian optimisation.
+
+The `dt=0.0125 s` run reaches 160.000 s; SG close is accepted at 147.175 s, accepted-step residual
+is at most `9.98175508801e-9`, attempted parent residual is at most `3.19889806266e-4`, and maximum
+subdivision depth is 1. Final SG frequency is 60.046773383 Hz with a nonzero last-2-s slope, so
+exact steady state is not claimed. A `dt=0.025 s` run closes at 148.175 s; this one-second event-time
+sensitivity is reported rather than hidden. Final targeted tests are 108/108 PASS, the reports
+build cleanly and all 20 pages were visually reviewed. The full repository regression was omitted
+under the repository risk policy because the targeted producer, consumers, and failure paths were
+covered.
+
+This resolves the reproducible diagnostic chronology, not the source gap itself: energy-reserve
+duration, field-measured controller parameters, synchronizer/protection deployment, secondary
+frequency restoration, and time-step-independent close timing remain unvalidated.
 
 ## Related files
 

@@ -328,6 +328,9 @@ opt = struct('t_end', 1.0, 'dt', 0.01, 'verbose', false, ...
     'selected_gfm_indices', 2:5, 'reference_resource_index', 2, ...
     'automatic_gfm_switching', false), 'plot_results', false);
 r = stability.run_hybrid_case(scenario, opt);
+tc.verifyNumElements(r.accepted_residual_per_step,numel(r.residual_per_step), ...
+    'run_hybrid_case must preserve the hybrid accepted-leaf residual provenance.');
+tc.verifyTrue(all(isfinite(r.accepted_residual_per_step)));
 tc.verifyFalse(r.converged);
 tc.verifyEqual(r.failure_id,'ts_simulate_ibr_hybrid:noVoltageFormingSource');
 tc.verifyFalse(r.metadata.automatic_gfm_switching);

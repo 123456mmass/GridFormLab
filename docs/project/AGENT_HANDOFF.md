@@ -9,7 +9,7 @@ provenance but do not override this runtime status.
 
 ## 2026-08-04 — ET-FCS predictive-supervisor proposal deck
 
-Documentation-only follow-on at starting commit `f78ea00`: a 19-slide Thai Beamer deck proposes
+Documentation-only follow-on at starting commit `f78ea00`: an 18-slide Thai Beamer deck proposes
 an event-triggered finite-control-set predictive supervisor above the existing AGSI++ local state
 machines. It separates verified current behaviour from the unimplemented `PROJECT_DERIVED`
 proposal, enumerates all 16 four-IBR mode vectors, defines global measurements, hard feasibility
@@ -18,7 +18,7 @@ benefits with measurable falsification metrics, phased implementation, and prede
 workflow is rendered as a non-overlapping numbered two-row sequence. The BO comparison is role-specific and does
 not claim universal superiority or closed-loop improvement before identical-contract testing. AVR,
 LLM/BO online switching, SG/IBR equations, thresholds, cases, and production runtime are unchanged.
-XeLaTeX builds 19 pages with no overfull/error warnings; every rendered slide was visually checked.
+XeLaTeX builds 18 pages with no overfull/error warnings; every rendered slide was visually checked.
 Source: `docs/source/presentation_fcs_predictive_supervisor_th.tex`. Final artifact:
 `output/pdf/presentation_fcs_predictive_supervisor_th.pdf`.
 

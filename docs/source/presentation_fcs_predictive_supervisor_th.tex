@@ -29,7 +29,7 @@
 \setbeamertemplate{itemize subitem}{\color{blue}$\bullet$}
 \setbeamertemplate{footline}{%
   \leavevmode\hbox{\begin{beamercolorbox}[wd=.84\paperwidth,ht=2.5ex,dp=1.1ex,leftskip=1em]{author in head/foot}%
-  \color{navy}\scriptsize Proposed method -- ยังไม่ใช่ผล production
+  \color{navy}\scriptsize แนวคิดสำหรับพัฒนาต่อ -- ยังไม่ใช่ผลการทดลอง
   \end{beamercolorbox}\begin{beamercolorbox}[wd=.16\paperwidth,ht=2.5ex,dp=1.1ex,center]{date in head/foot}%
   \color{navy}\scriptsize\insertframenumber/\inserttotalframenumber
   \end{beamercolorbox}}}
@@ -431,40 +431,26 @@ Runtime & deadline และจำนวน candidate TDS & percentile runtime +
 \gate{ผ่านทั้งหมดก่อนเทียบ performance กับ BO}
 \end{frame}
 
-\begin{frame}{16. สิ่งที่ต้องตกลงกับอาจารย์ก่อน implement}
-\begin{enumerate}
-  \item นิยาม ``system recovery'' และ operating limits ที่ใช้เป็น hard constraints
-  \item prediction horizon $T_p$ และ controller invocation/deadline
-  \item reserve/energy model ที่อนุญาตให้ใช้จริง
-  \item cost normalization และ weight provenance -- source, derived หรือ design choice
-  \item safe fallback เมื่อทุก candidate ไม่ผ่าน
-  \item BO ใช้เป็น baseline/offline tuner หรือไม่ และใช้ข้อมูลชุดเดียวกันอย่างไร
-\end{enumerate}
-\begin{alertblock}{สิ่งที่ยังไม่ควรพูด}
-ยังไม่อ้างว่า ET-FCSPS มีเสถียรภาพดีกว่า BO, เร็วกว่า BO หรือเลือก GFM น้อยกว่า จนกว่าจะ implement และทดสอบบน input/event contract เดียวกัน
-\end{alertblock}
-\end{frame}
-
-\begin{frame}{17. ข้อเสนอสำหรับการประชุม}
-\begin{block}{One-sentence proposal}
-ใช้ AGSI++ เป็น local event indicator แล้วให้ ET-FCS predictive supervisor ประเมิน mode combination ของ IBR จาก full-network feasibility และ short-horizon response ก่อน commit การสลับ
+\begin{frame}{16. แนวคิดที่เราจะพัฒนาต่อ}
+\begin{block}{แนวคิดหลัก}
+ให้ AGSI++ ทำหน้าที่ตรวจจับความผิดปกติราย IBR แล้วใช้ ET-FCS predictive supervisor วิเคราะห์สภาวะทั้งโครงข่าย เพื่อเลือกชุด GFL/GFM และ reference leader ก่อนสั่งสลับจริง
 \end{block}
 \begin{columns}[T,onlytextwidth]
 \column{.48\textwidth}
-\textbf{จุดเด่นที่คาดหวัง}
+\textbf{สิ่งที่คาดว่าจะได้}
 \begin{itemize}
-  \item system-aware แทน threshold-only
-  \item deterministic และอธิบายย้อนหลังได้
-  \item enforce hard constraints ก่อนเลือก
-  \item ใช้ finite set เล็กของระบบเราโดยตรง
+  \item ตัดสินใจจากสภาวะทั้งระบบ ไม่ใช่ threshold อย่างเดียว
+  \item เลือกจำนวนและตำแหน่ง GFM เท่าที่จำเป็น
+  \item ลด transient และการสลับที่ไม่จำเป็น
+  \item อธิบายเหตุผลของคำสั่งย้อนหลังได้
 \end{itemize}
 \column{.48\textwidth}
-\textbf{ความเสี่ยงที่ต้องจัดการ}
+\textbf{ประเด็นที่ต้องพิสูจน์จากผลจำลอง}
 \begin{itemize}
-  \item computational cost ของ prediction
-  \item model mismatch และ reserve uncertainty
-  \item horizon/weight sensitivity
-  \item closed-loop stability ยังต้องพิสูจน์
+  \item prediction ต้องเร็วพอก่อนถึงเวลาสั่งสลับ
+  \item voltage, frequency และ current transient ลดลงจริง
+  \item ผลไม่ไวเกินไปต่อ horizon, weight และ $\Delta t$
+  \item ทุก transaction ผ่าน KCL และไม่มี switching chatter
 \end{itemize}
 \end{columns}
 \end{frame}

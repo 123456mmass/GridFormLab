@@ -25,6 +25,15 @@ Fresh targeted verification: 25/25 PASS. EN/TH XeLaTeX builds pass and all 7+10 
 were visually reviewed. Full regression intentionally omitted under the risk policy; the only
 open gate is the advisor-approved long-duration dispatch/energy/control law required for 160 s.
 
+Continued 2026-08-04 diagnostics also rejected direct Sakimoto-governor splicing, a critically
+damped secondary integrator, immediate GRA override, proportional dispatch, command lags, and
+single-GFM arbitration on the legacy report driver. The reduced-6 wrapper was additionally found to
+have split limiter semantics (clamped KCL current versus unclamped swing power), so it is not a
+valid workaround. The production REGFM_B1/all-KCL engine remains the correct integration base, but
+its present event schedule orders fault before SG trip and lacks the required later load/line
+events; a 40-s SG-cycle performance probe exceeded 600 s without a terminal result. Experimental
+runtime edits were removed; details remain in the linked defect record.
+
 ## 2026-07-21 — Separate SMIB TDS current and power plots
 
 The ideal-SMIB TDS diagnostic now preserves the perturbed algebraic-voltage

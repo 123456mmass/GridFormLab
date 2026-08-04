@@ -63,6 +63,35 @@ approved by the user, not a tolerance relaxation to obtain PASS.
   law (including command dynamics and limits) is required before a truthful 160-s recovery result can
   be generated. Filling or extending the failed trace is not an admissible substitute.
 
+### Continued 160-s investigation (same working day)
+
+The following candidates were run on an uncommitted diagnostic tree and then removed because they
+failed the predeclared nonlinear/system gates. No candidate result feeds the report or production
+state.
+
+- A Sakimoto-style two-state speed-primary governor attached directly to the mapped full-state GFM
+  produced a fixed-bus right-half-plane pole at `+2.245 s^-1`; the local eigenvalue gate rejected it
+  before a report run.
+- A one-state secondary-frequency integrator with gain fixed analytically from
+  `D_v^2/(4M)=7.03125` passed the per-device fixed-bus gate but the four-GFM island left the validity
+  domain at 22.47 s. Local stability therefore did not establish multi-GFM stability.
+- Deterministic post-trip active-power sharing, immediate GRA-loss override, and 0.5-s/5-s command
+  lags were each falsified with both the mapped full-state pair and reduced-6 pair. Four physical
+  GFM oscillators lost relative synchronism; electing one GFM left the remaining weak-grid GFL
+  branches unstable. Reducing the step from 0.01 s to 0.002 s did not remove the physical runaway.
+- The reduced-6 diagnostic exposed a separate limiter trap: the wrapper clamps the network-current
+  injection while the device swing equation reads the unclamped electrical power. This split
+  contract can publish incompatible network and rotor powers and must not be used as a recovery
+  route without a device-owned limiter equation.
+- The audited REGFM_B1 production hybrid engine is the appropriate next base because it already has
+  multi-GFM equilibrium/all-KCL gates. A 40-s SG-cycle probe (trip 20 s, reclose request 39 s,
+  `dt=0.01 s`) did not reach a terminal result within the declared 600-s runtime gate. Its current
+  event schedule also assumes fault-before-trip, whereas the required chronology places the fault
+  at 85 s after the 20-s SG trip; load-step and line-trip events are not yet supported by that route.
+
+All experimental runtime edits were removed. The tested/pushed tree therefore retains the previous
+fail-closed 36.040-s evidence rather than silently replacing it with an unvalidated controller.
+
 ## Verification
 
 Targeted gates: 25/25 PASS (24 combined IBR/IEEE14/full-state tests plus the isolated bounded Padiyar

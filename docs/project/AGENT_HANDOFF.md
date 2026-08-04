@@ -7,6 +7,36 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-04 — ET-FCSPS core and paired BO baseline
+
+Starting commit `6eeb05c`. An additive, production-isolated ET-FCSPS decision core is now
+implemented under `+stability/et_fcs_*.m`. It validates/fingerprints an accepted value-state,
+enumerates 16 four-IBR mode vectors (and 32 SG-off mode-owner pairs), applies dwell/lockout and
+full-network evidence gates, validates an isolated prediction horizon, computes unmodified
+dimensionless metrics, ranks deterministically, emits a fingerprint-bound `COMMIT_REQUEST`, and
+revalidates it with a pure commit guard. The core never mutates hybrid state; existing atomic
+event handling remains the only commit authority. A project-owned authenticated trial-table
+provider interface is included so production policy rejects arbitrary callbacks.
+
+The frozen IEEE14 prototype policy is `PROJECT_DERIVED`: `T_p=0.25 s`, AGSI++-aligned engineering
+normalizers, voltage/current-dominant soft weights, and explicit provenance. It is frozen before
+closed-loop results and does not alter AGSI++, thresholds, SG/IBR equations, case limits, or event
+chronology. An in-house Base-MATLAB finite-set BO replay baseline uses an RBF Gaussian process and
+expected improvement after the identical hard screen. It is explicitly
+`ASSUMED_DIAGNOSTIC_OFFLINE_REPLAY`, budgeted at 8 predictions, never feeds ET-FCSPS/production,
+and reports paired winner, regret, and prediction-evaluation reduction. With a full budget it is
+required to recover the exhaustive winner.
+
+Fresh gates: ET-FCSPS/BO unit-oracle suite 20/20 PASS; existing authenticated selector table 44/44
+PASS; existing SG-ON integration 12/12 PASS; Code Analyzer zero issues for all new files. The full
+repository regression was intentionally omitted under the risk policy because the new core is
+unreachable from the default production runtime. Reports and PDFs were not edited. Remaining
+production-integration gate: create and verify a nonlinear accepted-state trial-table producer
+using the existing full-KCL state mapping/short-horizon runtime, then connect the returned request
+to the existing atomic event transaction under a separate shared-runtime ownership plan. See
+`docs/project/plans/ET_FCSPS_IMPLEMENTATION_PLAN.md` and defect record
+`docs/project/defects/2026-08-04-et-fcs-provider-name-dispatch.md`.
+
 ## 2026-08-04 — detailed ET-FCSPS technical report
 
 Documentation-only follow-on to the 18-slide proposal deck. A 14-page Thai A4 report now

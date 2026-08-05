@@ -1374,3 +1374,27 @@ reclose/handback, so this run is not claimed as a successful SG-recovery case;
 the controller comparison is limited to the SG-trip mode/owner decision and
 the subsequent accepted trajectory. The large raw `.mat` files remain local,
 ignored cache artifacts; the CSV is the committed machine-readable summary.
+
+## 2026-08-06 — IEEE14 switching report: Phase D/E/F/G/H complete
+
+Started from HEAD `126ae57`. Committed `a2d346a` (pushed, local==remote).
+
+- **Phase D**: eecon49 slack 1.06 -> 1.00 pu at angle 0, +-5% band
+  (Vmax 1.05/Vmin 0.95) on all buses. EECON49 mapping re-derived:
+  phi=0.508383707164714 (positive-Q root, residual -1.1e-15 on
+  |S_SG1|-1.3462), lost_sg_MW=133.190444. Bus 6 solves at 1.0575 pu (above
+  Vmax) and is reported, not tuned.
+- **Phase E**: bus_role labelling descriptor (REF/PV/PQ/GFM/GFL); PF
+  bit-identical, 12-col contract intact.
+- **Phase F**: Qmin/Qmax registered from mpc.gen into bus_data 11/12
+  (SOURCE_DEFINED); enforce_q_limits enabled in both builders. P-limit
+  fail-closed (no mechanism).
+- **Phase G**: horizon 160 -> 200 s from case contract; cache-horizon guard;
+  .fig companions saved. Full 200-s run passes: FULL_200_S_GATE_PASSED,
+  reclose 146.825 s, max step residual 9.99e-9, f_SG settles 60.0002 Hz.
+  5 remote load buses below Vmin 0.95 at endpoint — reported openly.
+- **Solver**: ts_algebraic_solve iteration lease 30 -> 60 (NUMERICAL_METHOD,
+  kcl_tol unchanged) fixing fault-on non-convergence (TS-2026-08-05-01).
+- **Phase H**: event timeline figure.
+- Reports EN/TH updated to 200-s. Targeted gates 19/19 pass. Full regression
+  omitted per risk policy (targeted producer/consumer coverage).

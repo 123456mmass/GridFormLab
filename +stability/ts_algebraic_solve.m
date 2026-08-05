@@ -16,7 +16,12 @@ y = y(:);
 info = struct('iterations',0,'final_residual',norm(g0,inf), ...
     'converged',norm(g0,inf)<=tol,'line_search_failures',0);
 
-for k = 1:30
+% NUMERICAL_METHOD iteration lease. Fixed 30 was tight for the fault-on
+% right-limit on the Phase D operating point (residual 1.116e-06 vs tol 1e-06,
+% line_search_failures=0: converging, lease exhausted). Raised to 60 for
+% headroom. kcl_tol (the acceptance residual) is unchanged; this only extends
+% how many damped-Newton steps may be taken.
+for k = 1:60
     g = dae_g(x, y, Y);
     nr = norm(g, inf);
     info.iterations = k;

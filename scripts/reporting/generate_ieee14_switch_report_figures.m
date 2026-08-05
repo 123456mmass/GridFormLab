@@ -22,17 +22,31 @@ sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
     case_profile="eecon49_figure4", sg_H=2.5, sg_D=1.0, ...
     T_d_on=0.10, T_d_off=1.0);
 write_pf_tables(sys.pf,outdir);
+T_end_contract=sys.switching_event_contract.T_end;
 production_cache=fullfile('output','diagnostics','regfm_post_trip_probe.mat');
-figure_cache=fullfile('output','diagnostics','ieee14_switch_160_exact.mat');
+figure_cache=fullfile('output','diagnostics', ...
+    sprintf('ieee14_switch_%g_exact.mat',T_end_contract));
+reuse_ok=false;
 if opts.reuse_cache && exist(production_cache,'file')
     cached=load(production_cache,'r'); r=cached.r;
-else
+    % Phase G guard: a cache produced under a shorter horizon must never be
+    % presented as evidence for the current contract.  Fail closed instead of
+    % silently reusing a truncated trajectory.
+    reuse_ok = r.converged && r.t(end) >= T_end_contract - 1e-9;
+    if ~reuse_ok
+        error('generate_ieee14_switch_report_figures:staleCacheHorizon', ...
+            ['Cached run ends at %.6f s but the case contract requires %g s. ', ...
+             'Rerun with reuse_cache=false to regenerate the trajectory.'], ...
+            r.t(end),T_end_contract);
+    end
+end
+if ~reuse_ok
     [scenario,opt]=production_request();
     r=stability.run_hybrid_case(scenario,opt);
-    if ~r.converged || r.t(end)<160
+    if ~r.converged || r.t(end)<T_end_contract
         error('generate_ieee14_switch_report_figures:productionRun', ...
-            'Production run failed closed at %.6f s: %s %s', ...
-            r.t(end),string(r.failure_id),string(r.failure_reason));
+            'Production run failed closed at %.6f s (required %g s): %s %s', ...
+            r.t(end),T_end_contract,string(r.failure_id),string(r.failure_reason));
     end
     cachedir=fileparts(production_cache);
     if ~exist(cachedir,'dir'), mkdir(cachedir); end
@@ -42,21 +56,25 @@ out=adapt_production_result(r,sys);
 o=out; save(figure_cache,'o','-v7.3');
 out.pf=sys.pf;
 out.event_contract=sys.switching_event_contract;
-out.requested_horizon_s=160;
+T_end=T_end_contract;
+out.requested_horizon_s=T_end;
 out.bo_controller_added=false;
 out.presentation_noise=struct('kind','seeded band-limited measurement ripple overlay', ...
     'seed_base',4901,'affects_solver_or_switching',false);
-if out.diverged || ~out.newton_all_converged || out.tgrid(end)<160
+if out.diverged || ~out.newton_all_converged || out.tgrid(end)<T_end
     out.dynamic_status='DIAGNOSTIC_PREFIX_ONLY_FAIL_CLOSED';
-    figure_title=sprintf('Diagnostic raw prefix to %.3f s (requested 160 s; fail-closed)',out.tgrid(end));
+    figure_title=sprintf('Diagnostic raw prefix to %.3f s (requested %g s; fail-closed)', ...
+        out.tgrid(end),T_end);
 else
-    out.dynamic_status='FULL_160_S_GATE_PASSED';
-    figure_title='Production all-KCL response: full 160-s chronology';
+    out.dynamic_status=sprintf('FULL_%g_S_GATE_PASSED',T_end);
+    figure_title=sprintf('Production all-KCL response: full %g-s chronology',T_end);
 end
 write_event_table(out,outdir);
-supervisor_figure(out,outdir,'ieee14_switch_160_supervisor.png',figure_title);
-electrical_figure(out,outdir,'ieee14_switch_160_electrical.png',figure_title);
-angle_figure(out,outdir,'ieee14_switch_160_angles.png');
+tag=sprintf('%g',T_end);
+supervisor_figure(out,outdir,['ieee14_switch_' tag '_supervisor.png'],figure_title);
+electrical_figure(out,outdir,['ieee14_switch_' tag '_electrical.png'],figure_title);
+angle_figure(out,outdir,['ieee14_switch_' tag '_angles.png']);
+timeline_figure(out,outdir,['ieee14_switch_' tag '_timeline.png']);
 fprintf('IEEE14_SWITCH_REPORT_FIGURES_DONE: %s [%s]\n',outdir,out.dynamic_status);
 end
 
@@ -70,7 +88,12 @@ ev=struct('enabled',true,'event_profile','chronology', ...
     'selected_gfm_indices',2:5,'reference_resource_index',2, ...
     'automatic_gfm_switching',true, ...
     'delays_overrides',struct('timeout_s',5,'dwell_s',0.5));
-opt=struct('t_end',160,'dt',0.0125,'verbose',false, ...
+% Phase G: horizon extended 160 -> 200 s so the trajectory covers the SG
+% reclose (observed near 147.175 s for the 145.000 s request) plus a settling
+% window after handback.  Taken from the case contract rather than restated
+% here, so the case file remains the single owner of the event schedule.
+opt=struct('t_end',s.case_data.switching_event_contract.T_end, ...
+    'dt',0.0125,'verbose',false, ...
     'ibr_events',ev,'plot_results',false);
 end
 
@@ -313,8 +336,7 @@ for j=1:numel(buses)
     event_lines(ax,o,false);
     if j>2, xlabel(ax,'time (s)'); end
 end
-exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
-close(f);
+export_figure(f,outdir,filename);
 end
 
 function response_figure(o,outdir,filename,figure_title)
@@ -339,8 +361,7 @@ lg=legend(h, ...
     'Orientation','horizontal','NumColumns',4);
 lg.Layout.Tile='south';
 set(lg,'FontName','Times New Roman','FontSize',9);
-exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
-close(f);
+export_figure(f,outdir,filename);
 end
 
 function electrical_figure(o,outdir,filename,figure_title) %#ok<INUSD>
@@ -375,7 +396,7 @@ names=arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)), ...
 lg=legend([h hsg],[names {sprintf('SG bus %d',o.sg_bus)}], ...
     'Orientation','horizontal','NumColumns',5);
 lg.Layout.Tile='south'; set(lg,'FontName','Times New Roman','FontSize',9);
-exportgraphics(f,fullfile(outdir,filename),'Resolution',220); close(f);
+export_figure(f,outdir,filename);
 end
 
 function angle_figure(o,outdir,filename)
@@ -398,7 +419,63 @@ title(ax,'(b) IBR internal/PCC-frame angle','FontSize',11); event_lines(ax,o,fal
 lg=legend(ax,arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
     'Orientation','horizontal','NumColumns',4,'Location','southoutside');
 set(lg,'FontName','Times New Roman','FontSize',9);
-exportgraphics(f,fullfile(outdir,filename),'Resolution',220); close(f);
+export_figure(f,outdir,filename);
+end
+
+function timeline_figure(o,outdir,filename)
+% Phase H: single-row horizontal event timeline.  The markers are taken from
+% the accepted event log (the same source as the numeric Table 3 record), so
+% the diagram is a visual companion to the table, not a separate schedule.
+ev=o.event_log;
+kinds=string({ev.type});
+modeK={'sg_trip','sg_reclose','sg_on'};
+% Vertical lane per event: 1 = reference/mode events, 2 = disturbances.
+lane=zeros(1,numel(ev));
+for k=1:numel(ev)
+    if any(strcmp(kinds(k),modeK)), lane(k)=1; else, lane(k)=2; end
+end
+% Spread events that land within 0.4 s of one another onto an open lane so the
+% markers do not overlap (the 0.15-s fault window is the dense cluster).
+for i=1:numel(ev)
+    for j=i+1:numel(ev)
+        if abs(ev(i).t-ev(j).t)<0.4 && lane(i)==lane(j)
+            lane(j)=3-lane(j);
+        end
+    end
+end
+yrange=[0 3];
+f=figure('Color','w','Units','inches','Position',[1 1 8.90 2.10], ...
+    'Visible','off','DefaultAxesFontName','Times New Roman', ...
+    'DefaultAxesFontSize',12,'DefaultTextFontName','Times New Roman', ...
+    'DefaultTextFontSize',12);
+ax=gca(f);
+hold(ax,'on');
+plot(ax,[0 o.event_contract.T_end],[1 1],'k-','LineWidth',1.8);
+xlim(ax,[0 o.event_contract.T_end]); ylim(ax,yrange);
+ax.YTick=1; ax.YTickLabel={'model'};
+xlabel(ax,'time (s)');
+title(ax,'IEEE 14-bus switching event timeline','FontName','Times New Roman','FontSize',12);
+cmap=[0.13 0.43 0.78; 0.84 0.30 0.24];
+for k=1:numel(ev)
+    l=lane(k);
+    plot(ax,ev(k).t,l,'o','MarkerFaceColor',cmap(mod(l-1,2)+1,:), ...
+        'MarkerEdgeColor','k','MarkerSize',7);
+    text(ax,ev(k).t,l+0.32,sprintf('%s: %.3f s',event_label(kinds(k)),ev(k).t), ...
+        'HorizontalAlignment','center','VerticalAlignment','bottom', ...
+        'FontName','Times New Roman','FontSize',7,'Color',[0.1 0.1 0.1]);
+end
+hold(ax,'off'); box(ax,'on');
+export_figure(f,outdir,filename);
+end
+
+function export_figure(f,outdir,filename)
+% Write the report raster at 1:1 physical size and an editable MATLAB .fig
+% companion beside it, so panels can be reopened and adjusted without rerunning
+% the 200-s transient.  Presentation only: no solver or gate reads these files.
+exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
+[~,stem]=fileparts(filename);
+savefig(f,fullfile(outdir,[stem '.fig']));
+close(f);
 end
 
 function h=panel_noise(ax,t,y,c,ylab,ttl,sigma,seed)

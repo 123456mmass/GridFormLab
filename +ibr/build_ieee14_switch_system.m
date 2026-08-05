@@ -54,8 +54,13 @@ switch lower(opts.case_profile)
         error('ibr:build_ieee14_switch_system:caseProfile', ...
             'Unknown case_profile "%s".',opts.case_profile);
 end
+% Phase F: Q-limit enforcement is now backed by real per-bus Qmin/Qmax
+% (registered from mpc.gen in cases.case_matpower6_case14).  On the
+% eecon49 operating point all inverter buses are PQ resources and the SG is
+% the slack, so no PV bus triggers enforcement (rounds = 0); enabling the
+% PF default is safe and correct for cases that do carry PV buses.
 pf = pfsolver.powerflow_newton_raphson(c, struct('verbose',false,'plot_results',false, ...
-    'tolerance',1e-10,'max_iter',100,'enforce_q_limits',false));
+    'tolerance',1e-10,'max_iter',100,'enforce_q_limits',true));
 if ~pf.converged
     error('ibr:build_ieee14_switch_system:powerFlow','In-house Newton PF did not converge.');
 end

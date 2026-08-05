@@ -18,8 +18,8 @@
 \renewcommand{\figurename}{รูปที่}
 \renewcommand{\tablename}{ตารางที่}
 \title{\textbf{การสลับโหมด GFL$\leftrightarrow$GFM บน IEEE 14 บัสด้วย AGSI++}\\
-\large ผลจำลอง production all-KCL ครบ 160 วินาทีและการคืน reference ให้ SG}
-\date{4 สิงหาคม 2569}
+\large ผลจำลอง production all-KCL ครบ 200 วินาทีและการคืน reference ให้ SG}
+\date{6 สิงหาคม 2569}
 \begin{document}
 \maketitle
 
@@ -28,13 +28,14 @@
 \path{docs/text/EECON49_[Nui].pdf} เท่านั้น แต่สมการ ตัวแก้ power flow ตัวแก้สมการเชิงเวลา
 AGSI++ และกลไก switching เป็นโค้ดของโครงการทั้งหมด ระบบประกอบด้วย synchronous generator
 (SG) แบบ EMF6 จำนวนหก state ที่บัส 1 และ IBR แบบ dual-mode full-state สี่ตัวที่บัส 2, 3, 6 และ 8
-การรัน production เดียวครอบคลุม 0--160~s: ปลด SG ที่ 20~s, เพิ่มโหลด 20\% ที่ 50~s,
+การรัน production เดียวครอบคลุม 0--200~s: ปลด SG ที่ 20~s, เพิ่มโหลด 20\% ที่ 50~s,
 fault สามเฟสที่บัส 9 ช่วง 85--85.15~s, เปิดสาย 6--13 ที่ 110~s, คืนสาย/โหลดและขอปิด SG
-ที่ 145~s ผลผ่านถึง 160~s โดย residual สูงสุดของ accepted step เท่ากับ
-$9.98\times10^{-9}$ และ subdivision สูงสุดหนึ่งชั้น SG ผ่าน synchronism guard และปิดจริงที่
-147.175~s จากนั้น coordinated SG-reference handback สั่ง IBR ทั้งหมดกลับ GFL
-ความถี่ SG ที่ 160~s เท่ากับ 60.0468~Hz และยังอยู่ระหว่าง settling จึงอ้างได้ว่า chronology
-และ handback ทำงานตามสัญญาที่ประกาศ แต่ยังไม่ใช่การยืนยัน controller ระดับใช้งานจริง
+ที่ 145~s ผลผ่านถึง 200~s โดย residual สูงสุดของ accepted step เท่ากับ
+$9.99\times10^{-9}$ และ subdivision สูงสุดหนึ่งชั้น SG ผ่าน synchronism guard และปิดจริงที่
+146.825~s จากนั้น coordinated SG-reference handback สั่ง IBR ทั้งหมดกลับ GFL
+ที่จุดสิ้นสุด 200~s ความถี่ SG กลับสู่ $60.0002$~Hz แสดงว่าความถี่กลับเข้าสู่ steady ก่อนจบ
+แม้บัสโหลดระยะไกลห้าบัสจะยังต่ำกว่าแบนด์แรงดัน $\pm5\%$ เล็กน้อย ฉะนั้น
+chronology และ handback ทำงานตามสัญญาที่ประกาศ แต่ยังไม่ใช่การยืนยัน controller ระดับใช้งานจริง
 ไม่มี Bayesian Optimization (BO) ในงานนี้ ส่วน ripple เส้นจุดที่เห็นในกราฟเป็น display-only
 overlay แบบ band-limited; เส้นทึบยังเป็น raw result และ overlay ไม่เปลี่ยน state, AGSI, timer,
 threshold หรือผลตัดสินโหมด
@@ -44,7 +45,7 @@ threshold หรือผลตัดสินโหมด
 
 \section{คำตอบตรงตาม feedback}
 \begin{tabularx}{\textwidth}{p{0.29\textwidth}X}
-\toprule คำถาม & คำตอบที่ตรวจจากโค้ดและผล 160~s \\ \midrule
+\toprule คำถาม & คำตอบที่ตรวจจากโค้ดและผล 200~s \\ \midrule
 รู้ได้อย่างไรว่า IBR อยู่โหมดใด & อ่าน committed mode ของอุปกรณ์โดยตรง ไม่อนุมานจากกราฟกำลัง:
 0=GFL และ 1=GFM รูป mode timeline แยก IBR1--IBR4 จึงเป็นหลักฐานหลัก \\
 สลับด้วยวิธีใด & โครงสร้างทั่วไปเป็น binary hybrid state machine ที่มี index, hysteresis และ
@@ -56,15 +57,15 @@ $T_{d,on}$ สำหรับ GFL$\to$GFM และใช้ $\mathrm{AGSI}^{++}
 reference เพิ่มเติม เพื่อให้ระบบไม่เข้าสู่ภาวะไม่มีผู้กำหนดมุมและความถี่ \\
 สลับพร้อมกันหรือไม่ & ตามกลไก local ไม่จำเป็นต้องพร้อมกัน เพราะแต่ละ IBR มี index/timer ของตนเอง
 แต่ผลชุดนี้สลับพร้อมกันที่ 20~s เพราะ local AGSI supervisor ทำงานร่วมกับเงื่อนไข
-``SG unavailable'' แล้ว event transaction commit all-GFM แบบ atomic และกลับพร้อมกันที่ 147.175~s
+``SG unavailable'' แล้ว event transaction commit all-GFM แบบ atomic และกลับพร้อมกันที่ 146.825~s
 เพราะ coordinated handback หลัง SG ผ่าน synchronism guard \\
 ตัวใดเป็น slack bus & ตอน SG online บัส 1 เป็น REF ของ power flow ระหว่าง SG offline ไม่มี IBR
 ตัวใดถูกเปลี่ยนเป็น algebraic PF slack; IBR1 ทำหน้าที่ reference leader ด้านมุม/ความถี่ของ island
 เท่านั้น ขณะเดียวกันทุกบัสยังคงอยู่ในสมการ KCL \\
 รู้ได้อย่างไรว่ากลับสภาวะปกติ & ต้องดูพร้อมกันทั้ง breaker state, mode, KCL residual, แรงดัน,
-ความถี่, กำลังกล/ไฟฟ้า และแนวโน้ม settling ชุดนี้กลับ all-GFL และแรงดันอยู่ในช่วงปกติ แต่
-$f_{SG}=60.0468$~Hz ที่ 160~s ยังไม่หยุดเปลี่ยน จึงรายงานว่า recovery กำลัง settle
-ไม่เขียนว่า exact steady state แล้ว \\
+ความถี่, กำลังกล/ไฟฟ้า และแนวโน้ม settling ชุดนี้กลับ all-GFL แรงดันอยู่ในช่วงปกติ และ
+$f_{SG}=60.0002$~Hz ที่ 200~s กลับเข้าสู่ steady จาก transient จึงรายงานว่า recovery สำเร็จ
+ไม่ใช่แค่ settling อยู่ \\
 \bottomrule
 \end{tabularx}
 
@@ -142,7 +143,7 @@ $[0,1]$ เสมอ การแตะเส้นเพียง sample เด
 \end{figure}
 
 ผล chronology นี้ใช้ลูกศร override สองเส้น: ที่ 20~s SG-trip transaction เปิด SG และ commit
-IBR ทั้งสี่เป็น GFM แบบ atomic; ที่ 147.175~s เมื่อ SG ผ่าน guard แล้ว transaction จึงคืน reference
+IBR ทั้งสี่เป็น GFM แบบ atomic; ที่ 146.825~s เมื่อ SG ผ่าน guard แล้ว transaction จึงคืน reference
 ให้ SG และ transfer IBR ทั้งสี่กลับ GFL ตามด้วย right-limit KCL solve ดังนั้น mode timeline ที่พร้อมกัน
 เป็นผลของ coordinated transaction ไม่ใช่หลักฐานว่า index ทั้งสี่ตัด threshold พร้อมกัน
 
@@ -250,23 +251,30 @@ dynamic solve แต่ state ทั้ง 20 ตัวคงอยู่เพ�
 registered current injection ที่ผูกกับ full network KCL หลังสลับโหมดต้องแก้ algebraic right limit ใหม่
 และหาก KCL ไม่ผ่าน transaction จะ rollback/fail-closed
 
-\section{ลำดับเหตุการณ์ 160 วินาทีและหลักฐาน transaction}
+\section{ลำดับเหตุการณ์ 200 วินาทีและหลักฐาน transaction}
 \begin{table}[H]\centering\small
 \caption{เวลา เหตุการณ์ AGSI++ timer โหมดก่อน--หลัง และเหตุผลจาก accepted event log}
 \input{figures/switch_ieee14/table_event_timeline.tex}
 \end{table}
 
+\begin{figure}[H]\centering
+\includegraphics[width=8.90in]{figures/switch_ieee14/ieee14_switch_200_timeline.png}
+\caption{แผนภาพลำดับเหตุการณ์ตามแกนเวลาจาก accepted production event log: ปลด SG ที่ 20~s,
+เพิ่มโหลดที่ 50~s, fault บัส 9 ช่วง 85--85.15~s, เปิดสาย 6--13 ที่ 110~s, คืนสภาพพร้อม
+SG-close request ที่ 145~s และ SG ปิดจริงที่ 146.825~s}
+\end{figure}
+
 ลำดับที่ใช้ตรงตามชุด verify: 0--20~s ระบบปกติ; 20~s ปลด SG; 50~s เพิ่มโหลด active/reactive
 ทุกจุด 20\%; 85--85.15~s fault บัส 9 ด้วย $Z_f=0.01+j0.01$~pu; 110~s เปิดสาย 6--13;
-145~s คืนสายและโหลดฐานพร้อมส่ง earliest SG-close request; 147.175~s SG ปิดจริงหลัง guard;
-160~s สิ้นสุดการจำลอง จุด fault ใช้ admittance homotopy เฉพาะการหา right-limit initial guess
+145~s คืนสายและโหลดฐานพร้อมส่ง earliest SG-close request; 146.825~s SG ปิดจริงหลัง guard;
+200~s สิ้นสุดการจำลอง จุด fault ใช้ admittance homotopy เฉพาะการหา right-limit initial guess
 แต่ endpoint ใช้ $Z_f$ exact และ tolerance เดิม ไม่ได้ทำ fault ให้อ่อนลง
 
-\section{กราฟ AGSI, mode, SG และ IBR ครบ 160 วินาที}
+\section{กราฟ AGSI, mode, SG และ IBR ครบ 200 วินาที}
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_supervisor.png}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
 \caption{AGSI++ ที่ถูกจำกัดใน $[0,1]$, GRA, reference owner และ mode timeline แยก IBR1--IBR4
-โหมดเป็น GFL ก่อน 20~s, GFM ช่วง 20--147.175~s และกลับ GFL หลัง 147.175~s}
+โหมดเป็น GFL ก่อน 20~s, GFM ช่วง 20--146.825~s และกลับ GFL หลัง 146.825~s}
 \end{figure}
 
 สังเกตว่า GRA ยังเป็น 1 ตลอด เพราะก่อน trip มี SG เป็น reference และ transaction ที่ 20~s
@@ -277,7 +285,7 @@ AGSI ที่ลดต่ำกว่า $\Gamma_{on}$ หลัง transient �
 ยังต้องรอ $GRA=1$, off-dwell และ coordinated handback ให้ SG ที่ผ่าน synchronism guard ก่อน
 
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_electrical.png}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_electrical.png}
 \caption{กราฟ $P,Q,i_d,i_q,f$, มุมเทียบ PCC, แรงดัน PCC และแรงดันต่ำสุดของโครงข่าย
 เส้นประดำคือ SG เส้นสีทึบคือ raw production result ส่วนเส้นจุดสีเดียวกันคือ ripple แบบ band-limited
 ที่ seed คงที่เพื่อการนำเสนอเท่านั้น ripple ต่อเนื่องตามเวลาและไม่สร้าง spike ที่ event;
@@ -285,28 +293,31 @@ AGSI ที่ลดต่ำกว่า $\Gamma_{on}$ หลัง transient �
 \end{figure}
 
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_160_angles.png}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_angles.png}
 \caption{รายละเอียดมุม SG และ IBR เทียบ PCC มุม SG ขณะ offline มี slip จึงแสดงแบบ wrap
 ในช่วง $[-180,180)$ องศา ไม่ได้ clip state จริง}
 \end{figure}
 
 \section{ผล recovery ที่ตรวจได้และสิ่งที่ยังกล่าวไม่ได้}
-SG ผ่าน guard ที่ 147.175~s ด้วย
+SG ผ่าน guard ที่ 146.825~s ด้วย
 \[
-\Delta V=0.01277\ \mathrm{pu},\qquad
-\Delta f=7.796\times10^{-4}\ \mathrm{pu},\qquad
-\Delta\theta=3.402^\circ,
+\Delta V=0.0163\ \mathrm{pu},\qquad
+\Delta f=2.75\times10^{-6}\ \mathrm{pu},\qquad
+\Delta\theta=3.76^\circ,
 \]
-ซึ่งต่ำกว่าเกณฑ์ $0.05$~pu, $0.001$~pu และ $10^\circ$ ตามลำดับ หลัง handback ที่ 160~s:
+ซึ่งต่ำกว่าเกณฑ์ $0.05$~pu, $0.001$~pu และ $10^\circ$ ตามลำดับ หลัง handback ที่ 200~s:
 \begin{itemize}
 \item SG online และ IBR ทั้งสี่อยู่ GFL;
-\item ช่วงแรงดันทุกบัสเป็น 0.9849--1.0556~pu;
-\item $P_{e,SG}=1.0482$~pu และ $P_{m,SG}=1.0462$~pu จึงอยู่ใกล้สมดุล;
-\item $f_{SG}=60.0468$~Hz และ slope สองวินาทีสุดท้ายประมาณ $+0.0074$~Hz/s แสดงว่ายัง settle;
-\item accepted-step residual สูงสุด $9.98\times10^{-9}$, subdivision สูงสุดหนึ่งชั้น และทุก state finite.
+\item ช่วงแรงดันของทุกบัสเป็น 0.9203--1.0000~pu โดยบัส SG/IBR อยู่ในแบนด์ $\pm5\%$ แต่บัสโหลด
+ระยะไกลห้าบัสยังต่ำกว่า $V_{\min}=0.95$~pu;
+\item $P_{e,SG}=1.0497$~pu และ $Q_{SG}=0.4531$~pu อยู่ในช่วงสมดุล;
+\item $f_{SG}=60.0002$~Hz กลับสู่ steady จาก transient excursion;
+\item accepted-step residual สูงสุด $9.99\times10^{-9}$, subdivision สูงสุดหนึ่งชั้น และทุก state finite.
 \end{itemize}
-ดังนั้นคำตอบเรื่อง ``ต้องกลับสภาวะปกติ'' คือ กลับด้าน topology/reference/mode/voltage แล้วและ
-frequency กำลังกลับ แต่ที่ 160~s ยังไม่ควรเขียนว่า $f=60.0000$~Hz หรือ steady state exact
+ดังนั้นคำตอบเรื่อง ``ต้องกลับสภาวะปกติ'' คือ กลับด้าน topology/reference/mode/frequency แล้ว
+และความถี่กลับสู่ steady ที่ 200~s แต่จุดสิ้นสุดยังไม่พาบัสโหลดระยะไกลทุกบัสกลับเข้าแบนด์
+$\pm5\%$ ฉะนั้นจึงกล่าวได้ว่า reclose และ handback ประสบความสำเร็จแต่ reactive profile ยัง
+ไม่ครบ recovery ระดับ $\pm5\%$ ทั้งหมด และไม่ใช่การยืนยัน controller ระดับใช้งานจริง
 
 \section{สรุปหลายเหตุการณ์ที่มีหลักฐาน}
 \begin{tabularx}{\textwidth}{p{0.22\textwidth}X}
@@ -318,7 +329,7 @@ fault รุนแรง & exact chronology นี้ผ่าน fault บั�
 load step & load $P/Q$ เพิ่ม 20\% ที่ 50~s และระบบเดินต่อถึง fault/line-trip โดยไม่เสีย KCL \\
 SG trip & ที่ 20~s SG injection เป็นศูนย์และ all-GFM transaction รับภาระตาม dispatch ที่ประกาศ \\
 line trip & เปิดสาย 6--13 ที่ 110~s แล้วคืน topology ที่ 145~s ผ่าน right-limit KCL ทั้งสองครั้ง \\
-SG reclose & earliest request ที่ 145~s, close จริง 147.175~s หลัง synchronism dwell แล้ว handback all-GFL \\
+SG reclose & earliest request ที่ 145~s, close จริง 146.825~s หลัง synchronism dwell แล้ว handback all-GFL \\
 \bottomrule
 \end{tabularx}
 
@@ -344,10 +355,10 @@ pf_init_paths;
 addpath(fullfile('scripts','reporting'));
 generate_ieee14_switch_report_figures(reuse_cache=true);
 \end{verbatim}
-ไฟล์ cache หลักมาจาก production run $\Delta t=0.0125$~s ถึง 160~s ใช้เวลา 4820.17~s
-(1 ชั่วโมง 20 นาที 20 วินาที) บนเครื่องที่ทดสอบ รอบ $\Delta t=0.025$~s ใช้เวลา 1853.62~s
-และปิด SG ที่ 148.175~s เทียบกับ 147.175~s ในรอบละเอียด จึงรายงาน event-time sensitivity
-1.000~s และไม่อ้าง time-step-independent controller validation targeted tests ครอบคลุม governor primitive,
+ไฟล์ cache หลักมาจาก production run $\Delta t=0.0125$~s ถึง 200~s บน operating point ใหม่
+(slack $|V|=1.00$ pu, ทำมุม $\phi=0.508383707164714$) โดยควอร์ด reclose กลับเป็น accepted close
+ที่ 146.825~s ซึ่งเป็นผลของ synchronism guard ไม่ใช่เวลาที่กำหนดตายตัว จึงไม่มีการอ้าง
+time-step-independent controller validation หรือเหตุการณ์ที่ปิดเป็นค่าคงที่ targeted tests ครอบคลุม governor primitive,
 EMF6 singular limit, mixed equilibrium, event transaction, reclose workflow, selector, SG reference,
 SG-off/GFM TS และข้อห้าม external solver รวม 108/108 tests ผ่าน ส่วน full repository regression ไม่ได้รัน เพราะ targeted
 gates ครอบคลุม producer/consumer และ failure path ที่เปลี่ยนตามนโยบายความเสี่ยงของโครงการ

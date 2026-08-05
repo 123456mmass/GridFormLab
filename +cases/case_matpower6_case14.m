@@ -86,11 +86,37 @@ type = bus(:,2); proj_type = 3*ones(nb,1); proj_type(type == 3) = 1; proj_type(t
 % Use specified voltages for slack/PV and flat start for PQ buses.
 V0 = ones(nb,1); V0(proj_type == 1 | proj_type == 2) = bus(proj_type == 1 | proj_type == 2, 8);
 A0 = zeros(nb,1);
+% SOURCE_DEFINED reactive limits (not guessed).  mpc.gen columns 4/5 are the
+% generator reactive-capability limits Qmax/Qmin in MVAr from the source
+% IEEE14 case (MATPOWER 6.0 case14.m).  Per-unit conversion uses the single
+% system base:  Q_pu = Q_MVAr / S_base,  S_base = mpc.baseMVA = 100 MVA.
+% Several gens may share a bus (IEEE14 has one per generator bus, so the
+% direct assignment is exact).  Buses with no finite generator limit keep
+% Q_max = +Inf and Q_min = -Inf, i.e. unconstrained, so the solver treats
+% them as having no Q limit.
+Qmax_pu = Inf(nb,1); Qmin_pu = -Inf(nb,1);
+for k = 1:size(gen,1)
+    if gen(k,1) < 1 || gen(k,1) > nb, continue; end
+    idx = find(bus(:,1) == gen(k,1), 1);
+    if isempty(idx), continue; end
+    % Aggregate per-bus: take the source value for this generator; if a
+    % later generator on the same bus also carries a finite limit, the
+    % strictest bound (largest |Q| margin) is assumed by direct assignment
+    % order -- IEEE14 has a single gen per generator bus, so this is exact.
+    Qmax_pu(idx) = gen(k,4)/base;   % Qmax_MVAr -> per unit
+    Qmin_pu(idx) = gen(k,5)/base;   % Qmin_MVAr -> per unit
+end
+case_data.bus_q_limits_classification = struct( ...
+    'classification','SOURCE_DEFINED', ...
+    'source','MATPOWER 6.0 case14.m mpc.gen columns 4/5 (Qmax/Qmin MVAr)', ...
+    'conversion','Q_pu = Q_MVAr / S_base, S_base = 100 MVA (mpc.baseMVA)', ...
+    'unconstrained','buses with no finite generator limit: Qmax=+Inf, Qmin=-Inf', ...
+    'solver_columns','bus_data cols 11/12 = Qmin_pu/Qmax_pu');
 case_data = struct();
 % Source-mapped reporting base from cases.case_ieee14bus (same IEEE14
 % network): |V|_kV = |V|_pu*69 kV.  The PF equations remain per-unit.
 case_data.base_values = struct('S_base_MVA', base, 'V_base_kV', 69, 'frequency_Hz', 60);
-case_data.bus_data = [bus(:,1), proj_type, V0, A0, Pgen, Qgen, bus(:,3)/base, bus(:,4)/base, bus(:,5)/base, bus(:,6)/base];
+case_data.bus_data = [bus(:,1), proj_type, V0, A0, Pgen, Qgen, bus(:,3)/base, bus(:,4)/base, bus(:,5)/base, bus(:,6)/base, Qmin_pu, Qmax_pu];
 % Project line_data uses B_half. MATPOWER branch b is total line charging.
 tap = br(:,9); tap(tap == 0) = 1;
 case_data.line_data = [br(:,1), br(:,2), br(:,3), br(:,4), br(:,5)/2, tap, br(:,10)];

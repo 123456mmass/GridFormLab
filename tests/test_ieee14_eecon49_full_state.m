@@ -37,10 +37,12 @@ verifyEqual(testCase,f0(4),0,'AbsTol',0);
 end
 
 function testExact160SecondEventContract(testCase)
+% Phase G updated this contract: T_end 160 -> 200 s so the trajectory covers
+% the SG reclose and settling after coordinated handback.
 s=ibr.build_ieee14_switch_system(case_profile="eecon49_figure4",index_mode="agsi_pp", ...
     T_d_on=0.10,T_d_off=1.0);
 e=s.switching_event_contract;
-verifyEqual(testCase,e.T_end,160,'AbsTol',0);
+verifyEqual(testCase,e.T_end,200,'AbsTol',0);
 verifyEqual(testCase,e.sg_trip_time,20,'AbsTol',0);
 verifyEqual(testCase,e.step_on,50,'AbsTol',0);
 verifyEqual(testCase,e.step_factor,0.20,'AbsTol',0);

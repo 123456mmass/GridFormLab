@@ -24,9 +24,60 @@ function case_data = case_ieee14bus_eecon49_switch()
 % and the production composite DAE share one ID/base/topology contract.  The
 % numerical solve still uses the in-house Newton implementation.
 case_data = cases.case_matpower6_case14();
+
+% Phase D (CASE_DEFINED): slack setpoint 1.06 -> 1.00 pu at angle 0, and a
+% +/-5% admissible voltage band on every bus.  Applied here, not in
+% cases.case_matpower6_case14, because that file's mpc.bus(:,8) also feeds its
+% reference_solution (the MATPOWER validation baseline for other consumers).
+% This case already discards that baseline (see reference_solution below).
+%
+% Voltage limits live in mpc.bus columns 12/13 only.  The 12-column bus_data
+% contract has no Vmax/Vmin column (cols 11/12 are Qmin_pu/Qmax_pu), so the
+% band is recorded in mpc and in voltage_limit_contract; it is a reporting and
+% admissibility band, not a PF equation input.
+ids = case_data.bus_data(:,1);
+slack_idx = find(ids==1,1);
+case_data.bus_data(slack_idx,3) = 1.00;   % PF slack |V| setpoint (was 1.06)
+case_data.bus_data(slack_idx,4) = 0.0;    % PF slack angle reference
+case_data.mpc.bus(case_data.mpc.bus(:,1)==1, 8) = 1.00;
+case_data.mpc.bus(case_data.mpc.bus(:,1)==1, 9) = 0.0;
+case_data.mpc.gen(case_data.mpc.gen(:,1)==1, 6) = 1.00;  % Vg setpoint of SG1
+case_data.mpc.bus(:,12) = 1.05;           % Vmax, +5% about the 1.00 reference
+case_data.mpc.bus(:,13) = 0.95;           % Vmin, -5% about the 1.00 reference
+case_data.voltage_limit_contract = struct( ...
+    'classification','CASE_DEFINED', ...
+    'V_ref_pu',1.00,'band_pct',5,'Vmax_pu',1.05,'Vmin_pu',0.95, ...
+    'applies_to','all buses', ...
+    'role','reporting and admissibility band; not a PF equation input', ...
+    'note',['Replaces the MATPOWER 1.06/0.94 band, which was +/-6% about ' ...
+            'the original 1.06 slack setpoint.'], ...
+    'known_violation',['Bus 6 solves at 1.057535 pu, exceeding Vmax by ' ...
+            '7.5e-3 pu, at the frozen Figure-4 mapping.  Reported, not tuned: ' ...
+            'the mapped IBR6 reactive dispatch and the 5-6 tap 0.932 are ' ...
+            'SOURCE/CASE_DEFINED and are not adjusted to satisfy the band.']);
+
+% Phase E: label the inverter buses by resource role.  These four are GFL
+% PQ resources (grid-following current sources on the reported operating
+% point; the switching study later re-roles them to GFM as the island
+% reference when the SG is absent).  bus_role is a presentation/labelling
+% field that standardize_case keeps parallel to the numeric 12-column
+% bus_data; it never feeds the PF equations.
+case_data.bus_role = repmat("PQ",size(case_data.bus_data,1),1);
+case_data.bus_role(1) = "REF";
+case_data.bus_role(case_data.bus_data(:,2)==2) = "PV";
 ibr_buses = [2 3 6 8];
+for k = 1:numel(ibr_buses)
+    j = find(case_data.bus_data(:,1)==ibr_buses(k),1);
+    case_data.bus_role(j) = "GFL";   % initial grid-following PQ resource
+end
+
 S_ibr_pu = [0.3631 0.3302 0.5086 0.3064];
-phi = 0.500345721564827;
+% PROJECT_DERIVED_FIGURE_MATCH, re-derived for the Phase D slack setpoint.
+% fzero on |S_SG1(phi)| - 1.3462 over the positive-Q bracket [0.30, 0.90] rad
+% converged to a residual of -1.11e-15 pu; the slack remains reactive-absorbing
+% (Q_SG1 = -0.195666 pu), so the original root-selection rationale is preserved.
+% Superseded value at slack 1.06: 0.500345721564827 rad.
+phi = 0.508383707164714;
 P_ibr_pu = S_ibr_pu*cos(phi);
 Q_ibr_pu = S_ibr_pu*sin(phi);
 
@@ -93,7 +144,8 @@ case_data.eecon49_mapping.sg_model_classification = 'PROJECT_DERIVED_SOURCE_MAPP
 % droop absorbs the small loss mismatch in the all-KCL equilibrium; no value is
 % tuned against the transient result.
 pmax_MW = struct('IBR2',140,'IBR3',100,'IBR6',100,'IBR8',100);
-lost_sg_MW = 131.895; % project PF result at the frozen mapped operating point
+lost_sg_MW = 133.190444; % project PF result at the frozen mapped operating point
+                         % (Phase D slack |V| = 1.00 pu; was 131.895 at 1.06)
 share = [140 100 100 100]/440;
 post_MW = 100*P_ibr_pu + lost_sg_MW*share;
 case_data.dispatch_contract = struct( ...
@@ -110,7 +162,7 @@ case_data.dispatch_contract = struct( ...
     'pmax_MW',pmax_MW,'load_shed_MW',0);
 case_data.switching_event_contract = struct( ...
     'classification','CASE_DEFINED_FROM_EVENT_SEQUENCE_FIGURE', ...
-    'T_end',160.0, ...
+    'T_end',200.0, ...
     'sg_trip_time',20.0, ...
     'step_on',50.0,'step_factor',0.20,'step_all_loads',true, ...
     'fault_on',85.0,'fault_clear',85.15,'fault_bus',9, ...
@@ -124,4 +176,8 @@ mission_contract=cases.case_ieee14_1sg_4ibr_auto_vsg();
 case_data.synchronism=mission_contract.synchronism;
 case_data.delays=mission_contract.delays;
 case_data.selector=mission_contract.selector;
+% Re-run standardize so the human-readable tables reflect the final bus_role,
+% slack setpoint, and MPC edits made above (bus_role was set after the
+% standardize call inside cases.case_matpower6_case14).
+case_data = cases.standardize_case(case_data);
 end

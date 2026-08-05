@@ -69,7 +69,7 @@ end
 % This mirrors composite_dae's internal PF so device constructors initialize
 % from the SAME warm-start the composite will use.
 pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false, ...
-    'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
+    'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',true));
 if ~pf.converged
     error('stability:build_mixed_resource_devices:powerFlow', ...
         'In-house Newton PF did not converge for the warm-start.');

@@ -56,7 +56,33 @@ c.columns.bus_data={'bus','internal_type','Vmag_pu','angle_deg','Pgen_pu', ...
 c.columns.line_data={'from','to','R_pu','X_pu','Bhalf_pu','tap','phase_deg'};
 c.columns.internal_bus_types=struct('slack_REF',1,'PV',2,'PQ',3);
 c.columns.matpower_bus_types=struct('PQ',1,'PV',2,'REF_slack',3,'isolated',4);
+
+% Phase E: parallel human-readable bus-role descriptor.  This is a
+% presentation/labelling field ONLY and never feeds the PF equations, so the
+% 12-column bus_data numeric contract (and the numeric type in col 2) is
+% unchanged.  The GFM/GFL designations distinguish inverter resources from
+% plain PV/PQ load/generation buses of the same numeric type.  Options:
+% 'REF' | 'PV' | 'PQ' | 'GFM' | 'GFL'.
+if ~isfield(c,'bus_role') || isempty(c.bus_role)
+    c.bus_role = default_bus_role(c);
+end
+if numel(c.bus_role) ~= size(c.bus_data,1)
+    error('standardize_case:busRoleCount', ...
+        'bus_role must have one entry per network bus (%d expected).', ...
+        size(c.bus_data,1));
+end
+c.columns.bus_role = {'REF','PV','PQ','GFM','GFL'};
+
 c.tables=readable_tables(c);
+end
+
+function role = default_bus_role(c)
+% Derive the default role label from the numeric internal type.  A case that
+% describes GFM/GFL resources sets c.bus_role explicitly and overrides these.
+nb = size(c.bus_data,1);
+role = repmat("PQ",nb,1);
+role(c.bus_data(:,2)==1) = "REF";
+role(c.bus_data(:,2)==2) = "PV";
 end
 
 function m=legacy_to_mpc(c)
@@ -103,6 +129,10 @@ t.bus=array2table(c.bus_data,'VariableNames', ...
 tn=repmat("PQ",height(t.bus),1); tn(t.bus.Type==1)="REF"; tn(t.bus.Type==2)="PV";
 t.bus.TypeName=categorical(tn,["REF","PV","PQ"]);
 t.bus=movevars(t.bus,'TypeName','After','Type');
+if isfield(c,'bus_role') && numel(c.bus_role)==height(t.bus)
+    t.bus.BusRole=string(c.bus_role);
+    t.bus=movevars(t.bus,'BusRole','After','TypeName');
+end
 t.branch=array2table(c.line_data,'VariableNames', ...
     {'FromBus','ToBus','R_pu','X_pu','Bhalf_pu','Tap','Phase_deg'});
 t.matpower_bus=array2table(c.mpc.bus(:,1:13),'VariableNames', ...

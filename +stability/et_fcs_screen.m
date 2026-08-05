@@ -62,7 +62,9 @@ if ~isfield(c,'modes') || ~iscell(c.modes) || numel(c.modes) ~= n || ...
     id = 'stability:et_fcs_screen:malformedCandidate'; return;
 end
 owner = c.owner_index;
-if ~s.device_online(owner)
+online = s.device_online;
+if isfield(s,'decision_device_online'), online = s.decision_device_online; end
+if ~online(owner)
     id = 'stability:et_fcs_screen:ownerOffline'; return;
 end
 if ~s.reference_capable(owner)
@@ -82,7 +84,7 @@ for k = eligible
         id = 'stability:et_fcs_screen:unsupportedMode'; return;
     end
     if strcmp(target, current), continue; end
-    if ~s.device_online(k)
+    if ~online(k)
         id = 'stability:et_fcs_screen:offlineTransition'; return;
     end
     if s.hold_timers(k) > 0

@@ -296,7 +296,7 @@ ylabel(ax,'GRA'); event_lines(ax,o,false);
 
 ax=nexttile(tl); stairs(ax,t,o.ref_code,'Color',[.35 .15 .55],'LineWidth',1.8); grid(ax,'on'); box(ax,'on');
 ylim(ax,[-1.2 4.2]); yticks(ax,-1:4); yticklabels(ax,{'none','SG','IBR1','IBR2','IBR3','IBR4'});
-ylabel(ax,'reference owner'); title(ax,'Reference owner (not PF slack)','FontSize',11);
+ylabel(ax,'reference owner'); title(ax,'Reference owner','FontSize',11);
 if any(o.ref_code==1)
     kk=find(o.ref_code==1); tm=mean([t(kk(1)) t(kk(end))]);
     text(ax,tm,1.45,'IBR1 is reference leader','HorizontalAlignment','center', ...

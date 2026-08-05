@@ -267,6 +267,12 @@ end
 ts_opt_ibr.resources = resources;
 % Propagate canonical value (resolved early, before device build).
 ts_opt_ibr.automatic_gfm_switching = canonical_agfm;
+if isfield(opt,'controller_mode') && ~isempty(opt.controller_mode)
+    ts_opt_ibr.controller_mode=opt.controller_mode;
+end
+if isfield(opt,'controller_trial_evidence') && ~isempty(opt.controller_trial_evidence)
+    ts_opt_ibr.controller_trial_evidence=opt.controller_trial_evidence;
+end
 % Build the precomputed authenticated selector table (SG_OFF + SG_ON) before
 % TS. Fail closed if the table cannot be built (no feasible candidate for a
 % required context). The table is bound to an immutable selector_table_fingerprint.
@@ -313,8 +319,13 @@ try
         sg_on_n = opt.sg_on_n_gfm_required;
     end
     table_opt.sg_on = struct('n_gfm_required', sg_on_n);
-    selector_table = stability.ibr_selector_table(case_data, resources, ...
-        scenario, table_opt);
+    if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
+            isfield(opt.selector_table,'selector_table_fingerprint')
+        selector_table=opt.selector_table;
+    else
+        selector_table = stability.ibr_selector_table(case_data, resources, ...
+            scenario, table_opt);
+    end
     ts_opt_ibr.selector_table = selector_table;
     result.metadata.selector_table_fingerprint = selector_table.selector_table_fingerprint;
 catch me
@@ -403,7 +414,7 @@ copy_fields = {'sample_side','topology_history','active_state_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
     'device_P_pu','device_Q_pu','device_P_MW','device_Q_MVAr', ...
     'device_current_limit_sys','device_ids','device_bus_ids','bus_ids', ...
-    'sg_sync_controller','resync_diagnostics', ...
+    'sg_sync_controller','resync_diagnostics','controller_audit', ...
     'last_synchronism_guard','transaction_id'};
 for k = 1:numel(copy_fields)
     name = copy_fields{k};

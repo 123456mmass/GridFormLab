@@ -27,10 +27,18 @@ if any(~strcmp(snapshot.resource_types(eligible), 'ibr'))
 end
 
 island_id = snapshot.energized_island_ids(1);
-sg_owner = find(snapshot.device_online & snapshot.reference_capable & ...
+online = snapshot.device_online;
+owners_now = snapshot.reference_owner_indices;
+if isfield(snapshot,'decision_device_online')
+    online = snapshot.decision_device_online;
+end
+if isfield(snapshot,'decision_reference_owner_indices')
+    owners_now = snapshot.decision_reference_owner_indices;
+end
+sg_owner = find(online & snapshot.reference_capable & ...
     strcmp(snapshot.resource_types, 'sg') & snapshot.resource_island_ids == island_id);
 if numel(sg_owner) > 1
-    current = intersect(sg_owner, snapshot.reference_owner_indices, 'stable');
+    current = intersect(sg_owner, owners_now, 'stable');
     if isscalar(current)
         sg_owner = current;
     else
@@ -60,7 +68,7 @@ for mask = 0:(2^n - 1)
         owners = sg_owner;
     else
         owners = selected(snapshot.reference_capable(selected) & ...
-            snapshot.device_online(selected) & ...
+            online(selected) & ...
             snapshot.resource_island_ids(selected) == island_id);
     end
     for oi = 1:numel(owners)

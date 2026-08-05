@@ -119,11 +119,29 @@ snapshot.resource_ids = ids;
 snapshot.resource_types = lower(types);
 snapshot.device_modes = lower(modes);
 snapshot.device_online = online;
+if isfield(state,'decision_device_online') && ~isempty(state.decision_device_online)
+    snapshot.decision_device_online = logical_row( ...
+        state.decision_device_online,n,'decision_device_online');
+else
+    snapshot.decision_device_online = online;
+end
 snapshot.eligible_mask = eligible;
 snapshot.reference_capable = refcap;
 snapshot.resource_island_ids = island;
 snapshot.energized_island_ids = energized;
 snapshot.reference_owner_indices = owners;
+if isfield(state,'decision_reference_owner_indices')
+    decision_owners = reshape(state.decision_reference_owner_indices,1,[]);
+    if ~isnumeric(decision_owners) || any(~isfinite(decision_owners)) || ...
+            any(decision_owners ~= fix(decision_owners)) || ...
+            any(decision_owners < 1 | decision_owners > n)
+        error('stability:et_fcs_snapshot:badReferenceOwners', ...
+            'decision_reference_owner_indices must contain valid resource indices.');
+    end
+    snapshot.decision_reference_owner_indices = decision_owners;
+else
+    snapshot.decision_reference_owner_indices = owners;
+end
 snapshot.hold_timers = hold;
 snapshot.lockout_until = lockout;
 snapshot.limits = state.limits;

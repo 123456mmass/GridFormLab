@@ -53,6 +53,28 @@ for k = 1:numel(c)
     tc.verifyTrue(ismember(c(k).owner_index,c(k).selected_gfm_indices));
     tc.verifyGreaterThanOrEqual(c(k).n_gfm,1);
 end
+
+function test_authenticated_sg_trip_uses_event_right_context(tc)
+% The immutable snapshot remains the accepted event-left state, while the
+% enumerator/screen must use the authenticated event-right online/owner view.
+st = tc.TestData.state;
+st.decision_device_online = st.device_online;
+st.decision_device_online(1) = false;
+st.decision_reference_owner_indices = [];
+ev = tc.TestData.event; ev.local_request = false; ev.authenticated = true;
+s = stability.et_fcs_snapshot(st,ev);
+c = stability.et_fcs_enumerate(s);
+tc.verifyTrue(s.device_online(1));
+tc.verifyFalse(s.decision_device_online(1));
+tc.verifyNumElements(c,32);
+tc.verifyTrue(all([c.owner_index] ~= 1));
+for k = 1:numel(c)
+    tc.verifyTrue(ismember(c(k).owner_index,c(k).selected_gfm_indices));
+end
+c = stability.et_fcs_screen(s,c,@screen_good, ...
+    struct('allow_diagnostic_callback',true));
+tc.verifyTrue(all([c.screen_pass]));
+end
 end
 
 function test_hold_and_lockout_prune_only_required_transitions(tc)

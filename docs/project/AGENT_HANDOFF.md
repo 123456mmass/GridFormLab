@@ -7,6 +7,44 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-04 — IEEE14 160-s controller comparison
+
+Starting commit `f7ff316`. The existing REGFM_B1/all-KCL 160-s trajectory was
+retained as the legacy selector baseline, and two fresh runs were completed
+with an authenticated nonlinear SG-trip candidate producer: exhaustive
+ET-FCSPS and an in-house finite-set BO offline replay. Every candidate starts
+from the same accepted event-left state, applies the same SG-trip transaction,
+device-owned mode mapping, post-trip dispatch, full-KCL right-limit solve, and
+0.25-s production prediction. The returned request is still revalidated and
+committed only by the existing atomic transaction.
+
+All three methods selected IBR1--IBR4 as GFM with IBR1 as the island reference,
+reached 160 s, and produced exactly identical raw trajectories for AGSI++,
+modes, P/Q, dq currents, frequency, angle, voltage, reference identity, and SG
+signals. ET-FCSPS and BO used 8 predictions each because the authenticated
+feasible universe contains only 8 candidates and the frozen BO budget is 8.
+Consequently ET-FCSPS is preferable for this four-IBR case: it gives the
+deterministic finite-set minimum without a surrogate, while BO demonstrates no
+evaluation reduction or response improvement. BO remains
+`ASSUMED_DIAGNOSTIC_OFFLINE_REPLAY`, not online production authority.
+
+Fresh long-run times were 2182.918 s (ET-FCSPS) and 2223.825 s (BO); the 1.9%
+difference is not a controller benefit because their dynamic trajectories are
+identical and common candidate evidence was reused. Both runs have minimum
+voltage 0.0600765 pu including the fault, online-frequency range
+58.3238--63.5606 Hz, 8 switches, 508.700 aggregate GFM-seconds, reclose/handback
+at 147.175 s, and maximum accepted residual `9.982 x 10^-9`. The historical
+legacy cache runtime is not used as a speed benchmark.
+
+Reports are separate from the earlier no-controller reports:
+`docs/source/report_ieee14_controller_th.tex` (detailed) and
+`docs/source/report_ieee14_controller_en.tex` (concise), with final PDFs
+`output/pdf/ieee14_bus_with_controller_th.pdf` and
+`output/pdf/ieee14_bus_with_controller_en.pdf`. Figures use raw production
+signals; no noise, smoothing, clipping, or result tuning was applied. The
+production adapter defect and correction are recorded in
+`docs/project/defects/2026-08-04-et-fcs-production-trip-adapter.md`.
+
 ## 2026-08-04 — ET-FCSPS core and paired BO baseline
 
 Starting commit `6eeb05c`. An additive, production-isolated ET-FCSPS decision core is now
@@ -1316,3 +1354,23 @@ wizard/launcher suite 66/66. No failed or incomplete targeted tests. No
 numerical equation, parameter, tolerance, solver, or result schema changed.
 Full repository regression was intentionally not rerun by user request.
 
+## 2026-08-05 — in-domain reference-PCC stress comparison
+
+The second frozen stress case (`reference_fault_recovery_stress`) completed all
+three 0--160 s arms. It uses the bus-2 fault from 19.25--19.50 s and SG-trip
+request at 20.0125 s, leaving the declared post-clear recovery interval before
+the trip. The legacy selector retained all four IBRs as GFM (`2-3-4-5`),
+whereas both ET-FCSPS and BO selected the authenticated subset `2-3-5` with
+resource 2 (IBR1) as the dynamic reference owner. This is the first paired
+stress result in which the selected GFM set differs from the manual baseline.
+
+Raw comparison metrics are preserved in
+`output/diagnostics/ieee14_controller_reference_fault_recovery_stress/summary.csv`.
+Legacy, ET-FCSPS and BO wall times were 4864.512 s, 3976.605 s and 2496.714 s,
+respectively; all reached 160 s with maximum accepted residuals
+$8.701\times10^{-9}$, $7.939\times10^{-9}$ and $7.939\times10^{-9}$. ET-FCSPS and BO used eight authenticated
+predictions. The stress schedule reports `NOT_REQUESTED` for actual SG
+reclose/handback, so this run is not claimed as a successful SG-recovery case;
+the controller comparison is limited to the SG-trip mode/owner decision and
+the subsequent accepted trajectory. The large raw `.mat` files remain local,
+ignored cache artifacts; the CSV is the committed machine-readable summary.

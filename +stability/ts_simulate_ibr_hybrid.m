@@ -80,6 +80,7 @@ sg_on_auth_ok = false;
 sg_on_auth_fid = '';
 sg_on_auth_msg = '';
 transaction_counter = 0;
+controller_audit = struct();
 converged = true;
 failure_id = '';
 failure_reason = '';
@@ -245,8 +246,11 @@ while t < settings.t_end-settings.event_tol
                 agfm = logical(opt.automatic_gfm_switching);
             end
             [ok,x_new,y_new,u_new,ec_new,active_new,handler_log,reason, ...
-                right_norm,stage,dispatch_after] = trip_transaction( ...
+                right_norm,stage,dispatch_after,trip_controller_audit] = trip_transaction( ...
                 t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm,opt);
+            if ~isempty(fieldnames(trip_controller_audit))
+                controller_audit = trip_controller_audit;
+            end
             log = new_event_log(ev.type,t);
             log.pre_kcl_norm = pre_norm; log.right_kcl_norm = right_norm;
             log.input_before = u;
@@ -669,6 +673,7 @@ if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
 end
 res.pre_event_input_fingerprint=pre_event_input_fp;
 res.sg_sync_controller=sync_ctl;
+res.controller_audit=controller_audit;
 
 try
     % Publish diagnostics for every accepted sample even when a later step or
@@ -908,7 +913,7 @@ for k=1:numel(sched.events)
 end
 end
 
-function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch] = ...
+function [ok,xr,yr,ur,ecr,active,handler_log,reason,right_norm,stage,dispatch,controller_audit] = ...
     trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,kcl_tol,automatic_gfm_switching,opt)
 %TRIP_TRANSACTION  SG breaker trip + optional GFM commitment (C3/F2).
 %   When automatic_gfm_switching=true: open the SG breaker, then commit the
@@ -927,6 +932,7 @@ if nargin < 11, automatic_gfm_switching = true; end
 if nargin < 12, opt = struct(); end
 ok=false; xr=x; yr=y; ur=u; ecr=ec; active=[]; reason='';
 right_norm=inf; stage='tripTransaction'; dispatch=struct();
+controller_audit=struct();
 if automatic_gfm_switching
     % --- sg_breaker_trip + optional_gfm_commit (full automatic path) ---
     % Authenticate the SG_OFF candidate from the precomputed selector table.
@@ -946,6 +952,32 @@ if automatic_gfm_switching
         handler_log = auth_fail_log('stability:gfm_selection:missingTable', ...
             'automatic SG_OFF requires opt.selector_table (no table injected).');
         reason = handler_log.details; return;
+    end
+    controller_mode='legacy';
+    if isfield(opt,'controller_mode') && ~isempty(opt.controller_mode)
+        controller_mode=lower(char(opt.controller_mode));
+    end
+    if ~strcmp(controller_mode,'legacy')
+        if ~isfield(opt,'resources') || ~isstruct(opt.resources)
+            handler_log=auth_fail_log( ...
+                'stability:et_fcs_production_trip_decision:missingResources', ...
+                'Predictive trip decision requires the authenticated resource table.');
+            reason=handler_log.details; return;
+        end
+        ctrl_opt=struct('dt',option(opt,'dt',0.0125));
+        if isfield(opt,'controller_trial_evidence') && ...
+                ~isempty(opt.controller_trial_evidence)
+            ctrl_opt.trial_evidence=opt.controller_trial_evidence;
+        end
+        try
+            [ctrl_selection,controller_audit]= ...
+                stability.et_fcs_production_trip_decision(t,x,y,Y,u,ec,dae, ...
+                sched,case_data,opt.resources,opt.selector_table,controller_mode,ctrl_opt);
+        catch me
+            handler_log=auth_fail_log(me.identifier,me.message);
+            reason=handler_log.details; return;
+        end
+        req=struct('mode','manual_override','manual_candidate',ctrl_selection);
     end
     % Assemble the identity-aligned runtime context (Step F): event-left modes,
     % online/hold/lockout materialized in dae.devices order + eligible mask.

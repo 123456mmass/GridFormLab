@@ -110,6 +110,43 @@ coefficient. This design is frozen here \emph{before} any re-run;
 equations~\eqref{eq:severity}--\eqref{eq:switch-law} are not used to produce any number in
 Sections~4--6 of this report.
 
+\subsubsection{Why $J_V,J_f$ suffice as severity, and why the weights are $0.5{:}0.5$}
+\label{sec:agsi-weight-rationale}
+So that the design can be defended when asked ``why only $J_V,J_f$'' and ``why these weights,''
+the reasoning is stated in three parts.
+
+\textbf{(1) Why $J_V$ and $J_f$ suffice as the severity.} The objective of switching is the single
+question \emph{``is the reference healthy?''}, and the two quantities a grid-forming reference
+directly regulates are the voltage magnitude $|V|$ and the frequency $f$ (voltage through the
+voltage PI and the $Q$--$V$ droop; frequency through the virtual rotor and the droop). The severity
+therefore has to measure ``distance from the reference'' with exactly these two quantities. Every
+other term of~\eqref{eq:agsi-legacy} is not a reference-severity but a condition of the
+surrounding system.
+
+\textbf{(2) Why the other five terms must be gates, not weights.} A condition such as ``$SCR$ must
+be sufficient,'' ``current must stay below $I_{max}$,'' or ``the PLL must be locked'' is a
+pass/fail statement, not a ``distance'' that can be averaged with other terms: there is no physics
+in which a good $SCR$ compensates for an over-current. Making them weighted terms lets a good value
+\emph{mask} a bad one, and worse, the averaging makes the index insensitive. A concrete count from
+\eqref{eq:agsi-legacy}: with the $1/7$ average a single term can trigger the threshold
+$\Gamma_{on}=0.65$ only once it reaches $7\times0.65=4.55$, i.e.\ $J_V=4.55$ back-transforms to
+$|\Delta V|=4.55\times0.10=0.455$~pu --- a catastrophic voltage collapse --- yet the $1/7$ index
+reads it merely as ``at threshold.'' The index therefore cannot distinguish ``one severe term''
+from ``all terms mildly stressed,'' and does not say what is actually wrong. The two-term severity
+always saturates at $1$, so the threshold $0.65$ reads directly as ``the normalized deviation
+reaches $65\%$ of the band,'' which is interpretable at a glance.
+
+\textbf{(3) Why the weights are $0.5{:}0.5$.} Separate the bases from the weights. The bases
+($\Delta V_{base}=0.10$~pu and $\Delta f_{base}=0.50$~Hz) make $J$ dimensionless and comparable:
+$J_V=1$ means a full $10\%$ band deviation and $J_f=1$ means a full $0.5$~Hz band deviation. The
+weight then states whether the two normalised deviations are equally important. The source
+EECON49-P4 Sec.~4.1 assigns the weight ratio of $V$ to $f$ as $0.30{:}0.30$, i.e.\ it treats them
+as equally important; renormalising to unit sum gives exactly $0.5{:}0.5$. \textbf{The weights are
+therefore pinned by normalisation from the source, not tuned.} If asked ``why not $0.7{:}0.3$,''
+the answer is: changing them would need source support, and the source treats $V$ and $f$ as
+equal. This is the provenance difference from the legacy $1/7$ weights: $1/7$ has no source
+support and cannot be defended, whereas $0.5{:}0.5$ can be defended to the end.
+
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_oneline.png}
 \caption{Network and resource locations used by the simulation.}
@@ -184,7 +221,19 @@ E_{VSM}^{raw}&=V_{ref}-m_qQ_{inv,f}+k_{pv}\left(V_{ref}-V_{inv,f}\right)+k_{iv}x
 \label{eq:gfm-vpi}
 \end{align}
 where $E_{VSM}=\mathrm{sat}\left(E_{VSM}^{raw},E_{min},E_{max}\right)$ and $\dot x_E$ is set to
-zero when the limiter is saturated in the direction of further integration.
+zero when the limiter is saturated in the direction of further integration. The limits $E_{min}$
+and $E_{max}$ are \emph{not constants}: they are recomputed every step from the current state so
+that the $q$-axis current cannot exceed its limit,
+\begin{align}
+E_{min}&=\sqrt{\left(V_{inv,f}-I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},\\
+E_{max}&=\sqrt{\left(V_{inv,f}+I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},
+\label{eq:gfm-elim}
+\end{align}
+with the current limit split by \texttt{PQFlag}: on $d$-axis priority
+$I_{d,max}^{SS}=k_fI_{max}^{SS}$ and
+$I_{q,max}^{SS}=\sqrt{\max\!\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,0\right)}$, and the reverse
+assignment on $q$-axis priority. The $x_E$ anti-windup uses the same conditional-hold rule: $\dot
+x_E=0$ when $E_{VSM}^{raw}$ is outside the band and the derivative still pushes outward.
 The current-angle bounds are themselves states, integrating the mismatch between the steady-state
 $d$-axis current limit and the measured $d$-axis current, so that the angle authority contracts
 when the device is overloaded:
@@ -261,6 +310,7 @@ integrator. Atomic state mapping is followed by a full-KCL right-limit solve; a 
 the transaction back.
 
 \section{Switching formulation: what is solved at a mode change}
+\label{sec:switching-formulation}
 This section states the mathematics executed at every switching instant. It is the governing
 formulation for the SG trip, the GFL$\leftrightarrow$GFM transfers, and the SG reclose.
 
@@ -290,6 +340,87 @@ g_q(x_{k+1},y_{k+1},u)&=0,\label{eq:sw-trapalg}
 solved together for $(x_{k+1},y_{k+1})$. The EMF6 route uses a fixed corrector count of three.
 Both $f_q$ and $g_q$ carry the subscript $q$: they are the equations \emph{of the present discrete
 mode}. A switching event changes $q$, hence changes the equations themselves.
+
+\subsection{The reference-role handover: SG to IBR}
+Before the mechanical detail below, four conceptual points must be settled, because this is where
+the formulation is most easily misunderstood: \emph{the SG and the IBRs obey different equations,
+so how can an IBR ``replace'' the SG?}
+
+\subsubsection{The SG and the IBRs really are different DAEs}
+Confirmed at the outset: the state variables and the physical mechanisms differ completely, with no
+shared state at all:
+\begin{align}
+\text{SG:}\quad 2H\,\Delta\dot\omega&=P_m-P_e-D\Delta\omega, \label{eq:sw-swing-sg}\\
+\text{GFM:}\quad 2H_v\,\Delta\dot\omega_m&=P_{ref,inv}-P_{inv,f}
+-\left(\frac{1}{m_p}+D_1\right)\Delta\omega_m-D_2\left(\Delta\omega_m-x_w\right),
+\label{eq:sw-swing-gfm}
+\end{align}
+The SG uses the real inertia $H$ of the rotating mass, the real rotor angle $\delta$, and the real
+mechanical torque $P_m$; the GFM uses a \emph{virtual} inertia $H_v$, the synthetic angle
+$\delta_{VSM}=\delta_{PLL}+\delta_{IT}$, and the setpoint $P_{ref,inv}$ --- the two swing equations
+look similar but describe different physical quantities. The GFL branch has no swing equation at
+all; it is a pure current source. Hence \emph{no equation sets $\omega_{SG}=\omega_m$}; each
+frequency variable belongs to its own device.
+
+\subsubsection{The reference is a role, not an equation transformation}
+In the time-domain DAE (Section~\ref{sec:switching-formulation}, \S 6.1) \textbf{every bus is an
+unknown of the all-KCL residual} $0=Y_qV-I_{bus}$ over all $2n_b$ real rows; no bus angle is pinned
+as an algebraic slack. The code never replaces a KCL row by a pinned angle, and
+\path{reference_owner_schema.m} states it directly: ``reference ownership is
+supervisory/physical, NOT a KCL-row replacement.'' The reference is therefore \emph{not a bus
+type} but a role played by whichever device controls the island's angle and frequency: while the SG
+is online the role belongs to the SG; while it is open it belongs to IBR1 (bus 2) through its GFM
+branch. What ``transforms'' at $t=20$~s is \textbf{not the SG equations into IBR equations} but the
+handover of the reference-setting role from one device to another.
+
+\subsubsection{Three things change together at the handover instant}
+The mechanical detail lives in Section~\ref{sec:sw-inverse}; at the role level, three changes happen
+inside a single transaction:
+\begin{enumerate}
+\item \textbf{SG:} the equations switch to the open-circuit mode --- $I_d=I_q=0$, $T_e=0$, flux
+decay, the rotor coasts as $2H\,\Delta\dot\omega=T_m^{froz}-D\Delta\omega$, and \emph{all six
+states stay in the state vector}
+\item \textbf{IBR:} the reset map switches GFL$\to$GFM by initialising the GFM branch so the
+\emph{terminal current is continuous}, $I^+=I^-$ --- the inverse problem of
+Section~\ref{sec:sw-inverse}
+\item \textbf{Network:} the matrix $Y$ changes (the SG breaker opens) and the KCL is re-solved
+for $y^+$
+\end{enumerate}
+All three are committed together as one transaction, so there is no interval in which the island is
+``without a reference'' (the supervisor plot keeps $GRA=1$ throughout). The simultaneous GFM switch
+of all four IBRs at 20~s is therefore the result of this coordinated transaction, not of the four
+AGSI indices crossing their thresholds at the same instant.
+
+\subsubsection{$H$, $\omega$, $f$ differ --- why are they interchangeable}
+This is the deepest point, and the answer is \emph{we never equate them directly}. The coupling is
+not an equation between frequency variables; it is the network. Every device injects current into
+the same set of buses, so KCL forces the bus voltages into geometric consistency; at steady state
+all voltages rotate at the same frequency, and each device locks to that frequency by its own
+mechanism --- the SG by its physical rotor (integrating $\dot\delta=\omega_0\Delta\omega$), the IBR
+by a PLL driving $v_q\to0$ to align with the terminal-voltage angle (the WECC GFL uses $\angle V$
+directly, algebraically). \emph{Steady-state synchronism is therefore emergent from the network,
+not a directly imposed condition.}
+
+This is why the switch must be ``continuous at the terminal'', not ``continuous in the state'': the
+terminal current is what the network sees, so keeping $I$ from jumping is exactly not disturbing the
+network's balance. The internal variables ($\delta$ of the SG, $\omega_m,\delta_{VSM}$ of the GFM)
+belong to each device and may be re-initialised freely as long as the terminal effect stays the
+same.
+
+\subsubsection{How the transient is handled}
+The post-handover transient is managed in three stages: (1) device level --- the reset map finds
+$x^+$ such that the terminal current is continuous (Section~\ref{sec:sw-inverse}); (2) system level
+--- solve KCL by Newton with $x^+$ held fixed, for $y^+$ (Eq.~\eqref{eq:sw-newton}); (3) integrate
+forward from the consistent pair $\left(x(t_e^+),y(t_e^+)\right)$. The transient then decays
+according to the device dynamics --- droop, damping $D_1,D_2$, the PLL, and the voltage PI --- not
+according to any imposed condition.
+
+The SG reclose differs because $x^+$ \emph{cannot} be found this way: the SG angle $\delta$ is tied
+to a real rotating mass and cannot change instantaneously, so there is no freedom to invert an
+equation for a desired $\delta^+$. The roles are therefore reversed --- instead of solving for the
+continuity condition, the system \emph{waits} for the physics to bring it close to continuity
+itself (the synchronism gate, Eq.~\eqref{eq:guard-margin}). This is what makes the 145.000~s close
+request complete at 146.825~s.
 
 \subsection{The transition at a switching instant}
 Equations~\eqref{eq:sw-trap}--\eqref{eq:sw-trapalg} are \emph{not} continued across an event. At a
@@ -339,6 +470,173 @@ not the state vector. No PLL angle is copied out of the GFL branch, because the 
 PLL state; the GFM angle is re-derived from $V_{bus}$ and $I^-$. The bus index $b$ is resolved from
 the device's registered bus position, so the map contains no hard-coded bus identity.
 
+\subsection{Why the recursion becomes an assignment, and what equation is solved}
+\label{sec:sw-inverse}
+This subsection answers the most direct question: during a normal step we advance the recursion
+$x_{k+1}=x_k+\frac{h}{2}[f_q(x_k)+f_q(x_{k+1})]$, yet at a switching instant the code appears to
+simply \emph{assign} $x^+=(\text{a value})$. What equation is being solved, and what makes the two
+sides of the event sync with each other?
+
+\subsubsection{Why the recursion cannot be continued}
+Write the step that straddles the switching time $t_e$ explicitly, with $t_k<t_e<t_{k+1}$. The
+trapezoidal rule requires
+\begin{equation}
+x_{k+1}-x_k=\frac{h}{2}\Big[\underbrace{f_{q^-}(x_k,y_k)}_{\text{pre-switch mode}}
++\underbrace{f_{q^+}(x_{k+1},y_{k+1})}_{\text{post-switch mode}}\Big].
+\label{eq:sw-illegal}
+\end{equation}
+Equation~\eqref{eq:sw-illegal} is \emph{mathematically invalid}, because the trapezoidal rule is
+derived from $\int_{t_k}^{t_{k+1}}f\,dt$ on the assumption that $f$ is \emph{continuous} on that
+interval; at $t_e$ the vector field jumps ($f_{q^-}\ne f_{q^+}$), so the order of accuracy collapses
+and the result approximates the integral of no field at all. The correct treatment is to
+\textbf{split the step at $t_e$} and treat $t_e$ as the boundary of two subproblems: the one on
+$[t_k,t_e]$ uses $f_{q^-}$ and the one on $[t_e,t_{k+1}]$ uses $f_{q^+}$, and each subproblem
+\emph{needs its own initial condition}. The initial condition of the second subproblem is
+$x(t_e^+)$, which is exactly what the reset map must produce. The recursion is therefore not
+``gone'' --- it \emph{ends one round and starts another}, with an initial-condition assignment in
+between.
+
+\subsubsection{The equation actually solved at the switching instant}
+$x^+$ is not a value chosen out of thin air; it is the \emph{solution of an inverse problem} with
+an explicit governing equation. Let $\mathcal C_{q}(x,V)$ be the terminal current-injection
+function of mode $q$. The problem is
+\begin{equation}
+\boxed{\;\text{find }x^+\ \text{such that}\quad
+\mathcal C_{q^+}\!\left(x^+,V_{bus}\right)-\underbrace{\mathcal C_{q^-}\!\left(x^-,V_{bus}\right)}_{=\,I^-\ \text{already known}}=0\;}
+\label{eq:sw-inverse}
+\end{equation}
+subject to the constraint that the inactive block keeps its values,
+$x^+\big|_{inactive}=x^-\big|_{inactive}$. Equation~\eqref{eq:sw-inverse} is the equation that is
+really ``solved''. In physical terms: \emph{the controller may change its operating law instantly,
+but the current leaving the terminal must not jump}, because that current is tied to the energy
+stored in the filter inductances, which cannot change as a step without an infinite voltage. The
+continuity check~\eqref{eq:sw-cont} on $|I^+-I^-|\le10^{-10}$ is therefore not a generic numerical
+quality check; it is \textbf{a verification that the inverse problem~\eqref{eq:sw-inverse} was
+actually solved}. If the value exceeds the threshold, no consistent $x^+$ exists and the
+transaction must not commit.
+
+\subsubsection{The closed-form inversion: GFL$\to$GFM step by step}
+The GFL$\to$GFM case at 20~s is the best example because it is solvable \emph{in closed form}
+with no iteration at all. Every step below is a direct back-substitution into the GFM branch
+equations.
+
+\textbf{Step 1 --- read the terminal condition from the left side.} Compute the current the GFL
+branch is actually injecting, using the GFL injection~\eqref{eq:gfl-current}, and convert it to
+power:
+\begin{equation}
+I^-=\frac{\left(I_{p,reg}\gamma(|V|)-jI_{q,reg}\right)e^{j\angle V}}{\kappa},\qquad
+S^-=V_{bus}\overline{I^-},\qquad P^-=\Re S^-,\quad Q^-=\Im S^-.
+\end{equation}
+The three quantities $(V_{bus},P^-,Q^-)$ are \emph{all} that is carried across the event; no GFL
+state variable is forwarded.
+
+\textbf{Step 2 --- find the required internal voltage.} The GFM branch injects current through the
+impedance $Z_{sys}=\kappa(R_e+jX_L)$ by~\eqref{eq:gfm-current}, so for it to deliver exactly
+$I^-$ the voltage behind the impedance must be
+\begin{equation}
+E_{terminal}=V_{bus}+Z_{sys}I^-
+\;\;\Longrightarrow\;\;
+E_{VSM}=\left|E_{terminal}\right|,\quad
+\delta_{VSM}=\angle E_{terminal}.
+\label{eq:sw-inv-E}
+\end{equation}
+This is the direct \emph{inversion} of~\eqref{eq:gfm-current}: originally we have $E$ and find
+$I$; now we have $I$ and find $E$. The equation solves immediately because it is linear in $I$.
+
+\textbf{Step 3 --- decompose $E_{VSM},\delta_{VSM}$ back into state variables.} We now have what the
+\emph{combination} must be, and still have to split it into individual states. Start with the
+angle: the PLL is locked to the terminal-voltage angle ($\delta_{PLL}=\angle V_{bus}$, positive
+$d$-axis), so from $\delta_{VSM}=\delta_{PLL}+\delta_{IT}$,
+\begin{equation}
+\delta_{IT}=\operatorname{wrap}_{\pi}\!\left(\angle E_{terminal}-\angle V_{bus}\right),
+\qquad x_{PLL}=0,\quad \Delta\omega_m=0,\quad x_w=0.
+\label{eq:sw-inv-angle}
+\end{equation}
+For the magnitude, invert the voltage-PI equation~\eqref{eq:gfm-vpi} to solve for the integrator:
+\begin{align}
+E_{VSM}&=V_{ref}-m_qQ_f+k_{pv}\left(V_{ref}-V_f\right)+k_{iv}x_E\notag\\
+&\Longrightarrow\quad
+x_E=\frac{E_{VSM}-V_{ref}+m_qQ_f-k_{pv}\left(V_{ref}-V_f\right)}{k_{iv}},
+\label{eq:sw-inv-xE}
+\end{align}
+which requires $k_{iv}>0$ (the code checks this and fails closed otherwise). The five filter states
+are set exactly to the measured quantities at that instant ($P_{inv,f}=\kappa P^-$,
+$Q_{inv,f}=\kappa Q^-$, $V_{inv,f}=|V_{bus}|$, and $I_{d,f},I_{q,f}$ from projecting the current
+onto the PLL frame), because a freshly restarted filter must not create a spurious transient from
+an initial value that disagrees with its input.
+
+\textbf{Step 4 --- verify the solution lies in the source-allowed region.} Before accepting $x^+$
+the code checks three layers and fails closed on each: $|I^-|$ must not exceed $I_{max}^F/\kappa$
+(if it did, the clamp would change $P,Q$, which is not acceptable), $E_{VSM}$ must lie in
+$[E_{min},E_{max}]$ of~\eqref{eq:gfm-elim}, and $\delta_{IT}$ must lie in
+$[\delta_{IT,min},\delta_{IT,max}]$. It also rejects the case where $|I^-|$ lands exactly on the
+clamp boundary, because the derivative is discontinuous there and the solution is not unique.
+
+\textbf{Step 5 --- verify by recomputing.} Feed $x^+$ back into the GFM current equation and
+compare with $I^-$ by~\eqref{eq:sw-cont}. This confirms steps 2--3 contain no error. Theoretically
+the value must be exactly zero; the $10^{-10}$ tolerance therefore covers only floating-point
+round-off, not a physical relaxation.
+
+\subsubsection{Device-level sync versus system-level sync}
+The word ``sync'' is used at two levels with two different mechanisms.
+
+\textbf{Device level} is steps 1--5 above: make the device itself consistent with the terminal
+condition at the \emph{same} voltage $V_{bus}$. Note that throughout steps 1--5 the voltage
+$V_{bus}$ is held fixed and never moves, so this is a per-device local problem that can be solved
+one device at a time.
+
+\textbf{System level} is the right-limit solve~\eqref{eq:sw-right}, needed because when several
+devices change their laws at once (and/or the topology changes $Y_{q^-}\to Y_{q^+}$), the old
+voltage $y(t_e^-)$ is in general \emph{no longer consistent} with the new KCL:
+\begin{equation}
+g_{q^+}\!\left(x^+,y(t_e^-),u\right)=Y_{q^+}V(t_e^-)-I_{bus}\!\left(x^+,y(t_e^-)\right)\ne0.
+\end{equation}
+One must therefore solve for $y(t_e^+)$ anew, \emph{holding $x^+$ fixed}, by damped Newton
+\begin{equation}
+J_{yy}\,\Delta y^{(i)}=-g_{q^+}\!\left(x^+,y^{(i)},u\right),\qquad
+y^{(i+1)}=y^{(i)}+\lambda_i\Delta y^{(i)},\qquad
+J_{yy}=\frac{\partial g_{q^+}}{\partial y},
+\label{eq:sw-newton}
+\end{equation}
+where $\lambda_i\in(0,1]$ comes from a backtracking line search that shrinks until the residual
+norm actually decreases (preventing over-long steps from diverging). It starts from
+$y^{(0)}=y(t_e^-)$ and stops when $\|g_{q^+}\|_\infty\le$ the step tolerance; if it does not
+converge, the whole transaction rolls back.
+
+The order \textbf{device first, then network} is essential and cannot be reversed: the device step
+needs a known $V_{bus}$ to invert its equations, and the network step needs a known $x^+$ to
+assemble $I_{bus}$. The two steps are therefore one transaction that commits or rolls back
+together.
+
+After this the system has a pair $\left(x(t_e^+),y(t_e^+)\right)$ consistent with both the device
+equations and KCL, and the trapezoidal recursion restarts correctly with $f_{q^+}$ as the vector
+field and this pair as the initial condition,
+\begin{equation}
+x_{k+2}-x(t_e^+)=\frac{h'}{2}\left[f_{q^+}\!\left(x(t_e^+),y(t_e^+)\right)
++f_{q^+}\!\left(x_{k+2},y_{k+2}\right)\right],\qquad h'=t_{k+2}-t_e.
+\end{equation}
+In short, \emph{the recursion never crosses the event; it is cut into two segments joined by a
+physical continuity condition, not by continuity of the state coordinates.}
+
+\subsubsection{The SG case: why an extra synchronism gate is needed}
+The IBR case above has a ``sync'' that solves immediately in closed form, because the converter may
+freely choose its internal angle ($\delta_{IT}$ is just a number in the state). The SG \emph{cannot}
+do this: the rotor angle $\delta$ is tied to a real rotating mass and cannot change
+instantaneously. When closing the SG breaker we therefore have \emph{no freedom} to invert an
+equation for a desired $\delta^+$; whatever $\delta$ happens to be must simply be accepted.
+
+The roles are thus completely reversed: instead of \emph{solving} for the continuity condition, we
+must \emph{wait} until the physics brings the system close enough to continuity on its own. That is
+the job of the gate~\eqref{eq:guard-margin}, which compares the two phasors on either side of the
+breaker and closes only when the difference is small enough in magnitude, frequency, and angle. The
+values $\Delta V=0.0163$~pu, $\Delta f=2.75\times10^{-6}$~pu, and $\Delta\theta=3.76^\circ$ at
+146.825~s are evidence that the condition was made true before closing, not enforced after.
+
+This is the mathematical explanation of why the 145.000~s close request does not close
+immediately: \emph{the breaker closure is an event with no supporting reset map}, so it must wait
+for the state to approach continuity by itself, whereas an IBR mode switch has a solvable reset
+map and happens the instant the transaction commands it.
+
 \subsection{The SG trip and the gated reclose}
 At the trip the SG states are \emph{not} removed from $x$. The breaker-open branch replaces the
 connected-stator algebra with open-circuit physics: $I_d=I_q=0$, $T_e=0$, mechanical torque frozen
@@ -360,9 +658,12 @@ open-circuit EMF $\left(E''_q-\mathrm jE''_d\right)e^{\mathrm j\delta}$ and requ
 |\Delta\theta|\le10^\circ,
 \end{equation}
 expressed as the signed margin
-$\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta|\right)\ge0$ sustained for a
-$0.5$~s dwell. The requested close time is therefore only the earliest instant at which closure
-\emph{may} occur: the request at 145.000~s produced an accepted close at 146.825~s.
+\begin{equation}
+m=\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta_{wrap}|\right)\ge0,
+\label{eq:guard-margin}
+\end{equation}
+sustained for a $0.5$~s dwell. The requested close time is therefore only the earliest instant at
+which closure \emph{may} occur: the request at 145.000~s produced an accepted close at 146.825~s.
 
 \section{Power-flow operating point}
 The power-flow is solved by the project Newton--Raphson routine. Q-limit

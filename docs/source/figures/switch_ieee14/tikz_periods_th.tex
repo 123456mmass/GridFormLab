@@ -24,10 +24,11 @@
 \node[per,fill=pblue]  (p6) at (0,-4.2)  {ช่วงที่ 6\\ $SG_1$ กลับคืน\\ สู่ระบบ};
 
 % start / end markers
-\draw[arr] (-2.6,0) -- node[tlab]{$t=0$ s} (p1);
+\draw[arr] (-3.2,0) -- node[tlab]{$t=0$ s} (p1);
 \draw[arr] (p1) -- node[tlab]{$t=20$ s} (p2);
 \draw[arr] (p2) -- node[tlab]{$t=50$ s} (p3);
-\draw[arr] (p3) -- node[tlab,pos=0.55]{$t=85$--$85.15$ s} (p4);
+% เส้นแนวตั้ง: วางป้ายข้างลูกศร ไม่ทับเส้น
+\draw[arr] (p3) -- node[font=\small,right=2mm,pos=0.5]{$t=85$--$85.15$ s} (p4);
 \draw[arr] (p4) -- node[tlabb]{$t=110$ s} (p5);
 \draw[arr] (p5) -- node[tlabb]{$t=145$ s} (p6);
 \draw[arr] (p6) -- node[tlabb,pos=0.62]{$t=200$ s} ++(-3.2,0);

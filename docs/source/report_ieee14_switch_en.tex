@@ -365,62 +365,59 @@ $0.5$~s dwell. The requested close time is therefore only the earliest instant a
 \emph{may} occur: the request at 145.000~s produced an accepted close at 146.825~s.
 
 \section{Power-flow operating point}
-\begin{table}[H]\centering\caption{Bus power-flow results (pu)}
-\input{figures/switch_ieee14/table_pf_bus_results.tex}
-\end{table}
-\begin{table}[H]\centering\caption{From-end line flows and losses (pu)}
-\input{figures/switch_ieee14/table_pf_line_results.tex}
-\end{table}
-
-The power-flow is solved by the project Newton--Raphson routine with Q-limit
-enforcement enabled, backed by generator reactive-capability limits that are
-\emph{source-defined}, not assumed or tuned. The limits are the IEEE14
+The power-flow is solved by the project Newton--Raphson routine. Q-limit
+enforcement is switched on, and the generator reactive-capability limits behind
+it are \emph{source-defined}, not assumed or tuned: they are the IEEE14
 generator data $Q_{\max}$ and $Q_{\min}$ in MVAr
 (\texttt{cases.case\_matpower6\_case14}, \texttt{mpc.gen} columns 5 and 4),
-converted to per unit with the single system base $S_{\mathrm{base}}=100$~MVA:
+converted to per unit with the single system base $S_{\mathrm{base}}=100$~MVA,
 \begin{equation}
 Q_{\max,\mathrm{pu}}=\frac{Q_{\max,\mathrm{MVAr}}}{100},\qquad
-Q_{\min,\mathrm{pu}}=\frac{Q_{\min,\mathrm{MVAr}}}{100}.
+Q_{\min,\mathrm{pu}}=\frac{Q_{\min,\mathrm{MVAr}}}{100},
 \label{eq:qlimits}
 \end{equation}
-Buses carrying no finite generator limit are left unconstrained
-($Q_{\max}=+\infty$, $Q_{\min}=-\infty$). The per-bus values are
-$(Q_{\max},Q_{\min})$ per unit: bus 1 $(0.10,0)$, bus 2 $(0.50,-0.40)$,
-bus 3 $(0.40,0)$, bus 6 $(0.24,-0.06)$, bus 8 $(0.24,-0.06)$; all other buses
-are unconstrained. On the reported operating point the SG is the slack and
-all inverter buses are PQ resources, so no PV bus reaches a reactive limit and
-the Q-limit switch resolves in zero rounds; the mechanism is exercised by the
-baseline IEEE14 case, which carries PV buses.
+with $P_{\max}$ taken the same way from \texttt{mpc.gen} column 9. Buses
+carrying no finite generator limit are left unconstrained
+($Q_{\max}=+\infty$, $Q_{\min}=-\infty$) and print a dash.
 
-Two consequences of that bus typing are reported rather than masked. The slack
+It must be stated plainly that \emph{enabling the mechanism is not the same as
+constraining this operating point}. The PV$\to$PQ Q-limit switch is defined
+only for PV buses, and after the inverter buses are mapped to PQ resources this
+case has no PV bus at all, so the switch resolves in zero rounds and changes
+nothing. Two consequences follow and are reported rather than masked: the slack
 bus 1 settles at $Q_g=-0.196$~pu against its registered $Q_{\min}=0$, and bus 6
-settles at $Q_g=0.2476$~pu against $Q_{\max}=0.24$. Neither is a solver error:
-a REF bus absorbs whatever reactive power closes the network balance, and a PQ
-resource injects its scheduled $Q$, while the PV$\to$PQ Q-limit switch is
-defined only for PV buses and therefore never applies to either. The columns
-report the registered source limits, not constraints that this operating point
-is claimed to satisfy.
+at $Q_g=0.2476$~pu against $Q_{\max}=0.24$. Neither is a solver error --- a REF
+bus absorbs whatever reactive power closes the network balance and a PQ resource
+injects its scheduled $Q$ --- but neither is a limit the solve enforced. The
+limit columns therefore report registered source data, not satisfied
+constraints. The enforcement path itself is exercised by the baseline IEEE14
+case, which does carry PV buses.
 
 The admissible voltage band is $\pm5\%$ about the $1.00$~pu slack reference,
 i.e.\ $V_{\max}=1.05$~pu and $V_{\min}=0.95$~pu on every bus
 (\texttt{CASE\_DEFINED} in \texttt{case\_ieee14bus\_eecon49\_switch}). This is
-a reporting and admissibility band, not a PF equation input: the SLDG (single
-voltage-regulated) slack is the only voltage-controlled bus in this operating
-point, so the band does not act as a PV-setpoint clamp. One observation is
-reported rather than masked: bus 6 solves at $1.0575$~pu, \mbox{$7.5\times
-10^{-3}$~pu} above $V_{\max}$, because its mapped IBR6 reactive dispatch and
-the fixed 5--6 tap ratio are source/case-defined and were not adjusted to
-satisfy the band.
+a reporting and admissibility band, not a PF equation input: the slack is the
+only voltage-controlled bus in this operating point, so the band does not act
+as a PV-setpoint clamp. One observation is reported rather than masked: bus 6
+solves at $1.0575$~pu, \mbox{$7.5\times10^{-3}$~pu} above $V_{\max}$, because
+its mapped IBR6 reactive dispatch and the fixed 5--6 tap ratio are
+source/case-defined and were not adjusted to satisfy the band.
 
-The bus roles (REF/$PQ$/GFL) are recorded as a labelling descriptor
-(see~\ref{sec:case-bus-roles}); because only a labelling field, they do not
-alter \eqref{eq:qlimits} or the bus-voltage table.
+The bus roles (REF/PQ/GFL) in the Type column are the \texttt{bus\_role}
+labelling descriptor (Section~\ref{sec:case-bus-roles}); being a label only,
+they do not alter \eqref{eq:qlimits} or any solved quantity.
+
+\begin{table}[htbp]\centering\small
+\caption{Bus power-flow results (pu)}
+\input{figures/switch_ieee14/table_pf_bus_results.tex}
+\end{table}
+
+\begin{table}[htbp]\centering\small
+\caption{From-end line flows and losses (pu)}
+\input{figures/switch_ieee14/table_pf_line_results.tex}
+\end{table}
 
 \section{200-s event and mode evidence}
-\begin{table}[H]\centering\small
-\caption{Accepted event transactions; AGSI++ is reported but overrides are explicit.}
-\input{figures/switch_ieee14/table_event_timeline.tex}
-\end{table}
 
 \begin{figure}[H]\centering
 \resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_en.tex}}

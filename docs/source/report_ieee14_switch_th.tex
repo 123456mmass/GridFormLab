@@ -85,14 +85,7 @@ SG trip และตัวควบคุม synchronism/governor ที่เ�
 บัส REF กำหนด $|V|,\theta$; บัส PV กำหนด $P,|V|$; บัส PQ กำหนด $P,Q$ ปริมาณที่เหลือเป็น
 ผลลัพธ์ของ Newton--Raphson ภายในโครงการ ตารางใช้เครื่องหมายลบเฉพาะค่าติดลบตามที่ขอ
 
-\begin{table}[H]\centering\caption{ผล bus power flow (pu)}
-\input{figures/switch_ieee14/table_pf_bus_results.tex}
-\end{table}
-\begin{table}[H]\centering\caption{กำลังด้าน from และ loss ของสายส่ง (pu)}
-\input{figures/switch_ieee14/table_pf_line_results.tex}
-\end{table}
-
-ตาราง bus power flow เพิ่มคอลัมน์ $Q_{min}$, $Q_{max}$ และ $P_{max}$ ค่าเหล่านี้เป็น
+ตาราง bus power flow มีคอลัมน์ $Q_{min}$, $Q_{max}$ และ $P_{max}$ ค่าเหล่านี้เป็น
 \emph{SOURCE\_DEFINED} จากข้อมูลเครื่องกำเนิดของ IEEE14 (\texttt{mpc.gen} คอลัมน์ 5, 4 และ 9
 ในหน่วย MVAr และ MW) แปลงเป็นเปอร์ยูนิตด้วยฐานระบบเดียว $S_{base}=100$~MVA:
 \begin{equation}
@@ -100,15 +93,29 @@ Q_{\max,\mathrm{pu}}=\frac{Q_{\max,\mathrm{MVAr}}}{100},\qquad
 Q_{\min,\mathrm{pu}}=\frac{Q_{\min,\mathrm{MVAr}}}{100},\qquad
 P_{\max,\mathrm{pu}}=\frac{P_{\max,\mathrm{MW}}}{100}.
 \end{equation}
-บัสที่ไม่มีเครื่องกำเนิดไม่มีขีดจำกัด (แสดงด้วย --) การบังคับ Q-limit เปิดใช้งานแล้ว แต่บนจุด
-ทำงานนี้ SG เป็น slack และ IBR ทุกตัวเป็น PQ resource จึงไม่มีบัส PV ให้สลับ PV$\to$PQ
-(rounds $=0$)
+บัสที่ไม่มีเครื่องกำเนิดไม่มีขีดจำกัด (แสดงด้วย --)
 
-รายงานตรงสองข้อโดยไม่ปิดบัง: บัส 1 (slack) ได้ $Q_g=-0.196$~pu เทียบขีดจำกัด $Q_{\min}=0$
-และบัส 6 ได้ $Q_g=0.2476$~pu เทียบ $Q_{\max}=0.24$ ทั้งสองไม่ใช่ความผิดพลาดเชิงตัวเลข เพราะ
-บัส REF ดูดซับกำลังรีแอกทีฟที่ทำให้สมดุลโครงข่ายปิด และ PQ resource จ่าย $Q$ ตามที่กำหนดไว้
-ส่วนกลไก PV$\to$PQ นิยามไว้สำหรับบัส PV เท่านั้นจึงไม่มีผลกับทั้งสองบัส คอลัมน์นี้จึงรายงาน
-ขีดจำกัดตามแหล่งข้อมูล ไม่ใช่ข้ออ้างว่าจุดทำงานนี้อยู่ในขีดจำกัดครบทุกบัส
+ต้องระบุให้ชัดว่า \emph{การเปิดกลไกไม่เท่ากับการบังคับจุดทำงานนี้} กลไก PV$\to$PQ นิยามไว้
+สำหรับบัส PV เท่านั้น และเมื่อบัส IBR ถูกกำหนดเป็น PQ resource แล้ว เคสนี้ไม่มีบัส PV เหลือเลย
+การสลับจึงจบใน 0 รอบและไม่เปลี่ยนอะไร ผลที่ตามมาสองข้อรายงานตรงโดยไม่ปิดบัง: บัส 1 (slack)
+ได้ $Q_g=-0.196$~pu เทียบขีดจำกัด $Q_{\min}=0$ และบัส 6 ได้ $Q_g=0.2476$~pu เทียบ
+$Q_{\max}=0.24$ ทั้งสองไม่ใช่ความผิดพลาดเชิงตัวเลข เพราะบัส REF ดูดซับกำลังรีแอกทีฟที่ทำให้
+สมดุลโครงข่ายปิด และ PQ resource จ่าย $Q$ ตามที่กำหนดไว้ แต่ทั้งสองก็ไม่ใช่ขีดจำกัดที่การแก้
+สมการบังคับจริง คอลัมน์นี้จึงรายงานขีดจำกัดตามแหล่งข้อมูล ไม่ใช่ข้ออ้างว่าจุดทำงานนี้อยู่ใน
+ขีดจำกัดครบทุกบัส ส่วนเส้นทางบังคับจริงถูกใช้งานโดยเคส IEEE14 พื้นฐานซึ่งมีบัส PV
+
+คอลัมน์ Type แสดง \texttt{bus\_role} (REF/PQ/GFL) ซึ่งเป็นป้ายกำกับเท่านั้น ไม่กระทบสมการ
+หรือค่าที่แก้ได้
+
+\begin{table}[htbp]\centering\small
+\caption{ผล bus power flow (pu)}
+\input{figures/switch_ieee14/table_pf_bus_results.tex}
+\end{table}
+
+\begin{table}[htbp]\centering\small
+\caption{กำลังด้าน from และ loss ของสายส่ง (pu)}
+\input{figures/switch_ieee14/table_pf_line_results.tex}
+\end{table}
 
 \section{AGSI++: สมการและความหมายของตัวแปรทุกตัว}
 \begin{align}
@@ -270,10 +277,6 @@ registered current injection ที่ผูกกับ full network KCL หล
 และหาก KCL ไม่ผ่าน transaction จะ rollback/fail-closed
 
 \section{ลำดับเหตุการณ์ 200 วินาทีและหลักฐาน transaction}
-\begin{table}[H]\centering\small
-\caption{เวลา เหตุการณ์ AGSI++ timer โหมดก่อน--หลัง และเหตุผลจาก accepted event log}
-\input{figures/switch_ieee14/table_event_timeline.tex}
-\end{table}
 
 \begin{figure}[H]\centering
 \resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_th.tex}}

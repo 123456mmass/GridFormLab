@@ -21,10 +21,11 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
     case_profile="eecon49_figure4", sg_H=2.5, sg_D=1.0, ...
     T_d_on=0.10, T_d_off=1.0);
-% PF tables carry Q_min/Q_max (pf struct) and P_max (from the case) so the
-% report table shows the limits actually enforced at each generator bus.
-lim = pf_limit_table(cases.case_ieee14bus_eecon49_switch());
-write_pf_tables(sys.pf,outdir,lim);
+% PF tables carry Q_min/Q_max (pf struct), P_max (from the case), and the
+% bus_role labels so inverter buses read as GFL rather than plain PQ.
+case_for_tables = cases.case_ieee14bus_eecon49_switch();
+lim = pf_limit_table(case_for_tables);
+write_pf_tables(sys.pf,outdir,lim,case_for_tables.bus_role);
 T_end_contract=sys.switching_event_contract.T_end;
 production_cache=fullfile('output','diagnostics','regfm_post_trip_probe.mat');
 figure_cache=fullfile('output','diagnostics', ...
@@ -426,11 +427,17 @@ ax=nexttile(tl); plot(ax,t,o.sg_delta*180/pi,'k--','LineWidth',0.9); grid(ax,'on
 ylabel(ax,'SG angle (deg)'); title(ax,'(a) SG rotor-to-terminal angle','FontSize',11);
 event_lines(ax,o,false);
 ax=nexttile(tl); hold(ax,'on');
-for j=1:numel(buses), plot(ax,t,o.ang_ibr(:,j)*180/pi,'Color',c(j,:),'LineWidth',0.8); end
+h=gobjects(1,numel(buses));
+for j=1:numel(buses)
+    h(j)=plot(ax,t,o.ang_ibr(:,j)*180/pi,'Color',c(j,:),'LineWidth',0.8, ...
+        'DisplayName',sprintf('IBR%d bus %d',j,buses(j)));
+end
 grid(ax,'on'); box(ax,'on'); ylabel(ax,'IBR angle (deg)'); xlabel(ax,'time (s)');
 title(ax,'(b) IBR internal/PCC-frame angle','FontSize',11); event_lines(ax,o,false);
-lg=legend(ax,arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
-    'Orientation','horizontal','NumColumns',4,'Location','northoutside');
+% Attach the legend to the tiled layout, not to panel (b), so it sits at the
+% very top of the figure instead of between the two panels.
+lg=legend(h,'Orientation','horizontal','NumColumns',4);
+lg.Layout.Tile='north';
 set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end

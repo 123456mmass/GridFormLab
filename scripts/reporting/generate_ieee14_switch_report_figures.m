@@ -347,7 +347,7 @@ ylim(ax,[-0.22 1.22]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
 ylabel(ax,'device mode'); xlabel(ax,'time (s)');
 title(ax,'IBR modes (offset for visibility; all four coincide)','FontSize',10);
 event_lines(ax,o,false);
-lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','southoutside');
+lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','northoutside');
 set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end
@@ -372,7 +372,7 @@ end
 lg=legend(h, ...
     arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
     'Orientation','horizontal','NumColumns',4);
-lg.Layout.Tile='south';
+lg.Layout.Tile='north';
 set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end
@@ -408,7 +408,7 @@ names=arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)), ...
     1:numel(buses),'UniformOutput',false);
 lg=legend([h hsg],[names {sprintf('SG bus %d',o.sg_bus)}], ...
     'Orientation','horizontal','NumColumns',5);
-lg.Layout.Tile='south'; set(lg,'FontName','Times New Roman','FontSize',9);
+lg.Layout.Tile='north'; set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end
 
@@ -430,7 +430,7 @@ for j=1:numel(buses), plot(ax,t,o.ang_ibr(:,j)*180/pi,'Color',c(j,:),'LineWidth'
 grid(ax,'on'); box(ax,'on'); ylabel(ax,'IBR angle (deg)'); xlabel(ax,'time (s)');
 title(ax,'(b) IBR internal/PCC-frame angle','FontSize',11); event_lines(ax,o,false);
 lg=legend(ax,arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
-    'Orientation','horizontal','NumColumns',4,'Location','southoutside');
+    'Orientation','horizontal','NumColumns',4,'Location','northoutside');
 set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end

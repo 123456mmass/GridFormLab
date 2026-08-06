@@ -1,5 +1,8 @@
-% TikZ GFL/GFM switching-strategy flowchart (English), following the report's
-% severity + hard-gate redesign and the declared CASE_DEFINED chronology.
+% TikZ GFL/GFM switching-strategy flowchart (English), following the
+% implemented seven-term AGSI++ index (ibr.SwitchableIbr6,
+% index_mode='agsi_pp') and the declared CASE_DEFINED chronology.  The
+% severity + hard-gate redesign of the report is a frozen design and is NOT
+% what this loop depicts.
 % Drawn in LaTeX so lettering matches the report body font (Times).
 \begin{tikzpicture}[
   font=\small,
@@ -26,7 +29,8 @@
   slack $1.00\angle0^{\circ}$ pu, $\pm5\%$ band\\
   Q-limits registered (SOURCE\_DEFINED)\\
   $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$\\
-  $T_{d,on}=0.10$ s, $T_{d,off}=1.00$ s, $w_V=w_f=0.5$};
+  $T_{d,on}=0.10$ s, $T_{d,off}=1.00$ s\\
+  equal AGSI++ weights $1/7$ on all seven terms};
 \node[proc,below=of setup] (events) {%
   CASE\_DEFINED events:\\
   SG trip 20 s, load step 50 s\\
@@ -44,14 +48,15 @@
   each step $t$ ($dt=0.0125$ s): measure at PCC\\
   $V, f, \mathrm{ROCOF}, P, Q, v_q, \mathrm{SCR}, I, \mathrm{GRA}$};
 \node[proc,below=of sense] (norm) {%
-  normalize: $J_V, J_f$\\
-  hard gates: $\mathrm{ROCOF}\le1.0$, $|P_{ref}-P|\le0.20$\\
-  $\mathrm{SCR}\ge \mathrm{SCR}_{crit}$, $|v_q|\le0.10$, GRA, $|I|\le I_{max}$};
+  normalize seven terms:\\
+  $J_V, J_f, J_R, J_P,$\\
+  $J_{SCR}, J_{lock}, J_{GRA}$};
 \node[proc,below=of norm] (sev) {%
-  severity $S=\min(1,\max(0,\,w_V J_V + w_f J_f))$};
+  $\mathrm{AGSI}^{++}=\min\!\left(1,\max\!\left(0,\,
+  \frac{1}{7}\sum J_k\right)\right)$};
 \node[dec,below=of sev] (qev) {CASE\_DEFINED\\ event?};
-\node[dec,below=of qev] (qgfl) {mode GFL and\\ $S\ge\Gamma_{on}$ for $T_{d,on}$?};
-\node[dec,below=of qgfl] (qgfm) {mode GFM and\\ $S<\Gamma_{off}$ for $T_{d,off}$?};
+\node[dec,below=of qev] (qgfl) {mode GFL and\\ $\mathrm{AGSI}^{++}\ge\Gamma_{on}$ for $T_{d,on}$?};
+\node[dec,below=of qgfl] (qgfm) {mode GFM and\\ $\mathrm{AGSI}^{++}<\Gamma_{off}$ for $T_{d,off}$?};
 \node[dec,below=of qgfm] (qend) {$t\ge T_{end}$?};
 \node[startstop,below=of qend] (stop) {End};
 

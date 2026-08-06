@@ -121,7 +121,7 @@ The operational SG state is
 $x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T$:
 \begin{align}
 \dot\delta&=\omega_0\Delta\omega,&
-2H\dot{\Delta\omega}&=P_m-P_e-D\Delta\omega,\\
+2H\Delta\dot\omega&=P_m-P_e-D\Delta\omega,\\
 T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,&
 T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
 T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,&
@@ -164,7 +164,7 @@ both frozen to zero while $|V|<V_{PLL,frz}$ so that a collapsed terminal cannot 
 The virtual synchronous machine supplies the frequency deviation, with a washout state providing
 transient-only damping:
 \begin{align}
-2H\dot{\Delta\omega}_m&=P_{ref,inv}-P_{inv,f}
+2H\Delta\dot\omega_m&=P_{ref,inv}-P_{inv,f}
 -\left(1/m_p+D_1\right)\Delta\omega_m-D_2\left(\Delta\omega_m-x_w\right),\label{eq:gfm-swing}\\
 \dot x_w&=\omega_D\left(\Delta\omega_m-x_w\right).\label{eq:gfm-washout}
 \end{align}
@@ -344,7 +344,7 @@ At the trip the SG states are \emph{not} removed from $x$. The breaker-open bran
 connected-stator algebra with open-circuit physics: $I_d=I_q=0$, $T_e=0$, mechanical torque frozen
 at its pre-trip value, and open-circuit flux decay,
 \begin{align}
-2H\dot{\Delta\omega}&=T_m^{froz}-D\Delta\omega, &
+2H\Delta\dot\omega&=T_m^{froz}-D\Delta\omega, &
 T''_{d0}\dot E''_q&=E'_q-E''_q, &
 T''_{q0}\dot E''_d&=E'_d-E''_d,
 \end{align}
@@ -431,7 +431,8 @@ fault 85--85.15~s, line 6--13 trip at 110~s, and SG restoration at 145~s (accept
 \resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_en.tex}}
 \caption{GFL/GFM switching-strategy flowchart. The left column sets the operating point,
 parameters, and CASE\_DEFINED events; the right column is the online loop that measures the
-PCC signals each step, forms the severity index, and switches mode by threshold and dwell or
+PCC signals each step, forms the seven-term AGSI$^{++}$ of~\eqref{eq:agsi-legacy} actually
+implemented by \texttt{ibr.SwitchableIbr6}, and switches mode by threshold and dwell or
 through the atomic CASE\_DEFINED transaction.}
 \end{figure}
 

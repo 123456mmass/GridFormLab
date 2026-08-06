@@ -104,6 +104,15 @@ $Q_{\max}=0.24$ ทั้งสองไม่ใช่ความผิดพ�
 สมการบังคับจริง คอลัมน์นี้จึงรายงานขีดจำกัดตามแหล่งข้อมูล ไม่ใช่ข้ออ้างว่าจุดทำงานนี้อยู่ใน
 ขีดจำกัดครบทุกบัส ส่วนเส้นทางบังคับจริงถูกใช้งานโดยเคส IEEE14 พื้นฐานซึ่งมีบัส PV
 
+แบนด์แรงดันที่ยอมรับได้คือ $\pm5\%$ รอบค่าอ้างอิง slack $1.00$~pu กล่าวคือ
+$V_{\max}=1.05$~pu และ $V_{\min}=0.95$~pu ทุกบัส (\texttt{CASE\_DEFINED} ใน
+\path{case_ieee14bus_eecon49_switch}) ต้องเข้าใจให้ตรงว่านี่เป็นแบนด์สำหรับการรายงานและ
+การตรวจความยอมรับได้ \emph{ไม่ใช่อินพุตของสมการ power flow} เพราะจุดทำงานนี้มีบัสที่ควบคุม
+แรงดันเพียงบัส slack บัสเดียว แบนด์จึงไม่ได้ทำหน้าที่เป็นตัวหนีบ setpoint ของบัส PV
+มีข้อสังเกตหนึ่งที่รายงานตรงโดยไม่ปิดบัง: บัส 6 แก้ได้ที่ $1.0575$~pu สูงกว่า $V_{\max}$ อยู่
+$7.5\times10^{-3}$~pu เพราะทั้ง reactive dispatch ของ IBR6 ที่แมปไว้และอัตราส่วนแท็ปของสาย
+5--6 เป็นค่าจากแหล่งข้อมูล/เคส และ \emph{ไม่ได้ถูกปรับเพื่อให้เข้าแบนด์}
+
 คอลัมน์ Type แสดง \texttt{bus\_role} (REF/PQ/GFL) ซึ่งเป็นป้ายกำกับเท่านั้น ไม่กระทบสมการ
 หรือค่าที่แก้ได้
 
@@ -130,6 +139,7 @@ J_{GRA}&=1-GRA.
 \begin{equation}
 \mathrm{AGSI}^{++}_i=\min\!\left(1,\max\!\left(0,
 \frac{J_V+J_f+J_R+J_P+J_{SCR}+J_{lock}+J_{GRA}}{7}\right)\right).
+\label{eq:agsi-legacy-th}
 \end{equation}
 
 \noindent\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}X@{}}
@@ -153,6 +163,78 @@ $T_{d,on},T_{d,off}$ & dwell time 0.10~s และ 1.00~s \\
 ผลรวมดิบสามารถเกินหนึ่งได้ แต่ค่าที่เผยแพร่และเปรียบเทียบ threshold ถูก saturate ให้อยู่ใน
 $[0,1]$ เสมอ การแตะเส้นเพียง sample เดียวไม่ทำให้ commit; ต้องอยู่ในเงื่อนไขต่อเนื่องครบ dwell
 ถ้าหลุดก่อน timer จะ reset
+
+\subsection{ที่มาของน้ำหนักและส่วนที่ป้องกันไม่ได้}
+\label{sec:agsi-provenance}
+ต้องแยกให้ชัดว่าส่วนใดของสมการ~\eqref{eq:agsi-legacy-th} มีที่มาจากแหล่งข้อมูล และส่วนใดเป็น
+สิ่งที่โครงการกำหนดเอง สี่พจน์แรก ($J_V,J_f,J_R,J_P$) มีฐานนอร์มัลไลซ์ที่ชี้นำโดยแหล่งข้อมูล
+EECON49-P4 หัวข้อ 4.1 คือ $0.10$~pu, $0.50$~Hz, $1.00$~Hz\,s$^{-1}$ และ $0.20$~pu ตามลำดับ
+พร้อมสัดส่วนน้ำหนัก $w=[0.30,0.30,0.25,0.15]$ แต่ \emph{การขยายเป็นเจ็ดพจน์แล้วเฉลี่ยเท่ากัน
+ที่ $1/7$ เป็น} \texttt{PROJECT\_DERIVED} \emph{ทั้งหมด} กล่าวคือน้ำหนักของ $J_{SCR}$, $J_{lock}$
+และ $J_{GRA}$ ไม่มีเอกสารต้นทางรองรับเป็นรายพจน์ นี่คือจุดอ่อนเชิงที่มาที่รายงานนี้ระบุตรงไปตรงมา
+แทนที่จะกลบไว้
+
+ในคลังโค้ดมีตัวปรับน้ำหนักแบบ design-time อยู่จริงคือ
+\path{scripts/reporting/optimize_agsi_weights.m} (จัดชั้นเป็น \texttt{NUMERICAL\_METHOD},
+ใช้ random search ร่วมกับ coordinate descent) ต้องแจ้งให้ชัดว่า \textbf{ผลลัพธ์ของตัวปรับนี้
+ไม่ได้ถูกนำมาใช้} ตัวเลขทั้งหมดในรายงานนี้ผลิตจากน้ำหนักเท่ากัน $1/7$ ตามสมการ
+\eqref{eq:agsi-legacy-th} การเปิดเผยเช่นนี้เป็นข้อบังคับตามกฎความซื่อตรงเชิงตัวเลขของโครงการ
+การซ่อนเครื่องมือปรับจูนที่มีอยู่ไม่ใช่ทางเลือก
+
+\subsection{การออกแบบดัชนีใหม่: severity บวก hard gate}
+\label{sec:index-redesign-th}
+การตัดสินใจสลับโหมดมีเป้าหมายเดียวคือ \emph{คืนผู้กำหนดแรงดันและความถี่ให้ระบบ} ดังนั้นการ
+ออกแบบใหม่จึงเก็บไว้ใน objective ต่อเนื่องเฉพาะสองปริมาณนั้น และลดทุกอย่างที่เหลือลงเป็น
+\emph{การทดสอบความยอมรับได้} (admissibility test) แบบผ่าน/ไม่ผ่าน เหตุผลเชิงหลักการคือ
+ปริมาณอย่างขีดจำกัดกระแสหรือความแข็งแรงของโครงข่ายไม่ใช่ ``ความรุนแรงที่แลกเปลี่ยนกันได้''
+กับความเบี่ยงเบนแรงดัน แต่เป็นเงื่อนไขที่ต้องไม่ละเมิด การใส่มันเป็นพจน์ถ่วงน้ำหนักทำให้
+ค่าความรุนแรงที่สูงมากในพจน์หนึ่งถูก ``เฉลี่ยกลบ'' โดยพจน์อื่นได้ ซึ่งผิดความหมายทางฟิสิกส์
+ค่าความรุนแรงใหม่คือ
+\begin{equation}
+S_i=\min\!\left(1,\max\!\left(0,\;w_VJ_V+w_fJ_f\right)\right),\qquad
+J_V=\frac{|V-V_{ref}|}{\Delta V_{base}},\quad
+J_f=\frac{|f-f_0|}{\Delta f_{base}},
+\label{eq:severity-th}
+\end{equation}
+โดย $\Delta V_{base}=0.10$~pu และ $\Delta f_{base}=0.50$~Hz เป็น \texttt{SOURCE\_DEFINED}
+ส่วน $w_V=w_f=0.5$ ที่มี $w_V+w_f=1$ ได้จากการนำสัดส่วนต้นทาง $0.30:0.30$ มานอร์มัลไลซ์ใหม่
+จึงไม่เหลือน้ำหนักอิสระที่กำหนดเองแม้แต่ตัวเดียว ความหมายเชิงกายภาพของ $S_i$ คือ
+``ระยะห่างจากจุดทำงานปกติ วัดเป็นสัดส่วนของแบนด์ที่ยอมรับได้'' ค่า $S_i=1$ หมายถึงเบี่ยงเบน
+เต็มแบนด์ทั้งแรงดันและความถี่พร้อมกัน
+
+พจน์เดิมที่เหลือทั้งหมดถูกเปลี่ยนเป็น hard not-to-exceed gate ที่คืนค่า $L_k\in\{0,1\}$
+ไม่ใช่ต้นทุนถ่วงน้ำหนักอีกต่อไป
+\begin{table}[H]\centering\small
+\caption{เงื่อนไขความยอมรับได้ การสลับโหมดต้องผ่านทุก gate พร้อมกัน}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Gate & เงื่อนไข & ความหมาย & การจัดชั้น\\
+\midrule
+RoCoF & $|\mathrm df/\mathrm dt|\le1.0$~Hz\,s$^{-1}$ & ยอมรับได้เชิงอัตราการเปลี่ยน & \texttt{SOURCE\_DEFINED}\\
+การตามกำลัง & $|P_{ref}-P|\le0.20$~pu & ความเป็นไปได้ของ dispatch & \texttt{SOURCE\_DEFINED}\\
+ความแข็งแรงโครงข่าย & $SCR\ge SCR_{crit}$ & ขอบเขตความถูกต้องของ GFL & \texttt{SOURCE\_DEFINED}\\
+PLL lock & $|v_q|\le0.10$~pu & สุขภาพการซิงโครไนซ์ & \texttt{PROJECT\_DERIVED}\\
+Reference & $GRA=1$ & มีผู้กำหนดมุม/ความถี่อยู่ & \texttt{PROJECT\_DERIVED}\\
+กระแส & $|I|\le I_{max}$ & ขีดจำกัดคอนเวอร์เตอร์ & \texttt{SOURCE\_DEFINED}\\
+\bottomrule
+\end{tabular}
+\end{table}
+กฎการสลับจึงกลายเป็น
+\begin{equation}
+\text{GFL}\to\text{GFM}:\;\;S_i\ge\Gamma_{on}\;\wedge\;\textstyle\bigwedge_kL_k
+\;\;\text{ครบ }T_{d,on},\qquad
+\text{GFM}\to\text{GFL}:\;\;S_i\le\Gamma_{off}\;\wedge\;\textstyle\bigwedge_kL_k
+\;\;\text{ครบ }T_{d,off},
+\label{eq:switch-law-th}
+\end{equation}
+โดยยังคงใช้ค่า hysteresis และ dwell เดิม สัญลักษณ์ $\bigwedge_kL_k$ คือการ AND ทุก gate เข้าด้วยกัน
+ผลคือ \emph{ทุกน้ำหนักตอนนี้เป็นค่าจากแหล่งข้อมูลหรือถูกตรึงด้วยการนอร์มัลไลซ์} และทุกปริมาณ
+ที่เหลือเป็นขีดจำกัดที่ตีพิมพ์ไว้ ไม่ใช่สัมประสิทธิ์ที่จูนขึ้นเอง
+
+ต้องย้ำว่าการออกแบบนี้ถูก \textbf{freeze ไว้ที่นี่ก่อนการรันใหม่ใด ๆ} สมการ
+\eqref{eq:severity-th}--\eqref{eq:switch-law-th} \emph{ไม่ได้ถูกใช้ผลิตตัวเลขใดเลย}
+ในรายงานฉบับนี้ ตัวเลขทั้งหมดยังมาจากสมการ~\eqref{eq:agsi-legacy-th} แบบเจ็ดพจน์เฉลี่ยเท่ากัน
+การประกาศไว้ล่วงหน้าเช่นนี้ป้องกันการเลือกน้ำหนักย้อนหลังให้เข้ากับผลที่ได้แล้ว
 
 \section{State machine และความแตกต่างระหว่าง index กับ override}
 \begin{figure}[H]\centering
@@ -182,7 +264,7 @@ x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T
 และ $E''_q,E''_d$ คือ subtransient EMF สมการหลักคือ
 \begin{align}
 \dot\delta&=\omega_0\Delta\omega,\\
-2H\dot{\Delta\omega}&=P_m-P_e-D\Delta\omega,\\
+2H\Delta\dot\omega&=P_m-P_e-D\Delta\omega,\\
 T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,\\
 T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
 T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,\\
@@ -230,7 +312,7 @@ $\delta_{IT}$ คือมุม VSM เทียบ PLL, $x_w$ คือ washou
 $\delta_{PLL},x_{PLL}$ คือมุมและ integrator ของ PLL, ตัวแปรลงท้าย $f$ คือค่าผ่าน measurement
 filter และ $\delta_{IT,max/min}$ คือขอบเขตมุมจาก active-current limiter สมการ state หลักที่ใช้จริงคือ
 \begin{align}
-2H\dot{\Delta\omega}_m={}&P_{ref,inv}-P_{inv,f}
+2H\Delta\dot\omega_m={}&P_{ref,inv}-P_{inv,f}
  -(1/m_p+D_1)\Delta\omega_m-D_2(\Delta\omega_m-x_w),\\
 \dot x_w={}&\omega_D(\Delta\omega_m-x_w),\\
 \dot\delta_{PLL}={}&\omega_0(k_{p,PLL}v_q+k_{i,PLL}x_{PLL}),\\
@@ -246,14 +328,62 @@ T_{If}\dot I_{q,inv,f}={}&\kappa I_q-I_{q,inv,f},\\
 \dot\delta_{IT,min}={}&k_I(-K_eI_{d,max}^{SS}-I_{d,inv,f}).
 \end{align}
 เมื่อชนขอบเขตแล้วอนุพันธ์ที่พยายามดัน state ออกนอกขอบเขตจะถูก hold ตาม conditional
-anti-windup ในโค้ด ส่วนแหล่งแรงดันหลัง impedance ใช้
+anti-windup ในโค้ด กล่าวให้ชัดคือกฎ conditional hold นิยามว่า
 \begin{equation}
-I_{sys}=\frac{E_{VSM}e^{j(\delta_{PLL}+\delta_{IT})}-V}
-{\kappa(R_e+jX_L)},\qquad |I_{sys}|\le \frac{I_{max}^{F}}{\kappa},
+\operatorname{hold}(x,\dot x^{raw},x_{lo},x_{hi})=
+\begin{cases}
+0, & (x\ge x_{hi}\ \text{และ}\ \dot x^{raw}>0)\ \text{หรือ}\ (x\le x_{lo}\ \text{และ}\ \dot x^{raw}<0),\\
+\dot x^{raw}, & \text{กรณีอื่น},
+\end{cases}
+\label{eq:hold-th}
 \end{equation}
-โดย $E_{VSM}$ มาจาก Q--V droop และ voltage PI ก่อนผ่านขอบเขต $E_{min/max}$; PLL จะ freeze
-ตาม $V_{PLL,frz}$ ที่ประกาศ จึงเป็น GFM ที่สร้างมุม/ความถี่ ไม่ใช่การกำหนด algebraic PF slack bus
-ขึ้นมาใหม่
+กล่าวคือ \emph{ตรึงเฉพาะทิศทางที่จะดันออกนอกขอบเขต แต่ยังปล่อยให้กลับเข้ามาได้ทันที} กฎนี้ใช้กับ
+$\delta_{IT}$ (ขอบเขต $[\delta_{IT,min},\delta_{IT,max}]$) และกับ $\delta_{IT,max}$,
+$\delta_{IT,min}$ เอง (ขอบเขต $[0,\delta_{max}]$ และ $[-\delta_{max},0]$) โดย
+$\delta_{max}=\arcsin\!\left(X_LI_{max}^{SS}\right)$ ซึ่งโค้ดตรวจโดเมน $|X_LI_{max}^{SS}|\le1$
+และ fail-closed หากละเมิด เมื่อ \texttt{ESFlag}$\,=0$ จะได้ $\dot\delta_{IT,min}=0$ ตายตัว
+
+ขนาดแรงดันภายใน $E_{VSM}$ ไม่ได้เป็นตัวแปรอิสระ แต่มาจาก Q--V droop รวมกับ voltage PI
+แล้วผ่านการ clamp:
+\begin{align}
+E_{VSM}^{raw}&=V_{ref}-m_qQ_{inv,f}+k_{pv}\left(V_{ref}-V_{inv,f}\right)+k_{iv}x_E,
+\label{eq:gfm-vpi-th}\\
+E_{VSM}&=\operatorname{clamp}\left(E_{VSM}^{raw},E_{min},E_{max}\right).
+\end{align}
+จุดที่ต้องเน้นคือ \emph{ขอบเขต $E_{min},E_{max}$ ไม่ใช่ค่าคงที่} แต่คำนวณใหม่ทุกขั้นเวลาจาก
+สถานะปัจจุบัน เพื่อให้กระแสแกน q ไม่เกินขีดจำกัด:
+\begin{align}
+E_{min}&=\sqrt{\left(V_{inv,f}-I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},\\
+E_{max}&=\sqrt{\left(V_{inv,f}+I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},
+\label{eq:gfm-elim-th}
+\end{align}
+โดยขีดจำกัดกระแสแบ่งตาม \texttt{PQFlag}: เมื่อให้ลำดับความสำคัญแกน d จะได้
+$I_{d,max}^{SS}=k_fI_{max}^{SS}$ และ
+$I_{q,max}^{SS}=\sqrt{\max\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,0\right)}$ ส่วนกรณีตรงข้าม
+สลับบทบาทของสองแกน การป้องกัน integrator windup ของ $x_E$ ใช้กฎเดียวกับ~\eqref{eq:hold-th}
+คือ $\dot x_E=0$ เมื่อ $E_{VSM}^{raw}$ อยู่นอกขอบเขตแล้วและอนุพันธ์ยังผลักไปทิศเดิม
+
+มุมที่ใช้จริงคือ $\delta_{VSM}=\delta_{PLL}+\operatorname{clamp}(\delta_{IT},\delta_{IT,min},
+\delta_{IT,max})$ เหตุที่เก็บ $\delta_{IT}$ แบบ \emph{สัมพัทธ์กับ PLL} แทนที่จะเก็บมุมสัมบูรณ์
+ก็เพื่อให้แหล่งมุมสองทาง (PLL กับ virtual machine) สอดคล้องกัน โดยการลบ $\dot\delta_{PLL}$
+ออกจาก $\dot\delta_{IT}$ ทำให้ได้ $\dot\delta_{VSM}=\omega_0\Delta\omega_m$ พอดี ไม่นับ
+การเคลื่อนที่ของ PLL ซ้ำสองครั้ง
+
+ส่วนแหล่งแรงดันหลัง impedance ใช้การอิ่มตัวแบบวงกลม (circular saturation) กล่าวคือ
+\emph{จำกัดขนาดแต่รักษาทิศทางของเฟเซอร์กระแสไว้}:
+\begin{equation}
+I_{unc}=\frac{E_{VSM}e^{j\delta_{VSM}}-V}{\kappa\left(R_e+jX_L\right)},\qquad
+I_{sys}=\begin{cases}
+I_{unc}, & |I_{unc}|<I_{max}^{F}/\kappa,\\[4pt]
+\dfrac{I_{max}^{F}}{\kappa}\dfrac{I_{unc}}{|I_{unc}|}, & \text{กรณีอื่น},
+\end{cases}
+\label{eq:gfm-current-th}
+\end{equation}
+โดย $E_{VSM}$ มาจาก Q--V droop และ voltage PI ตาม~\eqref{eq:gfm-vpi-th} ก่อนผ่านขอบเขต
+$E_{min/max}$; PLL จะ freeze ($\dot\delta_{PLL}=\dot x_{PLL}=0$) เมื่อ $|V|<V_{PLL,frz}$
+เพื่อไม่ให้แรงดันที่ยุบตัวขับตัวติดตามมุมให้หลุด จึงเป็น GFM ที่สร้างมุม/ความถี่ ไม่ใช่การกำหนด
+algebraic PF slack bus ขึ้นมาใหม่ กระแสที่ป้อนกลับเข้าสมการ filter ทั้งห้าตัวคือ $I_{sys}$
+\emph{หลัง} การอิ่มตัวแล้ว ไม่ใช่ $I_{unc}$ จึงไม่มีสถานะใดที่ ``เห็น'' กระแสเกินขีดจำกัด
 
 สำหรับ GFL, $V_{t,f},P_f$ คือแรงดันและกำลังจริงที่กรองแล้ว, $I_{q,cmd,f}$ คือคำสั่ง
 reactive current หลัง lag, $P_{ord}$ คือ active-power order, $V_{LVPL,f}$ คือแรงดันกรองของ
@@ -271,10 +401,224 @@ $I_{p,target}$ รวม LVPL/low-voltage active-current management; $I_{q,cmd}$
 reactive-current path และ P-priority current limit ตาม REGC\_A/REEC\_A ตัวแปร $\kappa=S_{base}/M_{base}$
 ใช้แปลง system base ไป inverter base เพียงครั้งเดียวที่ boundary
 
-เลข mode 0/1 จึงเป็นตัวเลือก active branch ไม่ใช่แบบจำลองทั้งหมด: branch ที่ active เท่านั้นเข้าสู่
-dynamic solve แต่ state ทั้ง 20 ตัวคงอยู่เพื่อทำ state mapping ตอน transfer ทั้งสอง branch ใช้
-registered current injection ที่ผูกกับ full network KCL หลังสลับโหมดต้องแก้ algebraic right limit ใหม่
-และหาก KCL ไม่ผ่าน transaction จะ rollback/fail-closed
+ต่างจาก GFM ตรงที่ branch GFL เป็นแบบ \emph{current source}: มันไม่มี state ของ PLL เลย
+เพราะจัดแนวเข้ากับมุมของแรงดันที่ขั้วโดยตรงเชิงพีชคณิต กระแสที่ฉีดเข้าโครงข่ายคือ
+\begin{equation}
+I=\frac{\left(I_{p,reg}\,\gamma(|V|)-jI_{q,reg}\right)e^{j\angle V}}{\kappa},
+\label{eq:gfl-current-th}
+\end{equation}
+โดย $e^{j\angle V}$ คือการหมุนเข้าสู่กรอบของแรงดันขั้ว ซึ่งเป็นเหตุผลเชิงโครงสร้างว่าทำไม GFL
+จึง \emph{ตาม} โครงข่าย ไม่ใช่ \emph{สร้าง} โครงข่าย ถ้าไม่มีอุปกรณ์ใดกำหนดมุมอ้างอิงเลย
+สมการนี้ก็ไม่มีมุมให้อ้างอิง นี่คือสาเหตุที่ $GRA$ ต้องเป็น hard gate ไม่ใช่พจน์ถ่วงน้ำหนัก
+ฟังก์ชัน $\gamma$ คือ low-voltage-point gain แบบเชิงเส้นเป็นช่วงของ REGC\_A และเมื่อ
+$|V|>V_{olim}$ จะมี high-voltage reactive clamp
+$I_q\leftarrow\max\left(I_{olim},I_q-K_{hv}(|V|-V_{olim})\right)$ เพิ่มเข้ามา
+
+คู่คำสั่งของ REEC\_A คำนวณจากการหาร power order ด้วยแรงดันที่กรองแล้ว บวกด้วยกระแสรีแอกทีฟ
+ช่วงแรงดันตก:
+\begin{align}
+I_{p,0}&=\frac{P_{ord}}{\max\left(V_{t,f},0.01\right)},&
+I_{q,0}&=\frac{\kappa Q_{ref}}{\max\left(V_{t,f},0.01\right)}+I_{q,inj},\\
+I_{q,inj}&=\operatorname{sat}\!\left(K_{qv}\operatorname{db}\!\left(V_{ref,0}-V_{t,f}\right),
+I_{ql1},I_{qh1}\right),&&
+\label{eq:reec-th}
+\end{align}
+โดยพจน์ $I_{q,inj}$ ทำงานเฉพาะเมื่อ $V_{t,f}<V_{dip}$ หรือ $V_{t,f}>V_{up}$ เท่านั้น
+นอกช่วงนั้นมีค่าเป็นศูนย์ ส่วน $\operatorname{db}$ คือ deadband ช่วง $[dbd_1,dbd_2]$
+ซึ่งทำให้ความคลาดเคลื่อนแรงดันเล็กน้อยไม่กระตุ้นการฉีดรีแอกทีฟ ตัวหาร
+$\max(V_{t,f},0.01)$ เป็น \texttt{NUMERICAL\_METHOD} ที่ประกาศไว้เพื่อกันการหารด้วยศูนย์
+ตอนแรงดันยุบ ไม่ใช่การปรับแต่งแบบจำลอง
+
+จากนั้นเป็นการจัดสรรกระแสตามลำดับความสำคัญ เมื่อ \texttt{PQFlag}$\,=1$ (ให้ลำดับความสำคัญ
+กำลังจริง) จะได้
+\begin{equation}
+I_p=\operatorname{sat}\left(I_{p,0},0,I_{max}\right),\qquad
+|I_q|\le\min\!\left(I_{max},\sqrt{\max\left(I_{max}^2-I_p^2,0\right)}\right),
+\label{eq:gfl-priority-th}
+\end{equation}
+คือ \emph{สงวนความสามารถให้กำลังจริงก่อน แล้วจึงยกกำลังรีแอกทีฟเท่าที่วงกลมขีดจำกัดยังเหลือ}
+ส่วนกรณี \texttt{PQFlag}$\,=0$ สลับลำดับกัน กระแสที่ควบคุมทั้งสองจึงไล่ตามคำสั่งผ่าน converter lag
+พร้อมขีดจำกัดอัตราการเปลี่ยนตามแหล่งข้อมูล
+\begin{align}
+T_g\dot I_{p,reg}&=I_p^{tgt}-I_{p,reg},&&\dot I_{p,reg}\le r_{rpwr},\\
+T_g\dot I_{q,reg}&=I_{q,cmd,f}-I_{q,reg},&&\dot I_{q,reg}\in[I_{qr,min},I_{qr,max}],
+\end{align}
+โดย $I_p^{tgt}$ คือ $I_p$ ที่ผ่านคุณลักษณะ LVPL แล้วเมื่อเปิดสวิตช์ \texttt{Lvplsw} คือ
+$I_p^{tgt}=\min\left(I_p,\mathrm{LVPL}(V_{t,f})\right)$ ซึ่ง $\mathrm{LVPL}$ เป็นฟังก์ชันเชิงเส้น
+เป็นช่วงที่เป็นศูนย์เมื่อ $V\le Z_{erox}$ เพิ่มเชิงเส้นจนถึง $L_{vpl1}$ ที่ $V\ge B_{rkpt}$
+และถูกยกพื้นที่ศูนย์เมื่อ $V\le V_{lvpnt0}$ ค่า gain, ค่าคงที่เวลา และขีดจำกัดทุกตัวข้างต้นเป็น
+\texttt{SOURCE\_DEFINED} มีเพียงตัวกันหารศูนย์ $0.01$~pu ที่เป็น \texttt{NUMERICAL\_METHOD}
+
+\subsection{การเลือก branch ตามโหมด}
+เลข mode 0/1 จึงเป็นตัวเลือก active branch ไม่ใช่แบบจำลองทั้งหมด กล่าวให้เป็นดัชนีอย่างชัดเจน:
+ในโหมด GFL ดัชนีที่ทำงานคือ $14{:}20$ และ $\dot x_{1:13}=0$; ในโหมด GFM ดัชนีที่ทำงานคือ
+$1{:}13$ และ $\dot x_{14:20}=0$; ในโหมด tripped อนุพันธ์ทั้งยี่สิบตัวเป็นศูนย์และกระแสที่ฉีด
+เป็นศูนย์พอดี branch ที่ active เท่านั้นเข้าสู่ dynamic solve แต่ state ทั้ง 20 ตัวคงอยู่เสมอ
+เพื่อทำ state mapping ตอน transfer และชุดดัชนีที่ active ถูก \emph{ถามจากตัวอุปกรณ์}
+ไม่ได้ hard-code ไว้ในตัวอินทิเกรเตอร์ ผังการเรียงสถานะข้างต้นจึงไม่ถูกทำซ้ำในสองที่
+ทั้งสอง branch ใช้ registered current injection ที่ผูกกับ full network KCL หลังสลับโหมดต้องแก้
+algebraic right limit ใหม่ และหาก KCL ไม่ผ่าน transaction จะ rollback/fail-closed
+
+\section{รูปแบบทางคณิตศาสตร์ของการสลับโหมด: อะไรถูกแก้ ณ ขณะเปลี่ยนโหมด}
+\label{sec:switching-formulation}
+หัวข้อนี้ตอบคำถามที่สำคัญที่สุดเชิงคณิตศาสตร์โดยตรง: \emph{ถ้าระหว่างที่ SG ยังอยู่ในระบบเราเดิน
+สมการเชิงอนุพันธ์แบบ $x_{i+1}=x_i+h\cdot(\cdots)$ แล้วเมื่อระบบเปลี่ยนจาก SG ไปเป็น IBR
+การเรียกซ้ำนั้นเกิดอะไรขึ้น และอะไรถูกแก้จริง ณ วินาทีนั้น} คำตอบมีสามส่วน และเป็นรูปแบบเดียวกัน
+ที่ใช้กับทั้งการปลด SG, การสลับ GFL$\leftrightarrow$GFM และการปิด SG กลับเข้าระบบ
+
+\subsection{ระบบที่แก้อยู่เป็น DAE ไม่ใช่ ODE}
+ระหว่างเหตุการณ์ (คือช่วงที่โหมดไม่เปลี่ยน) ระบบไม่ใช่สมการเชิงอนุพันธ์สามัญล้วน แต่เป็นระบบ
+เชิงอนุพันธ์-พีชคณิต (differential--algebraic, DAE) ชนิด semi-explicit index-1
+\begin{align}
+\dot x&=f_q(x,y,u),\label{eq:sw-diff-th}\\
+0&=g_q(x,y,u)=Y_qV-I_{bus}(x,y).\label{eq:sw-alg-th}
+\end{align}
+ความหมายของสัญลักษณ์แต่ละตัวต้องชัดเจน เพราะการอธิบายผิดจุดนี้ทำให้ทั้งหัวข้อผิดตามกันหมด
+\begin{itemize}
+\item $x$ คือเวกเตอร์ \emph{state เชิงอนุพันธ์} ที่ถูกแก้ \emph{ภายในขั้นเวลาเดียวกัน}
+ประกอบด้วย SG หก state ทางแม่เหล็กไฟฟ้า บวก IBR สี่ตัว $\times$ 20 state รวมเป็น 86 state
+ส่วน state ของ prime mover สองตัว ($P_{SV},P_m$) \emph{ไม่ได้} เป็นตัวไม่รู้ค่าของ Newton
+แต่เดินหน้าด้วยการอัปเดตแบบเอกซ์โพเนนเชียลเชิงวิเคราะห์แบบตรึงอินพุต คือ
+\begin{equation}
+P_{SV}(t+h)=P_c^*+\left(P_{SV}-P_c^*\right)e^{-h/T_{SV}},\qquad
+P_c^*=\operatorname{sat}\!\left(P_{ref}-\frac{\Delta\omega}{R},P_{min},P_{max}\right),
+\label{eq:gov-exact-th}
+\end{equation}
+พร้อมสูตรคู่กันสำหรับ $P_m$ ที่แยกกรณี $T_{SV}=T_{CH}$ ออกเพื่อเลี่ยงการหารด้วยศูนย์
+สอง state นี้จึงเข้าสู่~\eqref{eq:sw-diff-th} \emph{ผ่านอินพุต $u$ เท่านั้น} ไม่ใช่ในฐานะ
+ตัวไม่รู้ค่า
+\item $u$ จึงบรรจุ $T_m$ และ $E_{fd}$
+\item $y$ คือ state ของโครงข่าย เก็บเป็นแรงดันบัสแบบพิกัดฉาก คือคู่ $(V_x,V_y)$ ต่อบัส
+\item $q$ คือ \textbf{โหมดไม่ต่อเนื่อง} (discrete mode) ซึ่งเป็นทูเพิลของ (โทโพโลยีโครงข่าย,
+โหมดของอุปกรณ์แต่ละตัว, สถานะเบรกเกอร์)
+\end{itemize}
+สมการ~\eqref{eq:sw-alg-th} คือ residual แบบ all-KCL เต็มรูปเหนือแถวจริงทั้ง $2n_b$ แถว
+(ส่วนจริงและส่วนจินตภาพของทุกบัส) โดยมี \emph{โมดูลเดียว} เป็นเจ้าของสมการนี้ ขณะที่อุปกรณ์
+แต่ละตัวส่งมาเพียงสไลซ์ $f_q$ ของตนเองและกระแสที่ตนฉีด $I_{inj}$ เท่านั้น อุปกรณ์
+ไม่เคยแก้ไขหรือคืนค่า residual ของโครงข่ายเอง
+
+การแบ่งเวลาใช้กฎ \emph{implicit trapezoidal} ดังนั้นขั้นเวลาปกติ \emph{ไม่ใช่} การเรียกซ้ำ
+แบบชัดแจ้ง $x_{k+1}=x_k+h\,f(\cdot)$ อย่างที่มักเขียนกันโดยย่อ แต่เป็นระบบไม่เชิงเส้นที่ต้องแก้
+พร้อมกันทั้งคู่
+\begin{align}
+x_{k+1}-x_k-\frac{h}{2}\left[f_q(x_k,y_k,u)+f_q(x_{k+1},y_{k+1},u)\right]&=0,\label{eq:sw-trap-th}\\
+g_q(x_{k+1},y_{k+1},u)&=0,\label{eq:sw-trapalg-th}
+\end{align}
+โดยแก้หา $(x_{k+1},y_{k+1})$ ไปด้วยกัน เส้นทาง EMF6 ใช้จำนวนรอบ corrector คงที่เท่ากับสาม
+ตามสัญญาของโครงการ ประเด็นสำคัญที่ต้องเน้นคือ \textbf{ทั้ง $f_q$ และ $g_q$ มีตัวห้อย $q$}
+กล่าวคือมันเป็นสมการ \emph{ของโหมดไม่ต่อเนื่องปัจจุบัน} เมื่อเกิดเหตุการณ์สลับ $q$ เปลี่ยน
+ดังนั้น \emph{ตัวสมการเองเปลี่ยน} ไม่ใช่แค่ค่าสัมประสิทธิ์เปลี่ยน
+
+\subsection{การเปลี่ยนผ่าน ณ ขณะสลับโหมด}
+นี่คือคำตอบตรงของคำถาม: สมการ~\eqref{eq:sw-trap-th}--\eqref{eq:sw-trapalg-th}
+\textbf{ไม่ได้ถูกเดินต่อข้ามเหตุการณ์} ณ เวลาสลับ $t_e$ วิถีของระบบเกิดการเปลี่ยนผ่านแบบ
+hybrid-DAE สามขั้นตามลำดับ
+\begin{align}
+&q^-\;\longrightarrow\;q^+ &&\text{การกระโดดของโหมดไม่ต่อเนื่อง},\label{eq:sw-jump-th}\\
+&x(t_e^+)=R_{q^-\to q^+}\!\left(x(t_e^-),y(t_e^-)\right) &&\text{แผนที่รีเซ็ตสถานะ},\label{eq:sw-reset-th}\\
+&0=g_{q^+}\!\left(x(t_e^+),y(t_e^+),u\right)\ \text{แก้หา }y(t_e^+)
+&&\text{การแก้พีชคณิตลิมิตขวา}.\label{eq:sw-right-th}
+\end{align}
+อธิบายทีละขั้น:
+
+\textbf{ขั้น~\eqref{eq:sw-jump-th}} เลือกเมทริกซ์แอดมิตแตนซ์หลังเหตุการณ์ $Y_{q^+}$
+\emph{โดยตรงจากชุดโทโพโลยีที่ประกาศไว้ล่วงหน้าผ่านตัวระบุ} (\texttt{topology\_id})
+ไม่ใช่การไปค้นหาโทโพโลยีใหม่ที่เวลา $t+\epsilon$ พร้อมกันนั้นจะ commit แผนที่โหมดอุปกรณ์และ
+สถานะเบรกเกอร์เป็น \textbf{ทรานแซกชันเดียว}: ตรวจความถูกต้องของการอัปเดตทั้งก้อนให้ครบก่อน
+จึงเขียนฟิลด์ใด ๆ และหากการตรวจล้มเหลว สถานะที่คืนออกมาจะ \texttt{isequaln} กับสถานะขาเข้า
+พอดี กล่าวคือ \emph{ไม่มีการเปลี่ยนแปลงบางส่วนค้างไว้}
+
+\textbf{ขั้น~\eqref{eq:sw-reset-th}} อธิบายในหัวข้อย่อยถัดไป
+
+\textbf{ขั้น~\eqref{eq:sw-right-th}} แก้ \emph{เฉพาะบล็อกพีชคณิตเท่านั้น} ด้วย damped Newton
+ที่มี backtracking line search โดย \emph{ตรึง $x$ ไว้ที่ $x(t_e^+)$ ไม่ขยับ} และยอมรับผลลัพธ์
+ต่อเมื่อ residual ของ KCL เข้าเกณฑ์ความคลาดเคลื่อนของขั้นเวลา มิฉะนั้นทรานแซกชันทั้งก้อน
+จะ rollback จากนั้นการอินทิเกรตเชิงอนุพันธ์จึงเริ่มใหม่จาก
+$\left(x(t_e^+),y(t_e^+)\right)$ ในขั้นเวลาถัดไป
+
+ผลที่ตามมาคือ \textbf{ณ เวลา $t_e$ มีสองแซมเปิล}: ลิมิตซ้าย ($t_e^-$) และลิมิตขวา ($t_e^+$)
+ตารางและกราฟทั้งหมดในรายงานนี้เก็บ \emph{ลิมิตขวา} การไม่แยกสองแซมเปิลนี้คือกับดักที่ทำให้
+คำนวณ RoCoF ผิดโดยการหารด้วย $\Delta t=0$
+
+\subsection{แผนที่รีเซ็ตคือความต่อเนื่องที่ขั้ว ไม่ใช่การคัดลอกสถานะ}
+สมบัติเชิงโครงสร้างที่สำคัญที่สุดคือ \textbf{มิติของเวกเตอร์สถานะไม่เคยเปลี่ยน} IBR แต่ละตัว
+เป็นซูเปอร์เซ็ต 20 state ที่มิติคงที่ ซึ่ง state GFM $1{:}13$ และ state GFL $14{:}20$
+มีอยู่พร้อมกันตลอดเวลา การเปลี่ยนโหมดเพียง \emph{เลือกใหม่ว่าบล็อกย่อยใดทำงาน} ส่วนบล็อก
+ที่ไม่ทำงานถูกตรึงไว้พอดี $\dot x_{inactive}=0$ ตามกฎ frozen inactive-state
+(\texttt{PROJECT\_DERIVED}: ความต่อเนื่องบวกการลด residual เชิงพีชคณิต) ดังนั้น
+\emph{ตัวอินทิเกรตไม่เคยเปลี่ยนขนาด และจาโคเบียนไม่เคยเปลี่ยนขนาด} นี่คือเหตุผลเชิงคณิตศาสตร์
+ว่าทำไม SG จึงกลับเข้าระบบได้ในภายหลัง: \emph{ไม่มีสิ่งใดถูกลบออกทางโครงสร้างตอนปลด}
+
+แผนที่รีเซ็ต $R$ ใน~\eqref{eq:sw-reset-th} ส่งผ่าน \emph{เงื่อนไขทางกายภาพที่ขั้ว}
+ไม่ใช่พิกัดของสถานะ และเป็นของอุปกรณ์เอง (อุปกรณ์เปิด callback ให้ ตัวจัดการไม่ hard-code
+สมการใด)
+\begin{align}
+V_{bus}&=y_{2b-1}+jy_{2b}, &
+I^-&=I_{inj}\!\left(x^-,y,u,q^-\right),\\
+S^-&=V_{bus}\,\overline{I^-}, & P^-&=\Re S^-,\quad Q^-=\Im S^-,\\
+x^+\big|_{target}&=\mathcal I_{q^+}\!\left(V_{bus},P^-,Q^-\right), &
+x^+\big|_{inactive}&=x^-\big|_{inactive},
+\end{align}
+ตามด้วยการทดสอบยอมรับแบบ fail-closed
+\begin{equation}
+\left|I_{inj}\!\left(x^+,y,u,q^+\right)-I^-\right|\le10^{-10},
+\label{eq:sw-cont-th}
+\end{equation}
+ซึ่งหากละเมิดจะยกข้อผิดพลาด \texttt{ibr:transfer\_maps:currentContinuity} และทรานแซกชัน
+ไม่ commit ตัว $\mathcal I_{q^+}$ คือตัวเริ่มค่าแบบสมดุล/แบบถ่ายโอนของ branch เป้าหมายเอง
+(GFM ใช้ \texttt{transfer\_initialize} ซึ่งไม่บังคับแถว $|V|=V_{ref}$ แบบสถิต เพราะทันทีหลัง
+การรบกวนแรงดันขั้วยังไม่เท่าค่าอ้างอิง)
+
+\emph{ปริมาณคงตัวที่ถูกพาข้ามการสลับจึงเป็นคู่ที่ขั้ว $(V,I)$ หรือกล่าวเทียบเท่าคือ $(P,Q)$
+ไม่ใช่เวกเตอร์สถานะ} ไม่มีการคัดลอกมุม PLL ออกจาก branch GFL เพราะ branch GFL
+ไม่มี state ของ PLL เลย มุมของ GFM ถูก \emph{อนุมานย้อนกลับ} จาก $V_{bus}$ และ $I^-$
+ส่วนดัชนีบัส $b$ ถูกแก้จากตำแหน่งบัสที่อุปกรณ์ลงทะเบียนไว้ ดังนั้นแผนที่นี้ไม่มีการฝัง
+หมายเลขบัสแบบตายตัวไว้ในโค้ด
+
+ความหมายเชิงกายภาพของ~\eqref{eq:sw-cont-th} คือ \emph{โครงข่ายต้องไม่ ``เห็น'' การกระโดด
+ของกระแสที่จุดเชื่อมต่อ} ณ ขณะสลับ ถ้าเห็น นั่นหมายถึงเราเปลี่ยนแหล่งจ่ายกลางอากาศแบบ
+ไม่รักษาสมดุล ซึ่งจะทำให้ลิมิตขวาไม่ใช่คำตอบของระบบเดิม เกณฑ์ $10^{-10}$ จึงเข้มกว่าเกณฑ์
+การยอมรับ KCL ของขั้นเวลา เพราะเป็นข้อกำหนดเชิงเอกลักษณ์ ไม่ใช่ความคลาดเคลื่อนของตัวแก้
+
+\subsection{การปลด SG และการปิดกลับที่มีเงื่อนไขประตู}
+ตอนปลด SG นั้น \textbf{state ทั้งหกของ SG ไม่ได้ถูกลบออกจาก $x$} branch เบรกเกอร์เปิด
+เพียงแทนพีชคณิตของสเตเตอร์ที่ต่ออยู่ด้วยฟิสิกส์วงจรเปิด: $I_d=I_q=0$, $T_e=0$,
+แรงบิดทางกลถูกตรึงที่ค่าก่อนปลด และฟลักซ์สลายตัวแบบวงจรเปิด
+\begin{align}
+2H\Delta\dot\omega&=T_m^{froz}-D\Delta\omega, &
+T''_{d0}\dot E''_q&=E'_q-E''_q, &
+T''_{q0}\dot E''_d&=E'_d-E''_d,
+\end{align}
+กล่าวคือพจน์ $(X'_d-X''_d)I_d$ และ $(X'_q-X''_q)I_q$ หายไปพร้อมกับกระแสสเตเตอร์
+ขณะที่ $\dot\delta=\omega_0\Delta\omega$ ยังเดินต่อ \emph{โรเตอร์จึงหมุนอิสระต่อไป}
+ซึ่งเป็นสิ่งที่ทำให้การซิงโครไนซ์กลับในภายหลังมีความหมายทางกายภาพ ไม่ใช่การ ``เสก''
+เครื่องกำเนิดขึ้นมาใหม่ ในทางกลับกัน สมดุลแบบสถิตไม่รวม SG ที่เบรกเกอร์เปิด เพราะ
+$T_m$ ที่ถูกตรึงไว้โดยทั่วไปไม่มีรากสถิต แต่ TS ยังอินทิเกรต state เหล่านี้ผ่านสมการวงจรเปิด
+ข้างต้นได้ตามปกติ
+
+การปิดกลับเป็นแบบ \textbf{มีเงื่อนไขประตู (gated) ไม่ใช่กำหนดตามตาราง} ตัวประตูเปรียบเทียบ
+เฟเซอร์แรงดันบัสของโครงข่ายกับ \emph{แรงดันเหนี่ยวนำวงจรเปิดของ SG} คือ
+$\left(E''_q-jE''_d\right)e^{j\delta}$ และต้องการให้
+\begin{equation}
+|\Delta V|\le0.05~\text{pu},\qquad
+|\Delta f|\le0.001~\text{pu},\qquad
+|\Delta\theta|\le10^\circ,
+\end{equation}
+เขียนรวมเป็น \emph{ระยะขอบมีเครื่องหมาย} (signed margin) เพียงค่าเดียว
+\begin{equation}
+m=\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta_{wrap}|\right)\ge0
+\label{eq:guard-margin-th}
+\end{equation}
+โดยต้องเป็นจริงต่อเนื่องครบ dwell $0.5$~s การใช้ $\min$ ทำให้เงื่อนไขที่แย่ที่สุดเป็นตัวกำหนด
+ผลเสมอ ($m<0$ แปลว่ามีอย่างน้อยหนึ่งเงื่อนไขไม่ผ่าน) และค่า $m$ ยังบอก \emph{ระยะห่างจาก
+การผ่าน} ได้ด้วย ซึ่งเป็นข้อมูลที่ค่าบูลีนล้วนให้ไม่ได้ ส่วน $\Delta\theta_{wrap}$ คือผลต่างมุม
+ที่ห่อเข้าช่วง $[-180^\circ,180^\circ)$ เพื่อไม่ให้ผลต่าง $359^\circ$ ถูกตีความว่าห่างมาก
+ทั้งที่จริงห่างเพียง $1^\circ$
+
+ผลลัพธ์เชิงตีความที่สำคัญคือ \textbf{เวลาปิดที่ร้องขอเป็นเพียงเวลาที่เร็วที่สุดที่ \emph{อาจ}
+ปิดได้} ไม่ใช่เวลาที่ปิดจริง: คำขอที่ $145.000$~s ให้ผลการปิดที่ยอมรับจริงที่ $146.825$~s
+ความหน่วง $1.825$~s นี้เป็นผลลัพธ์ของฟิสิกส์และประตู ไม่ใช่ค่าคงที่ที่ตั้งไว้ จึงไม่มีการอ้าง
+ในรายงานนี้ว่าเวลาเหตุการณ์เป็นค่าที่ไม่ขึ้นกับขั้นเวลา
 
 \section{ลำดับเหตุการณ์ 200 วินาทีและหลักฐาน transaction}
 
@@ -289,7 +633,8 @@ registered current injection ที่ผูกกับ full network KCL หล
 \resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_th.tex}}
 \caption{ผังการทำงานกลยุทธ์สลับโหมด GFL/GFM: คอลัมน์ซ้ายกำหนดจุดทำงาน พารามิเตอร์ และ
 เหตุการณ์ CASE\_DEFINED; คอลัมน์ขวาเป็น online loop ที่วัดสัญญาณที่ PCC ทุกขั้นเวลา
-คำนวณ severity และตัดสินใจสลับโหมดตาม threshold และ dwell หรือผ่าน atomic transaction}
+คำนวณ AGSI++ เจ็ดพจน์ตามสมการ~\eqref{eq:agsi-legacy-th} ที่ \texttt{ibr.SwitchableIbr6}
+ใช้จริง และตัดสินใจสลับโหมดตาม threshold และ dwell หรือผ่าน atomic transaction}
 \end{figure}
 
 ลำดับที่ใช้ตรงตามชุด verify: 0--20~s ระบบปกติ; 20~s ปลด SG; 50~s เพิ่มโหลด active/reactive

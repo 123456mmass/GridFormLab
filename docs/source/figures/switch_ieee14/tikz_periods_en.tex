@@ -1,0 +1,34 @@
+% TikZ six-period disturbance timeline (English).  Every constant is
+% CASE_DEFINED from +cases/case_ieee14bus_eecon49_switch.m; the accepted
+% reclose 146.825 s comes from the accepted event log.  Drawn in LaTeX so the
+% lettering is the report body font (Times).
+\begin{tikzpicture}[
+  font=\normalsize,
+  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
+    align=center,text=white,font=\bfseries},
+  tlbl/.style={font=\small},
+  tlab/.style={midway,above,font=\small},
+  tlabb/.style={midway,below,font=\small},
+  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
+\definecolor{pgreen}{RGB}{41,153,69}
+\definecolor{pred}{RGB}{191,45,45}
+\definecolor{pblue}{RGB}{46,107,191}
+\definecolor{pyellow}{RGB}{199,178,38}
+
+\node[per,fill=pgreen] (p1) at (0,0)    {Period 1\\ normal\\ operation};
+\node[per,fill=pred]   (p2) at (4.4,0)  {Period 2\\ $SG_1$ tripped\\ Slack Bus};
+\node[per,fill=pblue]  (p3) at (8.8,0)  {Period 3\\ $P,Q$ load\\ step $+20\%$};
+\node[per,fill=pred]   (p4) at (8.8,-4.2){Period 4\\ fault\\ at bus 9};
+\node[per,fill=pyellow](p5) at (4.4,-4.2){Period 5\\ line 6--13\\ tripped};
+\node[per,fill=pblue]  (p6) at (0,-4.2)  {Period 6\\ $SG_1$ restored\\ to system};
+
+\draw[arr] (-2.6,0) -- node[tlab]{$t=0$ s} (p1);
+\draw[arr] (p1) -- node[tlab]{$t=20$ s} (p2);
+\draw[arr] (p2) -- node[tlab]{$t=50$ s} (p3);
+\draw[arr] (p3) -- node[tlab,pos=0.55]{$t=85$--$85.15$ s} (p4);
+\draw[arr] (p4) -- node[tlabb]{$t=110$ s} (p5);
+\draw[arr] (p5) -- node[tlabb]{$t=145$ s} (p6);
+\draw[arr] (p6) -- node[tlabb,pos=0.62]{$t=200$ s} ++(-3.2,0);
+
+\node[tlbl,below=2pt of p6,yshift=4pt] {accepted reclose 146.825 s};
+\end{tikzpicture}

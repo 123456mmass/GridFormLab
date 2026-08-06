@@ -1,6 +1,8 @@
 \documentclass[12pt,a4paper]{article}
 \usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
 \usepackage{newtxtext,newtxmath}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
 \usepackage{geometry,booktabs,tabularx,array}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
@@ -390,6 +392,15 @@ all inverter buses are PQ resources, so no PV bus reaches a reactive limit and
 the Q-limit switch resolves in zero rounds; the mechanism is exercised by the
 baseline IEEE14 case, which carries PV buses.
 
+Two consequences of that bus typing are reported rather than masked. The slack
+bus 1 settles at $Q_g=-0.196$~pu against its registered $Q_{\min}=0$, and bus 6
+settles at $Q_g=0.2476$~pu against $Q_{\max}=0.24$. Neither is a solver error:
+a REF bus absorbs whatever reactive power closes the network balance, and a PQ
+resource injects its scheduled $Q$, while the PV$\to$PQ Q-limit switch is
+defined only for PV buses and therefore never applies to either. The columns
+report the registered source limits, not constraints that this operating point
+is claimed to satisfy.
+
 The admissible voltage band is $\pm5\%$ about the $1.00$~pu slack reference,
 i.e.\ $V_{\max}=1.05$~pu and $V_{\min}=0.95$~pu on every bus
 (\texttt{CASE\_DEFINED} in \texttt{case\_ieee14bus\_eecon49\_switch}). This is
@@ -412,10 +423,19 @@ alter \eqref{eq:qlimits} or the bus-voltage table.
 \end{table}
 
 \begin{figure}[H]\centering
-\includegraphics[width=8.90in]{figures/switch_ieee14/ieee14_switch_200_timeline.png}
-\caption{Horizontal event timeline from the accepted production event log. SG trip at 20~s,
-load step at 50~s, bus-9 fault 85--85.15~s, line 6--13 trip at 110~s, topology restoration and
-SG-close request at 145~s, and the accepted SG reclose at 146.825~s.}
+\resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_en.tex}}
+\caption{Six-period disturbance sequence of the 200-s simulation from the accepted production
+event log: normal operation at 0~s, SG trip at 20~s, $P,Q$ load step $+20\%$ at 50~s, bus-9
+fault 85--85.15~s, line 6--13 trip at 110~s, and SG restoration at 145~s (accepted reclose
+146.825~s).}
+\end{figure}
+
+\begin{figure}[H]\centering
+\resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_en.tex}}
+\caption{GFL/GFM switching-strategy flowchart. The left column sets the operating point,
+parameters, and CASE\_DEFINED events; the right column is the online loop that measures the
+PCC signals each step, forms the severity index, and switches mode by threshold and dwell or
+through the atomic CASE\_DEFINED transaction.}
 \end{figure}
 
 \begin{figure}[H]\centering

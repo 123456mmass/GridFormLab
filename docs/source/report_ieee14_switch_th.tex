@@ -6,7 +6,7 @@
 \setmainfont[Path={fonts/TH Sarabun PSK V-1/TH Sarabun PSK V-1/},Extension=.ttf,UprightFont={*},BoldFont={* Bold},ItalicFont={* Italic},BoldItalicFont={* BoldItalic}]{THSarabun}
 \setmonofont{Latin Modern Mono}
 \usepackage{graphicx,amsmath,amssymb,float,caption,xcolor,hyperref,fancyhdr,tikz}
-\usetikzlibrary{arrows.meta,positioning}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
 \usepackage{geometry,booktabs,array,tabularx}
 \geometry{margin=1in}
 \setlength{\headheight}{19pt}
@@ -91,6 +91,24 @@ SG trip และตัวควบคุม synchronism/governor ที่เ�
 \begin{table}[H]\centering\caption{กำลังด้าน from และ loss ของสายส่ง (pu)}
 \input{figures/switch_ieee14/table_pf_line_results.tex}
 \end{table}
+
+ตาราง bus power flow เพิ่มคอลัมน์ $Q_{min}$, $Q_{max}$ และ $P_{max}$ ค่าเหล่านี้เป็น
+\emph{SOURCE\_DEFINED} จากข้อมูลเครื่องกำเนิดของ IEEE14 (\texttt{mpc.gen} คอลัมน์ 5, 4 และ 9
+ในหน่วย MVAr และ MW) แปลงเป็นเปอร์ยูนิตด้วยฐานระบบเดียว $S_{base}=100$~MVA:
+\begin{equation}
+Q_{\max,\mathrm{pu}}=\frac{Q_{\max,\mathrm{MVAr}}}{100},\qquad
+Q_{\min,\mathrm{pu}}=\frac{Q_{\min,\mathrm{MVAr}}}{100},\qquad
+P_{\max,\mathrm{pu}}=\frac{P_{\max,\mathrm{MW}}}{100}.
+\end{equation}
+บัสที่ไม่มีเครื่องกำเนิดไม่มีขีดจำกัด (แสดงด้วย --) การบังคับ Q-limit เปิดใช้งานแล้ว แต่บนจุด
+ทำงานนี้ SG เป็น slack และ IBR ทุกตัวเป็น PQ resource จึงไม่มีบัส PV ให้สลับ PV$\to$PQ
+(rounds $=0$)
+
+รายงานตรงสองข้อโดยไม่ปิดบัง: บัส 1 (slack) ได้ $Q_g=-0.196$~pu เทียบขีดจำกัด $Q_{\min}=0$
+และบัส 6 ได้ $Q_g=0.2476$~pu เทียบ $Q_{\max}=0.24$ ทั้งสองไม่ใช่ความผิดพลาดเชิงตัวเลข เพราะ
+บัส REF ดูดซับกำลังรีแอกทีฟที่ทำให้สมดุลโครงข่ายปิด และ PQ resource จ่าย $Q$ ตามที่กำหนดไว้
+ส่วนกลไก PV$\to$PQ นิยามไว้สำหรับบัส PV เท่านั้นจึงไม่มีผลกับทั้งสองบัส คอลัมน์นี้จึงรายงาน
+ขีดจำกัดตามแหล่งข้อมูล ไม่ใช่ข้ออ้างว่าจุดทำงานนี้อยู่ในขีดจำกัดครบทุกบัส
 
 \section{AGSI++: สมการและความหมายของตัวแปรทุกตัว}
 \begin{align}
@@ -258,10 +276,17 @@ registered current injection ที่ผูกกับ full network KCL หล
 \end{table}
 
 \begin{figure}[H]\centering
-\includegraphics[width=8.90in]{figures/switch_ieee14/ieee14_switch_200_timeline.png}
-\caption{แผนภาพลำดับเหตุการณ์ตามแกนเวลาจาก accepted production event log: ปลด SG ที่ 20~s,
-เพิ่มโหลดที่ 50~s, fault บัส 9 ช่วง 85--85.15~s, เปิดสาย 6--13 ที่ 110~s, คืนสภาพพร้อม
-SG-close request ที่ 145~s และ SG ปิดจริงที่ 146.825~s}
+\resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_th.tex}}
+\caption{ลำดับเหตุการณ์รบกวนหกช่วงของการจำลอง 200~s จาก accepted production event log:
+ระบบปกติที่ 0~s, ปลด SG ที่ 20~s, เพิ่มโหลด $P,Q$ 20\% ที่ 50~s, fault บัส 9 ช่วง
+85--85.15~s, เปิดสาย 6--13 ที่ 110~s และ SG กลับคืนที่ 145~s (reclose 146.825~s)}
+\end{figure}
+
+\begin{figure}[H]\centering
+\resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_th.tex}}
+\caption{ผังการทำงานกลยุทธ์สลับโหมด GFL/GFM: คอลัมน์ซ้ายกำหนดจุดทำงาน พารามิเตอร์ และ
+เหตุการณ์ CASE\_DEFINED; คอลัมน์ขวาเป็น online loop ที่วัดสัญญาณที่ PCC ทุกขั้นเวลา
+คำนวณ severity และตัดสินใจสลับโหมดตาม threshold และ dwell หรือผ่าน atomic transaction}
 \end{figure}
 
 ลำดับที่ใช้ตรงตามชุด verify: 0--20~s ระบบปกติ; 20~s ปลด SG; 50~s เพิ่มโหลด active/reactive

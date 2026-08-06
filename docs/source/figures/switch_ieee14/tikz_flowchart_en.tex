@@ -1,0 +1,84 @@
+% TikZ GFL/GFM switching-strategy flowchart (English), following the report's
+% severity + hard-gate redesign and the declared CASE_DEFINED chronology.
+% Drawn in LaTeX so lettering matches the report body font (Times).
+\begin{tikzpicture}[
+  font=\small,
+  node distance=7mm and 8mm,
+  startstop/.style={rounded corners=8pt,draw,thick,align=center,
+    fill=blue!8,minimum height=8mm,text width=34mm,font=\bfseries},
+  proc/.style={draw,thick,align=center,fill=blue!8,
+    minimum height=9mm,text width=42mm},
+  dec/.style={diamond,draw,thick,align=center,fill=yellow!25,
+    inner sep=1.5pt,aspect=2.1,text width=32mm},
+  act/.style={draw,thick,align=center,fill=green!15,
+    minimum height=8mm,text width=40mm},
+  tx/.style={draw,thick,align=center,fill=red!12,
+    minimum height=8mm,text width=40mm},
+  conn/.style={circle,draw=red,thick,text=red,fill=white,inner sep=1.5pt,
+    font=\bfseries},
+  lab/.style={font=\footnotesize},
+  arr/.style={-{Latex[length=2.6mm]},thick}]
+
+% ---- left column: setup ----
+\node[startstop] (start) {Start};
+\node[proc,below=of start] (setup) {%
+  Operating point and parameters:\\
+  slack $1.00\angle0^{\circ}$ pu, $\pm5\%$ band\\
+  Q-limits registered (SOURCE\_DEFINED)\\
+  $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$\\
+  $T_{d,on}=0.10$ s, $T_{d,off}=1.00$ s, $w_V=w_f=0.5$};
+\node[proc,below=of setup] (events) {%
+  CASE\_DEFINED events:\\
+  SG trip 20 s, load step 50 s\\
+  fault 85--85.15 s, line trip 110 s\\
+  restore 145 s, $T_{end}=200$ s};
+\node[conn,below=of events] (p1l) {P1};
+
+\draw[arr] (start) -- (setup);
+\draw[arr] (setup) -- (events);
+\draw[arr] (events) -- (p1l);
+
+% ---- right column: online loop ----
+\node[conn,right=34mm of start] (p1r) {P1};
+\node[proc,below=of p1r] (sense) {%
+  each step $t$ ($dt=0.0125$ s): measure at PCC\\
+  $V, f, \mathrm{ROCOF}, P, Q, v_q, \mathrm{SCR}, I, \mathrm{GRA}$};
+\node[proc,below=of sense] (norm) {%
+  normalize: $J_V, J_f$\\
+  hard gates: $\mathrm{ROCOF}\le1.0$, $|P_{ref}-P|\le0.20$\\
+  $\mathrm{SCR}\ge \mathrm{SCR}_{crit}$, $|v_q|\le0.10$, GRA, $|I|\le I_{max}$};
+\node[proc,below=of norm] (sev) {%
+  severity $S=\min(1,\max(0,\,w_V J_V + w_f J_f))$};
+\node[dec,below=of sev] (qev) {CASE\_DEFINED\\ event?};
+\node[dec,below=of qev] (qgfl) {mode GFL and\\ $S\ge\Gamma_{on}$ for $T_{d,on}$?};
+\node[dec,below=of qgfl] (qgfm) {mode GFM and\\ $S<\Gamma_{off}$ for $T_{d,off}$?};
+\node[dec,below=of qgfm] (qend) {$t\ge T_{end}$?};
+\node[startstop,below=of qend] (stop) {End};
+
+\node[tx,right=10mm of qev] (txn) {atomic transaction:\\ all-GFM / handback all-GFL};
+\node[act,right=10mm of qgfl] (swgfl) {switch GFL $\rightarrow$ GFM};
+\node[act,right=10mm of qgfm] (swgfm) {switch GFM $\rightarrow$ GFL};
+
+\draw[arr] (p1r) -- (sense);
+\draw[arr] (sense) -- (norm);
+\draw[arr] (norm) -- (sev);
+\draw[arr] (sev) -- (qev);
+\draw[arr] (qev) -- node[lab,right]{no} (qgfl);
+\draw[arr] (qgfl) -- node[lab,right]{no} (qgfm);
+\draw[arr] (qgfm) -- node[lab,right]{no} (qend);
+\draw[arr] (qend) -- node[lab,right]{yes} (stop);
+\draw[arr] (qev) -- node[lab,above]{yes} (txn);
+\draw[arr] (qgfl) -- node[lab,above]{yes} (swgfl);
+\draw[arr] (qgfm) -- node[lab,above]{yes} (swgfm);
+% yes-action outputs: feed a shared vertical channel EAST of the action boxes,
+% then one clean arrow west into qend (no line passes through a box).
+\coordinate (ret) at ($(txn.east)+(0.8,0)$);
+\draw (txn.east) -| (ret |- qend.east);
+\draw (swgfl.east) -| (ret |- qend.east);
+\draw (swgfm.east) -| (ret |- qend.east);
+\draw[arr] (ret |- qend.east) -- (qend.east);
+% loop-back from qend (no) up its own OUTER channel to sense.
+\coordinate (loopx) at ($(txn.east)+(1.7,0)$);
+\draw[arr] (qend.east) -- (qend.east -| loopx)
+  node[lab,pos=0.3,above]{no\; $t+dt$} |- (sense.east);
+\end{tikzpicture}

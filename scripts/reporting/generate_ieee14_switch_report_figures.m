@@ -296,12 +296,12 @@ end
 
 function supervisor_figure(o,outdir,filename,figure_title)
 t=o.tgrid; buses=o.ibr_buses; c=lines(numel(buses));
-f=figure('Color','w','Units','inches','Position',[1 1 5.90 6.35], ...
+f=figure('Color','w','Units','inches','Position',[1 1 5.90 5.30], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
     'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
     'DefaultLegendFontSize',10);
-tl=tiledlayout(f,4,2,'TileSpacing','compact','Padding','compact');
+tl=tiledlayout(f,3,2,'TileSpacing','compact','Padding','compact');
 title(tl,figure_title, ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
 
@@ -329,15 +329,26 @@ if any(o.ref_code==1)
 end
 event_lines(ax,o,false);
 
+% Single combined mode panel.  The four IBRs switch at the same instants, so
+% four separate axes hid the fact that the traces coincide.  Distinct line
+% styles plus a small vertical offset (display-only, +-0.03 pu of the 0/1 mode
+% coordinate) keep every trace visible where they overlap; the underlying mode
+% values are unchanged 0/1 integers.
+ax=nexttile(tl,[1 2]); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
+styles={'-','--',':','-.'};
+lws=[2.0 1.6 1.9 1.6];
+offs=[0.045 0.015 -0.015 -0.045];
+h=gobjects(1,numel(buses));
 for j=1:numel(buses)
-    ax=nexttile(tl); lw=1.4; if j==1, lw=2.0; end
-    stairs(ax,t,o.mode(:,j),'Color',c(j,:),'LineWidth',lw); grid(ax,'on'); box(ax,'on');
-    ylim(ax,[-0.1 1.1]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
-    ylabel(ax,sprintf('IBR%d bus %d',j,buses(j)));
-    if j==1, title(ax,'Reference leader while SG is open','FontSize',10); end
-    event_lines(ax,o,false);
-    if j>2, xlabel(ax,'time (s)'); end
+    h(j)=stairs(ax,t,o.mode(:,j)+offs(j),styles{j},'Color',c(j,:), ...
+        'LineWidth',lws(j),'DisplayName',sprintf('IBR%d bus %d',j,buses(j)));
 end
+ylim(ax,[-0.22 1.22]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
+ylabel(ax,'device mode'); xlabel(ax,'time (s)');
+title(ax,'IBR modes (offset for visibility; all four coincide)','FontSize',10);
+event_lines(ax,o,false);
+lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','southoutside');
+set(lg,'FontName','Times New Roman','FontSize',9);
 export_figure(f,outdir,filename);
 end
 

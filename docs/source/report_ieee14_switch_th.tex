@@ -47,7 +47,7 @@ threshold หรือผลตัดสินโหมด
 \begin{tabularx}{\textwidth}{p{0.29\textwidth}X}
 \toprule คำถาม & คำตอบที่ตรวจจากโค้ดและผล 200~s \\ \midrule
 รู้ได้อย่างไรว่า IBR อยู่โหมดใด & อ่าน committed mode ของอุปกรณ์โดยตรง ไม่อนุมานจากกราฟกำลัง:
-0=GFL และ 1=GFM รูป mode timeline แยก IBR1--IBR4 จึงเป็นหลักฐานหลัก \\
+0=GFL และ 1=GFM รูป mode timeline รวมของ IBR1--IBR4 จึงเป็นหลักฐานหลัก \\
 สลับด้วยวิธีใด & โครงสร้างทั่วไปเป็น binary hybrid state machine ที่มี index, hysteresis และ
 dwell timer แยกต่อ IBR แต่ chronology ชุดนี้มี override ที่ประกาศเพิ่มสองจุด ได้แก่ SG-trip
 all-GFM และ coordinated SG-reference handback \\
@@ -298,8 +298,10 @@ registered current injection ที่ผูกกับ full network KCL หล
 \section{กราฟ AGSI, mode, SG และ IBR ครบ 200 วินาที}
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
-\caption{AGSI++ ที่ถูกจำกัดใน $[0,1]$, GRA, reference owner และ mode timeline แยก IBR1--IBR4
-โหมดเป็น GFL ก่อน 20~s, GFM ช่วง 20--146.825~s และกลับ GFL หลัง 146.825~s}
+\caption{AGSI++ ที่ถูกจำกัดใน $[0,1]$, GRA, reference owner และ mode timeline ของ IBR1--IBR4
+รวมในกราฟเดียว โหมดเป็น GFL ก่อน 20~s, GFM ช่วง 20--146.825~s และกลับ GFL หลัง 146.825~s
+เส้นทั้งสี่ใช้รูปแบบต่างกัน (ทึบ/ประ/จุด/ประ-จุด) และเลื่อนแนวตั้งเล็กน้อยเพื่อการมองเห็นเท่านั้น
+($\pm0.045$ ของพิกัดโหมด 0/1) เพราะทั้งสี่เส้นทับกันสนิท}
 \end{figure}
 
 สังเกตว่า GRA ยังเป็น 1 ตลอด เพราะก่อน trip มี SG เป็น reference และ transaction ที่ 20~s

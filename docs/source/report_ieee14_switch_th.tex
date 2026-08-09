@@ -393,9 +393,12 @@ E_{max}&=\sqrt{\left(V_{inv,f}+I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right
 \label{eq:gfm-elim-th}
 \end{align}
 โดยขีดจำกัดกระแสแบ่งตาม \texttt{PQFlag}: เมื่อให้ลำดับความสำคัญแกน d จะได้
-$I_{d,max}^{SS}=k_fI_{max}^{SS}$ และ
-$I_{q,max}^{SS}=\sqrt{\max\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,0\right)}$ ส่วนกรณีตรงข้าม
-สลับบทบาทของสองแกน การป้องกัน integrator windup ของ $x_E$ ใช้กฎเดียวกับ~\eqref{eq:hold-th}
+\[
+I_{d,max}^{SS}=k_fI_{max}^{SS}
+\quad\text{และ}\quad
+I_{q,max}^{SS}=\sqrt{\max\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,0\right)},
+\]
+ส่วนกรณีตรงข้ามสลับบทบาทของสองแกน การป้องกัน integrator windup ของ $x_E$ ใช้กฎเดียวกับ~\eqref{eq:hold-th}
 คือ $\dot x_E=0$ เมื่อ $E_{VSM}^{raw}$ อยู่นอกขอบเขตแล้วและอนุพันธ์ยังผลักไปทิศเดิม
 
 มุมที่ใช้จริงคือ $\delta_{VSM}=\delta_{PLL}+\operatorname{clamp}(\delta_{IT},\delta_{IT,min},
@@ -458,11 +461,13 @@ I_{q,inj}&=\operatorname{sat}\!\left(K_{qv}\operatorname{db}\!\left(V_{ref,0}-V_
 I_{ql1},I_{qh1}\right),&&
 \label{eq:reec-th}
 \end{align}
-โดยพจน์ $I_{q,inj}$ ทำงานเฉพาะเมื่อ $V_{t,f}<V_{dip}$ หรือ $V_{t,f}>V_{up}$ เท่านั้น
+โดยพจน์ $I_{q,inj}$ ทำงานเฉพาะเมื่อ
+$V_{t,f}<V_{dip}$ หรือ $V_{t,f}>V_{up}$ เท่านั้น
 นอกช่วงนั้นมีค่าเป็นศูนย์ ส่วน $\operatorname{db}$ คือ deadband ช่วง $[dbd_1,dbd_2]$
-ซึ่งทำให้ความคลาดเคลื่อนแรงดันเล็กน้อยไม่กระตุ้นการฉีดรีแอกทีฟ ตัวหาร
-$\max(V_{t,f},0.01)$ เป็น \texttt{NUMERICAL\_METHOD} ที่ประกาศไว้เพื่อกันการหารด้วยศูนย์
-ตอนแรงดันยุบ ไม่ใช่การปรับแต่งแบบจำลอง
+ซึ่งทำให้ความคลาดเคลื่อนแรงดันเล็กน้อยไม่กระตุ้นการฉีดรีแอกทีฟ
+
+ตัวหาร $\max\!\left(V_{t,f},0.01\right)$ เป็น \texttt{NUMERICAL\_METHOD} ที่ประกาศไว้
+เพื่อกันการหารด้วยศูนย์ตอนแรงดันยุบ ไม่ใช่การปรับแต่งแบบจำลอง
 
 จากนั้นเป็นการจัดสรรกระแสตามลำดับความสำคัญ เมื่อ \texttt{PQFlag}$\,=1$ (ให้ลำดับความสำคัญ
 กำลังจริง) จะได้

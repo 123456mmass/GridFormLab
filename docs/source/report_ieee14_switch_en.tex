@@ -4,11 +4,13 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
 \usepackage{geometry,booktabs,tabularx,array}
+\usepackage{microtype}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
 \pagestyle{fancy}\fancyhf{}\lhead{IEEE 14-bus: 1 SG + 4 IBR, AGSI++}\rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
 \renewcommand{\arraystretch}{1.12}
+\emergencystretch=1.5em
 \title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching with Project AGSI++}\\
 \large Production all-KCL 200-s switching and SG-reference handback}
 \date{6 August 2026}
@@ -54,10 +56,9 @@ source-guided; the equal $1/7$ weighting of the remaining three terms is
 \texttt{PROJECT\_DERIVED} and is the part of~\eqref{eq:agsi-legacy} whose provenance cannot be
 defended term by term. Section~\ref{sec:index-redesign} states the redesigned index that replaces
 it; the numbers in this report predate that redesign and were produced by~\eqref{eq:agsi-legacy}.
-A design-time weight tuner exists in the repository
-(\texttt{scripts/reporting/optimize\_agsi\_weights.m}, \texttt{NUMERICAL\_METHOD}, random search
-plus coordinate descent). Its output was \emph{not} used: the reported run uses equal $1/7$
-weights.
+A design-time weight tuner exists in the repository at
+\path{scripts/reporting/optimize_agsi_weights.m} (\texttt{NUMERICAL\_METHOD}, random search plus
+coordinate descent). Its output was \emph{not} used: the reported run uses equal $1/7$ weights.
 
 The generic local state machine uses $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$,
 $T_{d,on}=0.10$~s, and $T_{d,off}=1.00$~s. In this declared chronology, however, the SG-trip
@@ -97,13 +98,13 @@ Current & $|I|\le I_{max}$ & converter limit & \texttt{SOURCE\_DEFINED}\\
 \end{tabular}
 \end{table}
 The switching law is then
-\begin{equation}
-\text{GFL}\to\text{GFM}:\;\;S_i\ge\Gamma_{on}\;\wedge\;\textstyle\bigwedge_kL_k
-\;\;\text{for }T_{d,on},\qquad
-\text{GFM}\to\text{GFL}:\;\;S_i\le\Gamma_{off}\;\wedge\;\textstyle\bigwedge_kL_k
+\begin{align}
+\text{GFL}\to\text{GFM}:\;\;&S_i\ge\Gamma_{on}\;\wedge\;\textstyle\bigwedge_kL_k,
+\;\;\text{for }T_{d,on},\notag\\
+\text{GFM}\to\text{GFL}:\;\;&S_i\le\Gamma_{off}\;\wedge\;\textstyle\bigwedge_kL_k,
 \;\;\text{for }T_{d,off},
 \label{eq:switch-law}
-\end{equation}
+\end{align}
 retaining the existing hysteresis and dwell values. Each weight is now either source-defined or
 fixed by normalisation, and each remaining quantity is a published limit rather than a tuned
 coefficient. This design is frozen here \emph{before} any re-run;
@@ -175,11 +176,12 @@ mapping is diagnostic and is not a machine-specific governor validation.
 
 \subsection{IBR state superset}
 Each IBR carries a constant-dimension \textbf{20-state} switching superset: the 13-state
-grid-forming branch (REGFM\_B1 generator model G2) and the 7-state grid-following branch
-(WECC REGC\_A/REEC\_A) both exist at all times,
+grid-forming branch (REGFM\_B1, generator model~G2) and the 7-state grid-following branch
+(the WECC REGC\_A and REEC\_A pair) exist at all times,
 \begin{align}
 x_{GFM}={}&[\Delta\omega_m,\delta_{IT},x_w,x_E,\delta_{PLL},x_{PLL},
-P_{inv,f},I_{d,f},Q_{inv,f},V_{inv,f},I_{q,f},\delta_{IT,max},\delta_{IT,min}]^T,\\
+P_{inv,f},I_{d,f},Q_{inv,f},\notag\\
+&\hspace{2.1em}V_{inv,f},I_{q,f},\delta_{IT,max},\delta_{IT,min}]^T,\\
 x_{GFL}={}&[V_{t,f},P_f,I_{q,cmd,f},P_{ord},V_{LVPL,f},I_{p,reg},I_{q,reg}]^T,
 \end{align}
 so that $x_{IBR}=[x_{GFM}^T\;x_{GFL}^T]^T\in\mathbb R^{20}$. All quantities are per-unit on the
@@ -231,8 +233,10 @@ E_{max}&=\sqrt{\left(V_{inv,f}+I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right
 \end{align}
 with the current limit split by \texttt{PQFlag}: on $d$-axis priority
 $I_{d,max}^{SS}=k_fI_{max}^{SS}$ and
-$I_{q,max}^{SS}=\sqrt{\max\!\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,0\right)}$, and the reverse
-assignment on $q$-axis priority. The $x_E$ anti-windup uses the same conditional-hold rule: $\dot
+\[
+I_{q,max}^{SS}=\sqrt{\max\!\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,\,0\right)},
+\]
+and the reverse assignment on $q$-axis priority. The $x_E$ anti-windup uses the same conditional-hold rule: $\dot
 x_E=0$ when $E_{VSM}^{raw}$ is outside the band and the derivative still pushes outward.
 The current-angle bounds are themselves states, integrating the mismatch between the steady-state
 $d$-axis current limit and the measured $d$-axis current, so that the angle authority contracts
@@ -276,10 +280,10 @@ $V_{olim}$. The states are three measurement filters, the power order, and the t
 currents:
 \begin{align}
 T_{rv}\dot V_{t,f}&=|V|-V_{t,f},&
-T_{p}\dot P_f&=\kappa P-P_f,&
-T_{fltr}\dot V_{LVPL,f}&=|V|-V_{LVPL,f},\\
-T_{pord}\dot P_{ord}&=\mathrm{sat}\left(\kappa P_{ref},P_{min},P_{max}\right)-P_{ord},&
-T_{iq}\dot I_{q,cmd,f}&=I_{q,cmd}-I_{q,cmd,f},&&
+T_{p}\dot P_f&=\kappa P-P_f,\\
+T_{fltr}\dot V_{LVPL,f}&=|V|-V_{LVPL,f},&
+T_{pord}\dot P_{ord}&=\mathrm{sat}(\kappa P_{ref},P_{min},P_{max})-P_{ord},\\
+T_{iq}\dot I_{q,cmd,f}&=I_{q,cmd}-I_{q,cmd,f},
 \end{align}
 where $\dot P_{ord}$ is additionally rate-limited to $[\dot P_{min},\dot P_{max}]$. The REEC\_A
 command pair divides the order by the filtered voltage and adds the voltage-dip reactive injection,
@@ -289,11 +293,15 @@ I_{q,0}&=\frac{\kappa Q_{ref}}{\max\left(V_{t,f},0.01\right)}+I_{q,inj},\\
 I_{q,inj}&=\mathrm{sat}\!\left(K_{qv}\,\mathrm{db}\!\left(V_{ref,0}-V_{t,f}\right),I_{ql1},I_{qh1}\right)
 &&\text{active only if }V_{t,f}<V_{dip}\text{ or }V_{t,f}>V_{up},
 \end{align}
-followed by the active-priority allocation $I_p=\mathrm{sat}(I_{p,0},0,I_{max})$ and
-$|I_q|\le\min\!\left(I_{max},\sqrt{I_{max}^2-I_p^2}\right)$. The regulated currents then track
+followed by the active-priority allocation
+\[
+I_p=\mathrm{sat}\!\left(I_{p,0},\,0,\,I_{max}\right),\qquad
+|I_q|\le\min\!\left(I_{max},\sqrt{I_{max}^2-I_p^2}\right).
+\]
+The regulated currents then track
 their commands through the converter lag with the sourced ramp limits,
 \begin{align}
-T_g\dot I_{p,reg}&=I_p^{tgt}-I_{p,reg}\;\;\left(\dot I_{p,reg}\le r_{rpwr}\right),&
+T_g\dot I_{p,reg}&=I_p^{tgt}-I_{p,reg}\;\;\left(\dot I_{p,reg}\le r_{rpwr}\right),\\
 T_g\dot I_{q,reg}&=I_{q,cmd,f}-I_{q,reg}\;\;\left(\dot I_{q,reg}\in[I_{qr,min},I_{qr,max}]\right),
 \end{align}
 where $I_p^{tgt}$ is $I_p$ passed through the LVPL characteristic when that switch is enabled and
@@ -470,7 +478,7 @@ not the state vector. No PLL angle is copied out of the GFL branch, because the 
 PLL state; the GFM angle is re-derived from $V_{bus}$ and $I^-$. The bus index $b$ is resolved from
 the device's registered bus position, so the map contains no hard-coded bus identity.
 
-\subsection{Why the recursion becomes an assignment, and what equation is solved}
+\subsection{Why the recursion becomes an assignment, and what equation\break is solved}
 \label{sec:sw-inverse}
 This subsection answers the most direct question: during a normal step we advance the recursion
 $x_{k+1}=x_k+\frac{h}{2}[f_q(x_k)+f_q(x_{k+1})]$, yet at a switching instant the code appears to
@@ -638,9 +646,9 @@ for the state to approach continuity by itself, whereas an IBR mode switch has a
 map and happens the instant the transaction commands it.
 
 \subsection{The SG trip and the gated reclose}
-At the trip the SG states are \emph{not} removed from $x$. The breaker-open branch replaces the
-connected-stator algebra with open-circuit physics: $I_d=I_q=0$, $T_e=0$, mechanical torque frozen
-at its pre-trip value, and open-circuit flux decay,
+At the trip the SG states are \emph{not} removed from $x$. The breaker-open branch
+replaces the connected-stator algebra with the open-circuit physics\,: $I_d\!=\!I_q\!=\!0$, $T_e\!=\!0$, the
+mechanical torque frozen at its pre-trip value, and open-circuit flux decay,
 \begin{align}
 2H\Delta\dot\omega&=T_m^{froz}-D\Delta\omega, &
 T''_{d0}\dot E''_q&=E'_q-E''_q, &
@@ -670,7 +678,7 @@ The power-flow is solved by the project Newton--Raphson routine. Q-limit
 enforcement is switched on, and the generator reactive-capability limits behind
 it are \emph{source-defined}, not assumed or tuned: they are the IEEE14
 generator data $Q_{\max}$ and $Q_{\min}$ in MVAr
-(\texttt{cases.case\_matpower6\_case14}, \texttt{mpc.gen} columns 5 and 4),
+(\path{cases.case_matpower6_case14}, \texttt{mpc.gen} columns 5 and 4),
 converted to per unit with the single system base $S_{\mathrm{base}}=100$~MVA,
 \begin{equation}
 Q_{\max,\mathrm{pu}}=\frac{Q_{\max,\mathrm{MVAr}}}{100},\qquad

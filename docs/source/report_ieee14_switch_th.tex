@@ -31,11 +31,12 @@ AGSI++ และกลไก switching เป็นโค้ดของโค�
 การรัน production เดียวครอบคลุม 0--200~s: ปลด SG ที่ 20~s, เพิ่มโหลด 20\% ที่ 50~s,
 fault สามเฟสที่บัส 9 ช่วง 85--85.15~s, เปิดสาย 6--13 ที่ 110~s, คืนสาย/โหลดและขอปิด SG
 ที่ 145~s ผลผ่านถึง 200~s โดย residual สูงสุดของ accepted step เท่ากับ
-$9.99\times10^{-9}$ และ subdivision สูงสุดหนึ่งชั้น SG ผ่าน synchronism guard และปิดจริงที่
-146.825~s จากนั้น coordinated SG-reference handback สั่ง IBR ทั้งหมดกลับ GFL
-ที่จุดสิ้นสุด 200~s ความถี่ SG กลับสู่ $60.0002$~Hz แสดงว่าความถี่กลับเข้าสู่ steady ก่อนจบ
-แม้บัสโหลดระยะไกลห้าบัสจะยังต่ำกว่าแบนด์แรงดัน $\pm5\%$ เล็กน้อย ฉะนั้น
-chronology และ handback ทำงานตามสัญญาที่ประกาศ แต่ยังไม่ใช่การยืนยัน controller ระดับใช้งานจริง
+$9.685\times10^{-9}$ และ subdivision สูงสุดสองชั้น SG ผ่าน synchronism guard และปิดจริงที่
+145.400~s โดย IBR ทั้งสี่ยังคง GFM จากนั้น severity ต่ำกว่า $\Gamma_{off}$ ครบ dwell 1.00~s
+จึงเกิด transaction แยกที่ 146.400~s ซึ่ง commit IBR ทั้งหมดกลับ GFL ที่จุดสิ้นสุด 200~s
+$f_{COI}=60.000008$~Hz และแรงดันทุกบัสอยู่ในช่วง 0.966733--1.057534~pu ไม่มีบัสต่ำกว่า
+0.95~pu แต่บัส 6 ยังสูงกว่าแบนด์ 1.05~pu ตาม reactive dispatch ของเคส ฉะนั้น chronology และ
+handback ทำงานตามสัญญาที่ประกาศ แต่ยังไม่ใช่การยืนยัน controller ระดับใช้งานจริง
 ไม่มี Bayesian Optimization (BO) ในงานนี้ ส่วน ripple เส้นจุดที่เห็นในกราฟเป็น display-only
 overlay แบบ band-limited; เส้นทึบยังเป็น raw result และ overlay ไม่เปลี่ยน state, AGSI, timer,
 threshold หรือผลตัดสินโหมด
@@ -50,22 +51,22 @@ threshold หรือผลตัดสินโหมด
 0=GFL และ 1=GFM รูป mode timeline รวมของ IBR1--IBR4 จึงเป็นหลักฐานหลัก \\
 สลับด้วยวิธีใด & โครงสร้างทั่วไปเป็น binary hybrid state machine ที่มี index, hysteresis และ
 dwell timer แยกต่อ IBR แต่ chronology ชุดนี้มี override ที่ประกาศเพิ่มสองจุด ได้แก่ SG-trip
-all-GFM และ coordinated SG-reference handback \\
+all-GFM และ severity-gated SG-reference handback แบบสอง phase \\
 ใช้เกณฑ์อะไร & local index route ใช้ $\mathrm{AGSI}^{++}\ge\Gamma_{on}$ ต่อเนื่องครบ
 $T_{d,on}$ สำหรับ GFL$\to$GFM และใช้ $\mathrm{AGSI}^{++}<\Gamma_{off}$ พร้อม $GRA=1$
 ครบ $T_{d,off}$ สำหรับ GFM$\to$GFL ส่วนชั้นประสานงานตรวจสถานะ SG/breaker และความพร้อมของ
 reference เพิ่มเติม เพื่อให้ระบบไม่เข้าสู่ภาวะไม่มีผู้กำหนดมุมและความถี่ \\
 สลับพร้อมกันหรือไม่ & ตามกลไก local ไม่จำเป็นต้องพร้อมกัน เพราะแต่ละ IBR มี index/timer ของตนเอง
-แต่ผลชุดนี้สลับพร้อมกันที่ 20~s เพราะ local AGSI supervisor ทำงานร่วมกับเงื่อนไข
-``SG unavailable'' แล้ว event transaction commit all-GFM แบบ atomic และกลับพร้อมกันที่ 146.825~s
-เพราะ coordinated handback หลัง SG ผ่าน synchronism guard \\
+แต่ผลชุดนี้สลับพร้อมกันที่ 20~s เพราะ SG-trip event transaction commit all-GFM แบบ atomic
+SG ปิดกลับที่ 145.400~s โดยโหมด IBR ไม่เปลี่ยน และทั้งสี่กลับพร้อมกันที่ 146.400~s เพราะ
+severity ของแต่ละตัวต่ำกว่า $\Gamma_{off}$ ครบ dwell พร้อมกันแล้ว Phase~2 transaction ผ่าน \\
 ตัวใดเป็น slack bus & ตอน SG online บัส 1 เป็น REF ของ power flow ระหว่าง SG offline ไม่มี IBR
 ตัวใดถูกเปลี่ยนเป็น algebraic PF slack; IBR1 ทำหน้าที่ reference leader ด้านมุม/ความถี่ของ island
 เท่านั้น ขณะเดียวกันทุกบัสยังคงอยู่ในสมการ KCL \\
 รู้ได้อย่างไรว่ากลับสภาวะปกติ & ต้องดูพร้อมกันทั้ง breaker state, mode, KCL residual, แรงดัน,
-ความถี่, กำลังกล/ไฟฟ้า และแนวโน้ม settling ชุดนี้กลับ all-GFL แรงดันอยู่ในช่วงปกติ และ
-$f_{SG}=60.0002$~Hz ที่ 200~s กลับเข้าสู่ steady จาก transient จึงรายงานว่า recovery สำเร็จ
-ไม่ใช่แค่ settling อยู่ \\
+ความถี่, กำลังกล/ไฟฟ้า และแนวโน้ม settling ชุดนี้กลับ all-GFL ที่ 146.400~s,
+$f_{COI}=60.000008$~Hz ที่ 200~s และแรงดันไม่มีบัสต่ำกว่า 0.95~pu; บัส 6 ที่ 1.057534~pu
+ยังสูงกว่าแบนด์ 1.05~pu ตามจุดทำงานที่ประกาศ จึงรายงาน recovery พร้อมข้อจำกัดนี้ \\
 \bottomrule
 \end{tabularx}
 
@@ -84,6 +85,10 @@ SG trip และตัวควบคุม synchronism/governor ที่เ�
 \subsection{ผล power flow ของบัสและสายส่ง}
 บัส REF กำหนด $|V|,\theta$; บัส PV กำหนด $P,|V|$; บัส PQ กำหนด $P,Q$ ปริมาณที่เหลือเป็น
 ผลลัพธ์ของ Newton--Raphson ภายในโครงการ ตารางใช้เครื่องหมายลบเฉพาะค่าติดลบตามที่ขอ
+ต้องแยกให้ชัดว่า \emph{GFL ไม่ได้แปลว่าเป็นบัส PV}: GFL คือโหมดตัวควบคุมเชิงพลวัตแบบ
+current source ส่วน PV/PQ คือความเป็นเจ้าของตัวแปรใน power flow สำหรับเคสนี้ GFL ทั้งสี่รับ
+$P_{ref},Q_{ref}$ ที่กำหนดไว้ จึงเป็น PQ resource และให้ $|V|$ เป็นผลจาก network solve
+ถ้าเป็น PV resource จริงจะกำหนด $P,|V|$ แล้วให้ตัวควบคุมแรงดันทำให้ $Q$ เป็นผลลัพธ์
 
 ตาราง bus power flow มีคอลัมน์ $Q_{min}$, $Q_{max}$ และ $P_{max}$ ค่าเหล่านี้เป็น
 \emph{SOURCE\_DEFINED} จากข้อมูลเครื่องกำเนิดของ IEEE14 (\texttt{mpc.gen} คอลัมน์ 5, 4 และ 9
@@ -126,115 +131,63 @@ $7.5\times10^{-3}$~pu เพราะทั้ง reactive dispatch ของ IB
 \input{figures/switch_ieee14/table_pf_line_results.tex}
 \end{table}
 
-\section{AGSI++: สมการและความหมายของตัวแปรทุกตัว}
-\begin{align}
-J_V&=\frac{|V-V_{ref}|}{0.10},&
-J_f&=\frac{|f-60|}{0.50},&
-J_R&=\frac{|\mathrm{d}f/\mathrm{d}t|}{1.0},\\
-J_P&=\frac{|P_{ref}-P|}{0.20},&
-J_{SCR}&=\max\left(0,\frac{3}{SCR}-1\right),&
-J_{lock}&=\frac{|v_q|}{0.10},\\
-J_{GRA}&=1-GRA.
-\end{align}
+\section{AGSI++ สองพจน์ที่ใช้งานจริงและความหมายของตัวแปร}
+ดัชนีของ IBR แต่ละตัวใช้เฉพาะแรงดันและความถี่ โดยอ้างแรงดันจุดทำงานปกติของบัสนั้นจาก
+power flow ก่อนเหตุการณ์ขณะที่ SG online:
 \begin{equation}
-\mathrm{AGSI}^{++}_i=\min\!\left(1,\max\!\left(0,
-\frac{J_V+J_f+J_R+J_P+J_{SCR}+J_{lock}+J_{GRA}}{7}\right)\right).
+S_i=\min\!\left(1,\max\!\left(0,\;\tfrac12J_{V,i}+\tfrac12J_f\right)\right),\qquad
+J_{V,i}=\frac{|V_i-V_{ref,i}|}{0.10},\quad
+J_f=\frac{|f_{COI}-60|}{0.50}.
 \label{eq:agsi-legacy-th}
 \end{equation}
+$V_{ref,i}$ จึงไม่ใช่ค่า $1.0$~pu ที่ฝังตายตัวทุกบัส แต่เป็น healthy per-bus PF profile
+ส่วน $f_{COI}$ คำนวณจาก SG/GFM ที่ online และมีข้อมูล inertia ครบโดยถ่วงน้ำหนักด้วย
+$H_{system}$ ค่า $S_i$ ถูกจำกัดใน $[0,1]$ และแต่ละ IBR มี timer ของตนเอง
 
-\noindent\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}X@{}}
-\toprule ตัวแปร & ความหมายและหน่วย \\ \midrule
-$V,V_{ref}$ & ขนาดแรงดันที่ PCC และค่าอ้างอิง หน่วย pu; $J_V$ วัด voltage deviation \\
-$f$ & ความถี่ หน่วย Hz; ใน GFM อ่านจาก virtual rotor ส่วน GFL ชุด production นี้ใช้ความถี่
-ของเฟสแรงดัน PCC เนื่องจาก active GFL subset ไม่มี PLL-frequency state แยก \\
-$\mathrm df/\mathrm dt$ & RoCoF หน่วย Hz/s คำนวณจาก accepted samples แล้วผ่าน low-pass
-ตามสัญญา AGSI++; จุดเวลา event ซ้ำซ้าย/ขวาไม่นำมาหารด้วย $\Delta t=0$ \\
-$P,P_{ref}$ & กำลังจริงที่อุปกรณ์ฉีดและ setpoint บนฐานระบบ หน่วย pu; $J_P$ คือ tracking stress \\
-$SCR$ & short-circuit ratio; เมื่อ $SCR\ge3$ จะได้ $J_{SCR}=0$ และเมื่ออ่อนกว่านั้น stress เพิ่ม \\
-$v_q$ & แรงดันแกน q ในกรอบอ้างอิงของอุปกรณ์ หน่วย pu ใช้บอก phase/lock mismatch \\
-$GRA$ & grid-reference availability; เท่ากับ 1 เมื่อมี SG online หรือมี committed GFM reference \\
-$J_{GRA}$ & missing-reference stress เท่ากับ 0 เมื่อมี reference และ 1 เมื่อไม่มี \\
-$i$ & หมายเลข IBR แต่ละตัวคำนวณ index และ timer ของตัวเอง \\
-$\Gamma_{on},\Gamma_{off}$ & threshold แบบ hysteresis เท่ากับ 0.65 และ 0.35 \\
-$T_{d,on},T_{d,off}$ & dwell time 0.10~s และ 1.00~s \\
+\noindent\begin{tabularx}{\textwidth}{@{}p{0.23\textwidth}X@{}}
+\toprule ตัวแปร & ความหมายและสัญญา \\ \midrule
+$V_i,V_{ref,i}$ & ขนาดแรงดัน PCC ปัจจุบันและค่า healthy SG-online PF ของบัสเดียวกัน หน่วย pu \\
+$f_{COI}$ & ความถี่รวมแบบถ่วง inertia ของ SG/GFM ที่ online หน่วย Hz; ถ้าหลักฐานไม่ครบจะไม่อนุญาต mode release \\
+$\Gamma_{on},\Gamma_{off}$ & threshold hysteresis เท่ากับ 0.65 และ 0.35 \\
+$T_{d,on},T_{d,off}$ & dwell time เท่ากับ 0.10~s และ 1.00~s \\
+$i$ & หมายเลข IBR; severity และ down-line timer แยกต่ออุปกรณ์ \\
 \bottomrule
 \end{tabularx}
 
-ผลรวมดิบสามารถเกินหนึ่งได้ แต่ค่าที่เผยแพร่และเปรียบเทียบ threshold ถูก saturate ให้อยู่ใน
-$[0,1]$ เสมอ การแตะเส้นเพียง sample เดียวไม่ทำให้ commit; ต้องอยู่ในเงื่อนไขต่อเนื่องครบ dwell
-ถ้าหลุดก่อน timer จะ reset
+พจน์เดิมอีกห้าตัว ($J_R,J_P,J_{SCR},J_{lock},J_{GRA}$) มีน้ำหนักเป็นศูนย์ใน preset
+\texttt{agsi\_pp} และเป็นข้อมูลวินิจฉัยเท่านั้น โค้ดไม่ได้อ้างว่าทั้งห้าเป็น hard gate ที่ซ่อนอยู่
+สิ่งที่เป็น gate จริงใน composite transaction แยกต่างหาก ได้แก่ SG ต้องคืน reference สำเร็จ,
+profile แรงดันต้อง map กับบัสได้แบบหนึ่งต่อหนึ่ง, หลักฐาน V/f ต้อง finite, transfer map ต้องผ่าน
+และ right-limit full-KCL ต้องลู่เข้า หากหลักฐาน V/f หาย timer จะ reset และไม่ปล่อยอุปกรณ์ใด
 
-\subsection{ที่มาของน้ำหนักและส่วนที่ป้องกันไม่ได้}
+\subsection{ที่มาของน้ำหนักและเหตุผลที่ไม่ใช้ค่าเฉลี่ยเจ็ดพจน์}
 \label{sec:agsi-provenance}
-ต้องแยกให้ชัดว่าส่วนใดของสมการ~\eqref{eq:agsi-legacy-th} มีที่มาจากแหล่งข้อมูล และส่วนใดเป็น
-สิ่งที่โครงการกำหนดเอง สี่พจน์แรก ($J_V,J_f,J_R,J_P$) มีฐานนอร์มัลไลซ์ที่ชี้นำโดยแหล่งข้อมูล
-EECON49-P4 หัวข้อ 4.1 คือ $0.10$~pu, $0.50$~Hz, $1.00$~Hz\,s$^{-1}$ และ $0.20$~pu ตามลำดับ
-พร้อมสัดส่วนน้ำหนัก $w=[0.30,0.30,0.25,0.15]$ แต่ \emph{การขยายเป็นเจ็ดพจน์แล้วเฉลี่ยเท่ากัน
-ที่ $1/7$ เป็น} \texttt{PROJECT\_DERIVED} \emph{ทั้งหมด} กล่าวคือน้ำหนักของ $J_{SCR}$, $J_{lock}$
-และ $J_{GRA}$ ไม่มีเอกสารต้นทางรองรับเป็นรายพจน์ นี่คือจุดอ่อนเชิงที่มาที่รายงานนี้ระบุตรงไปตรงมา
-แทนที่จะกลบไว้
+ฐาน $0.10$~pu และ $0.50$~Hz ชี้นำโดย EECON49-P4 หัวข้อ 4.1 และสัดส่วนน้ำหนักของแรงดันต่อ
+ความถี่ในแหล่งข้อมูลเป็น $0.30{:}0.30$ เมื่อมอร์มัลไลซ์เฉพาะสองปริมาณที่เป็น reference severity
+ให้ผลรวมเป็นหนึ่ง จึงได้ $w_V=w_f=0.5$ โดยไม่มีน้ำหนักอิสระให้จูน ส่วนค่าเฉลี่ยเจ็ดพจน์ $1/7$
+แบบเดิมเป็น \texttt{PROJECT\_DERIVED} ที่ไม่มีเอกสารรองรับรายพจน์และเจือจาง $J_V,J_f$
+ด้วยพจน์ที่มักเกือบศูนย์ จึงไม่ใช่นิยามที่ engine ใช้ปัจจุบัน
 
-ในคลังโค้ดมีตัวปรับน้ำหนักแบบ design-time อยู่จริงคือ
-\path{scripts/reporting/optimize_agsi_weights.m} (จัดชั้นเป็น \texttt{NUMERICAL\_METHOD},
-ใช้ random search ร่วมกับ coordinate descent) ต้องแจ้งให้ชัดว่า \textbf{ผลลัพธ์ของตัวปรับนี้
-ไม่ได้ถูกนำมาใช้} ตัวเลขทั้งหมดในรายงานนี้ผลิตจากน้ำหนักเท่ากัน $1/7$ ตามสมการ
-\eqref{eq:agsi-legacy-th} การเปิดเผยเช่นนี้เป็นข้อบังคับตามกฎความซื่อตรงเชิงตัวเลขของโครงการ
-การซ่อนเครื่องมือปรับจูนที่มีอยู่ไม่ใช่ทางเลือก
+มี design-time weight tuner ที่ไม่ได้ถูกนำมาใช้ โดยอยู่ที่
+\path{scripts/reporting/optimize_agsi_weights.m} และจัดเป็น
+\texttt{NUMERICAL\_METHOD} นิยามที่ freeze และ implement จริงคือ
+$0.5{:}0.5$ ตามสมการ~\eqref{eq:agsi-legacy-th}
 
-\subsection{การออกแบบดัชนีใหม่: severity บวก hard gate}
+\subsection{กฎ local และ authority ของ composite handback}
 \label{sec:index-redesign-th}
-การตัดสินใจสลับโหมดมีเป้าหมายเดียวคือ \emph{คืนผู้กำหนดแรงดันและความถี่ให้ระบบ} ดังนั้นการ
-ออกแบบใหม่จึงเก็บไว้ใน objective ต่อเนื่องเฉพาะสองปริมาณนั้น และลดทุกอย่างที่เหลือลงเป็น
-\emph{การทดสอบความยอมรับได้} (admissibility test) แบบผ่าน/ไม่ผ่าน เหตุผลเชิงหลักการคือ
-ปริมาณอย่างขีดจำกัดกระแสหรือความแข็งแรงของโครงข่ายไม่ใช่ ``ความรุนแรงที่แลกเปลี่ยนกันได้''
-กับความเบี่ยงเบนแรงดัน แต่เป็นเงื่อนไขที่ต้องไม่ละเมิด การใส่มันเป็นพจน์ถ่วงน้ำหนักทำให้
-ค่าความรุนแรงที่สูงมากในพจน์หนึ่งถูก ``เฉลี่ยกลบ'' โดยพจน์อื่นได้ ซึ่งผิดความหมายทางฟิสิกส์
-ค่าความรุนแรงใหม่คือ
+เส้นทาง reduced-6 ใช้ hysteresis/dwell โดยตรง:
 \begin{equation}
-S_i=\min\!\left(1,\max\!\left(0,\;w_VJ_V+w_fJ_f\right)\right),\qquad
-J_V=\frac{|V-V_{ref}|}{\Delta V_{base}},\quad
-J_f=\frac{|f-f_0|}{\Delta f_{base}},
-\label{eq:severity-th}
-\end{equation}
-โดย $\Delta V_{base}=0.10$~pu และ $\Delta f_{base}=0.50$~Hz เป็น \texttt{SOURCE\_DEFINED}
-ส่วน $w_V=w_f=0.5$ ที่มี $w_V+w_f=1$ ได้จากการนำสัดส่วนต้นทาง $0.30:0.30$ มานอร์มัลไลซ์ใหม่
-จึงไม่เหลือน้ำหนักอิสระที่กำหนดเองแม้แต่ตัวเดียว ความหมายเชิงกายภาพของ $S_i$ คือ
-``ระยะห่างจากจุดทำงานปกติ วัดเป็นสัดส่วนของแบนด์ที่ยอมรับได้'' ค่า $S_i=1$ หมายถึงเบี่ยงเบน
-เต็มแบนด์ทั้งแรงดันและความถี่พร้อมกัน
-
-พจน์เดิมที่เหลือทั้งหมดถูกเปลี่ยนเป็น hard not-to-exceed gate ที่คืนค่า $L_k\in\{0,1\}$
-ไม่ใช่ต้นทุนถ่วงน้ำหนักอีกต่อไป
-\begin{table}[H]\centering\small
-\caption{เงื่อนไขความยอมรับได้ การสลับโหมดต้องผ่านทุก gate พร้อมกัน}
-\begin{tabular}{@{}llll@{}}
-\toprule
-Gate & เงื่อนไข & ความหมาย & การจัดชั้น\\
-\midrule
-RoCoF & $|\mathrm df/\mathrm dt|\le1.0$~Hz\,s$^{-1}$ & ยอมรับได้เชิงอัตราการเปลี่ยน & \texttt{SOURCE\_DEFINED}\\
-การตามกำลัง & $|P_{ref}-P|\le0.20$~pu & ความเป็นไปได้ของ dispatch & \texttt{SOURCE\_DEFINED}\\
-ความแข็งแรงโครงข่าย & $SCR\ge SCR_{crit}$ & ขอบเขตความถูกต้องของ GFL & \texttt{SOURCE\_DEFINED}\\
-PLL lock & $|v_q|\le0.10$~pu & สุขภาพการซิงโครไนซ์ & \texttt{PROJECT\_DERIVED}\\
-Reference & $GRA=1$ & มีผู้กำหนดมุม/ความถี่อยู่ & \texttt{PROJECT\_DERIVED}\\
-กระแส & $|I|\le I_{max}$ & ขีดจำกัดคอนเวอร์เตอร์ & \texttt{SOURCE\_DEFINED}\\
-\bottomrule
-\end{tabular}
-\end{table}
-กฎการสลับจึงกลายเป็น
-\begin{equation}
-\text{GFL}\to\text{GFM}:\;\;S_i\ge\Gamma_{on}\;\wedge\;\textstyle\bigwedge_kL_k
-\;\;\text{ครบ }T_{d,on},\qquad
-\text{GFM}\to\text{GFL}:\;\;S_i\le\Gamma_{off}\;\wedge\;\textstyle\bigwedge_kL_k
-\;\;\text{ครบ }T_{d,off},
+\text{GFL}\to\text{GFM}:\; S_i\ge\Gamma_{on}\ \text{ครบ }T_{d,on},\qquad
+\text{GFM}\to\text{GFL}:\; S_i<\Gamma_{off}\ \text{ครบ }T_{d,off}.
 \label{eq:switch-law-th}
 \end{equation}
-โดยยังคงใช้ค่า hysteresis และ dwell เดิม สัญลักษณ์ $\bigwedge_kL_k$ คือการ AND ทุก gate เข้าด้วยกัน
-ผลคือ \emph{ทุกน้ำหนักตอนนี้เป็นค่าจากแหล่งข้อมูลหรือถูกตรึงด้วยการนอร์มัลไลซ์} และทุกปริมาณ
-ที่เหลือเป็นขีดจำกัดที่ตีพิมพ์ไว้ ไม่ใช่สัมประสิทธิ์ที่จูนขึ้นเอง
-
-ต้องย้ำว่าการออกแบบนี้ถูก \textbf{freeze ไว้ที่นี่ก่อนการรันใหม่ใด ๆ} สมการ
-\eqref{eq:severity-th}--\eqref{eq:switch-law-th} \emph{ไม่ได้ถูกใช้ผลิตตัวเลขใดเลย}
-ในรายงานฉบับนี้ ตัวเลขทั้งหมดยังมาจากสมการ~\eqref{eq:agsi-legacy-th} แบบเจ็ดพจน์เฉลี่ยเท่ากัน
-การประกาศไว้ล่วงหน้าเช่นนี้ป้องกันการเลือกน้ำหนักย้อนหลังให้เข้ากับผลที่ได้แล้ว
+ใน composite all-KCL การปล่อยหลัง reclose แบ่งเป็นสอง phase อย่างชัดเจน Phase~1 ปิด SG
+เมื่อผ่าน synchronism guard และคืน reference ownership ให้ SG โดย \emph{ยังไม่เปลี่ยนโหมด IBR}
+Phase~2 ประเมิน $S_i$ ของ IBR ที่ยังเป็น GFM ทุกตัว หากตัวใดต่ำกว่า $\Gamma_{off}$ ต่อเนื่องครบ
+$T_{d,off}$ จะสร้าง target ที่ปล่อยเฉพาะตัวนั้น แล้วใช้ device-owned transfer map และแก้ right-limit
+KCL แบบ atomic หลัง partial release จะ reset timer ทุกตัวที่เหลือ เพราะสภาพแวดล้อม V/f เปลี่ยนแบบ
+ไม่ต่อเนื่องจาก mode transfer การแยก eligibility ออกจาก committed transition นี้ป้องกันการเรียก
+post-hoc threshold crossing ว่าเป็นmode releaseทั้งที่ transaction ไม่เคยเกิดขึ้น
 
 \subsubsection{เหตุผลที่ใช้ $J_V,J_f$ เป็น severity และทำไมน้ำหนักจึงเป็น $0.5{:}0.5$}
 \label{sec:agsi-weight-rationale-th}
@@ -251,6 +204,11 @@ rotor และ droop) severity จึงต้องวัด ``ระยะห
 \textbf{(2) ทำไมอีกห้าพจน์ต้องเป็น gate ไม่ใช่น้ำหนัก.} เงื่อนไขอย่าง ``$SCR$ ต้องเพียงพอ'',
 ``กระแสต้องไม่เกิน $I_{max}$'' หรือ ``PLL ต้องล็อก'' เป็นแบบผ่าน/ไม่ผ่าน ไม่ใช่ ``ระยะห่าง''
 ที่จะเอามาเฉลี่ยกับพจน์อื่นได้ เพราะไม่มีความหมายทางฟิสิกส์ที่ ``SCR ดีไปชดเชยกระแสเกิน'' ได้
+การตามกำลังของ GFL ก็มีความหมายแบบไม่ชดเชยเช่นเดียวกัน: $P$ ที่ตามดีต้องไม่หักล้าง $Q$
+ที่ตามผิด และ V/f ที่ดีก็ต้องไม่ซ่อน dispatch mismatch ดังนั้นจึงไม่เพิ่ม $J_P,J_Q$ เป็นพจน์
+ถ่วงน้ำหนักใน severity ถ้าแหล่งข้อมูลหรือข้อกำหนดของเคสให้แบนด์การตามกำลังมา เงื่อนไข
+$|P-P^\star|$ และ $|Q-Q^\star|$ ควรเป็น release-readiness gate แยกต่างหาก และต้องคืน
+$P^\star,Q^\star$ ตามเคสให้สอดคล้องก่อน transfer เสมอ
 การใส่มันเป็นพจน์ถ่วงน้ำหนักเปิดโอกาสให้ค่าดีกลบ (mask) ค่าเสียได้ และที่ร้ายกว่าคือการเฉลี่ย
 ทำให้ดัชนีหนวกหู ยกตัวอย่างตัวเลขจากสมการ~\eqref{eq:agsi-legacy-th}: ด้วยค่าเฉลี่ย $1/7$
 พจน์เดียวจะกระตุ้น threshold $\Gamma_{on}=0.65$ ได้ก็ต่อเมื่อมีค่าถึง $7\times0.65=4.55$
@@ -279,15 +237,17 @@ $0.7{:}0.3$'' คำตอบคือ ``การเปลี่ยนต้อ
 \draw[->,thick,bend left=24] (gfl) to node[above,align=center] {$\mathrm{AGSI}^{++}_i\ge\Gamma_{on}$; ครบ $T_{d,on}$} (gfm);
 \draw[->,thick,bend left=24] (gfm) to node[below,align=center] {$\mathrm{AGSI}^{++}_i<\Gamma_{off}$, $GRA=1$; ครบ $T_{d,off}$} (gfl);
 \draw[->,very thick,red] (gfl.south) -- ++(0,-1.35) -| node[pos=0.25,below,align=center] {SG-trip override (CASE\_DEFINED)} (gfm.south);
-\draw[->,very thick,teal] (gfm.north) -- ++(0,1.35) -| node[pos=0.25,above,align=center] {SG-reference handback หลัง synchronism guard} (gfl.north);
+\draw[->,very thick,teal] (gfm.north) -- ++(0,1.35) -| node[pos=0.25,above,align=center] {severity + dwell หลัง SG รับ reference} (gfl.north);
 \end{tikzpicture}
 \caption{binary state machine พร้อม threshold, dwell และ override ที่แยกออกจาก index-driven switching}
 \end{figure}
 
-ผล chronology นี้ใช้ลูกศร override สองเส้น: ที่ 20~s SG-trip transaction เปิด SG และ commit
-IBR ทั้งสี่เป็น GFM แบบ atomic; ที่ 146.825~s เมื่อ SG ผ่าน guard แล้ว transaction จึงคืน reference
-ให้ SG และ transfer IBR ทั้งสี่กลับ GFL ตามด้วย right-limit KCL solve ดังนั้น mode timeline ที่พร้อมกัน
-เป็นผลของ coordinated transaction ไม่ใช่หลักฐานว่า index ทั้งสี่ตัด threshold พร้อมกัน
+ผล chronology นี้แยก authority เป็นสองช่วง: ที่ 20~s SG-trip transaction เปิด SG และ commit
+IBR ทั้งสี่เป็น GFM แบบ atomic; เมื่อ SG ผ่าน guard แล้ว Phase~1 จะคืน reference ให้ SG โดย
+\emph{ไม่เปลี่ยนโหมด IBR} จากนั้น Phase~2 จึงใช้ $S_i<\Gamma_{off}$ ครบ $T_{d,off}$ ต่ออุปกรณ์
+เพื่ออนุญาต GFM$\to$GFL และต้องผ่าน transfer map กับ right-limit KCL ก่อน commit ดังนั้นหลักฐาน
+mode releaseต้องอ่านจาก committed mode history ไม่ใช่จากเวลา reclose หรือ threshold crossing
+แบบ post-hoc
 
 \section{สมการ state ของ SG และ IBR}
 \subsection{SG แบบ operational EMF6 หก state}
@@ -299,31 +259,44 @@ x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T
 และ $E''_q,E''_d$ คือ subtransient EMF สมการหลักคือ
 \begin{align}
 \dot\delta&=\omega_0\Delta\omega,\\
-2H\Delta\dot\omega&=P_m-P_e-D\Delta\omega,\\
+2H\Delta\dot\omega&=T_m-T_e-D\Delta\omega,\\
 T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,\\
 T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
 T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,\\
 T''_{q0}\dot E''_d&=E'_d-E''_d+(X'_q-X''_q)I_q.
 \end{align}
-$H$ คือ inertia constant, $D$ คือ damping, $P_m$ คือ mechanical input, $P_e$ คือ electrical
-air-gap power, $E_{fd}$ คือ field input และ $I_d,I_q$ คือกระแส stator ในกรอบโรเตอร์
+$H$ คือ inertia constant, $D$ คือ damping, $T_m$ คือ mechanical input และ $T_e$ คือ
+air-gap electrical torque บน per-unit base เดียวกัน ($T_e$ เท่ากับ air-gap electrical power ที่
+synchronous speed), $E_{fd}$ คือ field input และ $I_d,I_q$ คือกระแส stator ในกรอบโรเตอร์
 case นี้มี $T'_{q0}=0$ จึงใช้ singular limit แบบ exact โดย freeze $E'_d=0$ ไม่แทนด้วย epsilon
 
 \subsection{governor/turbine เพิ่มเติมโดยไม่เปลี่ยนลำดับ EMF6}
 state ของ prime mover สองตัวคือ valve position $P_{SV}$ และ mechanical power $P_m$:
 \begin{align}
-T_{SV}\dot P_{SV}&=-P_{SV}+P_c-\frac{\Delta\omega}{R},\\
+T_{SV}\dot P_{SV}&=-P_{SV}+C,\\
 T_{CH}\dot P_m&=-P_m+P_{SV}.
 \end{align}
-สมการเป็นโครงสร้าง non-reheat turbine/governor ตาม Sauer--Pai ใช้ $R=0.05$,
-$T_{SV}=0.2$~s และ $T_{CH}=0.4$~s ตาม manifest ที่ freeze ก่อนรัน การเพิ่มสอง state นี้ไม่ได้
-เปลี่ยนคำว่า ``SG หก state'' เพราะหก state หมายถึง electromagnetic machine ส่วน governor
-เป็น subsystem ภายนอก หลัง breaker close จะ initialize $P_{SV},P_m$ แบบ bumpless ที่ input
-equilibrium และทำ primary speed regulation ต่อเนื่อง ไม่มี secondary integral/AGC และไม่มี BO
-
-ระหว่าง SG offline มี deterministic phase planner และ voltage matcher เพื่อให้ค่าก่อนปิดเข้า guard
-กลไกนี้เป็น \texttt{ASSUMED\_\allowbreak DIAGNOSTIC} ไม่ใช่ controller ที่ยืนยันจากเครื่องจริง จึงใช้ผลนี้
-ยืนยัน workflow ได้ แต่ยังใช้รับรอง protection/control deployment ไม่ได้
+กำหนด $e_{SV}=e^{-h/T_{SV}}$ และ $e_{CH}=e^{-h/T_{CH}}$ เมื่อคำสั่ง $C$ ถูกตรึงตลอด
+หนึ่งขั้นเวลา production ใช้ exact update ดังนี้:
+\begin{align}
+P_{SV}^{+}&=C+(P_{SV}-C)e_{SV},\\
+P_m^{+}&=\begin{cases}
+C+(P_m-C)e_{CH}+(P_{SV}-C)(h/T_{CH})e_{CH}, & T_{SV}=T_{CH},\\[2pt]
+C+(P_m-C)e_{CH}+(P_{SV}-C)\dfrac{T_{SV}}{T_{SV}-T_{CH}}(e_{SV}-e_{CH}), & T_{SV}\ne T_{CH}.
+\end{cases}
+\label{eq:gov-exact-th}
+\end{align}
+input ของ EMF6 ใช้ชื่อ $T_m$: ในแต่ละขั้นเวลา implicit trapezoidal solve รับค่าเฉลี่ย
+$T_m=\tfrac12(P_m+P_m^+)$ และหลัง accept แล้วจึง publish $P_m^+$ เป็น input ของขั้นถัดไป
+หลัง breaker close ใช้
+$C=\operatorname{sat}(P_{ref}-\Delta\omega/R,P_{min},P_{max})$ และ initialize
+$P_{SV},P_m$ แบบ bumpless เพื่อทำ primary speed regulation โดยไม่มี secondary integral/AGC
+ระหว่าง SG offline คำสั่ง $C$ มาจาก deterministic phase planner แยกต่างหาก และ voltage matcher
+กำหนด field command ดังนั้น $T_e=0$ ในสมการวงจรเปิด แต่ $P_m$ \emph{ไม่ได้ถูก freeze ตลอด
+outage} กลไก offline นี้เป็น \texttt{ASSUMED\_\allowbreak DIAGNOSTIC} ไม่ใช่ controller ที่ยืนยันจาก
+เครื่องจริง จึงใช้ยืนยัน workflow ได้ แต่ยังใช้รับรอง protection/control deployment ไม่ได้ การเพิ่ม
+สอง state นี้ไม่เปลี่ยนคำว่า ``SG หก state'' เพราะหก state หมายถึง electromagnetic machine ส่วน
+prime mover เป็น subsystem ภายนอก Newton state
 
 \subsection{IBR dual-mode full-state}
 branch GFM ใช้ REGFM\_B1 VSG (NREL/TP-5D00-90260) และ branch GFL ใช้ WECC
@@ -342,6 +315,37 @@ x_{GFL}={}&[V_{t,f},P_f,I_{q,cmd,f},P_{ord},\notag\\
 &\hspace{2.1em}V_{LVPL,f},I_{p,reg},I_{q,reg}]^T.
 \end{align}
 
+\subsubsection*{การมี PLL ขึ้นกับโมเดล ไม่ได้ตัดสินจากคำว่า GFM/GFL}
+รายการ state ข้างต้นอาจดูเหมือนกลับกับภาพจำ: GFM ในรายงานนี้มี PLL สอง state แต่ GFL ไม่มี
+explicit PLL state ข้อความนี้ถูกต้อง \emph{เฉพาะโมเดลสอง branch ที่เลือกใช้} ไม่ใช่กฎสากลว่า
+GFM ต้องมี PLL หรือ GFL ต้องไม่มี PLL โดย angle contract ของทั้งสอง branch คือ
+\begin{align}
+\text{REGFM\_B1 GFM:}\quad
+v_q&=\Im\!\left(Ve^{-\mathrm j\delta_{PLL}}\right), &
+\dot x_{PLL}&=v_q, &
+\dot\delta_{PLL}&=\omega_0(k_{p,PLL}v_q+k_{i,PLL}x_{PLL}),\label{eq:pll-scope-gfm-th}\\
+\delta_{VSM}&=\delta_{PLL}+\delta_{IT}, &
+\dot\delta_{IT}&=\omega_0\Delta\omega_m-\dot\delta_{PLL}, &
+\therefore\quad\dot\delta_{VSM}&=\omega_0\Delta\omega_m,\notag\\
+\text{WECC GFL:}\quad
+\theta_V&=\operatorname{atan2}(V_y,V_x), &
+I&=\frac{(I_{p,reg}\gamma(|V|)-\mathrm jI_{q,reg})e^{\mathrm j\theta_V}}{\kappa}.\label{eq:pll-scope-gfl-th}
+\end{align}
+ดังนั้น PLL ของ REGFM\_B1 ใช้สร้างกรอบวัด $dq$ ภายใน ขณะที่ state สัมพัทธ์ $\delta_{IT}$
+หักการเคลื่อนของ PLL ออกจากอนุพันธ์ของมุมรวม ทำให้ virtual swing ยังคงเป็นผู้กำหนด
+$\dot\delta_{VSM}$ ส่วน WECC GFL เจ็ด state ที่เลือกใช้ในรายงานนำมุมแรงดันขั้วที่วัดได้มาใช้
+ทันทีใน current interface เชิงพีชคณิต จึงไม่มีสมการเชิงอนุพันธ์ของ PLL เพิ่มขึ้นมา ข้อนี้
+\emph{ไม่ได้} แปลว่า GFL converter ทางกายภาพไม่มีวง synchronisation แต่แปลว่า dynamics ของวงนั้น
+อยู่นอกขอบเขตของ WECC aggregate เจ็ด state ชุดนี้
+
+ตัวอย่างโต้แย้งมีอยู่ในโครงการเดียวกัน: GFL-RMS10 แบบ opt-in สิบ state มี
+$(\delta_{PLL},\xi_{PLL})$ ชัดเจน ขณะที่ GFM reduced-6 สร้างมุมจาก swing integrator โดยไม่มี PLL
+ทั้งสองโมเดลไม่ได้อยู่บนเส้นทางผลลัพธ์ของรายงานนี้ ดังนั้นเฉพาะคู่โมเดลปัจจุบันจึงเขียนได้ว่า
+\[
+n_{PLL}^{GFM}=2,\qquad n_{PLL}^{GFL}=0,
+\]
+แต่ป้ายชื่อ ``GFM'' และ ``GFL'' เพียงอย่างเดียวไม่สามารถกำหนดจำนวน PLL states ได้
+
 สำหรับ GFM, $\Delta\omega_m$ คือ speed deviation ของ virtual synchronous machine,
 $\delta_{IT}$ คือมุม VSM เทียบ PLL, $x_w$ คือ washout state, $x_E$ คือ voltage-PI integrator,
 $\delta_{PLL},x_{PLL}$ คือมุมและ integrator ของ PLL, ตัวแปรลงท้าย $f$ คือค่าผ่าน measurement
@@ -359,10 +363,11 @@ T_{If}\dot I_{d,inv,f}={}&\kappa I_d-I_{d,inv,f},\\
 T_{Qf}\dot Q_{inv,f}={}&\kappa Q-Q_{inv,f},\\
 T_{Vf}\dot V_{inv,f}={}&|V|-V_{inv,f},\\
 T_{If}\dot I_{q,inv,f}={}&\kappa I_q-I_{q,inv,f},\\
-\dot\delta_{IT,max}={}&k_I(I_{d,max}^{SS}-I_{d,inv,f}),\\
-\dot\delta_{IT,min}={}&k_I(-K_eI_{d,max}^{SS}-I_{d,inv,f}).
+\dot\delta_{IT,max}^{raw}={}&k_I(I_{d,max}^{SS}-I_{d,inv,f}),\\
+\dot\delta_{IT,min}^{raw}={}&k_I(-K_eI_{d,max}^{SS}-I_{d,inv,f}).
 \end{align}
-เมื่อชนขอบเขตแล้วอนุพันธ์ที่พยายามดัน state ออกนอกขอบเขตจะถูก hold ตาม conditional
+โดย state ถูกจำกัดให้ $\delta_{IT,max}\in[0,\delta_{max}]$ และ
+$\delta_{IT,min}\in[-\delta_{max},0]$ เมื่อชนขอบเขตแล้วอนุพันธ์ที่พยายามดัน state ออกนอกขอบเขตจะถูก hold ตาม conditional
 anti-windup ในโค้ด กล่าวให้ชัดคือกฎ conditional hold นิยามว่า
 \begin{equation}
 \operatorname{hold}(x,\dot x^{raw},x_{lo},x_{hi})=
@@ -431,13 +436,12 @@ T_{rv}\dot V_{t,f}&=|V|-V_{t,f},& T_p\dot P_f&=\kappa P-P_f,\\
 \dot P_{ord}&=\operatorname{rate}_{[dP_{min},dP_{max}]}
  \!\left(\frac{\operatorname{sat}(P_{ref,inv})-P_{ord}}{T_{pord}}\right),\\
 T_{iq}\dot I_{q,cmd,f}&=I_{q,cmd}-I_{q,cmd,f},&
-T_{fltr}\dot V_{LVPL,f}&=|V|-V_{LVPL,f},\\
-T_g\dot I_{p,reg}&=I_{p,target}-I_{p,reg},&
-T_g\dot I_{q,reg}&=I_{q,cmd,f}-I_{q,reg}.
+T_{fltr}\dot V_{LVPL,f}&=|V|-V_{LVPL,f}.
 \end{align}
-$I_{p,target}$ รวม LVPL/low-voltage active-current management; $I_{q,cmd}$ รวม voltage-dip
-reactive-current path และ P-priority current limit ตาม REGC\_A/REEC\_A ตัวแปร $\kappa=S_{base}/M_{base}$
-ใช้แปลง system base ไป inverter base เพียงครั้งเดียวที่ boundary
+สมการ converter-current states และ exact one-sided rate limits แสดงครั้งเดียวหลัง current-allocation
+law ด้านล่าง $I_{p,target}$ รวม LVPL/low-voltage active-current management; $I_{q,cmd}$ รวม
+voltage-dip reactive-current path และ P-priority current limit ตาม REGC\_A/REEC\_A ตัวแปร
+$\kappa=S_{base}/M_{base}$ ใช้แปลง system base ไป inverter base เพียงครั้งเดียวที่ boundary
 
 ต่างจาก GFM ตรงที่ branch GFL เป็นแบบ \emph{current source}: มันไม่มี state ของ PLL เลย
 เพราะจัดแนวเข้ากับมุมของแรงดันที่ขั้วโดยตรงเชิงพีชคณิต กระแสที่ฉีดเข้าโครงข่ายคือ
@@ -478,12 +482,16 @@ I_p=\operatorname{sat}\left(I_{p,0},0,I_{max}\right),\qquad
 \end{equation}
 คือ \emph{สงวนความสามารถให้กำลังจริงก่อน แล้วจึงยกกำลังรีแอกทีฟเท่าที่วงกลมขีดจำกัดยังเหลือ}
 ส่วนกรณี \texttt{PQFlag}$\,=0$ สลับลำดับกัน กระแสที่ควบคุมทั้งสองจึงไล่ตามคำสั่งผ่าน converter lag
-พร้อมขีดจำกัดอัตราการเปลี่ยนตามแหล่งข้อมูล
-\begin{align}
-T_g\dot I_{p,reg}&=I_p^{tgt}-I_{p,reg},&&\dot I_{p,reg}\le r_{rpwr},\\
-T_g\dot I_{q,reg}&=I_{q,cmd,f}-I_{q,reg},&&\dot I_{q,reg}\in[I_{qr,min},I_{qr,max}],
-\end{align}
-โดย $I_p^{tgt}$ คือ $I_p$ ที่ผ่านคุณลักษณะ LVPL แล้วเมื่อเปิดสวิตช์ \texttt{Lvplsw} คือ
+โดย active-current state ใช้
+\[
+\dot I_{p,reg}=\min\!\left(\frac{I_p^{tgt}-I_{p,reg}}{T_g},r_{rpwr}\right).
+\]
+สำหรับ reactive-current state ให้กำหนด $d_q=(I_{q,cmd,f}-I_{q,reg})/T_g$ ก่อน แล้ว runtime ใช้
+$d_q\leftarrow\min(d_q,I_{qr,max})$ เมื่อ $Q_{ref}>0$,
+$d_q\leftarrow\max(d_q,I_{qr,min})$ เมื่อ $Q_{ref}<0$ และไม่ clamp เมื่อ $Q_{ref}=0$
+จากนั้นจึงกำหนด $\dot I_{q,reg}=d_q$ ดังนั้นนี่เป็น one-sided limits ตามเครื่องหมายของ
+$Q_{ref}$ ไม่ใช่ symmetric interval clamp ทุกกรณี โดย $I_p^{tgt}$ คือ $I_p$ ที่ผ่านคุณลักษณะ
+LVPL แล้วเมื่อเปิดสวิตช์ \texttt{Lvplsw} คือ
 $I_p^{tgt}=\min\left(I_p,\mathrm{LVPL}(V_{t,f})\right)$ ซึ่ง $\mathrm{LVPL}$ เป็นฟังก์ชันเชิงเส้น
 เป็นช่วงที่เป็นศูนย์เมื่อ $V\le Z_{erox}$ เพิ่มเชิงเส้นจนถึง $L_{vpl1}$ ที่ $V\ge B_{rkpt}$
 และถูกยกพื้นที่ศูนย์เมื่อ $V\le V_{lvpnt0}$ ค่า gain, ค่าคงที่เวลา และขีดจำกัดทุกตัวข้างต้นเป็น
@@ -503,7 +511,7 @@ algebraic right limit ใหม่ และหาก KCL ไม่ผ่าน 
 \label{sec:switching-formulation}
 หัวข้อนี้ตอบคำถามที่สำคัญที่สุดเชิงคณิตศาสตร์โดยตรง: \emph{ถ้าระหว่างที่ SG ยังอยู่ในระบบเราเดิน
 สมการเชิงอนุพันธ์แบบ $x_{i+1}=x_i+h\cdot(\cdots)$ แล้วเมื่อระบบเปลี่ยนจาก SG ไปเป็น IBR
-การเรียกซ้ำนั้นเกิดอะไรขึ้น และอะไรถูกแก้จริง ณ วินาทีนั้น} คำตอบมีสามส่วน และเป็นรูปแบบเดียวกัน
+recursionนั้นเกิดอะไรขึ้น และอะไรถูกแก้จริง ณ วินาทีนั้น} คำตอบมีสามส่วน และเป็นรูปแบบเดียวกัน
 ที่ใช้กับทั้งการปลด SG, การสลับ GFL$\leftrightarrow$GFM และการปิด SG กลับเข้าระบบ
 
 \subsection{ระบบที่แก้อยู่เป็น DAE ไม่ใช่ ODE}
@@ -515,18 +523,14 @@ algebraic right limit ใหม่ และหาก KCL ไม่ผ่าน 
 \end{align}
 ความหมายของสัญลักษณ์แต่ละตัวต้องชัดเจน เพราะการอธิบายผิดจุดนี้ทำให้ทั้งหัวข้อผิดตามกันหมด
 \begin{itemize}
-\item $x$ คือเวกเตอร์ \emph{state เชิงอนุพันธ์} ที่ถูกแก้ \emph{ภายในขั้นเวลาเดียวกัน}
-ประกอบด้วย SG หก state ทางแม่เหล็กไฟฟ้า บวก IBR สี่ตัว $\times$ 20 state รวมเป็น 86 state
-ส่วน state ของ prime mover สองตัว ($P_{SV},P_m$) \emph{ไม่ได้} เป็นตัวไม่รู้ค่าของ Newton
-แต่เดินหน้าด้วยการอัปเดตแบบเอกซ์โพเนนเชียลเชิงวิเคราะห์แบบตรึงอินพุต คือ
-\begin{equation}
-P_{SV}(t+h)=P_c^*+\left(P_{SV}-P_c^*\right)e^{-h/T_{SV}},\qquad
-P_c^*=\operatorname{sat}\!\left(P_{ref}-\frac{\Delta\omega}{R},P_{min},P_{max}\right),
-\label{eq:gov-exact-th}
-\end{equation}
-พร้อมสูตรคู่กันสำหรับ $P_m$ ที่แยกกรณี $T_{SV}=T_{CH}$ ออกเพื่อเลี่ยงการหารด้วยศูนย์
-สอง state นี้จึงเข้าสู่~\eqref{eq:sw-diff-th} \emph{ผ่านอินพุต $u$ เท่านั้น} ไม่ใช่ในฐานะ
-ตัวไม่รู้ค่า
+\item เวกเตอร์ที่ \emph{เก็บ} คือ $x\in\mathbb R^{86}$ ประกอบด้วย SG หกพิกัดทางแม่เหล็กไฟฟ้า
+และ IBR สี่ตัว $\times$ 20 พิกัด แต่ 86 ไม่ใช่จำนวน differential unknown ของ Newton
+เพราะ singular limit $T'_{q0}=0$ freeze $E'_d$ ทำให้ SG มี active coordinate ห้าตัว และ IBR
+แต่ละตัวส่ง active coordinate เจ็ดตัวเมื่อเป็น GFL หรือสิบสามตัวเมื่อเป็น GFM ดังนั้น active
+differential order เท่ากับ 33 ใน all-GFL และ 57 ใน all-GFM เฉพาะพิกัด active เหล่านี้เท่านั้น
+ที่อยู่ใน trapezoidal residual
+\item state ของ prime mover สองตัว ($P_{SV},P_m$) ไม่ใช่ Newton unknown แต่เดินหน้าด้วย
+exact update ตามสมการ~\eqref{eq:gov-exact-th} และเข้าสู่~\eqref{eq:sw-diff-th} ผ่านอินพุต $u$
 \item $u$ จึงบรรจุ $T_m$ และ $E_{fd}$
 \item $y$ คือ state ของโครงข่าย เก็บเป็นแรงดันบัสแบบพิกัดฉาก คือคู่ $(V_x,V_y)$ ต่อบัส
 \item $q$ คือ \textbf{โหมดไม่ต่อเนื่อง} (discrete mode) ซึ่งเป็นทูเพิลของ (โทโพโลยีโครงข่าย,
@@ -537,17 +541,19 @@ P_c^*=\operatorname{sat}\!\left(P_{ref}-\frac{\Delta\omega}{R},P_{min},P_{max}\r
 แต่ละตัวส่งมาเพียงสไลซ์ $f_q$ ของตนเองและกระแสที่ตนฉีด $I_{inj}$ เท่านั้น อุปกรณ์
 ไม่เคยแก้ไขหรือคืนค่า residual ของโครงข่ายเอง
 
-การแบ่งเวลาใช้กฎ \emph{implicit trapezoidal} ดังนั้นขั้นเวลาปกติ \emph{ไม่ใช่} การเรียกซ้ำ
+การแบ่งเวลาใช้กฎ \emph{implicit trapezoidal} ดังนั้นขั้นเวลาปกติ \emph{ไม่ใช่} recursion
 แบบชัดแจ้ง $x_{k+1}=x_k+h\,f(\cdot)$ อย่างที่มักเขียนกันโดยย่อ แต่เป็นระบบไม่เชิงเส้นที่ต้องแก้
 พร้อมกันทั้งคู่
 \begin{align}
 x_{k+1}-x_k-\frac{h}{2}\left[f_q(x_k,y_k,u)+f_q(x_{k+1},y_{k+1},u)\right]&=0,\label{eq:sw-trap-th}\\
 g_q(x_{k+1},y_{k+1},u)&=0,\label{eq:sw-trapalg-th}
 \end{align}
-โดยแก้หา $(x_{k+1},y_{k+1})$ ไปด้วยกัน เส้นทาง EMF6 ใช้จำนวนรอบ corrector คงที่เท่ากับสาม
-ตามสัญญาของโครงการ ประเด็นสำคัญที่ต้องเน้นคือ \textbf{ทั้ง $f_q$ และ $g_q$ มีตัวห้อย $q$}
-กล่าวคือมันเป็นสมการ \emph{ของโหมดไม่ต่อเนื่องปัจจุบัน} เมื่อเกิดเหตุการณ์สลับ $q$ เปลี่ยน
-ดังนั้น \emph{ตัวสมการเองเปลี่ยน} ไม่ใช่แค่ค่าสัมประสิทธิ์เปลี่ยน
+โดยแก้พร้อมกันสำหรับ active differential coordinates ของ $x_{k+1}$ และ algebraic coordinates
+ทั้งหมดของ $y_{k+1}$ เส้นทาง composite 200~s \emph{ไม่ได้} ใช้ corrector คงที่สามรอบ แต่ประกอบ
+residual ของ implicit trapezoidal และ full-KCL แล้วใช้ project Newton จน residual เข้า tolerance
+หากไม่ผ่านจะแบ่งขั้นเวลา และ fail-closed เมื่อ accepted leaf ยังไม่ผ่าน ประเด็นสำคัญคือ
+\textbf{ทั้ง $f_q$ และ $g_q$ มีตัวห้อย $q$} กล่าวคือเป็นสมการของโหมดปัจจุบัน เมื่อ $q$ เปลี่ยน
+ทั้งตัวสมการและชุด active coordinate ก็เปลี่ยน
 
 \subsection{การโอนย้ายบทบาทผู้กำหนดมุม/ความถี่: SG ไป IBR}
 ก่อนลงรายละเอียดเชิงกลไกในหัวข้อย่อยถัดไป ต้องตอบคำถามเชิงหลักการสี่ข้อก่อน เพราะนี่คือจุดที่
@@ -555,22 +561,15 @@ g_q(x_{k+1},y_{k+1},u)&=0,\label{eq:sw-trapalg-th}
 SG ได้}
 
 \subsubsection{SG และ IBR มีสมการ DAE ที่ต่างกันจริง}
-ยืนยันตั้งแต่ต้นว่าใช่ --- ทั้งตัวแปรสถานะและกลไกทางกายภาพต่างกันโดยสิ้นเชิง ไม่มี state ใด
-ใช้ร่วมกันเลยสักตัว:
-\begin{align}
-\text{SG:}\quad 2H\,\Delta\dot\omega&=P_m-P_e-D\Delta\omega, \label{eq:sw-swing-sg-th}\\
-\text{GFM:}\quad 2H_v\,\Delta\dot\omega_m&=P_{ref,inv}-P_{inv,f}
--\left(\frac{1}{m_p}+D_1\right)\Delta\omega_m-D_2\left(\Delta\omega_m-x_w\right),
-\label{eq:sw-swing-gfm-th}
-\end{align}
-SG ใช้ inertia จริง $H$ ของมวลหมุน มุม $\delta$ ของโรเตอร์จริง และแรงบิดกล $P_m$ จริง
-ส่วน GFM ใช้ inertia เสมือน $H_v$ มุมสังเคราะห์ $\delta_{VSM}=\delta_{PLL}+\delta_{IT}$
-และ setpoint $P_{ref,inv}$ --- สองสมการมีโครงสร้างหน้าตาคล้ายกัน แต่ปริมาณทางกายภาพคนละตัว
-ส่วน GFL ไม่มีสมการ swing เลย เป็น current source ล้วน ดังนั้นจึง \emph{ไม่มีสมการใดตั้ง
-$\omega_{SG}=\omega_m$ ได้} ตัวแปรความถี่เป็นของแต่ละอุปกรณ์
+สมการ branch ที่ควบคุมได้เขียนครบแล้วครั้งเดียวในหัวข้อสมการ state จึงไม่ทำซ้ำที่นี่ ประเด็นสำคัญคือ
+SG ใช้ inertia จริง $H$, มุมโรเตอร์จริง $\delta$ และ mechanical input $T_m$ ที่มาจาก prime-mover state $P_m$ ส่วน GFM ใช้
+inertia เสมือน มุมสังเคราะห์ $\delta_{VSM}=\delta_{PLL}+\delta_{IT}$ และ setpoint
+$P_{ref,inv}$ ขณะที่ GFL ไม่มี swing equation และเป็น current source ไม่มี state ใดใช้ร่วมกัน และ
+\emph{ไม่มีสมการใดตั้ง $\omega_{SG}=\omega_m$} การ ``แทน'' SG จึงหมายถึงการรับบทบาทผู้กำหนด
+reference ไม่ใช่การแปลง ODE ของเครื่องหนึ่งให้เป็นอีกเครื่องหนึ่ง
 
 \subsubsection{reference คือบทบาท ไม่ใช่การแปลงสมการ}
-ใน time-domain DAE (หัวข้อ~\ref{sec:switching-formulation} ข้อ 6.1) \textbf{ทุกบัสเป็นตัวไม่รู้ค่า
+ใน time-domain DAE (หัวข้อ~\ref{sec:switching-formulation} ข้อ 6.1) \textbf{ทุกบัสเป็น algebraic unknown
 ของ KCL} $0=Y_qV-I_{bus}$ ครบ $2n_b$ แถว ไม่มี bus ใดถูกตรึงมุมไว้เป็น algebraic slack
 (โค้ดไม่เคยแทนที่แถว KCL ด้วยการ pin มุม และโครงสร้าง
 \path{reference_owner_schema.m} ยืนยันตรง ๆ ว่า ``reference ownership is supervisory/physical,
@@ -583,9 +582,9 @@ NOT a KCL-row replacement'') ดังนั้น \emph{reference ไม่ใ�
 รายละเอียดเชิงกลไกอยู่ในหัวข้อ~\ref{sec:sw-inverse-th} แต่มุมมองระดับบทบาทมีสามอย่างที่เกิดขึ้น
 พร้อมกันในทรานแซกชันเดียว:
 \begin{enumerate}
-\item \textbf{SG:} สมการเปลี่ยนเป็นโหมดวงจรเปิด --- $I_d=I_q=0$, $T_e=0$, ฟลักซ์สลายตัว
-โรเตอร์หมุนอิสระตาม $2H\,\Delta\dot\omega=T_m^{froz}-D\Delta\omega$ และ \emph{state ทั้งหก
-ไม่ถูกลบออกจากเวกเตอร์สถานะ}
+\item \textbf{SG:} สมการเปลี่ยนเป็น open-circuit mode --- $I_d=I_q=0$, $T_e=0$, flux decay
+และ rotor coast ตาม $2H\,\Delta\dot\omega=T_m(t)-D\Delta\omega$ ภายใต้ diagnostic
+synchroniser input โดย \emph{state ทั้งหกไม่ถูกลบออกจาก state vector}
 \item \textbf{IBR:} reset map สลับ GFL$\to$GFM โดยตั้ง branch GFM ให้ \emph{กระแสที่ขั้วต่อเนื่อง}
 $I^+=I^-$ --- ปัญหาผกผันที่อธิบายในหัวข้อ~\ref{sec:sw-inverse-th}
 \item \textbf{Network:} เมทริกซ์ $Y$ เปลี่ยน (เบรกเกอร์ SG เปิด) แล้วแก้ KCL หา $y^+$ ใหม่
@@ -608,28 +607,15 @@ KCL บังคับให้แรงดันทุกบัสเป็น�
 ($\delta$ ของ SG, $\omega_m,\delta_{VSM}$ ของ GFM) เป็นของแต่ละอุปกรณ์ ต่างคนต่างมี และเริ่มค่าใหม่
 ได้อย่างอิสระตราบใดที่ผลกระทบที่ขั้วยังเท่าเดิม
 
-\subsubsection{transient ณ ขณะโอนย้ายแก้อย่างไร}
-การจัดการ transient หลังโอนย้ายมีสามขั้น: (1) ระดับอุปกรณ์ --- reset map หา $x^+$ ที่ทำให้
-กระแสขั้วต่อเนื่อง (หัวข้อ~\ref{sec:sw-inverse-th}); (2) ระดับระบบ --- แก้ KCL ด้วย Newton
-โดยตรึง $x^+$ คงที่ หา $y^+$ (สมการ~\eqref{eq:sw-newton-th}); (3) เดินหน้าอินทิเกรตต่อจาก
-$\left(x(t_e^+),y(t_e^+)\right)$ ที่สอดคล้องกัน transient หลังเหตุการณ์จึงจางลงตามพลวัตของ
-อุปกรณ์ --- droop, damping $D_1,D_2$, PLL และ voltage PI --- ไม่ใช่ตามเงื่อนไขที่ตั้งขึ้นเอง
-
-กรณี SG reclose ต่างกันตรงที่ $x^+$ \emph{หาแบบนี้ไม่ได้}: มุม $\delta$ ของ SG ผูกกับมวลจริง
-ที่หมุนอยู่ เปลี่ยนค่าทันทีไม่ได้ จึงไม่มีอิสระให้กลับด้านสมการหา $\delta^+$ ที่ต้องการ ด้วยเหตุนี้
-ต้องกลับบทบาท --- รอให้ฟิสิกส์พาระบบเข้ามาใกล้ความต่อเนื่องเอง (ประตูซิงโครไนซ์
-สมการ~\eqref{eq:guard-margin-th}) แทนที่จะแก้สมการหาคำตอบ เหตุผลนี้เองที่ทำให้คำขอปิดที่
-$145.000$~s ปิดจริงที่ $146.825$~s
-
 \subsection{การเปลี่ยนผ่าน ณ ขณะสลับโหมด}
 นี่คือคำตอบตรงของคำถาม: สมการ~\eqref{eq:sw-trap-th}--\eqref{eq:sw-trapalg-th}
 \textbf{ไม่ได้ถูกเดินต่อข้ามเหตุการณ์} ณ เวลาสลับ $t_e$ วิถีของระบบเกิดการเปลี่ยนผ่านแบบ
 hybrid-DAE สามขั้นตามลำดับ
 \begin{align}
 &q^-\;\longrightarrow\;q^+ &&\text{การกระโดดของโหมดไม่ต่อเนื่อง},\label{eq:sw-jump-th}\\
-&x(t_e^+)=R_{q^-\to q^+}\!\left(x(t_e^-),y(t_e^-)\right) &&\text{แผนที่รีเซ็ตสถานะ},\label{eq:sw-reset-th}\\
+&x(t_e^+)=R_{q^-\to q^+}\!\left(x(t_e^-),y(t_e^-)\right) &&\text{reset mapสถานะ},\label{eq:sw-reset-th}\\
 &0=g_{q^+}\!\left(x(t_e^+),y(t_e^+),u\right)\ \text{แก้หา }y(t_e^+)
-&&\text{การแก้พีชคณิตลิมิตขวา}.\label{eq:sw-right-th}
+&&\text{right-limit algebraic solve}.\label{eq:sw-right-th}
 \end{align}
 อธิบายทีละขั้น:
 
@@ -648,20 +634,20 @@ hybrid-DAE สามขั้นตามลำดับ
 จะ rollback จากนั้นการอินทิเกรตเชิงอนุพันธ์จึงเริ่มใหม่จาก
 $\left(x(t_e^+),y(t_e^+)\right)$ ในขั้นเวลาถัดไป
 
-ผลที่ตามมาคือ \textbf{ณ เวลา $t_e$ มีสองแซมเปิล}: ลิมิตซ้าย ($t_e^-$) และลิมิตขวา ($t_e^+$)
-ตารางและกราฟทั้งหมดในรายงานนี้เก็บ \emph{ลิมิตขวา} การไม่แยกสองแซมเปิลนี้คือกับดักที่ทำให้
-คำนวณ RoCoF ผิดโดยการหารด้วย $\Delta t=0$
+ผลที่ตามมาคือ \textbf{ณ เวลา $t_e$ มีสอง samples}: left limit ($t_e^-$) และ right limit
+($t_e^+$) ตารางและกราฟทั้งหมดในรายงานนี้เก็บ \emph{right limit} การไม่แยกสอง samples นี้คือ
+กับดักที่ทำให้คำนวณ RoCoF ผิดโดยการหารด้วย $\Delta t=0$
 
-\subsection{แผนที่รีเซ็ตคือความต่อเนื่องที่ขั้ว ไม่ใช่การคัดลอกสถานะ}
-สมบัติเชิงโครงสร้างที่สำคัญที่สุดคือ \textbf{มิติของเวกเตอร์สถานะไม่เคยเปลี่ยน} IBR แต่ละตัว
-เป็นซูเปอร์เซ็ต 20 state ที่มิติคงที่ ซึ่ง state GFM $1{:}13$ และ state GFL $14{:}20$
-มีอยู่พร้อมกันตลอดเวลา การเปลี่ยนโหมดเพียง \emph{เลือกใหม่ว่าบล็อกย่อยใดทำงาน} ส่วนบล็อก
-ที่ไม่ทำงานถูกตรึงไว้พอดี $\dot x_{inactive}=0$ ตามกฎ frozen inactive-state
-(\texttt{PROJECT\_DERIVED}: ความต่อเนื่องบวกการลด residual เชิงพีชคณิต) ดังนั้น
-\emph{ตัวอินทิเกรตไม่เคยเปลี่ยนขนาด และจาโคเบียนไม่เคยเปลี่ยนขนาด} นี่คือเหตุผลเชิงคณิตศาสตร์
-ว่าทำไม SG จึงกลับเข้าระบบได้ในภายหลัง: \emph{ไม่มีสิ่งใดถูกลบออกทางโครงสร้างตอนปลด}
+\subsection{reset mapคือความต่อเนื่องที่ขั้ว ไม่ใช่การคัดลอกสถานะ}
+สมบัติเชิงโครงสร้างที่สำคัญที่สุดคือ \textbf{มิติของเวกเตอร์ที่เก็บไม่เคยเปลี่ยน} IBR แต่ละตัว
+เป็นซูเปอร์เซ็ต 20 state ซึ่ง state GFM $1{:}13$ และ state GFL $14{:}20$ มีอยู่พร้อมกันตลอด
+การเปลี่ยนโหมดเพียงเลือกใหม่ว่าบล็อกใด active ส่วนบล็อก inactive ถูกตรึงไว้พอดี
+$\dot x_{inactive}=0$ ตามกฎ frozen inactive-state (\texttt{PROJECT\_DERIVED}: ความต่อเนื่องบวก
+การลด residual เชิงพีชคณิต) วิถีที่เก็บจึงคง 86 พิกัด แต่ reduced Newton residual และ Jacobian
+ใช้ชุด active ที่ขึ้นกับโหมด จึงเปลี่ยนขนาดเมื่อสลับระหว่าง GFL เจ็ด state กับ GFM สิบสาม state
+ไม่มี state ใดถูกลบทางโครงสร้าง จึงยังทำ transfer และนำ SG กลับเข้าระบบได้ภายหลัง
 
-แผนที่รีเซ็ต $R$ ใน~\eqref{eq:sw-reset-th} ส่งผ่าน \emph{เงื่อนไขทางกายภาพที่ขั้ว}
+reset map $R$ ใน~\eqref{eq:sw-reset-th} ส่งผ่าน \emph{เงื่อนไขทางกายภาพที่ขั้ว}
 ไม่ใช่พิกัดของสถานะ และเป็นของอุปกรณ์เอง (อุปกรณ์เปิด callback ให้ ตัวจัดการไม่ hard-code
 สมการใด)
 \begin{align}
@@ -689,17 +675,17 @@ x^+\big|_{inactive}&=x^-\big|_{inactive},
 
 ความหมายเชิงกายภาพของ~\eqref{eq:sw-cont-th} คือ \emph{โครงข่ายต้องไม่ ``เห็น'' การกระโดด
 ของกระแสที่จุดเชื่อมต่อ} ณ ขณะสลับ ถ้าเห็น นั่นหมายถึงเราเปลี่ยนแหล่งจ่ายกลางอากาศแบบ
-ไม่รักษาสมดุล ซึ่งจะทำให้ลิมิตขวาไม่ใช่คำตอบของระบบเดิม เกณฑ์ $10^{-10}$ จึงเข้มกว่าเกณฑ์
+ไม่รักษาสมดุล ซึ่งจะทำให้right limitไม่ใช่คำตอบของระบบเดิม เกณฑ์ $10^{-10}$ จึงเข้มกว่าเกณฑ์
 การยอมรับ KCL ของขั้นเวลา เพราะเป็นข้อกำหนดเชิงเอกลักษณ์ ไม่ใช่ความคลาดเคลื่อนของตัวแก้
 
-\subsection{ทำไมการเรียกซ้ำจึงกลายเป็นการกำหนดค่า และ ``สมการที่ถูกแก้'' คือสมการใด}
+\subsection{ทำไมrecursionจึงกลายเป็นการกำหนดค่า และ ``สมการที่ถูกแก้'' คือสมการใด}
 \label{sec:sw-inverse-th}
-หัวข้อนี้ตอบคำถามที่ตรงที่สุด: ระหว่างเดินขั้นเวลาปกติเรามีการเรียกซ้ำ
+หัวข้อนี้ตอบคำถามที่ตรงที่สุด: ระหว่างเดินขั้นเวลาปกติเรามีrecursion
 $x_{k+1}=x_k+\frac{h}{2}[f_q(x_k)+f_q(x_{k+1})]$ ที่ไล่ไปเรื่อย ๆ แต่พอถึงเวลาสลับ
 สิ่งที่เห็นในโค้ดกลับเป็น $x^+=(\text{ค่าหนึ่ง})$ เฉย ๆ เหมือนการกำหนดค่าธรรมดา
 คำถามคือ \emph{มันคือการแก้สมการอะไร} และ \emph{อะไรทำให้สองด้านของเหตุการณ์ sync กันได้}
 
-\subsubsection{เหตุผลที่เดินการเรียกซ้ำต่อไม่ได้}
+\subsubsection{เหตุผลที่เดินrecursionต่อไม่ได้}
 เขียนขั้นเวลาที่คร่อมเวลาสลับ $t_e$ ออกมาตรง ๆ จะเห็นปัญหาทันที สมมติ $t_k<t_e<t_{k+1}$
 สูตรสี่เหลี่ยมคางหมูต้องการ
 \begin{equation}
@@ -714,7 +700,7 @@ x_{k+1}-x_k=\frac{h}{2}\Big[\underbrace{f_{q^-}(x_k,y_k)}_{\text{โหมดก
 \textbf{ตัดขั้นเวลาที่ $t_e$} แล้วปฏิบัติกับ $t_e$ เป็นขอบเขตของสองปัญหาย่อย: ปัญหาบน
 $[t_k,t_e]$ ใช้ $f_{q^-}$ และปัญหาบน $[t_e,t_{k+1}]$ ใช้ $f_{q^+}$ ซึ่งแต่ละปัญหาย่อย
 \emph{ต้องมีเงื่อนไขเริ่มต้นของตัวเอง} เงื่อนไขเริ่มต้นของปัญหาย่อยที่สองคือ $x(t_e^+)$
-และนั่นคือสิ่งที่แผนที่รีเซ็ตต้องผลิตขึ้น การเรียกซ้ำจึงไม่ได้ ``หายไป'' แต่ \emph{จบรอบหนึ่ง
+และนั่นคือสิ่งที่reset mapต้องผลิตขึ้น recursionจึงไม่ได้ ``หายไป'' แต่ \emph{จบรอบหนึ่ง
 แล้วเริ่มรอบใหม่} โดยมีการกำหนดค่าเงื่อนไขเริ่มต้นคั่นกลาง
 
 \subsubsection{สมการที่ถูกแก้ ณ ขณะสลับ}
@@ -822,16 +808,16 @@ $\|g_{q^+}\|_\infty\le$ tolerance ของขั้นเวลา หากไ
 เพื่อประกอบ $I_{bus}$ ทั้งสองขั้นจึงถูกจัดเป็นทรานแซกชันเดียวที่ commit หรือ rollback พร้อมกัน
 
 หลังขั้นนี้ระบบมี $\left(x(t_e^+),y(t_e^+)\right)$ ที่สอดคล้องทั้งสมการอุปกรณ์และ KCL
-การเรียกซ้ำสี่เหลี่ยมคางหมูจึงเริ่มรอบใหม่ได้อย่างถูกต้อง โดยใช้ $f_{q^+}$ เป็นสนามเวกเตอร์
+recursionสี่เหลี่ยมคางหมูจึงเริ่มรอบใหม่ได้อย่างถูกต้อง โดยใช้ $f_{q^+}$ เป็นสนามเวกเตอร์
 และใช้คู่นี้เป็นเงื่อนไขเริ่มต้น
 \begin{equation}
 x_{k+2}-x(t_e^+)=\frac{h'}{2}\left[f_{q^+}\!\left(x(t_e^+),y(t_e^+)\right)
 +f_{q^+}\!\left(x_{k+2},y_{k+2}\right)\right],\qquad h'=t_{k+2}-t_e.
 \end{equation}
-สรุปคือ \emph{การเรียกซ้ำไม่เคยข้ามเหตุการณ์ แต่ถูกตัดออกเป็นสองท่อนที่เชื่อมกันด้วย
+สรุปคือ \emph{recursionไม่เคยข้ามเหตุการณ์ แต่ถูกตัดออกเป็นสองท่อนที่เชื่อมกันด้วย
 เงื่อนไขความต่อเนื่องเชิงกายภาพ ไม่ใช่ด้วยความต่อเนื่องของพิกัดสถานะ}
 
-\subsubsection{กรณี SG: ทำไมจึงต้องมีประตูซิงโครไนซ์เพิ่ม}
+\subsubsection{กรณี SG: ทำไมจึงต้องมี synchronism guard เพิ่ม}
 กรณี IBR ข้างต้นมี ``การ sync'' ที่แก้ได้ทันทีแบบปิดรูป เพราะคอนเวอร์เตอร์กำหนดมุมภายใน
 ของตัวเองได้อิสระ ($\delta_{IT}$ เป็นเพียงตัวเลขใน state) แต่ SG \emph{ทำแบบนั้นไม่ได้}
 เพราะมุมโรเตอร์ $\delta$ ผูกกับมวลเชิงกลที่หมุนอยู่จริงและเปลี่ยนค่าทันทีไม่ได้ ด้วยเหตุนี้
@@ -840,33 +826,35 @@ x_{k+2}-x(t_e^+)=\frac{h'}{2}\left[f_{q^+}\!\left(x(t_e^+),y(t_e^+)\right)
 
 ผลคือบทบาทกลับด้านกันโดยสิ้นเชิง: แทนที่จะ \emph{แก้สมการ} ให้เงื่อนไขต่อเนื่องเป็นจริง
 เราต้อง \emph{รอ} จนกว่าฟิสิกส์จะพาระบบมาถึงจุดที่เงื่อนไขต่อเนื่องเกือบเป็นจริงอยู่แล้ว
-นั่นคือหน้าที่ของประตู~\eqref{eq:guard-margin-th} ซึ่งเปรียบเทียบเฟเซอร์สองด้านของเบรกเกอร์
-และปิดได้ก็ต่อเมื่อผลต่างเล็กพอทั้งขนาด ความถี่ และมุม ค่า $\Delta V=0.0163$~pu,
-$\Delta f=2.75\times10^{-6}$~pu และ $\Delta\theta=3.76^\circ$ ที่ $146.825$~s คือหลักฐาน
-ว่าเงื่อนไขนี้ถูกทำให้เป็นจริงก่อนปิด ไม่ใช่ถูกบังคับหลังปิด
+นั่นคือหน้าที่ของ synchronism guard~\eqref{eq:guard-margin-th} ซึ่งเปรียบเทียบเฟเซอร์สองด้านของเบรกเกอร์
+และปิดได้ก็ต่อเมื่อผลต่างเล็กพอทั้งขนาด ความถี่ และมุม ค่า
+$\Delta V=9.985\times10^{-3}$~pu, $\Delta f=7.619\times10^{-6}$~pu และ
+$\Delta\theta=6.273^\circ$ ที่ 145.400~s คือหลักฐานว่าเงื่อนไขนี้ถูกทำให้เป็นจริงก่อนปิด
+ไม่ใช่ถูกบังคับหลังปิด
 
 นี่จึงเป็นคำอธิบายเชิงคณิตศาสตร์ว่าทำไมคำขอปิดที่ $145.000$~s จึงไม่ได้ทำให้ปิดทันที:
-\emph{การปิดเบรกเกอร์เป็นเหตุการณ์ที่ไม่มีแผนที่รีเซ็ตมารองรับ} จึงต้องอาศัยการรอให้
-สภาวะเข้าใกล้ความต่อเนื่องเองแทน ส่วนการสลับโหมด IBR มีแผนที่รีเซ็ตที่แก้ได้แน่นอน
+\emph{การปิดเบรกเกอร์เป็นเหตุการณ์ที่ไม่มีreset mapมารองรับ} จึงต้องอาศัยการรอให้
+สภาวะเข้าใกล้ความต่อเนื่องเองแทน ส่วนการสลับโหมด IBR มีreset mapที่แก้ได้แน่นอน
 จึงเกิดขึ้นทันทีที่ทรานแซกชันสั่ง
 
-\subsection{การปลด SG และการปิดกลับที่มีเงื่อนไขประตู}
+\subsection{การปลด SG และการปิดกลับด้วย synchronism guard}
 ตอนปลด SG นั้น \textbf{state ทั้งหกของ SG ไม่ได้ถูกลบออกจาก $x$} branch เบรกเกอร์เปิด
-เพียงแทนพีชคณิตของสเตเตอร์ที่ต่ออยู่ด้วยฟิสิกส์วงจรเปิด: $I_d=I_q=0$, $T_e=0$,
-แรงบิดทางกลถูกตรึงที่ค่าก่อนปลด และฟลักซ์สลายตัวแบบวงจรเปิด
+แทนพีชคณิต stator ที่ต่ออยู่ด้วยฟิสิกส์วงจรเปิด: $I_d=I_q=0$, $T_e=0$ และ
 \begin{align}
-2H\Delta\dot\omega&=T_m^{froz}-D\Delta\omega, &
-T''_{d0}\dot E''_q&=E'_q-E''_q, &
-T''_{q0}\dot E''_d&=E'_d-E''_d,
+2H\Delta\dot\omega&=T_m(t)-D\Delta\omega, &
+T'_{d0}\dot E'_q&=E_{fd}(t)+c_dE''_q-d_dE'_q,\\
+T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d, &
+T''_{d0}\dot E''_q&=E'_q-E''_q,\\
+&&T''_{q0}\dot E''_d&=E'_d-E''_d.
 \end{align}
-กล่าวคือพจน์ $(X'_d-X''_d)I_d$ และ $(X'_q-X''_q)I_q$ หายไปพร้อมกับกระแสสเตเตอร์
-ขณะที่ $\dot\delta=\omega_0\Delta\omega$ ยังเดินต่อ \emph{โรเตอร์จึงหมุนอิสระต่อไป}
-ซึ่งเป็นสิ่งที่ทำให้การซิงโครไนซ์กลับในภายหลังมีความหมายทางกายภาพ ไม่ใช่การ ``เสก''
-เครื่องกำเนิดขึ้นมาใหม่ ในทางกลับกัน สมดุลแบบสถิตไม่รวม SG ที่เบรกเกอร์เปิด เพราะ
-$T_m$ ที่ถูกตรึงไว้โดยทั่วไปไม่มีรากสถิต แต่ TS ยังอินทิเกรต state เหล่านี้ผ่านสมการวงจรเปิด
-ข้างต้นได้ตามปกติ
+พจน์กระแสในสมการ flux หายไป แต่ $\dot\delta=\omega_0\Delta\omega$ ยังเดินต่อ และ singular
+limit $T'_{q0}=0$ ยังคง freeze $E'_d=0$ ระหว่าง outage ค่า $T_m(t)$ มาจาก exact prime-mover
+update ที่รับคำสั่งจาก deterministic offline phase planner ส่วน diagnostic voltage matcher เป็นผู้ให้
+$E_{fd}(t)$ จึงไม่อ้างว่า input ใดเป็นค่าก่อนปลดที่ freeze ตลอด outage โรเตอร์และ open-circuit
+flux states ยังเดินต่อภายใต้ diagnostic preparation ที่ประกาศไว้ ทำให้การ resynchronise ภายหลังมี
+ความหมาย
 
-การปิดกลับเป็นแบบ \textbf{มีเงื่อนไขประตู (gated) ไม่ใช่กำหนดตามตาราง} ตัวประตูเปรียบเทียบ
+การปิดกลับเป็นแบบ \textbf{gated ไม่ใช่กำหนดตามตาราง} synchronism guard เปรียบเทียบ
 เฟเซอร์แรงดันบัสของโครงข่ายกับ \emph{แรงดันเหนี่ยวนำวงจรเปิดของ SG} คือ
 $\left(E''_q-jE''_d\right)e^{j\delta}$ และต้องการให้
 \begin{equation}
@@ -886,9 +874,10 @@ m=\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta_{wrap}|\
 ทั้งที่จริงห่างเพียง $1^\circ$
 
 ผลลัพธ์เชิงตีความที่สำคัญคือ \textbf{เวลาปิดที่ร้องขอเป็นเพียงเวลาที่เร็วที่สุดที่ \emph{อาจ}
-ปิดได้} ไม่ใช่เวลาที่ปิดจริง: คำขอที่ $145.000$~s ให้ผลการปิดที่ยอมรับจริงที่ $146.825$~s
-ความหน่วง $1.825$~s นี้เป็นผลลัพธ์ของฟิสิกส์และประตู ไม่ใช่ค่าคงที่ที่ตั้งไว้ จึงไม่มีการอ้าง
-ในรายงานนี้ว่าเวลาเหตุการณ์เป็นค่าที่ไม่ขึ้นกับขั้นเวลา
+ปิดได้} ไม่ใช่เวลาที่ปิดจริง: คำขอที่ 145.000~s ให้ผลการปิดที่ยอมรับจริงที่ 145.400~s
+ความหน่วง 0.400~s นี้เป็นผลลัพธ์ของguardและ dwell บนกริดเวลา $\Delta t=0.10$~s ไม่ใช่ค่า
+คงที่ที่ตั้งไว้ และเวลา release 146.400~s เป็นอีกเหตุการณ์หนึ่งหลัง down-line dwell 1.00~s
+รายงานจึงไม่อ้างว่าเวลาเหตุการณ์เป็นค่าที่ไม่ขึ้นกับขั้นเวลา
 
 \section{ลำดับเหตุการณ์ 200 วินาทีและหลักฐาน transaction}
 
@@ -896,30 +885,32 @@ m=\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta_{wrap}|\
 \resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_th.tex}}
 \caption{ลำดับเหตุการณ์รบกวนหกช่วงของการจำลอง 200~s จาก accepted production event log:
 ระบบปกติที่ 0~s, ปลด SG ที่ 20~s, เพิ่มโหลด $P,Q$ 20\% ที่ 50~s, fault บัส 9 ช่วง
-85--85.15~s, เปิดสาย 6--13 ที่ 110~s และ SG กลับคืนที่ 145~s (reclose 146.825~s)}
+85--85.15~s, เปิดสาย 6--13 ที่ 110~s, คืน topology/ขอปิดที่ 145~s, reclose 145.400~s
+และ severity release 146.400~s}
 \end{figure}
 
 \begin{figure}[H]\centering
 \resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_th.tex}}
 \caption{ผังการทำงานกลยุทธ์สลับโหมด GFL/GFM: คอลัมน์ซ้ายกำหนดจุดทำงาน พารามิเตอร์ และ
 เหตุการณ์ CASE\_DEFINED; คอลัมน์ขวาเป็น online loop ที่วัดสัญญาณที่ PCC ทุกขั้นเวลา
-คำนวณ AGSI++ เจ็ดพจน์ตามสมการ~\eqref{eq:agsi-legacy-th} ที่ \texttt{ibr.SwitchableIbr6}
-ใช้จริง และตัดสินใจสลับโหมดตาม threshold และ dwell หรือผ่าน atomic transaction}
+คำนวณ severity สองพจน์ตามสมการ~\eqref{eq:agsi-legacy-th} ที่ \texttt{ibr.SwitchableIbr6}
+ใช้จริง และแยก index eligibility ออกจาก atomic transaction ที่ commit การเปลี่ยนโหมด}
 \end{figure}
 
 ลำดับที่ใช้ตรงตามชุด verify: 0--20~s ระบบปกติ; 20~s ปลด SG; 50~s เพิ่มโหลด active/reactive
 ทุกจุด 20\%; 85--85.15~s fault บัส 9 ด้วย $Z_f=0.01+j0.01$~pu; 110~s เปิดสาย 6--13;
-145~s คืนสายและโหลดฐานพร้อมส่ง earliest SG-close request; 146.825~s SG ปิดจริงหลัง guard;
+145~s คืนสายและโหลดฐานพร้อมส่ง earliest SG-close request; 145.400~s SG ปิดจริงหลัง guard
+โดย IBR ยังเป็น GFM ทั้งสี่; 146.400~s severity-dwell transaction ปล่อยกลับ GFL ทั้งสี่;
 200~s สิ้นสุดการจำลอง จุด fault ใช้ admittance homotopy เฉพาะการหา right-limit initial guess
 แต่ endpoint ใช้ $Z_f$ exact และ tolerance เดิม ไม่ได้ทำ fault ให้อ่อนลง
 
 \section{กราฟ AGSI, mode, SG และ IBR ครบ 200 วินาที}
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
-\caption{AGSI++ ที่ถูกจำกัดใน $[0,1]$, GRA, reference owner และ mode timeline ของ IBR1--IBR4
-รวมในกราฟเดียว โหมดเป็น GFL ก่อน 20~s, GFM ช่วง 20--146.825~s และกลับ GFL หลัง 146.825~s
-เส้นทั้งสี่ใช้รูปแบบต่างกัน (ทึบ/ประ/จุด/ประ-จุด) และเลื่อนแนวตั้งเล็กน้อยเพื่อการมองเห็นเท่านั้น
-($\pm0.045$ ของพิกัดโหมด 0/1) เพราะทั้งสี่เส้นทับกันสนิท}
+\caption{AGSI++ ที่ถูกจำกัดใน $[0,1]$, GRA, reference owner และ committed mode timeline ของ
+IBR1--IBR4 โหมดเป็น GFL ก่อน 20~s และ GFM ช่วง 20--146.400~s โดยที่ reclose 145.400~s
+ไม่เปลี่ยนโหมด จากนั้น severity release 146.400~s จึง commit กลับ GFL เส้นทั้งสี่ใช้รูปแบบต่างกัน
+และเลื่อนแนวตั้งเล็กน้อยเพื่อการมองเห็นเท่านั้น ($\pm0.045$ ของพิกัดโหมด 0/1)}
 \end{figure}
 
 สังเกตว่า GRA ยังเป็น 1 ตลอด เพราะก่อน trip มี SG เป็น reference และ transaction ที่ 20~s
@@ -927,7 +918,9 @@ commit GFM reference แบบ atomic โดยไม่ปล่อยช่ว
 โดยตรงว่า IBR1 (บัส 2) เป็น grid-forming angle/frequency leader ระหว่าง SG เปิด ส่วน IBR2--IBR4
 เป็น GFM ที่แบ่งกำลังและช่วยแรงดัน แต่ไม่ได้เป็น owner ของ reference เดียวใน formulation นี้
 AGSI ที่ลดต่ำกว่า $\Gamma_{on}$ หลัง transient ไม่ได้สั่งกลับทันที เพราะการคืน GFM$\to$GFL
-ยังต้องรอ $GRA=1$, off-dwell และ coordinated handback ให้ SG ที่ผ่าน synchronism guard ก่อน
+ต้องรอให้ SG reclose และถือ reference ก่อน แล้ว severity ของอุปกรณ์นั้นต้องต่ำกว่า
+$\Gamma_{off}$ ต่อเนื่องครบ off-dwell จากนั้น transfer map และ right-limit KCL จึงต้องผ่านแบบ
+atomic; $GRA$ เป็น diagnostic น้ำหนักศูนย์ ไม่ใช่พจน์ severity หรือ gate ที่ซ่อนอยู่
 
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_electrical.png}
@@ -944,25 +937,28 @@ AGSI ที่ลดต่ำกว่า $\Gamma_{on}$ หลัง transient �
 \end{figure}
 
 \section{ผล recovery ที่ตรวจได้และสิ่งที่ยังกล่าวไม่ได้}
-SG ผ่าน guard ที่ 146.825~s ด้วย
+SG ผ่าน guard ที่ 145.400~s ด้วย
 \[
-\Delta V=0.0163\ \mathrm{pu},\qquad
-\Delta f=2.75\times10^{-6}\ \mathrm{pu},\qquad
-\Delta\theta=3.76^\circ,
+\Delta V=9.985\times10^{-3}\ \mathrm{pu},\qquad
+\Delta f=7.619\times10^{-6}\ \mathrm{pu},\qquad
+\Delta\theta=6.273^\circ,
 \]
-ซึ่งต่ำกว่าเกณฑ์ $0.05$~pu, $0.001$~pu และ $10^\circ$ ตามลำดับ หลัง handback ที่ 200~s:
+ซึ่งต่ำกว่าเกณฑ์ $0.05$~pu, $0.001$~pu และ $10^\circ$ ตามลำดับ right-limit หลัง reclose มี KCL
+$7.102\times10^{-10}$ และ committed modes ด้านซ้าย/ขวายังเป็น GFM ทั้งสี่ ต่อมา 146.400~s
+transaction แยกจึง commit GFM$\to$GFL ทั้งสี่ด้วย KCL $3.022\times10^{-13}$ ที่ 200~s:
 \begin{itemize}
 \item SG online และ IBR ทั้งสี่อยู่ GFL;
-\item ช่วงแรงดันของทุกบัสเป็น 0.9203--1.0000~pu โดยบัส SG/IBR อยู่ในแบนด์ $\pm5\%$ แต่บัสโหลด
-ระยะไกลห้าบัสยังต่ำกว่า $V_{\min}=0.95$~pu;
-\item $P_{e,SG}=1.0497$~pu และ $Q_{SG}=0.4531$~pu อยู่ในช่วงสมดุล;
-\item $f_{SG}=60.0002$~Hz กลับสู่ steady จาก transient excursion;
-\item accepted-step residual สูงสุด $9.99\times10^{-9}$, subdivision สูงสุดหนึ่งชั้น และทุก state finite.
+\item ช่วงแรงดันทุกบัสเป็น 0.966733--1.057534~pu ไม่มีบัสต่ำกว่า 0.95~pu แต่บัส 6 สูงกว่า
+1.05~pu อยู่ $7.534\times10^{-3}$~pu ตาม reactive dispatch ที่ประกาศ;
+\item $P_{e,SG}=1.331902$~pu และ $Q_{SG}=-0.195666$~pu;
+\item $f_{COI}=60.000008$~Hz และ severity ปลายทางสูงสุดเพียง $1.048\times10^{-5}$;
+\item $P^\star,Q^\star$ tracking errors ของ GFL ทั้งสี่ต่ำกว่า
+$1.1\times10^{-9}$~pu และ $7.7\times10^{-10}$~pu ตามลำดับ;
+\item accepted-step residual สูงสุด $9.685\times10^{-9}$, attempted residual สูงสุด
+$3.539\times10^{-3}$, subdivision สูงสุดสองชั้น และทุก state finite.
 \end{itemize}
-ดังนั้นคำตอบเรื่อง ``ต้องกลับสภาวะปกติ'' คือ กลับด้าน topology/reference/mode/frequency แล้ว
-และความถี่กลับสู่ steady ที่ 200~s แต่จุดสิ้นสุดยังไม่พาบัสโหลดระยะไกลทุกบัสกลับเข้าแบนด์
-$\pm5\%$ ฉะนั้นจึงกล่าวได้ว่า reclose และ handback ประสบความสำเร็จแต่ reactive profile ยัง
-ไม่ครบ recovery ระดับ $\pm5\%$ ทั้งหมด และไม่ใช่การยืนยัน controller ระดับใช้งานจริง
+ดังนั้น reclose และ index-driven handback ประสบความสำเร็จ แรงดันไม่มีบัสต่ำกว่าแบนด์ แต่บัส 6
+ยังสูงกว่าแบนด์ตามจุดทำงานของเคสที่ไม่ได้ tune และผลยังไม่ใช่การยืนยัน controller ระดับใช้งานจริง
 
 \section{สรุปหลายเหตุการณ์ที่มีหลักฐาน}
 \begin{tabularx}{\textwidth}{p{0.22\textwidth}X}
@@ -974,7 +970,7 @@ fault รุนแรง & exact chronology นี้ผ่าน fault บั�
 load step & load $P/Q$ เพิ่ม 20\% ที่ 50~s และระบบเดินต่อถึง fault/line-trip โดยไม่เสีย KCL \\
 SG trip & ที่ 20~s SG injection เป็นศูนย์และ all-GFM transaction รับภาระตาม dispatch ที่ประกาศ \\
 line trip & เปิดสาย 6--13 ที่ 110~s แล้วคืน topology ที่ 145~s ผ่าน right-limit KCL ทั้งสองครั้ง \\
-SG reclose & earliest request ที่ 145~s, close จริง 146.825~s หลัง synchronism dwell แล้ว handback all-GFL \\
+SG reclose/release & request 145~s; close 145.400~s โดยคง all-GFM; severity release 146.400~s จึง handback all-GFL \\
 \bottomrule
 \end{tabularx}
 
@@ -985,10 +981,10 @@ SG reclose & earliest request ที่ 145~s, close จริง 146.825~s ห�
 \item ไม่มี secondary AGC/integral restoration จึงยังมี frequency offset/settling ที่ endpoint
 \item energy source ของ IBR และ reserve-duration ไม่ได้ยืนยันจาก hardware; trajectory แสดงสมการ
 network/control ที่ประกาศ ไม่ใช่หลักฐานว่า storage จริงมีพลังงานเพียงพอ 125~s
-\item กลไกสลับมีสองชั้นที่ทำงานร่วมกัน: local AGSI/hysteresis/dwell ประเมิน stress ราย IBR;
-ชั้นประสานงานใช้สถานะ SG/reference และ synchronism guard เพื่อ commit reference transfer แบบ atomic
-ดังนั้นการสลับพร้อมกันใน chronology นี้เกิดจาก coordinated transaction ไม่ใช่การบังคับให้ค่า AGSI
-ทั้งสี่เท่ากัน
+\item กลไกสลับมีสองชั้นที่ทำงานร่วมกัน: local AGSI/hysteresis/dwell ประเมิน severity ราย IBR;
+ชั้นประสานงานใช้สถานะ SG/reference และ synchronism guard เพื่อ commit Phase~1 แบบ atomic โดย
+ไม่เปลี่ยนโหมด IBR ส่วน Phase~2 commit เฉพาะ target ที่ severity อนุญาตและผ่าน transfer/KCL
+ดังนั้นห้ามตีความ SG reclose ว่าเป็นการบังคับ all-GFL
 \item ripple ใช้แต่งการนำเสนอเท่านั้น เส้น raw ยังแสดงอยู่ในรูป และ cache/สมการ/AGSI/timer/ผลตัดสิน
 ไม่มี ripple
 \item ผลนี้ไม่มี BO ตามคำสั่งปัจจุบัน วิธี coordinated control ที่ดีกว่าจะคุยกับอาจารย์แยกภายหลัง
@@ -1000,10 +996,10 @@ pf_init_paths;
 addpath(fullfile('scripts','reporting'));
 generate_ieee14_switch_report_figures(reuse_cache=true);
 \end{verbatim}
-ไฟล์ cache หลักมาจาก production run $\Delta t=0.0125$~s ถึง 200~s บน operating point ใหม่
-(slack $|V|=1.00$ pu, ทำมุม $\phi=0.508383707164714$) โดยควอร์ด reclose กลับเป็น accepted close
-ที่ 146.825~s ซึ่งเป็นผลของ synchronism guard ไม่ใช่เวลาที่กำหนดตายตัว จึงไม่มีการอ้าง
-time-step-independent controller validation หรือเหตุการณ์ที่ปิดเป็นค่าคงที่ targeted tests ครอบคลุม governor primitive,
+ไฟล์ cache หลักมาจาก production run $\Delta t=0.10$~s ถึง 200~s บน operating point ใหม่
+(slack $|V|=1.00$ pu, ทำมุม $\phi=0.508383707164714$) accepted close ที่ 145.400~s เป็นผล
+ของ synchronism guard/dwell และ severity release ที่ 146.400~s เป็น transaction แยกหลัง down-line
+dwell 1.00~s จึงไม่มีการอ้าง time-step-independent controller validation targeted tests ครอบคลุม governor primitive,
 EMF6 singular limit, mixed equilibrium, event transaction, reclose workflow, selector, SG reference,
 SG-off/GFM TS และข้อห้าม external solver รวม 108/108 tests ผ่าน ส่วน full repository regression ไม่ได้รัน เพราะ targeted
 gates ครอบคลุม producer/consumer และ failure path ที่เปลี่ยนตามนโยบายความเสี่ยงของโครงการ

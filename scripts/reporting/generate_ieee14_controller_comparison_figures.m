@@ -53,7 +53,7 @@ for j=1:nibr
     Jp=abs(d.u(1)-r.device_P_pu(didx(j),:).')/d.dP_base;
     Jscr=max(0,d.SCR_crit/max(d.grid_scr,1e-9)-1)*ones(nt,1);
     Jlock=abs(imag(Vibr(:,j).*exp(-1i*busang(:,j))))/d.dvq_base;
-    index(:,j)=min(1,max(0,(Jv+Jf+Jr+Jp+Jscr+Jlock+(1-gra))/7));
+    index(:,j)=min(1,max(0,0.5*Jv+0.5*Jf));   % 2-term severity (see switch report)
 end
 ref=-ones(nt,1);
 for k=1:nt

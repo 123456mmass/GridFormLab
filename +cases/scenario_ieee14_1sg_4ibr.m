@@ -81,12 +81,19 @@ switch ibr_profile
 end
 
 % IBR2/3/6/8: dual-mode GFL + REGFM_B1 G2 GFM.
-% Mbase is the CASE_DEFINED unity-PF nameplate proxy (IBR2=140,
-% IBR3/6/8=100); each source model owns its documented defaults.
-ibr2 = ibr_entry('IBR2', 2, 140.0, 'gfl', gfl_family);
-ibr3 = ibr_entry('IBR3', 3, 100.0, 'gfl', gfl_family);
-ibr6 = ibr_entry('IBR6', 6, 100.0, 'gfl', gfl_family);
-ibr8 = ibr_entry('IBR8', 8, 100.0, 'gfl', gfl_family);
+% Mbase is the CASE_DEFINED nameplate proxy (IBR2=140, IBR3/6/8=100).
+% The EECON49 Figure-4 case additionally owns a nonzero GFL reactive-power
+% schedule in bus_data(:,6).  Preserve it in resource metadata so the generic
+% factory does not silently replace the mapped PQ operating point by unity PF.
+% Other profiles retain their historical Q_ref=0 default exactly.
+q_default_MVAr = zeros(1,4);
+if strcmp(case_profile,'eecon49_figure4')
+    q_default_MVAr = case_ibr_q_dispatch_MVAr(case_data,[2 3 6 8]);
+end
+ibr2 = ibr_entry('IBR2', 2, 140.0, 'gfl', gfl_family, q_default_MVAr(1));
+ibr3 = ibr_entry('IBR3', 3, 100.0, 'gfl', gfl_family, q_default_MVAr(2));
+ibr6 = ibr_entry('IBR6', 6, 100.0, 'gfl', gfl_family, q_default_MVAr(3));
+ibr8 = ibr_entry('IBR8', 8, 100.0, 'gfl', gfl_family, q_default_MVAr(4));
 
 resource_spec = [sg1, ibr2, ibr3, ibr6, ibr8];
 
@@ -147,14 +154,16 @@ r.provenance = struct( ...
 end
 
 % =========================================================================
-function r = ibr_entry(rid, bus, Mbase, initial_mode, gfl_family)
+function r = ibr_entry(rid, bus, Mbase, initial_mode, gfl_family, default_Q_MVAr)
 %IBR_ENTRY  Build one dual-mode IBR resource table entry (uniform provenance).
 %   Optional GFL_FAMILY (5th arg) selects the GFL branch at construction:
 %     '' | 'wecc_regca_reeca'  -> WECC 7-state (default, 20-state dual)
 %     'rms10'                  -> GFL-RMS10 10-state (23-state dual)
-%   The family flows through r.dynamic_params.gfl_family into the generic
-%   builder and dual_mode_ibr_model. Omitting the arg keeps WECC default.
+%   DEFAULT_Q_MVAR is the case-owned initial GFL reactive-power dispatch.
+%   The family and dispatch flow through the resource table into the generic
+%   builder. Omitting either optional value preserves the historical defaults.
 if nargin < 5, gfl_family = ''; end
+if nargin < 6, default_Q_MVAr = 0.0; end
 r = struct();
 r.resource_id = rid;
 r.bus_id = bus;
@@ -174,7 +183,8 @@ r.limits = struct( ...
     'ImaxSS', 1.0, 'ImaxF', 1.5, ...   % pu on machine base
     'Pmax_MW', Mbase, 'Qmax_MVAr', Mbase, ...
     'Emax', 1.2, 'Emin', 0.8);
-r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, 'default_P_MW', 0.0);
+r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, ...
+    'default_P_MW', 0.0, 'default_Q_MVAr', default_Q_MVAr);
 % dynamic_params: Mbase is shared at the system/device boundary. WECC and
 % REGFM_B1 parameters otherwise remain owned by their source-model defaults.
 % An optional gfl_family selects the RMS10 opt-in branch (construction-time).
@@ -185,6 +195,23 @@ end
 r.provenance = struct( ...
     'model', 'regfm_b1_dual', ...
     'source', 'WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM', ...
-    'classification', 'Mbase=CASE_DEFINED nameplate proxy; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED', ...
-    'details', sprintf('20-state superset (GFM13+GFL7); Mbase=%.0f MVA; kappa=Sbase/Mbase at boundary', Mbase));
+    'classification', 'Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED', ...
+    'details', sprintf(['20-state superset (GFM13+GFL7); Mbase=%.0f MVA; ' ...
+        'default Q=%.9g MVAr; kappa=Sbase/Mbase at boundary'],Mbase,default_Q_MVAr));
+end
+
+function q_MVAr = case_ibr_q_dispatch_MVAr(case_data,bus_ids)
+%CASE_IBR_Q_DISPATCH_MVAR  Map case-defined PQ injections by external bus ID.
+%   bus_data(:,6) is pu on the case's 100-MVA system base.  Reject missing,
+%   duplicate, or nonfinite mappings rather than falling back to unity PF.
+Sbase = 100.0;
+q_MVAr = nan(size(bus_ids));
+for k = 1:numel(bus_ids)
+    row = find(case_data.bus_data(:,1)==bus_ids(k));
+    if numel(row)~=1 || ~isfinite(case_data.bus_data(row,6))
+        error('cases:scenario_ieee14_1sg_4ibr:badReactiveDispatch', ...
+            'IBR bus %d lacks one finite case-defined Q dispatch.',bus_ids(k));
+    end
+    q_MVAr(k) = Sbase*case_data.bus_data(row,6);
+end
 end

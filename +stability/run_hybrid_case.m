@@ -170,6 +170,15 @@ has_ibr_events = isfield(opt,'ibr_events') && isstruct(opt.ibr_events) && ...
 
 ts_opt_base = struct('t_end', t_end, 'dt', dt, 'verbose', verbose, ...
     'load_model', load_model);
+% Presentation-only long-run progress log (opt-in): forward the file/interval
+% to the TS driver so a >1 h batch can be tailed live. No numerical output
+% depends on these fields.
+if isfield(opt,'progress_every') && ~isempty(opt.progress_every)
+    ts_opt_base.progress_every = opt.progress_every;
+end
+if isfield(opt,'progress_file') && ~isempty(opt.progress_file)
+    ts_opt_base.progress_file = opt.progress_file;
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...
@@ -265,6 +274,20 @@ end
 % (F1/C7). The TS driver uses the table for Phase-2 SG_ON reselection
 % lookup; the resource table is needed by the reselection transaction.
 ts_opt_ibr.resources = resources;
+% Healthy per-bus reference voltage for the severity-gated SG_ON reselection.
+% The gate needs the SG-ONLINE pre-fault PF profile (the healthy operating
+% point), NOT the SG-off island equilibrium that eq.y0 holds (V well below 1).
+% eq.y0 is therefore never used as a health reference.  Forward each caller
+% field independently: the TS validator owns the atomic-pair contract and must
+% reject an incomplete pair instead of this layer silently dropping it.  With
+% neither field present, the authenticated SG_ON selector remains the legacy
+% authority.
+if isfield(opt,'healthy_pf_V')
+    ts_opt_ibr.healthy_pf_V = opt.healthy_pf_V;
+end
+if isfield(opt,'healthy_pf_bus_ids')
+    ts_opt_ibr.healthy_pf_bus_ids = opt.healthy_pf_bus_ids;
+end
 % Propagate canonical value (resolved early, before device build).
 ts_opt_ibr.automatic_gfm_switching = canonical_agfm;
 if isfield(opt,'controller_mode') && ~isempty(opt.controller_mode)

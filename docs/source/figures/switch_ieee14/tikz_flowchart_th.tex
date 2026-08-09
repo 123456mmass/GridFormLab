@@ -1,7 +1,7 @@
 % TikZ GFL/GFM switching-strategy flowchart (Thai), following the implemented
-% seven-term AGSI++ index (ibr.SwitchableIbr6, index_mode='agsi_pp') and the
-% declared CASE_DEFINED chronology.  The severity + hard-gate redesign of the
-% report is a frozen design and is NOT what this loop depicts.
+% two-term severity index (ibr.SwitchableIbr6, index_mode='agsi_pp',
+% w_V=w_f=0.5 on J_V/J_f) with the healthy per-bus V_ref, and the declared
+% CASE_DEFINED chronology.
 % Drawn in LaTeX so lettering matches the report body font (TH Sarabun PSK).
 \begin{tikzpicture}[
   font=\small,
@@ -29,12 +29,13 @@
   ลง Q-limits (SOURCE\_DEFINED)\\
   $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$\\
   $T_{d,on}=0.10$ s, $T_{d,off}=1.00$ s\\
-  น้ำหนัก AGSI++ เท่ากัน $1/7$ ทั้งเจ็ดพจน์};
+  น้ำหนัก severity $w_V=w_f=0.5$ ($J_V$,$J_f$)\\
+  $V_{ref}$ = healthy per-bus PF, $f_0=60$ Hz};
 \node[proc,below=of setup] (events) {%
   เหตุการณ์ CASE\_DEFINED:\\
   SG trip 20 s, load step 50 s\\
   fault 85--85.15 s, line trip 110 s\\
-  restore 145 s, $T_{end}=200$ s};
+  restore 145 s, $T_{end}$ ตาม contract};
 \node[conn,below=of events] (p1l) {P1};
 
 \draw[arr] (start) -- (setup);
@@ -44,26 +45,24 @@
 % ---- right column: online loop (anchored to the right of the setup column) ----
 \node[conn,right=34mm of start] (p1r) {P1};
 \node[proc,below=of p1r] (sense) {%
-  ทุกขั้นเวลา $t$ ($dt=0.0125$ s): วัดที่ PCC\\
-  $V, f, \mathrm{ROCOF}, P, Q,$\\
-  $v_q, \mathrm{SCR}, I, \mathrm{GRA}$};
+  ทุกขั้นเวลา $t$ ($dt=0.10$ s): วัดที่ PCC\\
+  $V, f$ (การตรวจความยอมรับได้อื่นแยกต่างหาก)};
 \node[proc,below=of sense] (norm) {%
-  normalize เจ็ดพจน์:\\
-  $J_V, J_f, J_R, J_P,$\\
-  $J_{SCR}, J_{lock}, J_{GRA}$};
+  normalize สองพจน์:\\
+  $J_V, J_f$\\
+  (base $0.10$ pu, $0.50$ Hz)};
 \node[proc,below=of norm] (sev) {%
-  $\mathrm{AGSI}^{++}=\min\!\left(1,\max\!\left(0,\,
-  \frac{1}{7}\sum J_k\right)\right)$};
+  $S=\operatorname{sat}_{[0,1]}\!\left(\tfrac12J_V+\tfrac12J_f\right)$};
 \node[dec,below=of sev] (qev) {เหตุการณ์\\ CASE\_DEFINED?};
-\node[dec,below=of qev] (qgfl) {โหมด GFL และ\\ $\mathrm{AGSI}^{++}\ge\Gamma_{on}$ ครบ $T_{d,on}$?};
-\node[dec,below=of qgfl] (qgfm) {โหมด GFM และ\\ $\mathrm{AGSI}^{++}<\Gamma_{off}$ ครบ $T_{d,off}$?};
+\node[dec,below=of qev] (qgfl) {โหมด GFL และ\\ $S\ge\Gamma_{on}$ ครบ $T_{d,on}$?};
+\node[dec,below=of qgfl] (qgfm) {โหมด GFM และ\\ $S<\Gamma_{off}$ ครบ $T_{d,off}$?};
 \node[dec,below=of qgfm] (qend) {$t\ge T_{end}$?};
 \node[startstop,below=of qend] (stop) {สิ้นสุด};
 
 % yes-branch action boxes to the right of the diamonds
-\node[tx,right=10mm of qev] (txn) {atomic transaction:\\ all-GFM / handback all-GFL};
+\node[tx,right=10mm of qev] (txn) {atomic transaction:\\ SG trip $\to$ all GFM;\\ SG reclose $\to$ SG ถือ reference\\ (โหมด IBR ยังไม่เปลี่ยน)};
 \node[act,right=10mm of qgfl] (swgfl) {สลับ GFL $\rightarrow$ GFM};
-\node[act,right=10mm of qgfm] (swgfm) {สลับ GFM $\rightarrow$ GFL};
+\node[act,right=10mm of qgfm] (swgfm) {atomic รายอุปกรณ์\\ GFM $\rightarrow$ GFL;\\ reset dwell ของตัวที่เหลือ};
 
 % spine arrows
 \draw[arr] (p1r) -- (sense);

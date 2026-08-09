@@ -1,7 +1,6 @@
-% TikZ six-period disturbance timeline (Thai).  Every constant is CASE_DEFINED
-% from +cases/case_ieee14bus_eecon49_switch.m; the accepted reclose 146.825 s
-% comes from the accepted event log.  Drawn in LaTeX so the lettering is the
-% report body font (TH Sarabun PSK).
+% TikZ six-period disturbance timeline (Thai). Scheduled constants are
+% CASE_DEFINED; accepted reclose/release times come from the event log. Drawn
+% in LaTeX so the lettering is the report body font (TH Sarabun PSK).
 \begin{tikzpicture}[
   font=\normalsize,
   per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
@@ -34,5 +33,5 @@
 \draw[arr] (p6) -- node[tlabb,pos=0.62]{$t=200$ s} ++(-3.2,0);
 
 % accepted reclose note under period 6
-\node[tlbl,below=2pt of p6,yshift=4pt] {reclose 146.825 s};
+\node[tlbl,below=2pt of p6,yshift=4pt,align=center] {reclose 145.400 s\\severity release 146.400 s};
 \end{tikzpicture}

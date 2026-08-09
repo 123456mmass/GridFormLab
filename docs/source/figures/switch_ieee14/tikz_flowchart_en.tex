@@ -1,8 +1,7 @@
 % TikZ GFL/GFM switching-strategy flowchart (English), following the
-% implemented seven-term AGSI++ index (ibr.SwitchableIbr6,
-% index_mode='agsi_pp') and the declared CASE_DEFINED chronology.  The
-% severity + hard-gate redesign of the report is a frozen design and is NOT
-% what this loop depicts.
+% implemented two-term severity index (ibr.SwitchableIbr6,
+% index_mode='agsi_pp', w_V=w_f=0.5 on J_V/J_f) with the healthy per-bus V_ref,
+% and the declared CASE_DEFINED chronology.
 % Drawn in LaTeX so lettering matches the report body font (Times).
 \begin{tikzpicture}[
   font=\small,
@@ -30,12 +29,13 @@
   Q-limits registered (SOURCE\_DEFINED)\\
   $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$\\
   $T_{d,on}=0.10$ s, $T_{d,off}=1.00$ s\\
-  equal AGSI++ weights $1/7$ on all seven terms};
+  severity weights $w_V=w_f=0.5$ ($J_V$,$J_f$)\\
+  $V_{ref}$ = healthy per-bus PF, $f_0=60$ Hz};
 \node[proc,below=of setup] (events) {%
   CASE\_DEFINED events:\\
   SG trip 20 s, load step 50 s\\
   fault 85--85.15 s, line trip 110 s\\
-  restore 145 s, $T_{end}=200$ s};
+  restore 145 s, $T_{end}$ per contract};
 \node[conn,below=of events] (p1l) {P1};
 
 \draw[arr] (start) -- (setup);
@@ -45,25 +45,23 @@
 % ---- right column: online loop ----
 \node[conn,right=34mm of start] (p1r) {P1};
 \node[proc,below=of p1r] (sense) {%
-  each step $t$ ($dt=0.0125$ s): measure at PCC\\
-  $V, f, \mathrm{ROCOF}, P, Q,$\\
-  $v_q, \mathrm{SCR}, I, \mathrm{GRA}$};
+  each step $t$ ($dt=0.10$ s): measure at PCC\\
+  $V, f$ (other admissibility checks remain separate)};
 \node[proc,below=of sense] (norm) {%
-  normalize seven terms:\\
-  $J_V, J_f, J_R, J_P,$\\
-  $J_{SCR}, J_{lock}, J_{GRA}$};
+  normalize two terms:\\
+  $J_V, J_f$\\
+  (bases $0.10$ pu, $0.50$ Hz)};
 \node[proc,below=of norm] (sev) {%
-  $\mathrm{AGSI}^{++}=\min\!\left(1,\max\!\left(0,\,
-  \frac{1}{7}\sum J_k\right)\right)$};
+  $S=\operatorname{sat}_{[0,1]}\!\left(\tfrac12J_V+\tfrac12J_f\right)$};
 \node[dec,below=of sev] (qev) {CASE\_DEFINED\\ event?};
-\node[dec,below=of qev] (qgfl) {mode GFL and\\ $\mathrm{AGSI}^{++}\ge\Gamma_{on}$ for $T_{d,on}$?};
-\node[dec,below=of qgfl] (qgfm) {mode GFM and\\ $\mathrm{AGSI}^{++}<\Gamma_{off}$ for $T_{d,off}$?};
+\node[dec,below=of qev] (qgfl) {mode GFL and\\ $S\ge\Gamma_{on}$ for $T_{d,on}$?};
+\node[dec,below=of qgfl] (qgfm) {mode GFM and\\ $S<\Gamma_{off}$ for $T_{d,off}$?};
 \node[dec,below=of qgfm] (qend) {$t\ge T_{end}$?};
 \node[startstop,below=of qend] (stop) {End};
 
-\node[tx,right=10mm of qev] (txn) {atomic transaction:\\ all-GFM / handback all-GFL};
+\node[tx,right=10mm of qev] (txn) {atomic transaction:\\ SG trip $\to$ all GFM;\\ SG reclose $\to$ SG owns reference\\ (IBR modes unchanged)};
 \node[act,right=10mm of qgfl] (swgfl) {switch GFL $\rightarrow$ GFM};
-\node[act,right=10mm of qgfm] (swgfm) {switch GFM $\rightarrow$ GFL};
+\node[act,right=10mm of qgfm] (swgfm) {atomic per-device\\ GFM $\rightarrow$ GFL;\\ reset remaining dwell timers};
 
 \draw[arr] (p1r) -- (sense);
 \draw[arr] (sense) -- (norm);

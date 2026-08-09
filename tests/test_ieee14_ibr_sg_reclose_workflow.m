@@ -260,6 +260,46 @@ tc.verifyEqual(r.reference_owner_indices, 1, 'AbsTol', 0, ...
     'Reference stays at SG regardless of Phase-2 outcome.');
 end
 
+function test_incomplete_healthy_pf_reference_rejected_by_public_driver(tc)
+% 2026-08-10 regression: run_hybrid_case previously forwarded the profile only
+% when BOTH fields were present. A caller supplying just healthy_pf_V was then
+% silently routed to the legacy selector instead of failing the atomic-pair
+% contract. Independent oracle: ts_simulate_ibr_hybrid owns the documented
+% incompleteHealthyPfReference identifier; the public driver must preserve it
+% through its structured fail-closed result (the public API does not throw).
+s = tc.TestData.scenario;
+[scenario, selection] = stability.ibr_configure_scenario(s, struct());
+tc.assertTrue(selection.ready, selection.failure_reason);
+opt = short_public_event_opt();
+opt.healthy_pf_V = ones(1, size(s.case_data.bus_data,1));
+r = stability.run_hybrid_case(scenario, opt);
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id, ...
+    'ts_simulate_ibr_hybrid:incompleteHealthyPfReference');
+tc.verifyEqual(r.metadata.ts_meta.failure_id, r.failure_id);
+tc.verifyEmpty(r.t);
+end
+
+function test_invalid_healthy_pf_reference_rejected(tc)
+% Equal-length is not sufficient: duplicate bus IDs make V_ref ownership
+% ambiguous. The TS public entry must reject the profile before integration and
+% publish the exact validation ID through its structured fail-closed contract.
+o = base_opt(tc.TestData.eq, 0.10, 0.01);
+o.ibr_event_schedule = stability.ibr_event_schedule( ...
+    tc.TestData.scenario.case_data, tc.TestData.eq.devices, ...
+    event_spec(2:5, 2), 0.10, 0.01);
+o.healthy_pf_V = [1 1];
+o.healthy_pf_bus_ids = [2 2];
+[r,m] = stability.ts_simulate_ibr_hybrid( ...
+    tc.TestData.scenario.case_data, tc.TestData.eq.devices, ...
+    tc.TestData.eq.x0, tc.TestData.eq.y0, o);
+tc.verifyFalse(r.converged);
+tc.verifyEqual(r.failure_id, ...
+    'ts_simulate_ibr_hybrid:invalidHealthyPfReference');
+tc.verifyEqual(m.failure_id, r.failure_id);
+tc.verifyEmpty(r.t);
+end
+
 % =========================================================================
 % Sample-key uniqueness (F9)
 % =========================================================================
@@ -474,6 +514,13 @@ function o = base_opt(eq, tend, dt)
 o = struct('t_end', tend, 'dt', dt, 'verbose', false, 'load_model', 'cz_p_cz_q', ...
     'u_eq', eq.u_eq, 'event_context', eq.equilibrium_context, ...
     'dynamic_state_indices', eq.dynamic_state_indices, 'full_kcl', true);
+end
+
+function o = short_public_event_opt()
+% Short public-route request: schedule shape is sufficient to reach TS option
+% validation; the incomplete healthy-PF pair must be rejected before stepping.
+o = struct('t_end',0.10,'dt',0.01,'verbose',false, ...
+    'ibr_events',event_spec(2:5,2),'plot_results',false);
 end
 
 function over = diagnostic_overrides(reclose_t)

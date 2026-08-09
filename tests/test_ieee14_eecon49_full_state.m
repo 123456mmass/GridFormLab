@@ -21,6 +21,29 @@ end
 verifyLessThan(testCase,norm(s.sg.f(s.x_sg0,s.y0),inf),1e-9);
 end
 
+function testCompositeBuilderPreservesCaseDefinedGflPqDispatch(testCase)
+% Regression: the generic builder previously consumed only scenario P dispatch
+% and silently forced every Q_ref to zero.  That contradicted this case's mapped
+% PQ-resource operating point and made its healthy PF voltage an invalid release
+% reference. Independent oracle: external-bus-ID mapping of bus_data P/Q inputs.
+s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
+[devices,~]=stability.build_mixed_resource_devices( ...
+    s.case_data,s.resources,s.scenario_opt);
+for k=2:5
+    row=find(s.case_data.bus_data(:,1)==devices(k).bus_id);
+    verifyNumElements(testCase,row,1);
+    verifyEqual(testCase,devices(k).u0(1:2), ...
+        s.case_data.bus_data(row,5:6).','AbsTol',1e-14);
+end
+
+% Backward compatibility: a profile with no declared Q schedule retains the
+% historical unity-PF default rather than inheriting EECON49 values.
+legacy=cases.scenario_ieee14_1sg_4ibr();
+[legacy_devices,~]=stability.build_mixed_resource_devices( ...
+    legacy.case_data,legacy.resources,legacy.scenario_opt);
+verifyEqual(testCase,arrayfun(@(d)d.u0(2),legacy_devices(2:5)),zeros(4,1),'AbsTol',0);
+end
+
 function testOperationalEmf6SingularLimitIsFinite(testCase)
 s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
 [devices,~]=stability.build_mixed_resource_devices( ...

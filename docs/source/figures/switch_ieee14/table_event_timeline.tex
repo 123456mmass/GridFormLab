@@ -1,12 +1,13 @@
 % Generated from the accepted production event log.
 \begin{tabularx}{\textwidth}{@{}r p{0.15\textwidth} p{0.14\textwidth} p{0.19\textwidth} X@{}}\toprule
 Time (s) & Event / index & Timer & Mode before $\to$ after & Reason \\ \midrule
-20.000 & SG trip / 0.114 & reference-loss guard & all GFL $\to$ all GFM & SG opened; atomic all-GFM reference-security commit \\
-50.000 & load step / 0.393 & -- & all GFM $\to$ all GFM & base constant-impedance load increased \\
-85.000 & fault on / 0.550 & -- & all GFM $\to$ all GFM & bus-9 shunt fault applied \\
+20.000 & SG trip / 0.000 & reference-loss guard & all GFL $\to$ all GFM & SG opened; atomic all-GFM reference-security commit \\
+50.000 & load step / 0.010 & -- & all GFM $\to$ all GFM & base constant-impedance load increased \\
+85.000 & fault on / 0.129 & -- & all GFM $\to$ all GFM & bus-9 shunt fault applied \\
 85.150 & fault clear / 1.000 & -- & all GFM $\to$ all GFM & fault admittance removed \\
-110.000 & line trip / 0.550 & -- & all GFM $\to$ all GFM & line 6--13 opened \\
-145.000 & topology restore / 0.539 & -- & all GFM $\to$ all GFM & base load and line restored \\
-145.000 & SG close request / 0.539 & -- & all GFM $\to$ all GFM & earliest close request; guard monitored \\
-146.825 & SG reclose / 0.393 & 0.5-s sync dwell & all GFM $\to$ all GFL & guard passed; SG reference handback \\
+110.000 & line trip / 0.129 & -- & all GFM $\to$ all GFM & line 6--13 opened \\
+145.000 & topology restore / 0.120 & -- & all GFM $\to$ all GFM & base load and line restored \\
+145.000 & SG close request / 0.120 & -- & all GFM $\to$ all GFM & earliest close request; guard monitored \\
+145.400 & SG reclose / 0.019 & 0.5-s sync dwell & all GFM $\to$ all GFM & guard passed; SG owns reference; IBR modes unchanged \\
+146.400 & severity release / 0.024 & 1.0-s severity dwell & all GFM $\to$ all GFL & two-term severity dwell passed; transfer/KCL committed \\
 \bottomrule\end{tabularx}

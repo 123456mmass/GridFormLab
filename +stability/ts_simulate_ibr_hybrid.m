@@ -26,7 +26,15 @@ end
 try
     [dae,u,ec,sched,settings] = initialize(case_data,devices,x0,y0,opt);
 catch me
-    [res,meta] = fail(res,meta,'ts_simulate_ibr_hybrid:badInput',me);
+    % The public TS contract is structured fail-closed (no uncaught exception),
+    % but the governing validation identifier must remain observable.  Collapsing
+    % every initialization rejection to badInput hid whether an atomic healthy-PF
+    % pair was incomplete, duplicated, or otherwise malformed.
+    failure_id = me.identifier;
+    if isempty(failure_id)
+        failure_id = 'ts_simulate_ibr_hybrid:badInput';
+    end
+    [res,meta] = fail(res,meta,failure_id,me);
     return;
 end
 
@@ -77,8 +85,10 @@ reselection_good_since = NaN;
 reselection_deadline = NaN;  % exact-landing target: actual_reclose + T_down
 sg_on_cand = [];  % authenticated SG_ON candidate (Step 5); [] until authenticated
 sg_on_auth_ok = false;
-sg_on_auth_fid = '';
-sg_on_auth_msg = '';
+% Per-device down-line timers for the opt-in severity handback.  A timer is
+% finite only while that online GFM's complete V/f evidence stays below
+% Gamma_off; each device therefore earns its own T_d_off dwell.
+severity_release_since = nan(1,numel(dae.devices));
 transaction_counter = 0;
 controller_audit = struct();
 converged = true;
@@ -114,6 +124,17 @@ while t < settings.t_end-settings.event_tol
         target = min(target,sched.sg_on+settings.sync_timeout);
         if isfinite(good_since)
             target = min(target,good_since+settings.sync_dwell);
+        end
+    end
+    if pending_reselection
+        if settings.severity_handback_enabled
+            due = severity_release_since(isfinite(severity_release_since)) + ...
+                settings.severity_T_d_off;
+            due = due(due > t+settings.event_tol);
+            if ~isempty(due), target=min(target,min(due)); end
+        elseif isfinite(reselection_deadline) && ...
+                reselection_deadline>t+settings.event_tol
+            target=min(target,reselection_deadline);
         end
     end
     h = target-t;
@@ -155,6 +176,22 @@ while t < settings.t_end-settings.event_tol
         end
         t = target;
         accepted_steps=accepted_steps+1;
+        % Progress log (presentation-only, opt-in, default off): every
+        % settings.progress_every seconds of SIM time, append the current time
+        % to settings.progress_file so a long-running batch can be tailed live
+        % (MATLAB -batch does not flush stdout until exit). No numerical path
+        % reads this file; it exists only to explain where the run stands.
+        if settings.progress_every > 0 && ~isempty(settings.progress_file)
+            lastp = settings.progress_last;   % initialized to -Inf in initialize()
+            if t-lastp >= settings.progress_every
+                pfd = fopen(settings.progress_file,'a');
+                if pfd>0
+                    fprintf(pfd,'PROGRESS t=%.4f\n',t);
+                    fclose(pfd);
+                end
+                settings.progress_last = t;
+            end
+        end
         is_event_left = event_cursor<=numel(events) && ...
             abs(t-events(event_cursor).t)<=settings.event_tol;
         side = ternary(is_event_left,'left','continuous');
@@ -324,6 +361,7 @@ while t < settings.t_end-settings.event_tol
             kcl_norm(dae,t,x,y,Ycurr,u,ec));
         event_log(end).status=log_status;
         status_log(end+1,1)=log_status; %#ok<AGROW>
+        append_progress_event(settings,t,ev.type,log.applied,log.details);
         event_cursor = event_cursor+1;
         event_applied = true;
         if ~converged, break; end
@@ -471,11 +509,15 @@ while t < settings.t_end-settings.event_tol
                             'ts_simulate_ibr_hybrid:coordinatedHandback',hb_reason,log);
                     end
                 else
-                    % Begin Phase-2 selector-driven reselection (F4/F5).
+                    % Begin Phase-2 handback.  With an explicit healthy-PF
+                    % profile this is the per-IBR 2-term severity supervisor;
+                    % without that profile the authenticated SG_ON selector
+                    % remains the legacy authority.
                     pending_reselection=true;
                     reselection_status='PENDING';
                     reselection_good_since=NaN;
                     reselection_deadline=NaN;
+                    severity_release_since(:)=NaN;
                     sg_on_cand=[];
                 end
             else
@@ -498,6 +540,7 @@ while t < settings.t_end-settings.event_tol
                 kcl_norm(dae,t,x,y,Ycurr,u,ec));
             event_log(end).status=log_status;
             status_log(end+1,1)=log_status; %#ok<AGROW>
+            append_progress_event(settings,t,'sg_reclose',log.applied,log.details);
         elseif t>=sched.sg_on+settings.sync_timeout-settings.event_tol
             pending_reclose=false; reclose_status='SYNC_TIMEOUT';
             log=new_event_log('sg_reclose_timeout',t);
@@ -510,88 +553,148 @@ while t < settings.t_end-settings.event_tol
                 stability.ts_dynamic_state_indices(dae,ec),log.right_kcl_norm);
             event_log(end).status=log_status;
             status_log(end+1,1)=log_status; %#ok<AGROW>
+            append_progress_event(settings,t,'sg_reclose_timeout',false,log.details);
         end
     end
     % --- Phase-2 delayed indexed reselection (F4/F5) -------------------
-    % After a successful Phase-1 reclose, AUTHENTICATE the SG_ON candidate
-    % through the validator (Step 5), derive T_down from the authenticated
-    % candidate's Omega_target, and (after hold/guard/lockout) apply the
-    % selector-chosen GFM->GFL transitions. A rejected Phase-2 candidate does
-    % NOT roll back Phase 1 (F9: no right sample published).
-    if pending_reselection && ~isfinite(actual_mode_reselection)
-        % Authenticate the SG_ON candidate ONCE (Step 5): the validator is the
-        % sole commit authority; raw table.sg_on aggregates are no longer read
-        % directly. The authenticated candidate is cached for the deadline +
-        % transaction so omega/T_down and target modes come from one source.
-        if ~isstruct(sg_on_cand) && isfield(opt,'selector_table') && ...
-                isstruct(opt.selector_table)
-            [sg_on_cand, sg_on_auth_ok, sg_on_auth_fid, sg_on_auth_msg] = ...
-                authenticate_sg_on_candidate(opt.selector_table, dae, sched, ...
-                ec, Ycurr, t, case_data);
-            if ~sg_on_auth_ok
-                reselection_status = 'NO_FEASIBLE_SG_ON';
-                sg_on_cand = struct();
-            end
-        end
-        % Compute T_down from the AUTHENTICATED candidate's Omega_target.
-        if ~isfinite(reselection_deadline) && isstruct(sg_on_cand) && ~isempty(sg_on_cand)
-            [reselection_deadline, reselection_status] = compute_tdown( ...
-                sg_on_cand, settings, actual_reclose);
-        elseif ~isstruct(sg_on_cand) || isempty(sg_on_cand)
-            reselection_status = 'NO_FEASIBLE_SG_ON';
-        end
-        % Exact-landing: shorten the step to land at the reselection deadline.
-        if isfinite(reselection_deadline) && t < reselection_deadline - settings.event_tol && ...
-                target > reselection_deadline
-            target = reselection_deadline;
-        end
-        % Check hold/guard/lockout eligibility.
-        if isfinite(reselection_deadline) && t >= reselection_deadline - settings.event_tol
-            hold_ok = isfinite(t_trip) && t - t_trip >= settings.T_minimum_hold - settings.event_tol;
-            guard_ok = isfinite(reselection_good_since) && ...
-                t - reselection_good_since >= settings.T_guard - settings.event_tol;
-            if hold_ok && guard_ok
-                transaction_counter = transaction_counter + 1;
-                reselection_tx_id = transaction_counter;
-                samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reselection_tx_id);
-                [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
-                    no_mode_change] = reselection_transaction( ...
-                    t, x, y, Ycurr, u, ec, dae, sched, case_data, settings, opt, sg_on_cand);
-                log = new_event_log('sg_reselection', t);
-                log.transaction_id = reselection_tx_id;
-                log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
-                log.right_kcl_norm = right_norm;
-                log.input_before = u; log.input_after = u_new;
-                if ok
-                    x = x_new; y = y_new; u = u_new; ec = ec_new;
-                    active = stability.ts_dynamic_state_indices(dae,ec);
-                    actual_mode_reselection = t;
-                    pending_reselection = false;
-                    if no_mode_change
-                        reselection_status = 'NO_MODE_CHANGE_REQUIRED';
-                        log.details = 'SG_ON selector chose the current GFM set; no mode change required.';
-                    else
-                        reselection_status = 'SUCCESS';
-                        log.details = rsel_log.details;
-                        samples = append_sample(samples, t, x, y, u, ec, active, topology, 'right', reselection_tx_id);
-                    end
-                    log.applied = true;
-                else
-                    % Phase-2 failure: retain Phase 1, no right sample (F9).
-                    reselection_status = reselection_failure_status(reason);
-                    log.applied = false;
-                    log.failure_id = 'ts_simulate_ibr_hybrid:reselectionTransaction';
-                    log.details = reason;
-                    pending_reselection = false;
-                end
-                event_log(end+1,1) = log; %#ok<AGROW>
-                log_status = stability.ibr_status_snapshot('sg_reselection', t, dae, ec, active, ...
-                    kcl_norm(dae,t,x,y,Ycurr,u,ec));
-                event_log(end).status = log_status;
-                status_log(end+1,1) = log_status; %#ok<AGROW>
+    % Two authorities are deliberately disjoint:
+    %   (1) explicit healthy-PF V references -> per-IBR 2-term severity gate;
+    %   (2) no healthy profile -> legacy authenticated SG_ON selector.
+    % The severity path never treats the frozen SG_ON SSSA table as authority.
+    % Each online GFM must independently remain below Gamma_off for T_d_off;
+    % missing V/f evidence resets its timer and releases nothing (fail closed).
+    if pending_reselection
+        severity_enabled = settings.severity_handback_enabled;
+        target_modes = {};
+        target_selected = [];
+        authority = '';
+        attempt_transaction = false;
+
+        if severity_enabled
+            [sev_ok, current_gfm, sev_values] = post_reclose_severity( ...
+                t, x, y, u, ec, dae, settings);
+            severity_release_since(setdiff(1:numel(dae.devices),current_gfm)) = NaN;
+            if ~sev_ok
+                severity_release_since(:) = NaN;
+                reselection_status = 'SEVERITY_EVIDENCE_UNAVAILABLE';
+            elseif isempty(current_gfm)
+                pending_reselection = false;
+                reselection_status = 'SUCCESS';
             else
-                reselection_good_since = t;  % dwell accumulator
+                for q = 1:numel(current_gfm)
+                    kdev = current_gfm(q);
+                    if sev_values(q) < settings.severity_gamma_off
+                        if ~isfinite(severity_release_since(kdev))
+                            severity_release_since(kdev) = t;
+                        end
+                    else
+                        severity_release_since(kdev) = NaN;
+                    end
+                end
+                release = current_gfm(isfinite(severity_release_since(current_gfm)) & ...
+                    t-severity_release_since(current_gfm) >= ...
+                    settings.severity_T_d_off-settings.event_tol);
+                hold_ok = isfinite(actual_reclose) && ...
+                    t-actual_reclose >= settings.T_minimum_hold-settings.event_tol;
+                if hold_ok && ~isempty(release)
+                    target_selected = setdiff(current_gfm,release,'stable');
+                    target_modes = modes_from_selected(dae,target_selected);
+                    authority = 'severity';
+                    attempt_transaction = true;
+                else
+                    reselection_status = 'PENDING_SEVERITY';
+                end
             end
+        else
+            % Legacy compatibility path: authenticate the SG_ON candidate once,
+            % derive T_down from its stable mode, and retain all previous gates.
+            if ~isstruct(sg_on_cand) && isfield(opt,'selector_table') && ...
+                    isstruct(opt.selector_table)
+                [sg_on_cand, sg_on_auth_ok, ~, ~] = ...
+                    authenticate_sg_on_candidate(opt.selector_table, dae, sched, ...
+                    ec, Ycurr, t, case_data);
+                if ~sg_on_auth_ok
+                    reselection_status = 'NO_FEASIBLE_SG_ON';
+                    sg_on_cand = struct();
+                end
+            end
+            if ~isfinite(reselection_deadline) && isstruct(sg_on_cand) && ~isempty(sg_on_cand)
+                [reselection_deadline, reselection_status] = compute_tdown( ...
+                    sg_on_cand, settings, actual_reclose);
+            elseif ~isstruct(sg_on_cand) || isempty(sg_on_cand)
+                reselection_status = 'NO_FEASIBLE_SG_ON';
+            end
+            if isfinite(reselection_deadline) && t >= reselection_deadline-settings.event_tol
+                hold_ok = isfinite(t_trip) && ...
+                    t-t_trip >= settings.T_minimum_hold-settings.event_tol;
+                guard_ok = isfinite(reselection_good_since) && ...
+                    t-reselection_good_since >= settings.T_guard-settings.event_tol;
+                if hold_ok && guard_ok
+                    target_selected = sg_on_cand.selected_gfm_indices;
+                    target_modes = build_target_modes_frozen(sg_on_cand,dae);
+                    authority = 'selector';
+                    attempt_transaction = true;
+                else
+                    reselection_good_since = t;
+                end
+            end
+        end
+
+        if attempt_transaction
+            transaction_counter = transaction_counter + 1;
+            reselection_tx_id = transaction_counter;
+            samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reselection_tx_id);
+            [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
+                no_mode_change] = reselection_transaction( ...
+                t, x, y, Ycurr, u, ec, dae, settings, target_modes, ...
+                target_selected, authority);
+            log = new_event_log('sg_reselection',t);
+            log.transaction_id = reselection_tx_id;
+            log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
+            log.right_kcl_norm = right_norm;
+            log.input_before = u; log.input_after = u_new;
+            log.selected_gfm_indices = target_selected;
+            if ok
+                x=x_new; y=y_new; u=u_new; ec=ec_new;
+                active=stability.ts_dynamic_state_indices(dae,ec);
+                if ~isfinite(actual_mode_reselection) && ~no_mode_change
+                    actual_mode_reselection=t;
+                end
+                if no_mode_change
+                    pending_reselection=false;
+                    reselection_status='NO_MODE_CHANGE_REQUIRED';
+                    log.details='SG_ON selector chose the current GFM set; no mode change required.';
+                else
+                    samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reselection_tx_id);
+                    log.details=rsel_log.details;
+                    if severity_enabled && ~isempty(target_selected)
+                        % The transfer is a discontinuity for the remaining
+                        % devices' V/f environment.  Reset all down-line timers;
+                        % each residual GFM must earn a fresh full dwell.
+                        severity_release_since(:)=NaN;
+                        reselection_status='PARTIAL_SEVERITY_RELEASE';
+                        pending_reselection=true;
+                    else
+                        reselection_status='SUCCESS';
+                        pending_reselection=false;
+                    end
+                end
+                log.applied=true;
+            else
+                % A rejected transfer/KCL transaction never publishes a right
+                % sample and never rolls back the already committed Phase 1.
+                reselection_status=reselection_failure_status(reason);
+                log.applied=false;
+                log.failure_id='ts_simulate_ibr_hybrid:reselectionTransaction';
+                log.details=reason;
+                pending_reselection=false;
+            end
+            event_log(end+1,1)=log; %#ok<AGROW>
+            log_status=stability.ibr_status_snapshot('sg_reselection',t,dae,ec,active, ...
+                kcl_norm(dae,t,x,y,Ycurr,u,ec));
+            event_log(end).status=log_status;
+            status_log(end+1,1)=log_status; %#ok<AGROW>
+            append_progress_event(settings,t,'sg_reselection',log.applied,log.details);
         end
     end
     if ~converged, break; end
@@ -735,6 +838,34 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
     'T_guard',case_data.delays.T_guard_s, ...
     'T_lockout',case_data.delays.T_lockout_s, ...
     'rho',case_data.delays.rho);
+s.progress_every = option(opt,'progress_every',0);
+s.progress_file  = char(option(opt,'progress_file',''));
+s.progress_last  = -Inf;
+s.healthy_pf_V = option(opt,'healthy_pf_V',[]);
+s.healthy_pf_bus_ids = option(opt,'healthy_pf_bus_ids',[]);
+has_healthy_v = isfield(opt,'healthy_pf_V') && ~isempty(opt.healthy_pf_V);
+has_healthy_bus = isfield(opt,'healthy_pf_bus_ids') && ~isempty(opt.healthy_pf_bus_ids);
+if xor(has_healthy_v,has_healthy_bus)
+    error('ts_simulate_ibr_hybrid:incompleteHealthyPfReference', ...
+        'healthy_pf_V and healthy_pf_bus_ids must be supplied together.');
+end
+s.severity_handback_enabled = has_healthy_v && has_healthy_bus;
+s.severity_gamma_off = 0.35;
+s.severity_T_d_off = 1.00;
+s.severity_dV_base = 0.10;
+s.severity_df_base_Hz = 0.50;
+s.severity_f0_Hz = case_data.base_values.frequency_Hz;
+if s.severity_handback_enabled
+    hV=s.healthy_pf_V(:).'; hB=s.healthy_pf_bus_ids(:).';
+    if numel(hV)~=numel(hB) || isempty(hV) || ...
+            any(~isfinite(hV)) || any(hV<=0) || ...
+            any(~isfinite(hB)) || numel(unique(hB))~=numel(hB)
+        error('ts_simulate_ibr_hybrid:invalidHealthyPfReference', ...
+            ['healthy_pf_V and healthy_pf_bus_ids must be equal-length finite ' ...
+             'vectors with positive voltages and unique bus IDs.']);
+    end
+    s.healthy_pf_V=hV; s.healthy_pf_bus_ids=hB;
+end
 if isfield(opt,'synchronism_overrides'), s.sync_overrides=opt.synchronism_overrides; end
 if isfield(opt,'delays_overrides')
     d=opt.delays_overrides;
@@ -1273,88 +1404,97 @@ hl = struct('applied', false, ...
 end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
-    reselection_transaction(t, x, y, Y, u, ec, dae, sched, case_data, settings, opt, sg_on_cand)
-%RESELECTION_TRANSACTION  Phase-2 SG_ON indexed reselection.
-%   Consumes the AUTHENTICATED SG_ON candidate (Step 5) — never reads the raw
-%   table.sg_on aggregate as commit authority. Applies the selector-chosen
-%   GFM->GFL transitions via device-owned transfer maps. If no mode/online
-%   change is required (F5), no transfer/right-limit/sample occurs.
-ok = false; x_right = x; y_right = y; u_right = u; ec_right = ec;
-reason = ''; right_norm = inf; no_mode_change = false;
-handler_log = struct('details', '');
-if ~isstruct(sg_on_cand) || isempty(sg_on_cand)
-    reason = 'no authenticated SG_ON candidate';
+    reselection_transaction(t, x, y, Y, u, ec, dae, settings, target_modes, ...
+    target_selected, authority)
+%RESELECTION_TRANSACTION  Commit an already-authorized Phase-2 target.
+%   Authority is established outside the transaction by either the dynamic
+%   severity supervisor or the legacy authenticated SG_ON selector.  This
+%   function owns only mode transfer, hybrid metadata, and the right-limit KCL
+%   acceptance.  Any failure leaves the accepted Phase-1 state unchanged.
+ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
+reason=''; right_norm=inf; no_mode_change=false;
+handler_log=struct('details','');
+if ~iscell(target_modes) || numel(target_modes)~=numel(dae.devices)
+    reason='authorized target mode vector is missing or has the wrong size';
     return;
 end
-if ~isfield(sg_on_cand, 'ready_to_commit') || ~sg_on_cand.ready_to_commit
-    reason = 'authenticated SG_ON candidate not ready to commit';
+if ~isnumeric(target_selected) || any(~isfinite(target_selected)) || ...
+        any(target_selected<1) || any(target_selected>numel(dae.devices)) || ...
+        numel(unique(target_selected))~=numel(target_selected)
+    reason='authorized target GFM indices are invalid';
     return;
 end
-% Build the target mode vector from the AUTHENTICATED SG_ON candidate.
-target_modes = build_target_modes(sg_on_cand, dae, ec);
-if isempty(target_modes)
-    reason = 'could not build target modes from authenticated SG_ON selection';
+if ~any(strcmp(authority,{'severity','selector'}))
+    reason='unknown Phase-2 target authority';
     return;
 end
-% Determine which devices actually change mode (F5: no-mode-change case).
-current_modes = current_mode_vector(dae, ec);
-changing = find_mode_changes(current_modes, target_modes);
+current_modes=current_mode_vector(dae,ec);
+changing=find_mode_changes(current_modes,target_modes);
 if isempty(changing)
-    % F5: no mode/online change required. No transfer, no right-limit solve,
-    % no duplicate sample. Update committed_config_fingerprint only.
-    no_mode_change = true;
-    ok = true;
-    handler_log.details = sprintf('SG_ON reselection: no mode change required (selected GFM set unchanged) at t=%.3f.', t);
+    no_mode_change=true; ok=true;
+    handler_log.details=sprintf('%s reselection requires no mode change at t=%.3f.', ...
+        authority,t);
     return;
 end
-% Apply the selector-chosen GFM->GFL transitions via device-owned transfer
-% maps (complex-current continuity |I_right-I_left| <= 1e-10).
-ec_right = ec;
-ec_right.hybrid_state = stability.ts_hybrid_state_snapshot(ec.hybrid_state);
-for k = 1:numel(changing)
-    idx = changing(k);
-    dev = dae.devices(idx);
-    key = matlab.lang.makeValidName(char(dev.device_id), 'ReplacementStyle', 'underscore');
-    ec_right.hybrid_state.device_modes.(key) = target_modes{idx};
+ec_right=ec;
+ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(ec.hybrid_state);
+for k=1:numel(changing)
+    idx=changing(k); dev=dae.devices(idx);
+    key=matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+    ec_right.hybrid_state.device_modes.(key)=target_modes{idx};
 end
 try
-    x_right = apply_device_transfers(x, y, u, ec, ec_right, dae);
+    x_right=apply_device_transfers(x,y,u,ec,ec_right,dae);
 catch me
-    reason = sprintf('transfer map failed: %s: %s', me.identifier, me.message);
+    reason=sprintf('transfer map failed: %s: %s',me.identifier,me.message);
     return;
 end
-% Update hybrid_state selector fields atomically (F1/C1) from the AUTHENTICATED
-% candidate (not the raw table aggregate).
-hs = ec_right.hybrid_state;
-hs.selected_gfm_indices = sg_on_cand.selected_gfm_indices;
-hs.n_gfm_required = sg_on_cand.n_gfm_required;
-% reference_owner_indices stays at SG; gfm_reference_resource_indices stays empty.
-if isfield(hs, 'committed_config_fingerprint')
-    version = 0;
-    if isfield(hs, 'selector_table_version') && isnumeric(hs.selector_table_version) && ...
+hs=ec_right.hybrid_state;
+hs.selected_gfm_indices=target_selected(:).';
+hs.n_gfm_required=numel(target_selected);
+% Reference ownership stays with the reclosed SG; no GFM is a reference owner.
+if isfield(hs,'committed_config_fingerprint')
+    version=0;
+    if isfield(hs,'selector_table_version') && isnumeric(hs.selector_table_version) && ...
             isscalar(hs.selector_table_version) && isfinite(hs.selector_table_version)
-        version = hs.selector_table_version;
+        version=hs.selector_table_version;
     end
-    version = version + 1;
-    hs.selector_table_version = version;
-    hs.committed_config_fingerprint = sprintf( ...
-        'sg_on_reselection|selected=%s|n=%d|version=%d', ...
-        mat2str(sg_on_cand.selected_gfm_indices), sg_on_cand.n_gfm_required, version);
+    version=version+1;
+    hs.selector_table_version=version;
+    hs.committed_config_fingerprint=sprintf( ...
+        'sg_on_%s_reselection|selected=%s|n=%d|version=%d', ...
+        authority,mat2str(target_selected(:).'),numel(target_selected),version);
 end
-ec_right.hybrid_state = hs;
-% One final right-limit solve after all transfers.
-[ok, y_right, reason, right_norm] = right_limit(x_right, y, Y, dae, u_right, ec_right, t, settings.kcl_tol);
+ec_right.hybrid_state=hs;
+[ok,y_right,reason,right_norm]=right_limit( ...
+    x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
 if ok
-    handler_log.details = sprintf('SG_ON reselection committed at t=%.3f; %d device(s) transitioned.', ...
-        t, numel(changing));
+    handler_log.details=sprintf('%s reselection committed at t=%.3f; %d device(s) transitioned.', ...
+        authority,t,numel(changing));
 end
 end
 
-function modes = build_target_modes(sg_on_result, dae, ~)
-%BUILD_TARGET_MODES  Build the target mode vector from the SG_ON selection.
+function modes = build_target_modes_frozen(sg_on_result, dae)
+%BUILD_TARGET_MODES_FROZEN  Legacy/fallback: target = authenticated selection.
 nd = numel(dae.devices);
 modes = cell(1, nd);
-selected = sg_on_result.selected_gfm_indices;
+for k = 1:nd
+    dev = dae.devices(k);
+    if isfield(dev, 'capabilities') && isfield(dev.capabilities, 'resource_type') && ...
+            strcmpi(char(dev.capabilities.resource_type), 'sg')
+        modes{k} = 'synchronous';
+    elseif isfield(sg_on_result,'selected_gfm_indices') && ...
+            ismember(k, sg_on_result.selected_gfm_indices)
+        modes{k} = 'gfm';
+    else
+        modes{k} = 'gfl';
+    end
+end
+end
+
+function modes = modes_from_selected(dae, selected)
+nd = numel(dae.devices);
+modes = cell(1, nd);
 for k = 1:nd
     dev = dae.devices(k);
     if isfield(dev, 'capabilities') && isfield(dev.capabilities, 'resource_type') && ...
@@ -1366,6 +1506,76 @@ for k = 1:nd
         modes{k} = 'gfl';
     end
 end
+end
+
+function [ok, current_gfm, severity] = post_reclose_severity( ...
+    t, x, y, u, ec, dae, settings)
+%POST_RECLOSE_SEVERITY  Complete 2-term evidence for each online GFM IBR.
+%   S_i = sat(0.5*|V_i-V_ref,i|/0.10 + 0.5*|f_COI-f0|/0.50).
+%   f_COI uses the same inertia-weighted online SG/GFM convention as the
+%   published diagnostic.  The function returns ok=false unless every current
+%   online switchable GFM maps uniquely to a healthy-PF voltage reference and
+%   every required measurement is finite.  An empty current_gfm is valid.
+ok=false; current_gfm=[]; severity=[];
+nd=numel(dae.devices);
+freq=nan(1,nd); inertia=nan(1,nd); online=false(1,nd);
+rec_cache=cell(1,nd);
+for k=1:nd
+    dev=dae.devices(k);
+    xi=dae.device_offsets(k)+(1:dev.nx);
+    ui=dae.u_offsets(k)+(1:dev.nu);
+    try
+        rec=dev.reconstruct(t,x(xi),y,u(ui),ec);
+    catch
+        return;
+    end
+    rec_cache{k}=rec;
+    if ~isfield(rec,'online') || ~isscalar(rec.online)
+        return;
+    end
+    online(k)=logical(rec.online);
+    if ~online(k), continue; end
+    if strcmpi(char(rec.mode),'sg') && isfield(rec,'omega') && ...
+            isfinite(rec.omega) && isfield(rec,'H_system') && ...
+            isfinite(rec.H_system) && rec.H_system>0
+        freq(k)=settings.severity_f0_Hz*(1+rec.omega);
+        inertia(k)=rec.H_system;
+    elseif isfield(rec,'gfm') && isstruct(rec.gfm) && ...
+            isfield(rec.gfm,'omega_m') && isfinite(rec.gfm.omega_m) && ...
+            isfield(rec.gfm,'H_system') && isfinite(rec.gfm.H_system) && ...
+            rec.gfm.H_system>0
+        freq(k)=settings.severity_f0_Hz*(1+rec.gfm.omega_m);
+        inertia(k)=rec.gfm.H_system;
+    end
+end
+use=online & isfinite(freq) & isfinite(inertia) & inertia>0;
+if ~any(use), return; end
+fcoi=sum(inertia(use).*freq(use))/sum(inertia(use));
+if ~isfinite(fcoi), return; end
+for k=1:nd
+    dev=dae.devices(k); rec=rec_cache{k};
+    is_switchable_ibr=isfield(dev,'capabilities') && ...
+        isfield(dev.capabilities,'resource_type') && ...
+        strcmpi(char(dev.capabilities.resource_type),'ibr') && ...
+        isfield(dev.capabilities,'voltage_forming_modes') && ...
+        any(strcmpi(string(dev.capabilities.voltage_forming_modes),'gfm'));
+    if is_switchable_ibr && online(k) && strcmpi(char(rec.mode),'gfm')
+        current_gfm(end+1)=k; %#ok<AGROW>
+    end
+end
+severity=nan(1,numel(current_gfm));
+for q=1:numel(current_gfm)
+    k=current_gfm(q); dev=dae.devices(k); bp=dev.bus_position;
+    if ~isscalar(bp) || bp<1 || 2*bp>numel(y), return; end
+    Vm=abs(complex(y(2*bp-1),y(2*bp)));
+    ref_idx=find(settings.healthy_pf_bus_ids==dev.bus_id);
+    if numel(ref_idx)~=1 || ~isfinite(Vm), return; end
+    vref=settings.healthy_pf_V(ref_idx);
+    Jv=abs(Vm-vref)/settings.severity_dV_base;
+    Jf=abs(fcoi-settings.severity_f0_Hz)/settings.severity_df_base_Hz;
+    severity(q)=min(1,max(0,0.5*Jv+0.5*Jf));
+end
+ok=all(isfinite(severity));
 end
 
 function modes = current_mode_vector(dae, ec)
@@ -1644,6 +1854,17 @@ end
 
 function value=option(s,name,default)
 value=default; if isfield(s,name) && ~isempty(s.(name)), value=s.(name); end
+end
+
+function append_progress_event(settings,t,event_type,applied,details)
+%APPEND_PROGRESS_EVENT  Presentation-only event trace for long batch runs.
+if settings.progress_every<=0 || isempty(settings.progress_file), return; end
+pfd=fopen(settings.progress_file,'a');
+if pfd<0, return; end
+cleanup=onCleanup(@() fclose(pfd)); %#ok<NASGU>
+text=regexprep(char(string(details)),'[\r\n]+',' ');
+fprintf(pfd,'EVENT t=%.4f type=%s applied=%d details=%s\n', ...
+    t,char(event_type),logical(applied),text);
 end
 
 function value=ternary(condition,a,b)

@@ -87,9 +87,14 @@ verifyLessThan(tc, agsi, s.d1.AGSI_down);   % below the down-line => calm
 verifyGreaterThanOrEqual(tc, agsi, 0);
 end
 
-function test_agsipp_equal_seven_term_gra_weight(tc)
-% User-approved AGSI++ contract: the added missing-reference term is averaged
-% equally with the six existing terms; it is not a hard switching override.
+function test_agsipp_two_term_severity_index(tc)
+% 2026-08-09 index-definition change: the implemented agsi_pp severity is the
+% two-term J_V/J_f index [V f | R P SCR lock GRA] = [0.5 0.5 0 0 0 0 0] with
+% bases dV_base=0.10 pu, df_base=0.50 Hz.  The 0.30:0.30 V:f ratio of
+% EECON49-P4 sec 4.1 renormalised to sum 1 gives 0.5:0.5.  The five demoted
+% stresses (J_R, J_P, J_SCR, J_lock, J_GRA) carry zero weight and remain
+% diagnostics; this class does not claim unimplemented hard gates. GRA therefore
+% has NO effect on the bounded index unless the explicit gra_override is enabled.
 s = setup_common();
 d1 = ibr.SwitchableIbr6("GRA1",1,1,1,s.Vinf,s.params,s.Pref,s.Qref, ...
     index_mode="agsi_pp", GRA=1);
@@ -98,10 +103,32 @@ d0 = ibr.SwitchableIbr6("GRA0",1,1,1,s.Vinf,s.params,s.Pref,s.Qref, ...
 x1 = d1.gfl_dev.equilibrium_initialize(s.Vpcc,s.Pref,s.Qref,struct());
 x0 = d0.gfl_dev.equilibrium_initialize(s.Vpcc,s.Pref,s.Qref,struct());
 w = [d1.w_V d1.w_f d1.w_R d1.w_P d1.w_SCR d1.w_lock d1.w_GRA];
-verifyEqual(tc,w,repmat(1/7,1,7),'AbsTol',1e-15);
-verifyEqual(tc,d0.compute_index(x0,s.y,0)-d1.compute_index(x1,s.y,0), ...
-    1/7,'AbsTol',1e-12);
+verifyEqual(tc,w,[0.5 0.5 0 0 0 0 0],'AbsTol',1e-15);
+verifyEqual(tc,sum(w),1,'AbsTol',1e-12);          % weights still sum to 1
+% GRA (weight 0) must not move the bounded index.
+verifyLessThan(tc, abs(d0.compute_index(x0,s.y,0)-d1.compute_index(x1,s.y,0)), 1e-12);
 verifyFalse(tc,d0.gra_override);
+end
+
+function test_agsipp_uses_validated_per_bus_voltage_reference(tc)
+% Regression for the actual N-by-2 contract. The old constructor flattened the
+% table to a row and compute_agsi then indexed it as if it still had two columns,
+% so a per-bus reference was not usable in practice. Independent oracle: with
+% |V|=0.95 at bus 6 and V_ref,6=1.05, J_V=1 and J_f=0, hence S=0.5 exactly.
+s = setup_common();
+y = [0.95;0];
+d = ibr.SwitchableIbr6("VREF6",6,1,6,1.0,s.params,s.Pref,s.Qref, ...
+    index_mode="agsi_pp", V_ref_per_bus=[2 0.99;6 1.05]);
+x = d.gfl_dev.equilibrium_initialize(0.95,s.Pref,s.Qref,struct());
+verifyEqual(tc,d.compute_index(x,y,0),0.5,'AbsTol',1e-12);
+verifyError(tc,@() ibr.SwitchableIbr6("BAD",6,1,6,1.0,s.params,s.Pref,s.Qref, ...
+    index_mode="agsi_pp",V_ref_per_bus=[6 1.05;6 1.04]), ...
+    'ibr:SwitchableIbr6:invalidVRefPerBus');
+missing = ibr.SwitchableIbr6("MISS",6,1,6,1.0,s.params,s.Pref,s.Qref, ...
+    index_mode="agsi_pp",V_ref_per_bus=[2 0.99;3 0.97]);
+xm = missing.gfl_dev.equilibrium_initialize(0.95,s.Pref,s.Qref,struct());
+verifyError(tc,@() missing.compute_index(xm,y,0), ...
+    'ibr:SwitchableIbr6:missingVRefForBus');
 end
 
 function test_bumpless_continuity_both_directions(tc)

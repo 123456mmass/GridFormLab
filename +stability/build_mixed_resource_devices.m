@@ -38,8 +38,10 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %   SCENARIO_OPT may carry:
 %     .initial_modes  - struct array (.device_id, .mode) overriding initial mode
 %     .initial_online - struct array (.device_id, .online) overriding online
-%     .dispatch       - struct with per-resource_id dispatch (MW, system base)
-%                       required for IBR resources (P_ref)
+%     .dispatch       - struct with per-resource_id active-power dispatch
+%                       (MW, system base), required for IBR P_ref. Reactive
+%                       dispatch is case/resource owned by ratings.default_Q_MVAr;
+%                       absence preserves the historical unity-PF default.
 %
 %   Output:
 %     devices  - 1xN struct array conforming to composite_dae ABI + uniform schema
@@ -110,7 +112,20 @@ for k = 1:nr
                 P_ref_MW = r.ratings.default_P_MW;
             end
             P_ref_pu = P_ref_MW / Sbase;
-            Q_ref_pu = 0.0;   % unity-PF default (CASE_DEFINED per resource)
+            % Initial GFL Q is a PQ-resource schedule, not a PV-voltage
+            % controller output.  Consume the case-owned value when declared;
+            % legacy resources without the additive field remain unity PF.
+            Q_ref_MVAr = 0.0;
+            if isfield(r,'ratings') && isfield(r.ratings,'default_Q_MVAr') && ...
+                    ~isempty(r.ratings.default_Q_MVAr)
+                Q_ref_MVAr = r.ratings.default_Q_MVAr;
+            end
+            if ~isnumeric(Q_ref_MVAr) || ~isscalar(Q_ref_MVAr) || ...
+                    ~isfinite(Q_ref_MVAr)
+                error('stability:build_mixed_resource_devices:badReactiveDispatch', ...
+                    'Resource "%s" default_Q_MVAr must be one finite scalar.',rid);
+            end
+            Q_ref_pu = Q_ref_MVAr / Sbase;
             V_ref_pu = abs(V0);
             params = r.dynamic_params;
             if ~isfield(params,'Mbase') && isfield(r,'ratings') && isfield(r.ratings,'Mbase')

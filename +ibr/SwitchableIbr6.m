@@ -39,14 +39,32 @@ classdef SwitchableIbr6 < handle
 %   gra_override=true route adds the legacy hard GRA rule.  When latch=true the
 %   switch is one-way (GFL->GFM only).
 %
-%   SOURCE / CLASSIFICATION: the four-term plain AGSI route is source-guided.
-%   AGSI++ is PROJECT_DERIVED: it adds SCR, PLL-lock, and GRA terms and uses the
-%   user-approved equal seven-term average (1/7 each).  The EECON49 source case
-%   supplies data/events only; this supervisor is not a reproduction of the
-%   paper's Bayesian-optimisation method.  The wrapped GFL/GFM branch equations
-%   keep their own documented provenance.
+%   INDEX MODES (presets; caller-passed w_* overrides the preset, sum==1 enforced):
+%     'agsi'    - plain four-term AGSI, EECON49-P4 sec 4.1 source-guided:
+%                 [w_V w_f w_R w_P] = [0.30 0.30 0.25 0.15], raw RoCoF.
+%     'agsi_pp' - severity AGSI, PROJECT_DERIVED two-term index and the
+%                 implemented switching supervisor for the IEEE14 go/no-go study:
+%                 severity S = sat_[0,1](0.5*J_V + 0.5*J_f) with bases
+%                 dV_base=0.10 pu, df_base=0.50 Hz.  The 0.30:0.30 V:f ratio of
+%                 EECON49-P4 renormalised to sum 1 gives 0.5:0.5.  The five
+%                 demoted stresses (J_R, J_P, J_SCR, J_lock, J_GRA) carry zero
+%                 weight and remain diagnostics only; they are not silently
+%                 asserted as mode-change gates.  System-level event authority,
+%                 transfer-map validity, reference ownership, and right-limit KCL
+%                 remain separate contracts (an equal 1/7 average would let one
+%                 large J_V be diluted by the mostly-zero other terms).
+%                 RoCoF stays low-pass filtered to reject the one-sample spike
+%                 inherited from the former AGSI++ default.
 %
-%   Defaults (EECON49-P4 sec 4.1): w=[0.30,0.30,0.25,0.15];
+%   SOURCE / CLASSIFICATION: the four-term plain AGSI route is source-guided.
+%   The AGSI++ severity index is PROJECT_DERIVED from the EECON49-P4 V:f
+%   severity ratio (0.30:0.30) renormalised onto the two-term base.  The
+%   EECON49 source case supplies data/events only; this supervisor is not a
+%   reproduction of the paper's Bayesian-optimisation method.  The wrapped
+%   GFL/GFM branch equations keep their own documented provenance.
+%
+%   Defaults (EECON49-P4 sec 4.1): w=[0.30,0.30,0.25,0.15] (plain);
+%   agsi_pp severity w=[0.50,0.50,0,0,0,0,0];
 %   bases dV=0.10 pu, df=0.50 Hz, dR=1.00 Hz/s, dP=0.20 pu;
 %   AGSI_up=0.65 (Gamma_on), AGSI_down=0.35 (Gamma_off);
 %   T_d_on=0.10 s, T_d_off=1.00 s; V_ref=1.0; GRA=1 (infinite bus present).
@@ -75,6 +93,7 @@ classdef SwitchableIbr6 < handle
         dP_base = 0.20  % pu
         dvq_base = 0.10 % J_lock normalisation (|v_q| pu)
         V_ref = 1.0     % nominal PCC voltage magnitude for J_V [pu]
+        V_ref_per_bus = zeros(0,2) % [external bus_id, healthy PF |V|]; when non-empty J_V uses the unique matching row
         % --- AGSI++ enhancements -------------------------------------------
         index_mode = 'agsi'    % 'agsi' (EECON49) | 'agsi_pp' (AGSI++)
         filtered_rocof = false % AGSI++ uses a low-pass-filtered RoCoF
@@ -148,6 +167,7 @@ classdef SwitchableIbr6 < handle
                 opts.gra_override (1,1) logical = false
                 opts.latch (1,1) logical = false
                 opts.f0 (1,1) double = 60
+                opts.V_ref_per_bus double = []
             end
             if ~isfinite(V0) || abs(V0) <= 0
                 error('ibr:SwitchableIbr6:badV0','V0 must be finite nonzero.');
@@ -156,10 +176,11 @@ classdef SwitchableIbr6 < handle
             if ~ismember(mode,{'agsi','agsi_pp'})
                 error('ibr:SwitchableIbr6:mode','index_mode must be "agsi" or "agsi_pp".');
             end
-            % Mode presets (weights sum to 1; AGSI++ adds J_SCR, J_lock and J_GRA and
-            % uses a filtered RoCoF). User-supplied weights override the preset.
+            % Mode presets (weights sum to 1).  'agsi_pp' is the implemented
+            % two-term severity index [V f | R P SCR lock GRA] with a filtered
+            % RoCoF diagnostic; caller-passed w_* overrides the preset.
             if strcmp(mode,'agsi_pp')
-                defw = repmat(1/7,1,7);   % V f R P SCR lock GRA (equal average)
+                defw = [0.5 0.5 0 0 0 0 0];   % severity: J_V+J_f only (0.30:0.30 renormalised)
                 deffilt = true;
             else
                 defw = [0.30 0.30 0.25 0.15 0.00 0.00 0.00];
@@ -201,6 +222,16 @@ classdef SwitchableIbr6 < handle
             obj.dV_base = opts.dV_base; obj.df_base = opts.df_base;
             obj.dR_base = opts.dR_base; obj.dP_base = opts.dP_base;
             obj.V_ref = opts.V_ref;
+            if ~isempty(opts.V_ref_per_bus)
+                refs = opts.V_ref_per_bus;
+                if ~isreal(refs) || size(refs,2)~=2 || any(~isfinite(refs(:))) || ...
+                        any(refs(:,2)<=0) || numel(unique(refs(:,1)))~=size(refs,1)
+                    error('ibr:SwitchableIbr6:invalidVRefPerBus', ...
+                        ['V_ref_per_bus must be an N-by-2 finite real table ' ...
+                         '[external bus_id, positive healthy |V|] with unique bus IDs.']);
+                end
+                obj.V_ref_per_bus = refs;
+            end
             obj.AGSI_up = opts.AGSI_up;
             obj.AGSI_down = opts.AGSI_down;
             obj.T_d_on = opts.T_d_on;
@@ -324,7 +355,20 @@ classdef SwitchableIbr6 < handle
             P = rec.Pe;
             P_ref = obj.u(1);
             % --- baseline sub-indices --------------------------------------
-            J_V = abs(Vmag - obj.V_ref)/obj.dV_base;
+            % J_V uses the healthy per-bus PF |V| when V_ref_per_bus is
+            % provided (the network's achievable operating point, not a flat 1.0)
+            % -- this is what lets an index-driven supervisor see a "healthy"
+            % bus in steady state and release it back to GFL.
+            vref = obj.V_ref;
+            if ~isempty(obj.V_ref_per_bus)
+                ip2 = find(obj.V_ref_per_bus(:,1)==obj.bus_id);
+                if numel(ip2)~=1
+                    error('ibr:SwitchableIbr6:missingVRefForBus', ...
+                        'V_ref_per_bus must contain exactly one row for bus %g.',obj.bus_id);
+                end
+                vref = obj.V_ref_per_bus(ip2,2);
+            end
+            J_V = abs(Vmag - vref)/obj.dV_base;
             J_f = abs(f_hz - obj.f0)/obj.df_base;
             J_R = abs(rocof_used)/obj.dR_base;
             J_P = abs(P_ref - P)/obj.dP_base;
@@ -426,7 +470,15 @@ classdef SwitchableIbr6 < handle
                 cond_down = (agsi < obj.AGSI_down);   % pure index-driven
             end
             if cond_down
-                if isnan(obj.down_since), obj.down_since = t; end
+                if isnan(obj.down_since)
+                    obj.down_since = t;
+                    % Q-restore before release: return the GFM to the healthy
+                    % pre-fault dispatch so the bus voltage settles back to
+                    % V_ref_per_bus.  The index then measures a truly healthy
+                    % operating point and a later, sustained-healthy dwell
+                    % releases the IBR to GFL (dynamic, not a forced handback).
+                    obj.restore_healthy_setpoint();
+                end
             else
                 obj.down_since = NaN;
             end
@@ -467,6 +519,17 @@ classdef SwitchableIbr6 < handle
             %   from being applied simultaneously (coordinated reference handback).
             obj.u = [obj.P_ref0; obj.Q_ref0];
             obj.down_since = NaN;
+        end
+
+        function restore_healthy_setpoint(obj)
+            %RESTORE_HEALTHY_SETPOINT Return the island-support GFM P/Q setpoint
+            %   to the PF-healthy pre-fault dispatch (P_ref0/Q_ref0).  This is the
+            %   Q-restore step BEFORE an index-driven GFM->GFL release: once the
+            %   SG reference returns, keeping Q at the healthy-dispatch value lets
+            %   the bus voltage settle back to V_ref_per_bus, so J_V falls and the
+            %   local severity gates the handback (`maybe_switch` releases only
+            %   when V/f are healthy again).  Calling this does NOT change mode.
+            obj.u = [obj.P_ref0; obj.Q_ref0];
         end
 
         function reset(obj)

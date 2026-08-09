@@ -2,11 +2,13 @@ function out = generate_ieee14_switch_report_figures(opts)
 %GENERATE_IEEE14_SWITCH_REPORT_FIGURES Reproduce publishable IEEE14 evidence.
 %   The source-data profile is simulated by the production all-KCL hybrid
 %   engine: six-state EMF6 SG, registered full-state dual-mode IBR devices,
-%   exact event landing, synchronism guard, and coordinated SG handback.
-%   AGSI++ is reconstructed from the accepted raw production signals using
-%   the project seven equally weighted terms.  It is evidence for the index;
-%   the SG-trip and SG-reference-handback transactions remain explicitly
-%   separate CASE_DEFINED overrides.  A seeded band-limited display-only
+%   exact event landing, synchronism guard, and two-phase SG handback.
+%   The per-IBR index is reconstructed from accepted raw production signals as
+%   S=sat(0.5*J_V+0.5*J_f), using the healthy SG-online PF voltage at each bus.
+%   The SG-trip transaction is a CASE_DEFINED all-GFM override.  Reclose returns
+%   reference ownership to the SG without changing IBR modes; each remaining
+%   GFM then releases independently after S<Gamma_off for T_d_off.  A seeded
+%   band-limited display-only
 %   measurement ripple is drawn beside the raw trace and never feeds the
 %   solver, AGSI, timers, gates, or mode decisions.
 
@@ -27,7 +29,7 @@ case_for_tables = cases.case_ieee14bus_eecon49_switch();
 lim = pf_limit_table(case_for_tables);
 write_pf_tables(sys.pf,outdir,lim,case_for_tables.bus_role);
 T_end_contract=sys.switching_event_contract.T_end;
-production_cache=fullfile('output','diagnostics','regfm_post_trip_probe.mat');
+production_cache=fullfile('output','diagnostics','engine_release_result.mat');
 figure_cache=fullfile('output','diagnostics', ...
     sprintf('ieee14_switch_%g_exact.mat',T_end_contract));
 reuse_ok=false;
@@ -45,7 +47,7 @@ if opts.reuse_cache && exist(production_cache,'file')
     end
 end
 if ~reuse_ok
-    [scenario,opt]=production_request();
+    [scenario,opt]=production_request(sys);
     r=stability.run_hybrid_case(scenario,opt);
     if ~r.converged || r.t(end)<T_end_contract
         error('generate_ieee14_switch_report_figures:productionRun', ...
@@ -81,13 +83,13 @@ angle_figure(out,outdir,['ieee14_switch_' tag '_angles.png']);
 fprintf('IEEE14_SWITCH_REPORT_FIGURES_DONE: %s [%s]\n',outdir,out.dynamic_status);
 end
 
-function [s,opt]=production_request()
+function [s,opt]=production_request(sys)
 s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
 ev=struct('enabled',true,'event_profile','chronology', ...
     'sg_trip',20,'load_step',50,'load_step_factor',0.20, ...
     'fault_on',85,'fault_clear',85.15,'fault_bus',9,'Zf',0.01+0.01i, ...
     'line_trip',110,'line_from_bus',6,'line_to_bus',13, ...
-    'restore_time',145,'sg_on',145,'coordinated_handback',true, ...
+    'restore_time',145,'sg_on',145,'coordinated_handback',false, ...
     'selected_gfm_indices',2:5,'reference_resource_index',2, ...
     'automatic_gfm_switching',true, ...
     'delays_overrides',struct('timeout_s',5,'dwell_s',0.5));
@@ -96,8 +98,10 @@ ev=struct('enabled',true,'event_profile','chronology', ...
 % window after handback.  Taken from the case contract rather than restated
 % here, so the case file remains the single owner of the event schedule.
 opt=struct('t_end',s.case_data.switching_event_contract.T_end, ...
-    'dt',0.0125,'verbose',false, ...
-    'ibr_events',ev,'plot_results',false);
+    'dt',0.10,'verbose',false, ...
+    'ibr_events',ev,'plot_results',false, ...
+    'healthy_pf_V',sys.pf.bus_voltage(:).', ...
+    'healthy_pf_bus_ids',sys.pf.external_bus_ids(:).');
 end
 
 function o=adapt_production_result(r,sys)
@@ -169,14 +173,33 @@ index=zeros(nt,nibr); raw_index=zeros(nt,nibr);
 for j=1:nibr
     d=sys.devs{j}; Vmag=abs(Vibr(:,j));
     rocof=filtered_rate(t,f_ibr(:,j),d.rocof_tau);
-    Jv=abs(Vmag-d.V_ref)/d.dV_base;
-    Jf=abs(f_ibr(:,j)-d.f0)/d.df_base;
+    ibr_bus_id=r.device_bus_ids(didx(j));
+    ref_idx=find(sys.pf.external_bus_ids==ibr_bus_id);
+    if numel(ref_idx)~=1
+        error('generate_ieee14_switch_report_figures:healthyPfReference', ...
+            'IBR bus %d does not map uniquely to the healthy PF profile.',ibr_bus_id);
+    end
+    vref=sys.pf.bus_voltage(ref_idx);
+    Jv=abs(Vmag-vref)/d.dV_base;
+    if ~isfield(r,'coi_frequency_Hz') || numel(r.coi_frequency_Hz)~=nt || ...
+            any(~isfinite(r.coi_frequency_Hz(:)))
+        error('generate_ieee14_switch_report_figures:coiFrequency', ...
+            'The production trajectory lacks complete finite COI-frequency evidence.');
+    end
+    Jf=abs(r.coi_frequency_Hz(:)-d.f0)/d.df_base;
     Jr=abs(rocof)/d.dR_base;
     Jp=abs(d.u(1)-r.device_P_pu(didx(j),:).')/d.dP_base;
     Jscr=max(0,d.SCR_crit/max(d.grid_scr,1e-9)-1)*ones(nt,1);
     vq=abs(imag(Vibr(:,j).*exp(-1i*angle_ibr(:,j))));
     Jlock=vq/d.dvq_base; Jgra=1-GRA(:,j);
-    raw=(Jv+Jf+Jr+Jp+Jscr+Jlock+Jgra)/7;
+    % 2026-08-09: the implemented per-IBR supervisor index (ibr.SwitchableIbr6,
+    % index_mode='agsi_pp') is the two-term severity S=0.5*J_V+0.5*J_f on bases
+    % dV=0.10 pu / df=0.50 Hz (EECON49-P4 0.30:0.30 renormalised).  The other
+    % five former terms are measured diagnostics with zero weight; applicable
+    % admissibility checks remain separate, never tradeable severity terms.
+    % The previous equal 1/7 average diluted J_V/J_f and is NOT what the engine
+    % evaluates.  Keep the raw stress (weighted sum) as a diagnostic field.
+    raw=0.5*Jv+0.5*Jf;
     raw_index(:,j)=raw; index(:,j)=min(1,max(0,raw));
 end
 
@@ -196,6 +219,7 @@ o.sg_trip_time=r.sched.sg_trip; o.step_on=r.sched.load_step;
 o.fault_on=r.sched.fault_on; o.fault_clear=r.sched.fault_clear;
 o.line_trip_time=r.sched.line_trip; o.sg_reclose_time=r.sched.restore_time;
 o.actual_reclose_time=r.actual_reclose_time;
+o.actual_mode_reselection_time=r.actual_mode_reselection_time;
 o.diverged=~r.converged; o.newton_all_converged=r.converged;
 if isfield(r,'accepted_residual_per_step') && any(isfinite(r.accepted_residual_per_step))
     o.max_step_residual=max(r.accepted_residual_per_step(isfinite(r.accepted_residual_per_step)));
@@ -256,6 +280,7 @@ for k=1:numel(o.event_log)
     idx=max(o.index(left,:)); timer='--';
     if strcmp(e.type,'sg_trip'), timer='reference-loss guard'; end
     if strcmp(e.type,'sg_reclose'), timer='0.5-s sync dwell'; end
+    if strcmp(e.type,'sg_reselection'), timer='1.0-s severity dwell'; end
     reason=event_reason(e.type);
     fprintf(fid,'%.3f & %s / %.3f & %s & %s $\\to$ %s & %s \\\\\n', ...
         e.t,event_label(e.type),idx,timer,mb,ma,reason);
@@ -273,6 +298,7 @@ switch type
     case 'topology_restore', s='topology restore';
     case 'sg_on', s='SG close request';
     case 'sg_reclose', s='SG reclose';
+    case 'sg_reselection', s='severity release';
     otherwise, s=strrep(type,'_',' ');
 end
 end
@@ -286,7 +312,8 @@ switch type
     case 'line_trip', s='line 6--13 opened';
     case 'topology_restore', s='base load and line restored';
     case 'sg_on', s='earliest close request; guard monitored';
-    case 'sg_reclose', s='guard passed; SG reference handback';
+    case 'sg_reclose', s='guard passed; SG owns reference; IBR modes unchanged';
+    case 'sg_reselection', s='two-term severity dwell passed; transfer/KCL committed';
     otherwise, s=strrep(type,'_','\_');
 end
 end
@@ -330,11 +357,10 @@ if any(o.ref_code==1)
 end
 event_lines(ax,o,false);
 
-% Single combined mode panel.  The four IBRs switch at the same instants, so
-% four separate axes hid the fact that the traces coincide.  Distinct line
-% styles plus a small vertical offset (display-only, +-0.03 pu of the 0/1 mode
-% coordinate) keep every trace visible where they overlap; the underlying mode
-% values are unchanged 0/1 integers.
+% Single combined mode panel. Distinct line styles plus a small vertical
+% offset (display-only, +-0.045 of the 0/1 mode coordinate) keep each IBR
+% visible where traces overlap; the underlying committed modes remain exact
+% 0/1 integers and need not switch at the same instant.
 ax=nexttile(tl,[1 2]); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 styles={'-','--',':','-.'};
 lws=[2.0 1.6 1.9 1.6];
@@ -346,7 +372,7 @@ for j=1:numel(buses)
 end
 ylim(ax,[-0.22 1.22]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
 ylabel(ax,'device mode'); xlabel(ax,'time (s)');
-title(ax,'IBR modes (offset for visibility; all four coincide)','FontSize',10);
+title(ax,'Committed IBR modes (display-only offsets)','FontSize',10);
 event_lines(ax,o,false);
 lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','northoutside');
 set(lg,'FontName','Times New Roman','FontSize',9);
@@ -498,9 +524,9 @@ end
 function event_lines(ax,o,show_labels)
 if nargin<3, show_labels=false; end
 if show_labels
-    labels={'SG trip','load +20%','fault','clear','line 6-13 trip','restore','close'};
+    labels={'SG trip','load +20%','fault','clear','line 6-13 trip','restore','close','release'};
 else
-    labels=repmat({''},1,7);
+    labels=repmat({''},1,8);
 end
 xline(ax,o.sg_trip_time,':',labels{1},'Color',[.15 .15 .15],'LineWidth',0.8, ...
     'LabelVerticalAlignment','bottom','HandleVisibility','off');
@@ -517,6 +543,10 @@ xline(ax,o.sg_reclose_time,':',labels{6},'Color',[.10 .35 .65],'LineWidth',0.8, 
 if isfinite(o.actual_reclose_time)
     xline(ax,o.actual_reclose_time,'-.',labels{7},'Color',[.05 .50 .38],'LineWidth',0.9, ...
         'LabelVerticalAlignment','top','HandleVisibility','off');
+end
+if isfinite(o.actual_mode_reselection_time)
+    xline(ax,o.actual_mode_reselection_time,'--',labels{8},'Color',[.15 .55 .15],'LineWidth',0.9, ...
+        'LabelVerticalAlignment','bottom','HandleVisibility','off');
 end
 if isfield(o,'requested_horizon_s') && o.tgrid(end)<o.requested_horizon_s
     xline(ax,o.tgrid(end),'r-','validity exit','LineWidth',1.0, ...

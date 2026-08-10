@@ -100,6 +100,39 @@ if reference_specified && (~is_scalar_integer(preferred_reference) || ...
     return;
 end
 
+% SG_ON candidates always retain the authenticated online synchronous
+% reference owner.  A GFM subset is a physical support/mode choice; it must
+% not silently become the numerical angle/P-balancing reference merely because
+% it is the lowest selected IBR index.  Resolve SG1 by resource identity (not
+% by a hard-coded table position) and allow that owner to be outside the GFM
+% subset, including the all-GFL subset.  An explicit caller reference remains
+% accepted only when it names that same online SG, otherwise fail closed.
+sg_reference_index = [];
+if sg_online
+    sg_online_indices = find(online & strcmp(resource_type_of(resources), 'sg'));
+    if numel(sg_online_indices) ~= 1
+        result.selection_status = 'INVALID_SG_REFERENCE';
+        result.failure_id = 'stability:ibr_config_selector:sgReferenceOwner';
+        result.feasibility_log = {sprintf( ...
+            'SG_ON requires exactly one online synchronous reference owner; found %d.', ...
+            numel(sg_online_indices))};
+        result.fingerprint = 'selector_v3:invalidSgReferenceOwner';
+        return;
+    end
+    sg_reference_index = sg_online_indices(1);
+    if reference_specified && preferred_reference ~= sg_reference_index
+        result.selection_status = 'INVALID_SG_REFERENCE';
+        result.failure_id = 'stability:ibr_config_selector:sgReferenceOwner';
+        result.feasibility_log = {sprintf( ...
+            'SG_ON reference_resource_index=%d conflicts with online SG owner=%d.', ...
+            preferred_reference, sg_reference_index)};
+        result.fingerprint = 'selector_v3:conflictingSgReferenceOwner';
+        return;
+    end
+    preferred_reference = sg_reference_index;
+    reference_specified = true;
+end
+
 eligible = false(1, nr);
 resource_type = cell(1, nr);
 for k = 1:nr
@@ -160,7 +193,7 @@ if n_required == 0
     c.online = online;
     c.selected_gfm_indices = selected;
     c.n_gfm_required = n_required;
-    c.reference_resource_index = reference_index;
+    c.reference_resource_index = sg_reference_index;
     c.structural_feasible = true;
     c.topology_evaluated = false;
     c.scr_evaluated = false;
@@ -181,7 +214,9 @@ if n_required == 0
 else
 for row = 1:size(subsets, 1)
     selected = reshape(subsets(row, :), 1, []);
-    if reference_specified && ~ismember(preferred_reference, selected)
+    is_sg_reference = ~isempty(sg_reference_index) && ...
+        preferred_reference == sg_reference_index;
+    if reference_specified && ~is_sg_reference && ~ismember(preferred_reference, selected)
         continue;
     end
     if reference_specified
@@ -488,7 +523,10 @@ c = struct('resource_ids', {{}}, 'resource_type', {{}}, 'modes', {{}}, ...
     'sssa_pass', [], 'margin', NaN, 'omega', NaN, 'physical_kcl_norm', Inf, ...
     'eigenvalues', [], 'physical_eigenvalues', [], 'raw_omega', NaN, ...
     'physical_reduction_method', '', 'active_bound_constraint_count', 0, ...
-    'coordinate_mode_count', 0, 'gy_rcond', NaN, 'ready_to_commit', false, ...
+    'coordinate_mode_count', 0, 'gy_rcond', NaN, ...
+    'fd_eps_values', [], 'fd_omegas', [], 'fd_stable_classification', [], ...
+    'fd_classification_consistent', false, 'fd_robust_margin_pass', false, ...
+    'ready_to_commit', false, ...
     'feasible', false, 'reason', '', 'failure_id', '', 'n_mode_changes', Inf, ...
     'tie_break', '', 'ordering_key', '', 'full_ordering_key', '', ...
     'eq_x0', [], 'eq_y0', [], 'eq_u_eq', [], 'eq_context', struct(), ...
@@ -710,4 +748,20 @@ end
 function tf = has_dispatch_values(dispatch)
 tf = isstruct(dispatch) && isscalar(dispatch) && ...
     ~isempty(fieldnames(dispatch));
+end
+
+function types = resource_type_of(resources)
+%RESOURCE_TYPE_OF  Return normalized resource classes for SG-owner checks.
+%  This helper deliberately reads only the declared resource metadata.  The
+%  selector never infers an angle owner from a bus number or from a selected
+%  IBR subset; SG_ON requires exactly one online synchronous resource.
+types = cell(1, numel(resources));
+for k = 1:numel(resources)
+    if isfield(resources(k), 'resource_type') && ...
+            ~isempty(resources(k).resource_type)
+        types{k} = lower(char(resources(k).resource_type));
+    else
+        types{k} = '';
+    end
+end
 end

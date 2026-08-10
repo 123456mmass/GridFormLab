@@ -355,11 +355,14 @@ try
     % (all-GFL) or more, determined by the selector. The pre_fault dispatch
     % is the SG_ON contract (C2: pre_event_input is authoritative, so the
     % table uses the same dispatch the runtime will restore).
-    sg_on_n = 0;
+    % SG_ON is an authenticated online-reference context.  By default the
+    % table must enumerate the complete 0..N GFM subset universe so staged
+    % release can authenticate one-step candidates and the all-GFL endpoint.
+    % A caller may explicitly pin a mission-specific count, but the runtime
+    % contract never silently pins automatic operation to zero.
     if isfield(opt,'sg_on_n_gfm_required') && ~isempty(opt.sg_on_n_gfm_required)
-        sg_on_n = opt.sg_on_n_gfm_required;
+        table_opt.sg_on = struct('n_gfm_required', opt.sg_on_n_gfm_required);
     end
-    table_opt.sg_on = struct('n_gfm_required', sg_on_n);
     if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
             isfield(opt.selector_table,'selector_table_fingerprint')
         selector_table=opt.selector_table;
@@ -410,6 +413,13 @@ result.iter_per_step = ts_res.iter_per_step;
 result.requested_sg_on_time = ts_res.requested_sg_on_time;
 result.actual_reclose_time = ts_res.actual_reclose_time;
 result.reclose_status = ts_res.reclose_status;
+copy_fields={'handback_status','handback_start_time','handback_duration_s', ...
+    'handback_complete_time'};
+for kcopy=1:numel(copy_fields)
+    if isfield(ts_res,copy_fields{kcopy})
+        result.(copy_fields{kcopy})=ts_res.(copy_fields{kcopy});
+    end
+end
 result.sched = ts_res.sched;
 % New Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 if isfield(ts_res,'actual_mode_reselection_time')

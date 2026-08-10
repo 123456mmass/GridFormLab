@@ -150,6 +150,9 @@ while t < settings.t_end-settings.event_tol
             target=min(target,reselection_deadline);
         end
     end
+    if sync_ctl.active && sync_ctl.online && sync_ctl.handback_active
+        target=min(target,sync_ctl.handback_t0+sync_ctl.handback_T);
+    end
     if settings.severity_support_enabled && ~sg_online_state(dae,ec)
         due=[];
         if isfinite(support_up_since)
@@ -644,6 +647,13 @@ while t < settings.t_end-settings.event_tol
             resync_diag(end+1) = rec; %#ok<AGROW> % subsequent records append
         end
         if eligible && dwell_ok && off_ok
+            [handback_T,handback_status]=derive_handback_duration( ...
+                opt.selector_table,dae,ec,settings,sync_ctl);
+            if ~isfinite(handback_T)
+                good_since=NaN;
+                reclose_status=handback_status;
+                continue;
+            end
             transaction_counter=transaction_counter+1;
             reclose_tx_id=transaction_counter;
             samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,reclose_tx_id);
@@ -664,7 +674,7 @@ while t < settings.t_end-settings.event_tol
                 % Sauer-Pai non-reheat turbine/governor at the restored
                 % equilibrium input so Tm is bumpless and frequency remains
                 % regulated after the SG resumes network power balance.
-                sync_ctl=enter_online_governor(sync_ctl,u_new,t);
+                sync_ctl=enter_online_governor(sync_ctl,u_new,t,handback_T);
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 subdivision_hint=0;
@@ -672,6 +682,8 @@ while t < settings.t_end-settings.event_tol
                 predictor_prev_x=[];
                 predictor_prev_t=NaN;
                 log.applied=true; log.details=handler_log.details;
+                log.handback_duration_s=handback_T;
+                log.handback_status='C1_ACTIVE';
                 samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reclose_tx_id);
                 if isfield(sched,'coordinated_handback') && sched.coordinated_handback
                     [hb_ok,hb_x,hb_y,hb_ec,hb_reason,hb_norm]= ...
@@ -739,11 +751,11 @@ while t < settings.t_end-settings.event_tol
     end
     % --- Phase-2 delayed indexed reselection (F4/F5) -------------------
     % Two authorities are deliberately disjoint:
-    %   (1) explicit healthy-PF V references -> per-IBR 2-term severity gate;
-    %   (2) no healthy profile -> legacy authenticated SG_ON selector.
-    % The severity path never treats the frozen SG_ON SSSA table as authority.
-    % Each online GFM must independently remain below Gamma_off for T_d_off;
-    % missing V/f evidence resets its timer and releases nothing (fail closed).
+    %   (1) explicit healthy-PF V references -> scalar AGSI dwell only;
+    %   (2) the authenticated SG_ON table -> every physical release guard.
+    % The scalar never substitutes for equilibrium/SSSA/reserve/current gates.
+    % A severity release is therefore authenticated as an exact one-IBR step
+    % against the SG-online table before a mode transaction is attempted.
     if pending_reselection
         severity_enabled = settings.severity_handback_enabled;
         target_modes = {};
@@ -776,12 +788,37 @@ while t < settings.t_end-settings.event_tol
                     t-severity_release_since(current_gfm) >= ...
                     settings.severity_T_d_off-settings.event_tol);
                 hold_ok = isfinite(actual_reclose) && ...
-                    t-actual_reclose >= settings.T_minimum_hold-settings.event_tol;
+                    t-actual_reclose >= settings.T_minimum_hold-settings.event_tol && ...
+                    sync_ctl.handback_complete;
                 if hold_ok && ~isempty(release)
-                    target_selected = setdiff(current_gfm,release,'stable');
-                    target_modes = modes_from_selected(dae,target_selected);
-                    authority = 'severity';
-                    attempt_transaction = true;
+                    % The scalar AGSI is only a timing predicate.  Authenticate
+                    % each one-device target against the immutable SG_ON table
+                    % and choose the deterministic best admissible candidate.
+                    selector_table_live = struct();
+                    if isfield(opt,'selector_table') && isstruct(opt.selector_table)
+                        selector_table_live = opt.selector_table;
+                    end
+                    [target_selected, release_audit, release_ok] = ...
+                        choose_sg_online_one_step( ...
+                        selector_table_live, dae, sched, ec, Ycurr, t, case_data, ...
+                        current_gfm, release);
+                    if release_ok
+                        target_modes = modes_from_selected(dae,target_selected);
+                        authority = 'severity_sg_online_authenticated';
+                        attempt_transaction = true;
+                        reselection_status = 'AUTHENTICATED_ONE_STEP_READY';
+                    else
+                        % Keep the scalar dwell evidence, but fail closed when
+                        % the independent SG-online hard guards are absent or
+                        % stale.  No mode is changed and no physical state is
+                        % fabricated while waiting for a fresh authenticated
+                        % candidate.
+                        target_selected = [];
+                        target_modes = {};
+                        authority = '';
+                        attempt_transaction = false;
+                        reselection_status = release_audit.reason;
+                    end
                 else
                     reselection_status = 'PENDING_SEVERITY';
                 end
@@ -958,6 +995,10 @@ if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
 end
 res.pre_event_input_fingerprint=pre_event_input_fp;
 res.sg_sync_controller=sync_ctl;
+res.handback_status=sync_ctl.handback_status;
+res.handback_start_time=sync_ctl.handback_t0;
+res.handback_duration_s=sync_ctl.handback_T;
+res.handback_complete_time=sync_ctl.handback_complete_time;
 res.controller_audit=controller_audit;
 
 try
@@ -1629,6 +1670,136 @@ end
     table, req, dae, sched, 'sg_on', Ytopo, runtime_context);
 end
 
+function [target_selected, audit, ok] = choose_sg_online_one_step( ...
+    table, dae, sched, ec, Y, t, case_data, current_gfm, release_candidates)
+%CHOOSE_SG_ONLINE_ONE_STEP  Authenticate exactly one staged GFM release.
+%   The live AGSI scalar decides when a release may be considered.  This
+%   helper is the independent physical authority: each target must be an
+%   exact SG_ON table row, differ from the committed GFM set by one IBR, and
+%   pass the validator's fingerprint, runtime, equilibrium/SSSA and resource
+%   contracts.  No TS-step equilibrium or eigenvalue solve occurs here.
+target_selected = [];
+ok = false;
+audit = struct('reason','NO_FEASIBLE_SG_ON', 'failure_id', ...
+    'stability:gfm_selection:noAuthenticatedCandidate', ...
+    'evaluated_candidates',0,'accepted_candidates',0, ...
+    'selected_release_index',NaN,'candidate_margin',NaN, ...
+    'candidate_fingerprint','');
+if ~isstruct(table) || ~isfield(table,'sg_on') || ...
+        ~isstruct(table.sg_on) || ~isfield(table.sg_on,'configurations')
+    audit.reason = 'NO_AUTHENTICATED_SG_ON_TABLE';
+    audit.failure_id = 'stability:gfm_selection:missingTable';
+    return;
+end
+if isempty(current_gfm) || isempty(release_candidates)
+    audit.reason = 'NO_RELEASE_CANDIDATE';
+    audit.failure_id = 'stability:gfm_selection:noOneStepCandidate';
+    return;
+end
+current_gfm = unique(current_gfm(:).','stable');
+release_candidates = unique(release_candidates(:).','stable');
+if any(~ismember(release_candidates,current_gfm))
+    audit.reason = 'INVALID_RELEASE_SET';
+    audit.failure_id = 'stability:gfm_selection:invalidOneStepSet';
+    return;
+end
+% Runtime compatibility/fingerprint checks are repeated for each exact row;
+% this prevents a previously authenticated winner from becoming a hidden
+% authority after another device's mode has changed.
+cfgs = table.sg_on.configurations;
+accepted = repmat(struct(),0,1);
+for q = 1:numel(release_candidates)
+    k_release = release_candidates(q);
+    target = setdiff(current_gfm,k_release,'stable');
+    audit.evaluated_candidates = audit.evaluated_candidates + 1;
+    match = [];
+    for j = 1:numel(cfgs)
+        c = cfgs(j);
+        if ~isfield(c,'selected_gfm_indices') || ...
+                ~isfield(c,'reference_resource_index')
+            continue;
+        end
+        if isequal(sort(reshape(c.selected_gfm_indices,1,[])),sort(target)) && ...
+                isscalar(c.reference_resource_index) && ...
+                isfinite(c.reference_resource_index)
+            match(end+1) = j; %#ok<AGROW>
+        end
+    end
+    if numel(match) ~= 1
+        continue;
+    end
+    c0 = cfgs(match);
+    req = struct('mode','manual_override', ...
+        'manual_candidate',struct( ...
+        'selected_gfm_indices',target, ...
+        'n_gfm_required',numel(target), ...
+        'reference_resource_index',c0.reference_resource_index));
+    runtime_context = assemble_runtime_context(ec.hybrid_state,dae);
+    runtime_context.event_time = t;
+    [valid,err_id,err_msg,~,c_auth] = ...
+        stability.validate_runtime_candidate_compatibility( ...
+        table,req,dae,sched,'sg_on',Y,runtime_context);
+    if ~valid || ~isstruct(c_auth) || isempty(fieldnames(c_auth))
+        continue;
+    end
+    % A manual match must retain the exact one-step relation.  The validator
+    % authenticates the candidate but intentionally does not rank it.
+    if ~isequal(sort(reshape(c_auth.selected_gfm_indices,1,[])),sort(target)) || ...
+            numel(setdiff(current_gfm,c_auth.selected_gfm_indices)) ~= 1
+        continue;
+    end
+    c_auth.release_index = k_release;
+    c_auth.validation_failure_id = err_id;
+    c_auth.validation_message = err_msg;
+    accepted(end+1,1) = c_auth; %#ok<AGROW>
+end
+if isempty(accepted)
+    audit.reason = 'NO_FEASIBLE_SG_ON_ONE_STEP';
+    audit.failure_id = 'stability:gfm_selection:noOneStepCandidate';
+    return;
+end
+% Frozen one-step ranking: robust margin first, then normalized headroom when
+% supplied by the candidate evidence, then deterministic resource-ID tuple.
+score = zeros(numel(accepted),4);
+for j = 1:numel(accepted)
+    margin = -Inf;
+    if isfield(accepted(j),'margin') && isfinite(accepted(j).margin)
+        margin = accepted(j).margin;
+    end
+    headroom = -Inf;
+    if isfield(accepted(j),'minimum_normalized_headroom') && ...
+            isfinite(accepted(j).minimum_normalized_headroom)
+        headroom = accepted(j).minimum_normalized_headroom;
+    end
+    ids = '';
+    if isfield(accepted(j),'resource_ids') && iscell(accepted(j).resource_ids)
+        ids = strjoin(sort(accepted(j).resource_ids(accepted(j).selected_gfm_indices)),',');
+    end
+    score(j,:) = [-margin,-headroom,accepted(j).release_index,j];
+    accepted(j).release_sort_key = ids;
+end
+% Use numeric score for the physics metrics and a stable lexical ID tie-break.
+[~,ord] = sortrows(score,[1 2 3 4]);
+if numel(ord)>1
+    best_score = score(ord(1),1:3);
+    tied = ord(all(score(ord,1:3)==best_score,2));
+    if numel(tied)>1
+        ids = cell(1,numel(tied));
+        for j=1:numel(tied), ids{j}=accepted(tied(j)).release_sort_key; end
+        [~,jj] = sort(ids); ord = [tied(jj),setdiff(ord,tied,'stable')];
+    end
+end
+chosen = accepted(ord(1));
+target_selected = reshape(chosen.selected_gfm_indices,1,[]);
+audit.reason = 'AUTHENTICATED_ONE_STEP';
+audit.failure_id = '';
+audit.accepted_candidates = numel(accepted);
+audit.selected_release_index = chosen.release_index;
+if isfield(chosen,'margin'), audit.candidate_margin = chosen.margin; end
+if isfield(chosen,'fingerprint'), audit.candidate_fingerprint = chosen.fingerprint; end
+ok = true;
+end
+
 function [deadline, status] = compute_tdown(sg_on_cand, settings, actual_reclose)
 %COMPUTE_TDOWN  Derive T_down from the AUTHENTICATED SG_ON candidate's Omega.
 %   T_settle = ln(1/rho) / (-Omega_target); T_down = max(T_minimum_hold, T_settle).
@@ -1684,6 +1855,44 @@ hl = struct('applied', false, ...
     'candidate_modes', struct(), 'failing_island_ids', [], ...
     'n_failing_islands', 0, 'selected_gfm_indices', [], ...
     'n_gfm_required', [], 'reference_resource_index', []);
+end
+
+function [T,status]=derive_handback_duration(table,dae,ec,settings,sync_ctl)
+%DERIVE_HANDBACK_DURATION  Frozen C1 duration from the exact SG_ON spectrum.
+%   The current GFM subset must have one authenticated SG_ON equilibrium/SSSA
+%   row.  The duration is the maximum of the case minimum hold, the 95-percent
+%   decay time of its least-damped physical mode, and the 95-percent response
+%   time of the declared governor/exciter command lags.  No transient result
+%   enters this calculation.
+T=NaN; status='NO_AUTHENTICATED_SG_ON_HANDBACK';
+if ~isstruct(table) || ~isfield(table,'sg_on') || ...
+        ~isfield(table.sg_on,'configurations')
+    return;
+end
+modes=current_mode_vector(dae,ec);
+selected=find(strcmpi(modes,'gfm'));
+cfgs=table.sg_on.configurations;
+match=[];
+for k=1:numel(cfgs)
+    if isfield(cfgs(k),'selected_gfm_indices') && ...
+            isequal(sort(reshape(cfgs(k).selected_gfm_indices,1,[])),sort(selected))
+        match(end+1)=k; %#ok<AGROW>
+    end
+end
+if numel(match)~=1, status='SG_ON_HANDBACK_CANDIDATE_MISMATCH'; return; end
+c=cfgs(match);
+if ~isfield(c,'ready_to_commit') || ~c.ready_to_commit || ...
+        ~isfield(c,'omega') || ~isfinite(c.omega) || c.omega>=0
+    status='SG_ON_HANDBACK_SSSA_UNSTABLE'; return;
+end
+rho=settings.rho;
+if ~isfinite(rho) || rho<=0 || rho>=1
+    status='SG_ON_HANDBACK_RHO_INVALID'; return;
+end
+t_mode=log(1/rho)/(-c.omega);
+t_control=-log(rho)*max([sync_ctl.Tsv sync_ctl.Tch sync_ctl.TA]);
+T=max([settings.T_minimum_hold,t_mode,t_control]);
+status='C1_DURATION_AUTHENTICATED';
 end
 
 function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm] = ...
@@ -1819,11 +2028,19 @@ if ~isnumeric(target_selected) || any(~isfinite(target_selected)) || ...
     reason='authorized target GFM indices are invalid';
     return;
 end
-if ~any(strcmp(authority,{'severity','selector'}))
+if ~any(strcmp(authority,{'severity','severity_sg_online_authenticated','selector'}))
     reason='unknown Phase-2 target authority';
     return;
 end
 current_modes=current_mode_vector(dae,ec);
+if strcmp(authority,'severity_sg_online_authenticated')
+    current_gfm=find(strcmpi(current_modes,'gfm'));
+    if numel(setdiff(current_gfm,target_selected,'stable'))~=1 || ...
+            ~all(ismember(target_selected,current_gfm))
+        reason='authenticated SG_ON release must change exactly one current GFM IBR';
+        return;
+    end
+end
 changing=find_mode_changes(current_modes,target_modes);
 if isempty(changing)
     no_mode_change=true; ok=true;
@@ -2058,9 +2275,18 @@ end
 % The SG handler owns only the breaker transition.  IBRs remain in their
 % committed post-trip modes: forcing GFM->GFL at breaker close can violate the
 % target GFL current/power contract and is not part of the sourced SG reclose
-% event.  No SG or IBR differential coordinate is fabricated here.
+% event.  No SG or IBR differential coordinate is fabricated here.  Critically,
+% keep the accepted left-limit inputs at the breaker close.  The historical
+% u_right=initial_u assignment stepped every SG/IBR command at once (1.2876 pu
+% in the frozen baseline); the online C1 controller now transfers those
+% commands after the close. INITIAL_U remains an explicit target/provenance
+% argument and is checked here, but is never committed as a right-limit step.
 ec_right=ec; ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(hs_candidate);
-u_right=initial_u;
+if ~isnumeric(initial_u) || numel(initial_u)~=numel(u) || any(~isfinite(initial_u))
+    reason='Pre-event handback target is invalid or dimensionally stale.';
+    return;
+end
+u_right=u;
 dispatch=dispatch_snapshot(u_right,dae);
 [ok,y_right,reason,right_norm]=right_limit(x_right,y,Y,dae,u_right,ec_right,t,kcl_tol);
 end
@@ -2228,6 +2454,12 @@ gopt=struct('dV_max',case_data.synchronism.dV_max_pu, ...
 names=fieldnames(settings.sync_overrides);
 for k=1:numel(names), gopt.(names{k})=settings.sync_overrides.(names{k}); end
 guard=stability.synchronism_guard(Vbus,rec.V_open_circuit,rec.delta,rec.omega,omega_grid,gopt);
+sync_pass=guard.passes;
+prospective=stability.sg_prospective_close_metrics( ...
+    t,x(xi),y,u(ui),ec,dev,case_data);
+guard.passes_synchronism=sync_pass;
+guard.prospective=prospective;
+guard.passes=sync_pass && prospective.passes;
 eligible=guard.passes;
 end
 
@@ -2272,7 +2504,8 @@ log=struct('type',type,'t',t,'applied',false,'failure_id','', ...
     'candidate_committed',[],'candidate_sg_online',[], ...
     'candidate_modes',struct(),'failing_island_ids',[], ...
     'n_failing_islands',0, ...
-    'reclose_diag',struct());
+    'reclose_diag',struct(), ...
+    'handback_duration_s',NaN,'handback_status','');
 end
 
 function [converged,id,reason,log]=transition_failure(id,reason,log)
@@ -2585,10 +2818,16 @@ c=struct('enabled',false,'active',false,'online',false,'sg_index',NaN,'x_delta',
     'omega_n',0.8,'zeta',1.0,'K_omega',NaN,'K_theta',NaN, ...
     'design_classification','PROJECT_DERIVED', ...
     'Tmax',NaN,'Efdmax',3.0, ...
-    'Psv',NaN,'Pm',NaN,'Efd',NaN,'u_end',u, ...
+    'Psv',NaN,'Pm',NaN,'Efd',NaN,'u_end',u,'target_u',u, ...
+    'handback_indices',[],'handback_start_u',u,'handback_t0',NaN, ...
+    'handback_T',NaN,'handback_active',false,'handback_complete',false, ...
+    'handback_complete_time',NaN,'handback_alpha',0, ...
+    'handback_status','NOT_STARTED','Pref_start',NaN,'Pref_target',NaN, ...
+    'Efd_start',NaN,'Efd_target',NaN, ...
     'history_t',[],'history_Psv',[],'history_Pm',[],'history_command',[], ...
     'history_phase_error',[],'history_grid_omega',[], ...
-    'history_Efd',[],'history_Efd_command',[],'history_Vopen',[]);
+    'history_Efd',[],'history_Efd_command',[],'history_Vopen',[], ...
+    'history_handback_alpha',[]);
 if ~sched.enabled || ~isfield(sched,'has_chronology') || ~sched.has_chronology
     return;
 end
@@ -2608,6 +2847,13 @@ c.x_omega=dae.device_offsets(k)+2; c.u_tm=dae.u_offsets(k)+slot;
 c.bus_position=dae.devices(k).bus_position; c.restore_time=sched.sg_on;
 c.H=M.units.H/scale; c.D=M.units.D/scale;
 c.u_efd=dae.u_offsets(k)+efdslot;
+c.target_u=u(:);
+for q=1:numel(dae.devices)
+    if q==k, continue; end
+    names=string(dae.devices(q).input_names);
+    slots=find(ismember(lower(names),["p_ref","q_ref"]));
+    c.handback_indices=[c.handback_indices,dae.u_offsets(q)+slots]; %#ok<AGROW>
+end
 c.Tmax=max([u(c.u_tm),1.3462]);
 c.Pref=u(c.u_tm);
 c.K_omega=4*c.H*c.zeta*c.omega_n-c.D;
@@ -2620,21 +2866,33 @@ c.active=true; c.online=false; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm); c.Efd=u(c.u_efd)
 c.history_t=t; c.history_Psv=c.Psv; c.history_Pm=c.Pm;
 c.history_command=c.Pm; c.history_phase_error=NaN; c.history_grid_omega=NaN;
 c.history_Efd=c.Efd; c.history_Efd_command=c.Efd; c.history_Vopen=NaN;
+c.history_handback_alpha=NaN;
 end
 
-function c=enter_online_governor(c,u,t)
+function c=enter_online_governor(c,u,t,T_handback)
 % Bumpless transition to the Sauer-Pai Type-A non-reheat turbine and
 % droop-governor equations after breaker close.  Pref is the frozen
 % pre-event equilibrium mechanical input; the six EMF6 machine states are
 % unchanged by this supervisory two-state prime-mover model.
 if ~c.enabled, return; end
+if ~isfinite(T_handback) || T_handback<=0
+    error('ts_simulate_ibr_hybrid:badHandbackDuration', ...
+        'C1 handback duration must be finite and positive.');
+end
 c.active=true; c.online=true; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm);
 c.Efd=u(c.u_efd); c.u_end=u;
+c.handback_start_u=u(:); c.handback_t0=t; c.handback_T=T_handback;
+c.handback_active=true; c.handback_complete=false;
+c.handback_complete_time=NaN; c.handback_alpha=0;
+c.handback_status='C1_ACTIVE';
+c.Pref_start=c.Pm; c.Pref_target=c.target_u(c.u_tm);
+c.Efd_start=c.Efd; c.Efd_target=c.target_u(c.u_efd);
 c.history_t(end+1)=t; c.history_Psv(end+1)=c.Psv;
 c.history_Pm(end+1)=c.Pm; c.history_command(end+1)=c.Pref;
 c.history_phase_error(end+1)=NaN; c.history_grid_omega(end+1)=NaN;
 c.history_Efd(end+1)=c.Efd; c.history_Efd_command(end+1)=c.Efd;
 c.history_Vopen(end+1)=NaN;
+c.history_handback_alpha(end+1)=0;
 end
 
 function [u_step,c]=advance_sync_controller(c,x,y,t,h,dae,ec,u,case_data)
@@ -2646,21 +2904,38 @@ if c.online
     %   Tch*dPm/dt  = -Pm + Psv
     % Pc=Pref is frozen from the accepted pre-event equilibrium.  No AGC
     % or secondary integral is introduced.
-    gp=struct('Tsv',c.Tsv,'Tch',c.Tch,'R',c.R,'Pref',c.Pref, ...
+    [am,~,~]=stability.c1_smoothstep(t+0.5*h,c.handback_t0,c.handback_T);
+    [a1,~,~]=stability.c1_smoothstep(t+h,c.handback_t0,c.handback_T);
+    pref_mid=c.Pref_start+am*(c.Pref_target-c.Pref_start);
+    gp=struct('Tsv',c.Tsv,'Tch',c.Tch,'R',c.R,'Pref',pref_mid, ...
         'Pmin',0,'Pmax',c.Tmax);
     [Psv1,Pm1,command]=stability.sg_turbine_governor_step( ...
         c.Psv,c.Pm,omega,h,gp);
-    u_step=u; u_step(c.u_tm)=0.5*(c.Pm+Pm1);
-    % Retain the restored equilibrium field input.  The offline voltage
-    % matcher is a synchronizer aid, not an online AVR claim.
-    u_step(c.u_efd)=c.Efd;
-    c.Psv=Psv1; c.Pm=Pm1; c.u_end=u;
-    c.u_end(c.u_tm)=Pm1; c.u_end(c.u_efd)=c.Efd;
+    u_step=u;
+    if ~isempty(c.handback_indices)
+        u_step(c.handback_indices)=c.handback_start_u(c.handback_indices)+ ...
+            am*(c.target_u(c.handback_indices)-c.handback_start_u(c.handback_indices));
+    end
+    efd_mid=c.Efd_start+am*(c.Efd_target-c.Efd_start);
+    efd_end=c.Efd_start+a1*(c.Efd_target-c.Efd_start);
+    u_step(c.u_tm)=0.5*(c.Pm+Pm1); u_step(c.u_efd)=efd_mid;
+    c.Psv=Psv1; c.Pm=Pm1; c.Efd=efd_end; c.u_end=u;
+    if ~isempty(c.handback_indices)
+        c.u_end(c.handback_indices)=c.handback_start_u(c.handback_indices)+ ...
+            a1*(c.target_u(c.handback_indices)-c.handback_start_u(c.handback_indices));
+    end
+    c.u_end(c.u_tm)=Pm1; c.u_end(c.u_efd)=efd_end;
+    c.handback_alpha=a1;
+    if a1>=1
+        c.handback_active=false; c.handback_complete=true;
+        c.handback_complete_time=t+h; c.handback_status='C1_COMPLETE';
+    end
     c.history_t(end+1)=t+h; c.history_Psv(end+1)=Psv1;
     c.history_Pm(end+1)=Pm1; c.history_command(end+1)=command;
     c.history_phase_error(end+1)=NaN; c.history_grid_omega(end+1)=wgrid;
-    c.history_Efd(end+1)=c.Efd; c.history_Efd_command(end+1)=c.Efd;
+    c.history_Efd(end+1)=efd_end; c.history_Efd_command(end+1)=efd_mid;
     c.history_Vopen(end+1)=NaN;
+    c.history_handback_alpha(end+1)=a1;
     if any(~isfinite([Psv1 Pm1 command]))
         error('ts_simulate_ibr_hybrid:onlineGovernorNonFinite', ...
             'Post-reclose SG governor produced a non-finite state.');
@@ -2695,6 +2970,7 @@ c.history_phase_error(end+1)=phase_error;
 c.history_grid_omega(end+1)=wgrid;
 c.history_Efd(end+1)=Efd1; c.history_Efd_command(end+1)=Efd_command;
 c.history_Vopen(end+1)=Vopen;
+c.history_handback_alpha(end+1)=NaN;
 if any(~isfinite([Psv1 Pm1 command Efd1]))
     error('ts_simulate_ibr_hybrid:syncControllerNonFinite', ...
         'SG synchronizer produced a non-finite controller state.');

@@ -258,9 +258,10 @@ function sssa = attach_physical_decision_spectrum(sssa,dae,x0,y0,u_eq, ...
     event_context,opt,active,fd_eps)
 %ATTACH_PHYSICAL_DECISION_SPECTRUM Fixed-active-set and gauge quotient.
 %   Active saturation equalities are differentiated on the exact KCL
-%   manifold and eliminated before eig.  With every SG breaker open, the
-%   common GFM PLL angle is a rotational coordinate; one reference PLL angle
-%   is quotiented while relative PLL-angle dynamics are retained.
+%   manifold and eliminated before eig.  Full-KCL equations retain one rigid
+%   network-angle coordinate whether the reference owner is an SG or a GFM.
+%   That coordinate is quotiented before eig while every relative SG/VSG/PLL
+%   angle remains in the physical decision spectrum.
 
 sssa.physical_A = sssa.A;
 sssa.physical_eigenvalues = sssa.eigenvalues;
@@ -332,7 +333,7 @@ if ~isempty(locked_active)
     method_parts{end+1} = 'fixed_active_bound_tangent_elimination'; %#ok<AGROW>
 end
 
-[A_work,coordinate_global,gauge_meta] = quotient_common_gfm_angle( ...
+[A_work,coordinate_global,gauge_meta] = quotient_common_network_angle( ...
     A_work,coordinate_global,dae,event_context,opt);
 if gauge_meta.applied
     sssa.coordinate_gauge_global_index = gauge_meta.global_index;
@@ -437,28 +438,24 @@ end
 end
 
 % =========================================================================
-function [Aq,global_out,meta] = quotient_common_gfm_angle(A,global_in,dae,event_context,opt)
+function [Aq,global_out,meta] = quotient_common_network_angle(A,global_in,dae,event_context,opt)
 meta = struct('applied',false,'global_index',[],'state_name','', ...
     'method','','L',[],'T',[]);
 Aq = A;
 global_out = global_in;
-if online_sg_present(dae,event_context), return; end
 
 angle_global = zeros(1,0);
 angle_dev = zeros(1,0);
 for dk = 1:numel(dae.devices)
     dev = dae.devices(dk);
-    if ~device_online(dev,event_context) || ~strcmpi(device_mode(dev,event_context),'gfm')
+    if ~device_online(dev,event_context)
         continue;
     end
-    % The rotational gauge belongs to the angle coordinate of every online
-    % GFM, regardless of whether that controller is legacy PLL-based or a
-    % VSG without a PLL.  Explicit names keep this fail-closed for unrelated
-    % state layouts.
-    local = find(strcmpi(dev.state_names,'gfm_delta_PLL') | ...
-        strcmpi(dev.state_names,'gfm_delta_VSG') | ...
-        strcmpi(dev.state_names,'delta_PLL') | ...
-        strcmpi(dev.state_names,'delta_VSG'),1,'first');
+    % The rigid-rotation vector contains exactly one active electrical-angle
+    % coordinate for each online angle-bearing device.  Resolve that state
+    % from the active runtime mode, rather than accepting every name that
+    % happens to contain "delta" (e.g. speed/controller-error states).
+    local = network_angle_local_index(dev,device_mode(dev,event_context));
     if isempty(local), continue; end
     gi = dae.device_offsets(dk)+local;
     if ismember(gi,global_in)
@@ -475,8 +472,21 @@ elseif isfield(event_context,'hybrid_state') && ...
         isfield(event_context.hybrid_state,'reference_resource_index')
     ref_dev = event_context.hybrid_state.reference_resource_index;
 end
+if isempty(ref_dev)
+    sg_candidates = online_sg_indices(dae,event_context);
+    if numel(sg_candidates) == 1
+        % Backward-compatible SG_ON full-KCL callers may predate the explicit
+        % owner field. A unique online synchronous machine is an unambiguous
+        % physical owner; zero or multiple candidates remain fail-closed.
+        ref_dev = sg_candidates(1);
+    end
+end
 ref_pick = find(angle_dev == ref_dev,1,'first');
-if isempty(ref_pick), ref_pick = 1; end
+if isempty(ref_pick)
+    error('composite_sssa_model:referenceAngleMissing', ...
+        ['The declared reference device %s has no active network-angle ' ...
+         'coordinate in the full-KCL state partition.'],mat2str(ref_dev));
+end
 ref_global = angle_global(ref_pick);
 ref_pos = find(global_in == ref_global,1,'first');
 angle_pos = arrayfun(@(g)find(global_in==g,1,'first'),angle_global);
@@ -498,8 +508,10 @@ meta.applied = true;
 meta.global_index = ref_global;
 meta.state_name = sprintf('%s/%s',dae.devices(angle_dev(ref_pick)).device_id, ...
     dae.devices(angle_dev(ref_pick)).state_names{ref_global-dae.device_offsets(angle_dev(ref_pick))});
-if contains(lower(meta.state_name),'pll')
+if contains(lower(meta.state_name),'pll') && ~online_sg_present(dae,event_context)
     meta.method='common_gfm_pll_angle_quotient';
+elseif online_sg_present(dae,event_context)
+    meta.method='common_sg_ibr_network_angle_quotient';
 else
     meta.method='common_gfm_vsg_angle_quotient';
 end
@@ -507,9 +519,43 @@ meta.L = L;
 meta.T = T;
 end
 
+function local = network_angle_local_index(dev,mode)
+local = [];
+names = cellstr(string(dev.state_names));
+dtype = '';
+if isfield(dev,'device_type') && ~isempty(dev.device_type)
+    dtype = lower(char(dev.device_type));
+end
+is_sg = contains(dtype,'sg') || strcmp(dtype,'synchronous_generator');
+if isfield(dev,'capabilities') && isfield(dev.capabilities,'resource_type')
+    is_sg = is_sg || strcmpi(char(dev.capabilities.resource_type),'sg');
+end
+if is_sg
+    candidates = {'delta'};
+elseif strcmpi(mode,'gfm')
+    candidates = {'gfm_delta_VSG','gfm_delta_PLL','delta_VSG', ...
+        'delta_vsm','delta_PLL','delta'};
+elseif strcmpi(mode,'gfl')
+    candidates = {'gfl_delta_PLL','delta_PLL'};
+else
+    candidates = {};
+end
+for k = 1:numel(candidates)
+    pos = find(strcmpi(names,candidates{k}),1,'first');
+    if ~isempty(pos)
+        local = pos;
+        return;
+    end
+end
+end
+
 % =========================================================================
 function tf = online_sg_present(dae,event_context)
-tf = false;
+tf = ~isempty(online_sg_indices(dae,event_context));
+end
+
+function indices = online_sg_indices(dae,event_context)
+indices = [];
 for k = 1:numel(dae.devices)
     d = dae.devices(k);
     dtype = '';
@@ -519,8 +565,7 @@ for k = 1:numel(dae.devices)
         is_sg = is_sg || strcmpi(char(d.capabilities.resource_type),'sg');
     end
     if is_sg && device_online(d,event_context)
-        tf = true;
-        return;
+        indices(end+1) = k; %#ok<AGROW>
     end
 end
 end

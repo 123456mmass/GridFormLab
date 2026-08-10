@@ -17,7 +17,8 @@ tc.TestData.scenario=s; tc.TestData.eq=eq; tc.TestData.dae=dae;
 % Two pinned authenticated tables (manual_override) built ONCE for reuse.
 % table_4gfm: SG_OFF n_gfm_required=4, ref=2 (candidate [2 3 4 5]).
 % table_1gfm: SG_OFF n_gfm_required=1, ref=2 (single-GFM right-limit oracle).
-% SG_ON pinned to n_gfm_required=0 (collapses to one candidate, fast).
+% SG_ON remains unpinned (all 16 rows) because C1 handback authenticates the
+% exact current set and staged release authenticates each one-device target.
 tc.TestData.table_4gfm=build_pinned_table(s,4,2);
 tc.TestData.table_1gfm=build_pinned_table(s,1,2);
 end
@@ -27,7 +28,6 @@ function table = build_pinned_table(s, n_gfm, ref)
 % mode-dependent pinning: SG_OFF pinned to the manual tuple, SG_ON n=0.
 table_opt=struct();
 table_opt.sg_off=struct('n_gfm_required',n_gfm,'reference_resource_index',ref);
-table_opt.sg_on=struct('n_gfm_required',0);
 table=stability.ibr_selector_table(s.case_data,s.resources,s,table_opt);
 end
 
@@ -157,21 +157,21 @@ function test_reclose_requires_dwell_and_preserves_sg_state(tc)
 % right-limit/state-continuity contract; post-close trajectory stability is a
 % separate physical gate and is never repaired here with looser numerics.
 over=struct('synchronism_overrides',struct('dV_max',10,'df_max',10,'dtheta_max',180), ...
-    'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0.01,'timeout_s',0.04), ...
-    't_end',0.07);
+    'delays_overrides',struct('T_sg_min_off_s',0,'dwell_s',0,'timeout_s',0.04), ...
+    'event_overrides',struct('sg_on',0.05),'t_end',0.05);
 r=event_run_with_table(tc.TestData,2:5,2,over,tc.TestData.table_4gfm);
 tc.assertTrue(r.converged,r.failure_reason);
 tc.verifyEqual(r.reclose_status,'SUCCESS');
-tc.verifyEqual(r.actual_reclose_time,0.07,'AbsTol',1e-12);
-left=find(abs(r.t-0.07)<1e-12 & ~strcmp(r.sample_side,'right'),1,'last');
-right=find(abs(r.t-0.07)<1e-12 & strcmp(r.sample_side,'right'),1,'last');
+tc.verifyEqual(r.actual_reclose_time,0.05,'AbsTol',1e-12);
+left=find(abs(r.t-0.05)<1e-12 & ~strcmp(r.sample_side,'right'),1,'last');
+right=find(abs(r.t-0.05)<1e-12 & strcmp(r.sample_side,'right'),1,'last');
 tc.assertNotEmpty(left); tc.assertNotEmpty(right);
 tc.verifyEqual(r.x_traj(1:6,right),r.x_traj(1:6,left),'AbsTol',0, ...
     'Reclose changes the breaker context and algebraic right limit, not SG state.');
 tc.verifyTrue(r.device_online_history(1,right));
 tc.verifyEqual(r.device_modes_history(:,right),{'sg';'GFM';'GFM';'GFM';'GFM'});
-tc.verifyEqual(r.u_history(:,right),tc.TestData.eq.u_eq,'AbsTol',0, ...
-    'Reclose must restore the pre-event input vector atomically.');
+tc.verifyEqual(r.u_history(:,right),r.u_history(:,left),'AbsTol',0, ...
+    'Reclose must not step SG or IBR controller commands.');
 expected=stability.ts_dynamic_state_indices(tc.TestData.dae,r.event_context_history{right});
 tc.verifyEqual(r.active_state_history{right},expected,'AbsTol',0);
 st=find(strcmp({r.status_log.stage},'sg_reclose'),1);
@@ -190,13 +190,11 @@ if isfield(r,'gfm_reference_resource_indices') && ~isempty(r.gfm_reference_resou
     tc.verifyTrue(isnan(r.gfm_reference_resource_indices(1)), ...
         'gfm_reference_resource_indices must be empty while SG owns reference.');
 end
-% Phase 2 reselection is evaluated before t_end=0.07: the authenticated SG_ON
-% table has no feasible candidate under the frozen gates, so the honest
-% runtime outcome is NO_FEASIBLE_SG_ON (not PENDING/SUCCESS). No Phase-2 mode
-% reselection actually occurs, so actual_mode_reselection_time stays NaN.
+% Phase 2 remains pending at the exact close because the C1 participation
+% handback has only just started. No immediate mode release is permitted.
 if isfield(r,'reselection_status')
     tc.verifyEqual(r.reselection_status,'NO_FEASIBLE_SG_ON', ...
-        'IEEE14 SG_ON is physically infeasible under frozen gates; the authenticated outcome must be NO_FEASIBLE_SG_ON.');
+        'The same-timestamp legacy fixture must not release a GFM.');
 end
 if isfield(r,'actual_mode_reselection_time')
     tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...
@@ -352,6 +350,11 @@ end
 
 function r=event_run(data,selected,ref,extra)
 ev=event_spec(selected,ref);
+if isfield(extra,'event_overrides')
+    event_names=fieldnames(extra.event_overrides);
+    for k=1:numel(event_names),ev.(event_names{k})=extra.event_overrides.(event_names{k});end
+    extra=rmfield(extra,'event_overrides');
+end
 tend=0.10; if isfield(extra,'t_end'),tend=extra.t_end;end
 sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,tend,0.01);
 o=base_opt(data.eq,tend,0.01); o.ibr_event_schedule=sched;
@@ -365,6 +368,11 @@ function r=event_run_with_table(data,selected,ref,extra,table)
 % so the manual_override tuple has an exact authenticated candidate to match.
 % TABLE must be the pinned table matching (selected,ref) — see setupOnce.
 ev=event_spec(selected,ref);
+if isfield(extra,'event_overrides')
+    event_names=fieldnames(extra.event_overrides);
+    for k=1:numel(event_names),ev.(event_names{k})=extra.event_overrides.(event_names{k});end
+    extra=rmfield(extra,'event_overrides');
+end
 tend=0.10; if isfield(extra,'t_end'),tend=extra.t_end;end
 sched=stability.ibr_event_schedule(data.scenario.case_data,data.eq.devices,ev,tend,0.01);
 o=base_opt(data.eq,tend,0.01); o.ibr_event_schedule=sched; o.selector_table=table;

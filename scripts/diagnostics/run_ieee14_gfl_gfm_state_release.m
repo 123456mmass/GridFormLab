@@ -1,5 +1,5 @@
 function run_ieee14_gfl_gfm_state_release
-%RUN_IEEE14_GFL_GFM_STATE_RELEASE  Audited 200-s mixed-resource chronology.
+%RUN_IEEE14_GFL_GFM_STATE_RELEASE  Audited 250-s mixed-resource chronology.
 % The post-reclose return is owned by each IBR severity/dwell state machine;
 % coordinated handback is deliberately disabled.
 
@@ -7,6 +7,8 @@ pf_init_paths();
 pfile='output/diagnostics/engine_release_progress.log';
 rfile='output/diagnostics/engine_release_result.log';
 mfile='output/diagnostics/engine_release_result.mat';
+archive_rfile='output/diagnostics/engine_release_250s_improved_result.log';
+archive_mfile='output/diagnostics/engine_release_250s_improved_result.mat';
 if exist(pfile,'file'), delete(pfile); end
 if exist(rfile,'file'), delete(rfile); end
 
@@ -19,7 +21,7 @@ ev=struct('enabled',true,'event_profile','chronology', ...
     'coordinated_handback',false, ...
     'automatic_gfm_switching',true, ...
     'delays_overrides',struct('timeout_s',20,'dwell_s',0.5));
-opt=struct('t_end',200.0,'dt',0.1,'verbose',false, ...
+opt=struct('t_end',250.0,'dt',0.1,'verbose',false, ...
     'ibr_events',ev,'plot_results',false,'max_step_subdivisions',9, ...
     'progress_every',0.1,'progress_file',pfile, ...
     'state_predictor','linear_kcl', ...
@@ -37,6 +39,8 @@ opt.healthy_pf_bus_ids=sys0.pf.external_bus_ids(:).';
 r=stability.run_hybrid_case(s,opt);
 save(mfile,'r','opt','-v7.3');
 write_result_log(r,rfile,sys0);
+save(archive_mfile,'r','opt','-v7.3');
+write_result_log(r,archive_rfile,sys0);
 fprintf('ENGINE_RELEASE_DONE converged=%d t_end=%.6f\n', ...
     r.converged,last_time(r));
 end
@@ -88,7 +92,7 @@ for j=1:4
 end
 
 fprintf(fid,'\nselected timeline:\n');
-for tt=[0 20 50 85 85.15 110 145 146 150 160 170 180 190 200]
+for tt=[0 20 50 85 85.15 110 145 146 150 160 170 180 190 200 225 250]
     k=find(t>=tt-1e-9,1); if isempty(k), k=numel(t); end
     fprintf(fid,['  t=%.3f sg=%d mode=[%s %s %s %s] ' ...
         'V=[%.6f %.6f %.6f %.6f] S=[%.6f %.6f %.6f %.6f]\n'], ...
@@ -118,6 +122,12 @@ for j=1:4
 end
 fprintf(fid,'reselection_status=%s actual_mode_reselection_time=%.6f\n', ...
     string(r.reselection_status),r.actual_mode_reselection_time);
+if isfield(r,'handback_status')
+    fprintf(fid,['handback_status=%s handback_start_s=%.6f ' ...
+        'handback_duration_s=%.6f handback_complete_s=%.6f\n'], ...
+        string(r.handback_status),r.handback_start_time, ...
+        r.handback_duration_s,r.handback_complete_time);
+end
 end
 
 function t=last_time(r)

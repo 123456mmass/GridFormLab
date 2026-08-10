@@ -35,7 +35,10 @@ testCase.verifyEqual(numel(res.configurations), 1);
 cfg = res.configurations(1);
 testCase.verifyEmpty(cfg.selected_gfm_indices);
 testCase.verifyEqual(cfg.n_gfm_required, 0);
-testCase.verifyEmpty(cfg.reference_resource_index);
+% SG_ON has an authenticated online SG reference owner even for all-GFL;
+% leaving this alias empty would make mixed_equilibrium_solve ambiguous and
+% would violate the SG1 owner contract.  The synthetic table's SG is index 1.
+testCase.verifyEqual(cfg.reference_resource_index, 1);
 testCase.verifyEqual(cfg.reason, 'sg_on_all_gfl_no_gfm_required');
 % ready_to_commit must be false without SSSA evidence (no false readiness).
 testCase.verifyFalse(cfg.ready_to_commit);
@@ -1049,6 +1052,11 @@ testCase.verifyEqual(sel.n_gfm_required, 4);
 testCase.verifyTrue(sel.ready_to_commit);
 testCase.verifyTrue(isfinite(sel.margin));
 testCase.verifyTrue(isfinite(sel.omega));
+testCase.verifyEqual(sel.fd_eps_values,3e-6*[0.5 1 2],'AbsTol',0);
+testCase.verifyTrue(all(isfinite(sel.fd_omegas)));
+testCase.verifyTrue(sel.fd_classification_consistent);
+testCase.verifyTrue(sel.fd_robust_margin_pass);
+testCase.verifyEqual(sel.omega,max(sel.fd_omegas),'AbsTol',0);
 % 3-layer fingerprints populated.
 testCase.verifyTrue(isfield(table, 'selector_input_fingerprint') && ~isempty(table.selector_input_fingerprint));
 testCase.verifyTrue(isfield(table, 'candidate_evidence_fingerprint') && ~isempty(table.candidate_evidence_fingerprint));

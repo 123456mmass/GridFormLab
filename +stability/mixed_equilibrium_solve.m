@@ -859,11 +859,15 @@ tuple = struct('selected_gfm_indices',[],'n_gfm_required',[], ...
 reason = '';
 names = {'selected_gfm_indices','n_gfm_required','reference_resource_index'};
 present = false(1,3);
+declared = false(1,3);
 for k = 1:3
-    present(k) = isfield(owner,names{k}) && ~isempty(owner.(names{k}));
+    declared(k) = isfield(owner,names{k});
+    present(k) = declared(k) && ~isempty(owner.(names{k}));
 end
 has = any(present);
-if has && ~all(present)
+% SG_ON all-GFL is the valid atomic tuple {selected=[],n=0,reference=SG}.
+% Empty selected_gfm_indices is therefore content, not a missing field.
+if has && ~all(declared)
     reason = sprintf('%s must carry the three selection fields atomically.',label);
     return;
 end
@@ -924,16 +928,14 @@ if top_selection_present && nested_selection_present
     return;
 end
 
-has_selected = isfield(config,'selected_gfm_indices') && ...
-    ~isempty(config.selected_gfm_indices);
+has_selected = isfield(config,'selected_gfm_indices');
 has_required = isfield(config,'n_gfm_required') && ...
     ~isempty(config.n_gfm_required);
 has_reference = isfield(config,'reference_resource_index') && ...
     ~isempty(config.reference_resource_index);
 if isfield(config,'selected_config') && isstruct(config.selected_config)
     sc = config.selected_config;
-    has_selected = has_selected || (isfield(sc,'selected_gfm_indices') && ...
-        ~isempty(sc.selected_gfm_indices));
+    has_selected = has_selected || isfield(sc,'selected_gfm_indices');
     has_required = has_required || (isfield(sc,'n_gfm_required') && ...
         ~isempty(sc.n_gfm_required));
     has_reference = has_reference || (isfield(sc,'reference_resource_index') && ...
@@ -986,7 +988,8 @@ if isfield(config,'selected_config') && isstruct(config.selected_config)
     if isfield(sc,'selected_gfm_indices'), selected = sc.selected_gfm_indices; end
     if isfield(sc,'n_gfm_required'), required = sc.n_gfm_required; end
 end
-if ~isempty(selected)
+selection_supplied = has_selected && has_required && has_reference;
+if selection_supplied
     if any(~isfinite(selected)) || any(selected~=fix(selected)) || ...
             any(selected<1) || any(selected>numel(devices)) || ...
             numel(unique(selected))~=numel(selected)
@@ -994,12 +997,12 @@ if ~isempty(selected)
         return;
     end
     if isempty(required) || ~isscalar(required) || ~isfinite(required) || ...
-            required ~= fix(required) || required < 1 || ...
+            required ~= fix(required) || required < 0 || ...
             required~=numel(selected)
         reason = 'n_gfm_required must equal numel(selected_gfm_indices).';
         return;
     end
-    if ~any(selected==candidate)
+    if require_explicit_gfm_selection && ~any(selected==candidate)
         reason = 'reference_resource_index must belong to selected_gfm_indices.';
         return;
     end

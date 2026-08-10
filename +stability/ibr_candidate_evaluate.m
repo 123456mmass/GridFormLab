@@ -55,6 +55,11 @@ if ~isfield(cand,'physical_reduction_method'), cand.physical_reduction_method = 
 if ~isfield(cand,'active_bound_constraint_count'), cand.active_bound_constraint_count = 0; end
 if ~isfield(cand,'coordinate_mode_count'), cand.coordinate_mode_count = 0; end
 if ~isfield(cand,'gy_rcond'), cand.gy_rcond = NaN; end
+if ~isfield(cand,'fd_eps_values'), cand.fd_eps_values = []; end
+if ~isfield(cand,'fd_omegas'), cand.fd_omegas = []; end
+if ~isfield(cand,'fd_stable_classification'), cand.fd_stable_classification = []; end
+if ~isfield(cand,'fd_classification_consistent'), cand.fd_classification_consistent = false; end
+if ~isfield(cand,'fd_robust_margin_pass'), cand.fd_robust_margin_pass = false; end
 
 % --- gamma_req frozen check ---
 if ~isscalar(gamma_req) || ~isfinite(gamma_req) || gamma_req < 0
@@ -145,15 +150,18 @@ end
 devices = [];
 dev_meta = [];
 dispatch = struct();
+sg_online_context = isfield(opt,'sg_online') && isscalar(opt.sg_online) && ...
+    logical(opt.sg_online);
 if isfield(opt,'dispatch') && has_dispatch_values(opt.dispatch)
     dispatch = opt.dispatch;
-elseif isfield(case_data,'dispatch_contract') && isfield(case_data.dispatch_contract,'post_trip')
+elseif ~sg_online_context && isfield(case_data,'dispatch_contract') && ...
+        isfield(case_data.dispatch_contract,'post_trip')
     % IEEE14 dispatch contract fallback – build post-trip Pg
     if isfield(case_data.dispatch_contract.post_trip,'post_trip_Pg_MW')
         dispatch = case_data.dispatch_contract.post_trip.post_trip_Pg_MW;
     end
 end
-if is_source_full_state_resources(resources)
+if ~sg_online_context && is_source_full_state_resources(resources)
     dispatch=mode_aware_source_dispatch(case_data,resources, ...
         cand.selected_gfm_indices,dispatch);
 end
@@ -171,7 +179,7 @@ try
     if ~isempty(dispatch)
         scenario_opt.dispatch = dispatch;
     end
-    if isfield(case_data,'dispatch_contract') && ...
+    if ~sg_online_context && isfield(case_data,'dispatch_contract') && ...
             isfield(case_data.dispatch_contract,'post_trip') && ...
             isfield(case_data.dispatch_contract.post_trip,'post_trip_Qg_MVAr')
         scenario_opt.reactive_dispatch = ...
@@ -331,8 +339,17 @@ if isfield(eq_result,'active_bound_regime_history') && ...
         ~isempty(eq_result.active_bound_regime_history)
     sssa_opt.active_bound_regimes = eq_result.active_bound_regime_history{end};
 end
-if isfield(opt,'sssa_opt') && isstruct(opt.sssa_opt)
-    % keep full_kcl enforced – ignore other sssa options that could disable it
+if isfield(opt,'sssa_opt') && isstruct(opt.sssa_opt) && ...
+        isfield(opt.sssa_opt,'fd_eps') && ~isempty(opt.sssa_opt.fd_eps)
+    % The only caller override admitted here is the audited FD step. The
+    % full-KCL/equilibrium/partition/reference contract remains immutable.
+    if ~isscalar(opt.sssa_opt.fd_eps) || ~isfinite(opt.sssa_opt.fd_eps) || ...
+            opt.sssa_opt.fd_eps <= 0
+        cand.reason = 'sssa_opt.fd_eps must be a positive finite scalar';
+        cand.failure_id = 'stability:ibr_candidate_evaluate:badFdEps';
+        return;
+    end
+    sssa_opt.fd_eps = opt.sssa_opt.fd_eps;
 end
 try
     sssa = stability.composite_sssa_model(devices, eq_result.x0, eq_result.y0, case_data, sssa_opt);
@@ -358,8 +375,33 @@ cand.full_kcl = sssa.full_kcl;
 % spectrum is a pre-eig fixed-active-set/gauge-coordinate projection; no
 % eigenvalue is filtered or deleted after eig.
 cand.raw_omega = max(real(sssa.eigenvalues));
-omega = max(real(sssa.physical_eigenvalues));
-if isempty(omega), omega = NaN; end
+base_fd_eps = sssa.fd_eps;
+fd_factors = [0.5 1.0 2.0];
+cand.fd_eps_values = base_fd_eps*fd_factors;
+cand.fd_omegas = nan(size(fd_factors));
+cand.fd_omegas(2) = max(real(sssa.physical_eigenvalues));
+for kk = [1 3]
+    perturbed_opt = sssa_opt;
+    perturbed_opt.fd_eps = cand.fd_eps_values(kk);
+    try
+        perturbed = stability.composite_sssa_model(devices,eq_result.x0, ...
+            eq_result.y0,case_data,perturbed_opt);
+        cand.fd_omegas(kk) = max(real(perturbed.physical_eigenvalues));
+    catch me
+        cand.reason = sprintf('FD robustness SSSA failed at eps %.6g: %s', ...
+            cand.fd_eps_values(kk),me.message);
+        cand.failure_id = 'stability:ibr_candidate_evaluate:fdRobustnessFailure';
+        cand.feasible = false;
+        return;
+    end
+end
+cand.fd_stable_classification = cand.fd_omegas < 0;
+cand.fd_classification_consistent = all(isfinite(cand.fd_omegas)) && ...
+    (all(cand.fd_stable_classification) || ~any(cand.fd_stable_classification));
+cand.fd_robust_margin_pass = all(isfinite(cand.fd_omegas)) && ...
+    all(cand.fd_omegas <= -gamma_req);
+% Consume the worst (least damped) member of the frozen FD perturbation set.
+omega = max(cand.fd_omegas);
 cand.omega = omega;
 % margin definition: positive means stable beyond requirement
 % margin = -omega - gamma_req (so >0 means pass)
@@ -368,12 +410,15 @@ if isfinite(omega) && isfinite(gamma_req)
 else
     cand.margin = NaN;
 end
-if omega <= -gamma_req
+if cand.fd_classification_consistent && cand.fd_robust_margin_pass
     cand.sssa_pass = true;
 else
     cand.sssa_pass = false;
-    cand.reason = sprintf('Omega %.4g > -gamma_req %.4g (margin %.4g) insufficient', omega, gamma_req, cand.margin);
-    cand.failure_id = 'stability:ibr_candidate_evaluate:insufficientMargin';
+    cand.reason = sprintf(['robust Omega %s, worst %.4g, gamma_req %.4g, ' ...
+        'classification_consistent=%d, margin %.4g insufficient'], ...
+        mat2str(cand.fd_omegas,6),omega,gamma_req, ...
+        cand.fd_classification_consistent,cand.margin);
+    cand.failure_id = 'stability:ibr_candidate_evaluate:insufficientRobustMargin';
     cand.feasible = false;
     return;
 end
@@ -381,10 +426,11 @@ end
 % --- All gates pass ---
 cand.feasible = true;
 cand.ready_to_commit = true;
-cand.reason = sprintf(['feasible: KCL %.2e, physical Omega %.4g <= -%.4g, ' ...
-    'margin %.4g, full roots=%d, decision roots=%d, SCR pass'], ...
+cand.reason = sprintf(['feasible: KCL %.2e, robust physical Omega %.4g <= -%.4g, ' ...
+    'margin %.4g, FD eps=%s, full roots=%d, decision roots=%d, SCR pass'], ...
     cand.physical_kcl_norm, omega, gamma_req, cand.margin, ...
-    numel(cand.eigenvalues),numel(cand.physical_eigenvalues));
+    mat2str(cand.fd_eps_values,6),numel(cand.eigenvalues), ...
+    numel(cand.physical_eigenvalues));
 cand.failure_id = '';
 
 end

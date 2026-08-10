@@ -1,855 +1,425 @@
 \documentclass[12pt,a4paper]{article}
 \usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
 \usepackage{newtxtext,newtxmath}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
-\usepackage{geometry,booktabs,tabularx,array}
-\usepackage{microtype}
+\usepackage{geometry,booktabs,tabularx,array,longtable,microtype}
 \geometry{margin=1in}
 \setlength{\headheight}{14.5pt}
-\pagestyle{fancy}\fancyhf{}\lhead{IEEE 14-bus: 1 SG + 4 IBR, AGSI++}\rhead{\thepage}
+\pagestyle{fancy}\fancyhf{}
+\lhead{IEEE 14-bus: corrected GFL/GFM full-state model}\rhead{\thepage}
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
 \renewcommand{\arraystretch}{1.12}
 \emergencystretch=1.5em
-\title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching with Project AGSI++}\\
-\large Production all-KCL 200-s switching and SG-reference handback}
-\date{6 August 2026}
+
+\IfFileExists{figures/switch_ieee14/run_summary.tex}{%
+  \input{figures/switch_ieee14/run_summary.tex}}{%
+  \newcommand{\RunEnd}{not generated}
+  \newcommand{\RunVMin}{not generated}
+  \newcommand{\RunVMax}{not generated}
+  \newcommand{\RunFMin}{not generated}
+  \newcommand{\RunFMax}{not generated}
+  \newcommand{\RunSubdivision}{not generated}
+  \newcommand{\RunDomainRejects}{not generated}
+  \newcommand{\RunResidual}{not generated}
+  \newcommand{\RunReclose}{not reached}
+  \newcommand{\RunRelease}{not reached}}
+
+\title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching}\\
+\large Corrected full-state equations, automatic formation, and the requested 200-s chronology}
+\author{}
+\date{10 August 2026}
+
 \begin{document}
 \maketitle
 
 \begin{abstract}
-One six-state EMF6 synchronous generator (SG) and four registered full-state dual-mode IBRs are
-simulated by the project-owned fixed-step, all-KCL hybrid engine for 200~s. The exact chronology is
-SG trip at 20~s, load increase at 50~s, bus-9 fault at 85--85.15~s, line 6--13 trip at 110~s,
-topology restoration and SG-close request at 145~s, and endpoint at 200~s. The operating point uses
-a $1.00$~pu slack reference with a $\pm5\%$ admissible voltage band. The run converges with maximum
-accepted-step residual $9.685\times10^{-9}$ and at most two subdivision levels. The synchronism
-guard accepts the SG at 145.400~s without changing any IBR mode. Each still-GFM IBR then returns to
-GFL only after the implemented two-term severity remains below its release threshold for the full
-down-line dwell and the atomic transfer/KCL transaction passes at 146.400~s. At 200~s,
-$f_{COI}=60.000008$~Hz and the all-bus voltage range is 0.966733--1.057534~pu; no bus is below
-0.95~pu, while bus 6 remains above the 1.05 reporting band as disclosed.
-No Bayesian-optimisation controller is used. A seeded band-limited display ripple is drawn beside,
-not instead of, each raw trace and affects figures only.
+This report describes the corrected project-owned model used for one six-state EMF6 synchronous
+generator (SG) and four switchable inverter-based resources (IBRs). The correction restores the
+physical controller ownership: grid-following (GFL) mode contains a phase-locked loop (PLL), while
+grid-forming (GFM) mode forms its angle through a virtual swing equation and contains no PLL.
+Both modes share the AC-filter current and dc-link states. The requested chronology uses
+$\Delta t=0.1$~s and events at 20, 50, 85, 85.15, 110, and 145~s, with a requested endpoint of
+200~s. The latest generated accepted trajectory ends at \RunEnd~s. Its observed network-voltage
+range is \RunVMin--\RunVMax~pu and its aggregate-frequency range is
+\RunFMin--\RunFMax~Hz. These extrema are reported as results, not used as tuned acceptance bands.
+The maximum accepted residual is \RunResidual, the deepest step subdivision is
+\RunSubdivision, and the number of rejected domain trials is \RunDomainRejects. The SG reclosed
+at \RunReclose~s and the four independent handback transactions reached all-GFL at
+\RunFinalRelease~s. Numerical completion is established; the large reported excursions explicitly
+preclude an operational-readiness claim.
 \end{abstract}
 
-\section{Case, decision index, and switching semantics}
-\label{sec:case-bus-roles}
-The system base is 100~MVA and 60~Hz. The SG is at bus 1; IBR1--IBR4 are at buses 2, 3, 6, and 8.
-The buses carry a parallel \texttt{bus\_role} label
-(\texttt{REF}/\texttt{PV}/\texttt{PQ}/\texttt{GFM}/\texttt{GFL}) that is
-\emph{presentation-only} and never feeds the power-flow equations
-(Section~\ref{sec:case-bus-roles}): the SG bus 1 is REF, buses 2/3/6/8 (the
-IBRs) are GFL resources on this operating point, and the remaining load buses
-are PQ. The numerical internal bus type (REF$=1$, PV$=2$, PQ$=3$) in the
-12-column \texttt{bus\_data} is unchanged by this descriptor. In particular,
-\emph{GFL does not mean PV}: GFL is a dynamic current-controller mode, whereas
-PV/PQ denotes steady-state variable ownership. The four GFLs in this case
-receive specified $P_{ref},Q_{ref}$ and are therefore PQ resources; $|V|$ is a
-network-solved output. A PV resource would instead specify $P,|V|$ and let $Q$
-be solved by a voltage controller.
-The per-IBR switching supervisor of this study is the two-term severity index implemented in
-\texttt{ibr.SwitchableIbr6} ($\texttt{index\_mode}=\texttt{"agsi\_pp"}$):
+\section{Scope, evidence classes, and non-goals}
+
+The system base is $S_{base}=100$~MVA and $f_0=60$~Hz. SG1 is connected at bus~1;
+IBR1--IBR4 are connected at buses 2, 3, 6, and 8. Network equations, power flow, equilibrium,
+small-signal analysis, and time-domain simulation use project-owned Base MATLAB code. The model
+choices are separated as follows.
+
+\begingroup\small\noindent
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.27\textwidth}X@{}}
+\toprule
+Class & Use in this work \\ \midrule
+Source-defined / source-mapped & AC-filter, GFL PLL and PI loops, GFM virtual swing and voltage-amplitude dynamics, controller gains, and event chronology. \\
+Case-defined & Bus/branch data, resource ratings and limits, initial $P/Q$ schedule, $E_{ref}$, event times, and healthy per-bus voltage references. \\
+Project-derived & Fixed dual-mode state superset, dc-source closure, mode-transfer map, lost-SG dispatch participation, equilibrium gauge, selector ranking, grid-relative SG synchronizer, and subdivision-history initialisation. \\
+Numerical method & Newton solves, finite-difference Jacobians, one rotational quotient coordinate, implicit trapezoidal integration, and event-local backward-Euler half steps. \\
+\bottomrule
+\end{tabularx}
+\endgroup
+
+The run does not claim EMT accuracy, unbalanced-fault validity, or controller field readiness.
+In particular, a transient voltage excursion is disclosed rather than clipped, filtered, or used
+to retune the equations.
+
+\section{Corrected fixed state and input contracts}
+
+Every IBR stores one 20-state vector of constant dimension:
+\begin{align}
+x={}&[i_d,i_q,V_{dc},
+\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{Id}^{gfl},\xi_{Iq}^{gfl},V_{d,del}^{gfl},V_{q,del}^{gfl},\nonumber\\
+&\theta,\omega,E,\xi_{Vd},\xi_{Vq},\xi_{Id}^{gfm},\xi_{Iq}^{gfm},V_{d,del}^{gfm},V_{q,del}^{gfm}]^T .
+\end{align}
+The common plant is $x_{1:3}$. GFL activates $x_{1:11}$ and freezes $x_{12:20}$ exactly.
+GFM activates $x_{1:3}$ and $x_{12:20}$ and freezes $x_{4:11}$ exactly. Hence GFL has 11 active
+states including its PLL, while GFM has 12 active states including its VSG angle, frequency, and
+voltage-amplitude states but no PLL. The fixed external input vector is
 \begin{equation}
-S_i=\min\!\left(1,\max\!\left(0,\;w_VJ_V+w_fJ_f\right)\right),\qquad
-J_V=\frac{|V-V_{ref,i}|}{\Delta V_{base}},\quad
-J_f=\frac{|f-f_0|}{\Delta f_{base}},
-\label{eq:agsi-legacy}
+u=[P_{ref},Q_{ref},E_{ref}]^T .
 \end{equation}
-with $\Delta V_{base}=0.10$~pu, $\Delta f_{base}=0.50$~Hz, weights $w_V=w_f=0.5$ (the
-$0.30{:}0.30$ source ratio renormalised), and $V_{ref,i}$ the \emph{healthy per-bus} voltage
-from the pre-fault SG-online power flow (Section~\ref{sec:case-bus-roles}). The five former
-weighted stresses (RoCoF, power tracking, SCR, PLL-lock, and GRA) have zero weight in this preset.
-They remain diagnostics where available, but the implementation does \emph{not} claim that all five
-are hidden mode-change gates. An equal $1/7$ average would dilute $J_V,J_f$ with mostly-zero terms
-and could hide a real voltage/frequency deviation.
+GFL consumes $P_{ref},Q_{ref}$. GFM consumes all three inputs; $E_{ref}$ is an external
+terminal-voltage reference, not the measured $|V|$.
 
-The SG trip at 20~s is a \texttt{CASE\_DEFINED} atomic all-GFM transaction. SG reclose is different:
-Phase~1 closes only after the synchronism guard and returns reference ownership to the SG while the
-IBR modes remain unchanged. Phase~2 then evaluates each still-GFM IBR independently and authorises a
-GFM$\to$GFL transfer only after its severity stays below $\Gamma_{off}$ for $T_{d,off}$. Each authorised
-transfer still requires the device reset map and a right-limit full-KCL solve to pass. The defaults
-are $\Gamma_{on}=0.65$, $\Gamma_{off}=0.35$, $T_{d,on}=0.10$~s, and $T_{d,off}=1.00$~s.
+\subsection{Per-unit boundary and terminal power}
 
-\subsection{Implemented two-term decision index and separate transaction gates}
-\label{sec:index-redesign}
-The switching decision asks whether the voltage/frequency reference is healthy, so the continuous
-severity contains only those two quantities:
+Let $\kappa=S_{base}/M_{base}$ and let $\vartheta$ be the active controller angle
+($\delta_{PLL}$ in GFL or $\theta$ in GFM). The model uses the power-invariant project boundary
 \begin{equation}
-S_i=\min\!\left(1,\max\!\left(0,\;w_VJ_V+w_fJ_f\right)\right),\qquad
-J_V=\frac{|V-V_{ref}|}{\Delta V_{base}},\quad
-J_f=\frac{|f-f_0|}{\Delta f_{base}},
-\label{eq:severity}
+I_{sys}=\frac{(i_d+\mathrm{j}i_q)e^{\mathrm{j}\vartheta}}{\kappa},\qquad
+S_{sys}=P+\mathrm{j}Q=V I_{sys}^{*}.
+\label{eq:power-boundary}
 \end{equation}
-with $\Delta V_{base}=0.10$~pu, $\Delta f_{base}=0.50$~Hz, and $w_V=w_f=0.5$, $w_V+w_f=1$. The two
-bases are \texttt{SOURCE\_DEFINED}; the equal split follows the source ratio $0.30:0.30$
-renormalised, so no free weight remains.
+No isolated factor $3/2$ is inserted in only part of the per-unit model. This identity is also the
+independent current/power oracle used by tests and reporting adapters.
 
-The reduced-6 local supervisor applies the hysteresis/dwell law directly,
+\section{Common converter plant and dc closure}
+
+With $V e^{-\mathrm{j}\vartheta}=v_d+\mathrm{j}v_q$, limited current
+$i_d+\mathrm{j}i_q$, filter parameters $L_f,R_f$, and per-unit frequency $\omega_c$, the common
+current plant is
 \begin{align}
-\text{GFL}\to\text{GFM}:\;\;&S_i\ge\Gamma_{on}\quad\text{for }T_{d,on},\notag\\
-\text{GFM}\to\text{GFL}:\;\;&S_i<\Gamma_{off}\quad\text{for }T_{d,off}.
-\label{eq:switch-law}
+\frac{L_f}{\omega_b}\dot i_d&=V_{d,del}-v_d-R_f i_d+\omega_cL_f i_q,\\
+\frac{L_f}{\omega_b}\dot i_q&=V_{q,del}-v_q-R_f i_q-\omega_cL_f i_d.
 \end{align}
-The composite all-KCL handback uses the same two-term down-line but has explicit system-level
-prerequisites rather than undocumented AGSI terms: the SG must already own the reference; the
-healthy-PF voltage profile must map uniquely to each IBR bus; finite inertia-weighted COI frequency
-evidence must exist; and the device transfer plus right-limit KCL transaction must pass. Missing
-voltage/frequency evidence resets the dwell timer and releases nothing. After a partial release,
-all remaining timers reset because the mode transfer changes their voltage/frequency environment.
-A design-time weight tuner exists at
-\path{scripts/reporting/optimize_agsi_weights.m} (\texttt{NUMERICAL\_METHOD}); its output was not
-used, and the source $0.30{:}0.30$ renormalisation leaves no free weight to tune.
-
-\subsubsection{Why $J_V,J_f$ suffice as severity, and why the weights are $0.5{:}0.5$}
-\label{sec:agsi-weight-rationale}
-So that the design can be defended when asked ``why only $J_V,J_f$'' and ``why these weights,''
-the reasoning is stated in three parts.
-
-\textbf{(1) Why $J_V$ and $J_f$ suffice as the severity.} The objective of switching is the single
-question \emph{``is the reference healthy?''}, and the two quantities a grid-forming reference
-directly regulates are the voltage magnitude $|V|$ and the frequency $f$ (voltage through the
-voltage PI and the $Q$--$V$ droop; frequency through the virtual rotor and the droop). The severity
-therefore has to measure ``distance from the reference'' with exactly these two quantities. Every
-other term of~\eqref{eq:agsi-legacy} is not a reference-severity but a condition of the
-surrounding system.
-
-\textbf{(2) Why the other five terms are not severity weights.} Quantities such as SCR, current
-margin, or PLL health are conditions or diagnostics, not distances from the voltage/frequency
-reference: there is no physics in which a good SCR compensates for over-current. Active/reactive
-power tracking has the same non-compensatory role for a GFL handback: good $P$ tracking must not
-cancel bad $Q$ tracking, and good voltage/frequency must not hide a dispatch mismatch. Hence
-$J_P,J_Q$ are not added as weighted severity terms. Where a source or case requirement supplies
-tracking bands, $|P-P^\star|$ and $|Q-Q^\star|$ belong to separate release-readiness gates; the
-case-defined $P^\star,Q^\star$ must in all cases be restored consistently before transfer. In this
-implementation the former AGSI weights are zero; only separately implemented plant,
-event-authority, transfer-map, reference-ownership, and KCL checks may block a transaction. A
-concrete count from
-\eqref{eq:agsi-legacy}: with the $1/7$ average a single term can trigger the threshold
-$\Gamma_{on}=0.65$ only once it reaches $7\times0.65=4.55$, i.e.\ $J_V=4.55$ back-transforms to
-$|\Delta V|=4.55\times0.10=0.455$~pu --- a catastrophic voltage collapse --- yet the $1/7$ index
-reads it merely as ``at threshold.'' The index therefore cannot distinguish ``one severe term''
-from ``all terms mildly stressed,'' and does not say what is actually wrong. The two-term severity
-always saturates at $1$, so the threshold $0.65$ reads directly as ``the normalized deviation
-reaches $65\%$ of the band,'' which is interpretable at a glance.
-
-\textbf{(3) Why the weights are $0.5{:}0.5$.} Separate the bases from the weights. The bases
-($\Delta V_{base}=0.10$~pu and $\Delta f_{base}=0.50$~Hz) make $J$ dimensionless and comparable:
-$J_V=1$ means a full $10\%$ band deviation and $J_f=1$ means a full $0.5$~Hz band deviation. The
-weight then states whether the two normalised deviations are equally important. The source
-EECON49-P4 Sec.~4.1 assigns the weight ratio of $V$ to $f$ as $0.30{:}0.30$, i.e.\ it treats them
-as equally important; renormalising to unit sum gives exactly $0.5{:}0.5$. \textbf{The weights are
-therefore pinned by normalisation from the source, not tuned.} If asked ``why not $0.7{:}0.3$,''
-the answer is: changing them would need source support, and the source treats $V$ and $f$ as
-equal. This is the provenance difference from the legacy $1/7$ weights: $1/7$ has no source
-support and cannot be defended, whereas $0.5{:}0.5$ can be defended to the end.
-
-\begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_oneline.png}
-\caption{Network and resource locations used by the simulation.}
-\end{figure}
-
-\section{Dynamic equations}
-\label{sec:dyn}
-The operational SG state is
-$x_{SG}=[\delta,\Delta\omega,E'_q,E'_d,E''_q,E''_d]^T$:
-\begin{align}
-\dot\delta&=\omega_0\Delta\omega,&
-2H\Delta\dot\omega&=T_m-T_e-D\Delta\omega,\\
-T'_{d0}\dot E'_q&=E_{fd}+c_dE''_q-d_dE'_q,&
-T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d,\\
-T''_{d0}\dot E''_q&=E'_q-E''_q-(X'_d-X''_d)I_d,&
-T''_{q0}\dot E''_d&=E'_d-E''_d+(X'_q-X''_q)I_q.
-\end{align}
-Here $T_m$ and $T_e$ are the mechanical input and air-gap electrical torque on the common
-per-unit base; $T_e$ equals air-gap electrical power at synchronous speed. The source singular limit
-$T'_{q0}=0$ freezes $E'_d=0$ exactly. Two prime-mover states remain outside the six-state
-electromagnetic order:
-\[
-T_{SV}\dot P_{SV}=-P_{SV}+C,\qquad
-T_{CH}\dot P_m=-P_m+P_{SV}.
-\]
-For one interval of length $h$, with $C$ held at the accepted left-sample value, define
-$e_{SV}=e^{-h/T_{SV}}$ and $e_{CH}=e^{-h/T_{CH}}$. The production update is exact:
-\begin{align}
-P_{SV}^{+}&=C+(P_{SV}-C)e_{SV},\\
-P_m^{+}&=\begin{cases}
-C+(P_m-C)e_{CH}+(P_{SV}-C)(h/T_{CH})e_{CH}, & T_{SV}=T_{CH},\\[2pt]
-C+(P_m-C)e_{CH}+(P_{SV}-C)\dfrac{T_{SV}}{T_{SV}-T_{CH}}(e_{SV}-e_{CH}), & T_{SV}\ne T_{CH}.
-\end{cases}
-\label{eq:gov-exact}
-\end{align}
-The EMF6 input is $T_m$: the time step uses the interval-average
-$T_m=\tfrac12(P_m+P_m^+)$ in the implicit trapezoidal solve and publishes $P_m^+$ as the next
-accepted input. After reclose, $C=\operatorname{sat}(P_{ref}-\Delta\omega/R,P_{min},P_{max})$
-implements primary
-droop regulation and the two states are initialised bumplessly from the accepted mechanical input.
-While the breaker is open, $C$ instead comes from the separate deterministic phase planner; the
-planner also supplies the field-matching command. Thus $T_e=0$ in the open-circuit SG equations,
-but $P_m$ is not claimed to remain frozen for the whole outage: its input follows this explicitly
-\texttt{ASSUMED\_DIAGNOSTIC} synchronising path. Neither path adds secondary AGC, and the numerical
-mapping is not a machine-specific governor validation.
-
-\subsection{IBR state superset}
-Each IBR carries a constant-dimension \textbf{20-state} switching superset: the 13-state
-grid-forming branch (REGFM\_B1, generator model~G2) and the 7-state grid-following branch
-(the WECC REGC\_A and REEC\_A pair) exist at all times,
-\begin{align}
-x_{GFM}={}&[\Delta\omega_m,\delta_{IT},x_w,x_E,\delta_{PLL},x_{PLL},
-P_{inv,f},I_{d,f},Q_{inv,f},\notag\\
-&\hspace{2.1em}V_{inv,f},I_{q,f},\delta_{IT,max},\delta_{IT,min}]^T,\\
-x_{GFL}={}&[V_{t,f},P_f,I_{q,cmd,f},P_{ord},V_{LVPL,f},I_{p,reg},I_{q,reg}]^T,
-\end{align}
-so that $x_{IBR}=[x_{GFM}^T\;x_{GFL}^T]^T\in\mathbb R^{20}$. All quantities are per-unit on the
-device base $M_{base}$; the network interface applies $\kappa=S_{base}/M_{base}$. Powers are
-positive into the network. Only the branch selected by the present mode $q$ contributes a nonzero
-derivative; the other branch satisfies $\dot x=0$ exactly.
-
-\subsubsection*{PLL ownership is model-specific, not a GFM/GFL definition}
-The state lists above can otherwise appear counter-intuitive: this report's GFM has a PLL pair,
-whereas its GFL has no explicit PLL state. This is an exact statement about the \emph{two selected
-models}, not a universal rule for grid-forming and grid-following control. Their angle contracts are
-\begin{align}
-\text{REGFM\_B1 GFM:}\quad
-v_q&=\Im\!\left(Ve^{-\mathrm j\delta_{PLL}}\right), &
-\dot x_{PLL}&=v_q, &
-\dot\delta_{PLL}&=\omega_0(k_{p,PLL}v_q+k_{i,PLL}x_{PLL}),\label{eq:pll-scope-gfm}\\
-\delta_{VSM}&=\delta_{PLL}+\delta_{IT}, &
-\dot\delta_{IT}&=\omega_0\Delta\omega_m-\dot\delta_{PLL}, &
-\therefore\quad\dot\delta_{VSM}&=\omega_0\Delta\omega_m,\notag\\
-\text{WECC GFL:}\quad
-\theta_V&=\operatorname{atan2}(V_y,V_x), &
-I&=\frac{(I_{p,reg}\gamma(|V|)-\mathrm jI_{q,reg})e^{\mathrm j\theta_V}}{\kappa}.\label{eq:pll-scope-gfl}
-\end{align}
-Thus the REGFM\_B1 PLL defines the local $dq$ measurement frame, while the relative state
-$\delta_{IT}$ cancels the PLL motion from the final VSM-angle derivative; the virtual swing still
-sets $\dot\delta_{VSM}$. The selected WECC aggregate instead applies the measured terminal angle
-instantaneously in its algebraic current interface, so it adds no PLL differential equation. This
-must not be read as proof that a physical GFL converter has no synchronisation loop: the loop's
-dynamics are outside this particular seven-state WECC aggregate.
-
-Counterexamples exist in this same repository. The opt-in 10-state GFL-RMS10 branch carries
-$(\delta_{PLL},\xi_{PLL})$, whereas the reduced six-state GFM branch evolves its rotor angle only by
-its swing integrator and has no PLL. Neither counterexample is on the trajectory reported here.
-Consequently, for the present model pair only,
-\[
-n_{PLL}^{GFM}=2,\qquad n_{PLL}^{GFL}=0,
-\]
-while the controller labels ``GFM'' and ``GFL'' alone do not determine either number.
-
-\subsection{Grid-forming branch: 13 states, term by term}
-The angle reference is the sum of a phase-locked component and a virtual-machine component, so the
-GFM branch \emph{does} own a PLL pair. With
-$V=V_x+\mathrm jV_y$ the terminal voltage and $v_q=-V_x\sin\delta_{PLL}+V_y\cos\delta_{PLL}$ its
-quadrature error,
-\begin{align}
-\dot x_{PLL}&=v_q, &
-\dot\delta_{PLL}&=\omega_0\left(k_{p,PLL}v_q+k_{i,PLL}x_{PLL}\right),
-\label{eq:gfm-pll}
-\end{align}
-both frozen to zero while $|V|<V_{PLL,frz}$ so that a collapsed terminal cannot drive the tracker.
-The virtual synchronous machine supplies the frequency deviation, with a washout state providing
-transient-only damping:
-\begin{align}
-2H\Delta\dot\omega_m&=P_{ref,inv}-P_{inv,f}
--\left(1/m_p+D_1\right)\Delta\omega_m-D_2\left(\Delta\omega_m-x_w\right),\label{eq:gfm-swing}\\
-\dot x_w&=\omega_D\left(\Delta\omega_m-x_w\right).\label{eq:gfm-washout}
-\end{align}
-Here $1/m_p$ is the droop gain, $D_1$ the steady damping, and $D_2$ acts only on the
-high-pass component $\Delta\omega_m-x_w$. The internal angle is stored \emph{relative} to the PLL,
-which is what keeps the two angle sources consistent:
+The circular limit acts on the controller current reference only.  If
+$i^{*,raw}=i_d^{*,raw}+\mathrm{j}i_q^{*,raw}$, then
 \begin{equation}
-\dot\delta_{IT}=\omega_0\Delta\omega_m-\dot\delta_{PLL},\qquad
-\delta_{VSM}=\delta_{PLL}+\delta_{IT},\label{eq:gfm-angle}
+i^*=\alpha i^{*,raw},\qquad
+\alpha=\min\!\left(1,\frac{I_{max}}{|i^{*,raw}|}\right).
 \end{equation}
-with $\dot\delta_{IT}$ held at zero whenever $\delta_{IT}$ sits on the active bound of
-$[\delta_{IT,min},\delta_{IT,max}]$ and the derivative would push it further out.
-The voltage magnitude comes from a PI regulator with reactive droop and anti-windup,
-\begin{align}
-\dot x_E&=V_{ref}-V_{inv,f},&
-E_{VSM}^{raw}&=V_{ref}-m_qQ_{inv,f}+k_{pv}\left(V_{ref}-V_{inv,f}\right)+k_{iv}x_E,
-\label{eq:gfm-vpi}
-\end{align}
-where $E_{VSM}=\mathrm{sat}\left(E_{VSM}^{raw},E_{min},E_{max}\right)$ and $\dot x_E$ is set to
-zero when the limiter is saturated in the direction of further integration. The limits $E_{min}$
-and $E_{max}$ are \emph{not constants}: they are recomputed every step from the current state so
-that the $q$-axis current cannot exceed its limit,
-\begin{align}
-E_{min}&=\sqrt{\left(V_{inv,f}-I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},\\
-E_{max}&=\sqrt{\left(V_{inv,f}+I_{q,max}^{SS}X_L\right)^2+\left(I_{d,f}X_L\right)^2},
-\label{eq:gfm-elim}
-\end{align}
-with the current limit split by \texttt{PQFlag}: on $d$-axis priority
-$I_{d,max}^{SS}=k_fI_{max}^{SS}$ and
-\[
-I_{q,max}^{SS}=\sqrt{\max\!\left(\left(I_{max}^{SS}\right)^2-I_{d,f}^2,\,0\right)},
-\]
-and the reverse assignment on $q$-axis priority. The $x_E$ anti-windup uses the same conditional-hold rule: $\dot
-x_E=0$ when $E_{VSM}^{raw}$ is outside the band and the derivative still pushes outward.
-The current-angle bounds are themselves states, integrating the mismatch between the steady-state
-$d$-axis current limit and the measured $d$-axis current, so that the angle authority contracts
-when the device is overloaded:
-\begin{align}
-\dot\delta_{IT,max}^{raw}&=k_I\left(I_{d,max}^{SS}-I_{d,f}\right),&
-\dot\delta_{IT,min}^{raw}&=k_I\left(-K_eI_{d,max}^{SS}-I_{d,f}\right),
-\label{eq:gfm-bounds}
-\end{align}
-with the states constrained to $\delta_{IT,max}\in[0,\delta_{max}]$ and
-$\delta_{IT,min}\in[-\delta_{max},0]$. Each derivative is replaced by the same conditional hold on
-its own bound, with
-$\delta_{max}=\arcsin\!\left(X_LI_{max}^{SS}\right)$ and $\dot\delta_{IT,min}=0$ when the
-energy-storage flag is inactive. The five remaining states are first-order measurement filters,
-\begin{align}
-T_{pf}\dot P_{inv,f}&=\kappa P-P_{inv,f},&
-T_{If}\dot I_{d,f}&=\kappa I_d-I_{d,f},&
-T_{Qf}\dot Q_{inv,f}&=\kappa Q-Q_{inv,f},\\
-T_{Vf}\dot V_{inv,f}&=|V|-V_{inv,f},&
-T_{If}\dot I_{q,f}&=\kappa I_q-I_{q,f},&&
-\end{align}
-where $P+\mathrm jQ=V\overline{I_{out}}$ and $(I_d,I_q)$ are the injected current projected on the
-PLL frame. The network injection is voltage-behind-impedance with circular saturation:
+The physical filter states $i_d,i_q$ and the terminal-current injection are never projected,
+clipped, or replaced by $i^*$. Consequently a fast fault transient may drive actual filter current
+above the reference limit; the report discloses that response rather than altering the plant.
+The command delay is
 \begin{equation}
-I_{out}=\begin{cases}
-I_{unc}, & |I_{unc}|<I_{max}^F/\kappa,\\[2pt]
-\dfrac{I_{max}^F}{\kappa}\dfrac{I_{unc}}{|I_{unc}|}, & \text{otherwise},
-\end{cases}
-\qquad
-I_{unc}=\frac{E_{VSM}e^{\mathrm j\delta_{VSM}}-V}{\kappa\left(R_e+\mathrm jX_L\right)}.
-\label{eq:gfm-current}
+\dot V_{d,del}=\frac{V_{d,cmd}-V_{d,del}}{T_d},\qquad
+\dot V_{q,del}=\frac{V_{q,cmd}-V_{q,del}}{T_d}.
 \end{equation}
 
-\subsection{Grid-following branch: 7 states, term by term}
-The GFL branch is the registered WECC pair and is a \emph{current-source} model: it owns no PLL
-state because it aligns algebraically to the measured terminal-voltage angle. Its injection is
-\begin{equation}
-I=\frac{\left(I_{p,reg}\,\gamma(|V|)-\mathrm jI_{q,reg}\right)e^{\mathrm j\angle V}}{\kappa},
-\label{eq:gfl-current}
-\end{equation}
-with $\gamma$ the REGC\_A low-voltage-point gain and a high-voltage reactive clamp applied above
-$V_{olim}$. The states are three measurement filters, the power order, and the two regulated
-currents:
+The physical energy balance requires an external dc current, but the case does not prescribe its
+controller. The project therefore uses the declared exogenous controlled-current closure
 \begin{align}
-T_{rv}\dot V_{t,f}&=|V|-V_{t,f},&
-T_{p}\dot P_f&=\kappa P-P_f,\\
-T_{fltr}\dot V_{LVPL,f}&=|V|-V_{LVPL,f},&
-T_{pord}\dot P_{ord}&=\mathrm{sat}(\kappa P_{ref},P_{min},P_{max})-P_{ord},\\
-T_{iq}\dot I_{q,cmd,f}&=I_{q,cmd}-I_{q,cmd,f},
+I_{dc}&=\frac{P_{ac}}{V_{dc}}+\frac{C_{dc}}{T_{dc}}(V_{dc,ref}-V_{dc}),\\
+C_{dc}\dot V_{dc}&=I_{dc}-\frac{P_{ac}}{V_{dc}},\qquad
+P_{ac}=V_{d,cmd}i_d+V_{q,cmd}i_q,\\
+\therefore\quad \dot V_{dc}&=\frac{V_{dc,ref}-V_{dc}}{T_{dc}}.
 \end{align}
-where $\dot P_{ord}$ is additionally rate-limited to $[\dot P_{min},\dot P_{max}]$. The REEC\_A
-command pair divides the order by the filtered voltage and adds the voltage-dip reactive injection,
+Instantaneous power feed-forward prevents this unpublished closure from moving the sourced AC
+equilibrium. Nonpositive or nonfinite $V_{dc}$ fails closed.
+
+\section{GFL equations: PLL present}
+
+The GFL frame is owned by its PLL:
 \begin{align}
-I_{p,0}&=\frac{P_{ord}}{\max\left(V_{t,f},0.01\right)}, &
-I_{q,0}&=\frac{\kappa Q_{ref}}{\max\left(V_{t,f},0.01\right)}+I_{q,inj},\\
-I_{q,inj}&=\mathrm{sat}\!\left(K_{qv}\,\mathrm{db}\!\left(V_{ref,0}-V_{t,f}\right),I_{ql1},I_{qh1}\right)
-&&\text{active only if }V_{t,f}<V_{dip}\text{ or }V_{t,f}>V_{up},
+v_d+\mathrm{j}v_q&=Ve^{-\mathrm{j}\delta_{PLL}},\\
+\dot\xi_{PLL}&=v_q,\\
+\dot\delta_{PLL}&=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},\\
+\omega_{PLL}&=1+\dot\delta_{PLL}/\omega_b.
 \end{align}
-followed by the active-priority allocation
-\[
-I_p=\mathrm{sat}\!\left(I_{p,0},\,0,\,I_{max}\right),\qquad
-|I_q|\le\min\!\left(I_{max},\sqrt{I_{max}^2-I_p^2}\right).
-\]
-The regulated currents then track their commands through the converter lag. The active-current
-state uses
-\[
-\dot I_{p,reg}=\min\!\left(\frac{I_p^{tgt}-I_{p,reg}}{T_g},r_{rpwr}\right).
-\]
-For the reactive-current state, first define
-$d_q=(I_{q,cmd,f}-I_{q,reg})/T_g$; then the implementation uses
-$d_q\leftarrow\min(d_q,I_{qr,max})$ when $Q_{ref}>0$,
-$d_q\leftarrow\max(d_q,I_{qr,min})$ when $Q_{ref}<0$, and leaves $d_q$ unchanged when
-$Q_{ref}=0$, followed by $\dot I_{q,reg}=d_q$. Thus these are source-mapped one-sided limits, not an
-unconditional symmetric interval clamp. Here $I_p^{tgt}$ is $I_p$ passed through the LVPL
-characteristic when that switch is enabled and floored at zero below $V_{lvpnt0}$. The $0.01$~pu
-division guard is
-\texttt{NUMERICAL\_METHOD}; every gain, time constant, and limit above is
-\texttt{SOURCE\_DEFINED}.
-
-\subsection{Mode dispatch}
-In GFL mode the active indices are $14{:}20$ and $\dot x_{1:13}=0$; in GFM mode the active indices
-are $1{:}13$ and $\dot x_{14:20}=0$; in the tripped mode all twenty derivatives are zero and the
-injection is identically zero. Only the active branch enters the dynamic solve, and the active-index
-set is queried from the device rather than hard-coded, so the layout above is not duplicated in the
-integrator. Atomic state mapping is followed by a full-KCL right-limit solve; a failed solve rolls
-the transaction back.
-
-\section{Switching formulation: what is solved at a mode change}
-\label{sec:switching-formulation}
-This section states the mathematics executed at every switching instant. It is the governing
-formulation for the SG trip, the GFL$\leftrightarrow$GFM transfers, and the SG reclose.
-
-\subsection{The plant is a DAE, not an ODE}
-Between events the plant is a semi-explicit index-1 differential--algebraic system, not a plain
-ordinary differential equation:
+Measured inverter-base power is $P_{inv}=\kappa P$ and $Q_{inv}=\kappa Q$. The outer loops are
 \begin{align}
-\dot x&=f_q(x,y,u),\label{eq:sw-diff}\\
-0&=g_q(x,y,u)=Y_q V-I_{inj}(x,y).\label{eq:sw-alg}
+e_P&=\kappa P_{ref}-P_{inv}, & \dot\xi_P&=e_P,
+&i_d^*&=k_{pP}e_P+k_{iP}\xi_P,\\
+e_Q&=\kappa Q_{ref}-Q_{inv}, & \dot\xi_Q&=e_Q,
+&i_q^*&=-(k_{pQ}e_Q+k_{iQ}\xi_Q).
 \end{align}
-Here the stored vector $x\in\mathbb R^{86}$ is the fixed inventory of six SG electromagnetic
-coordinates and four 20-state IBR supersets. This stored dimension is \emph{not} the differential
-Newton order. The exact $T'_{q0}=0$ limit freezes SG coordinate $E'_d$, so the SG contributes five
-active electromagnetic coordinates. Each online IBR contributes either seven active GFL
-coordinates or thirteen active GFM coordinates, as returned by its current mode. Therefore the
-active differential order is 33 in the all-GFL configuration and 57 in the all-GFM configuration;
-only these active coordinates are included in the trapezoidal residual. The two prime-mover states
-of Section~\ref{sec:dyn} are advanced by the separate exact update~\eqref{eq:gov-exact} and enter
-\eqref{eq:sw-diff} through the input $u$, not as Newton unknowns. Accordingly $u$ carries $T_m$ and
-$E_{fd}$, $y$ stores rectangular bus voltages, and $q$ is the \emph{discrete mode}: the tuple of
-network topology, per-device mode, and breaker status. Equation~\eqref{eq:sw-alg} is the full
-all-KCL residual over all $2n_b$ real rows; a single module owns it, while each device contributes
-only its own slice of $f_q$ and its own $I_{inj}$.
-
-The discretisation is the implicit trapezoidal rule, so a normal step is not the explicit
-recursion $x_{k+1}=x_k+h\,f(\cdot)$ but the simultaneous nonlinear system
+After circular limitation of $i_d^*+\mathrm{j}i_q^*$, the inner current errors are
+$e_d=i_d^*-i_d$ and $e_q=i_q^*-i_q$, and
 \begin{align}
-x_{k+1}-x_k-\tfrac{h}{2}\left[f_q(x_k,y_k,u)+f_q(x_{k+1},y_{k+1},u)\right]&=0,\label{eq:sw-trap}\\
-g_q(x_{k+1},y_{k+1},u)&=0,\label{eq:sw-trapalg}
+V_{d,cmd}&=v_d+R_fi_d-\omega_{PLL}L_fi_q+k_{pI}e_d+k_{iI}\xi_{Id},\\
+V_{q,cmd}&=v_q+R_fi_q+\omega_{PLL}L_fi_d+k_{pI}e_q+k_{iI}\xi_{Iq}.
 \end{align}
-solved together for the active differential coordinates of $x_{k+1}$ and all algebraic coordinates
-$y_{k+1}$. The composite 200-s route does \emph{not} use a fixed count of three corrector sweeps:
-it forms the coupled trapezoidal/full-KCL residual and applies the project Newton solver until the
-residual tolerance is met, otherwise subdividing the attempted step and ultimately failing closed if
-the accepted-leaf gate cannot be met. Both $f_q$ and $g_q$ carry the subscript $q$: they are the
-equations \emph{of the present discrete mode}. A switching event changes $q$, hence changes the
-equations and the active-coordinate set themselves.
-
-\subsection{The reference-role handover: SG to IBR}
-Before the mechanical detail below, four conceptual points must be settled, because this is where
-the formulation is most easily misunderstood: \emph{the SG and the IBRs obey different equations,
-so how can an IBR ``replace'' the SG?}
-
-\subsubsection{The SG and the IBRs really are different DAEs}
-The governing branch equations were stated once in Section~\ref{sec:dyn}; they are not repeated here.
-The important distinction is that the SG has real inertia $H$, rotor angle $\delta$, and mechanical
-input $T_m$ supplied by its prime-mover state $P_m$, whereas the GFM branch has virtual inertia, the synthetic angle
-$\delta_{VSM}=\delta_{PLL}+\delta_{IT}$, and $P_{ref,inv}$. The GFL branch has no swing equation at
-all; it is a current source. Hence no state is shared and \emph{no equation sets
-$\omega_{SG}=\omega_m$}; each frequency variable belongs to its own device. The devices replace one
-another only in the supervisory reference-setting role described next, not by transforming one ODE
-into another.
-
-\subsubsection{The reference is a role, not an equation transformation}
-In the time-domain DAE (Section~\ref{sec:switching-formulation}, \S 6.1) \textbf{every bus is an
-unknown of the all-KCL residual} $0=Y_qV-I_{bus}$ over all $2n_b$ real rows; no bus angle is pinned
-as an algebraic slack. The code never replaces a KCL row by a pinned angle, and
-\path{reference_owner_schema.m} states it directly: ``reference ownership is
-supervisory/physical, NOT a KCL-row replacement.'' The reference is therefore \emph{not a bus
-type} but a role played by whichever device controls the island's angle and frequency: while the SG
-is online the role belongs to the SG; while it is open it belongs to IBR1 (bus 2) through its GFM
-branch. What ``transforms'' at $t=20$~s is \textbf{not the SG equations into IBR equations} but the
-handover of the reference-setting role from one device to another.
-
-\subsubsection{Three things change together at the handover instant}
-The mechanical detail lives in Section~\ref{sec:sw-inverse}; at the role level, three changes happen
-inside a single transaction:
-\begin{enumerate}
-\item \textbf{SG:} the equations switch to the open-circuit mode --- $I_d=I_q=0$, $T_e=0$, flux
-decay, the rotor coasts as $2H\,\Delta\dot\omega=T_m(t)-D\Delta\omega$ under the declared
-diagnostic synchroniser input, and \emph{all six states stay in the state vector}
-\item \textbf{IBR:} the reset map switches GFL$\to$GFM by initialising the GFM branch so the
-\emph{terminal current is continuous}, $I^+=I^-$ --- the inverse problem of
-Section~\ref{sec:sw-inverse}
-\item \textbf{Network:} the matrix $Y$ changes (the SG breaker opens) and the KCL is re-solved
-for $y^+$
-\end{enumerate}
-All three are committed together as one transaction, so there is no interval in which the island is
-``without a reference'' (the supervisor plot keeps $GRA=1$ throughout). The simultaneous GFM switch
-of all four IBRs at 20~s is therefore the result of this coordinated transaction, not of the four
-AGSI indices crossing their thresholds at the same instant.
-
-\subsubsection{$H$, $\omega$, $f$ differ --- why are they interchangeable}
-This is the deepest point, and the answer is \emph{we never equate them directly}. The coupling is
-not an equation between frequency variables; it is the network. Every device injects current into
-the same set of buses, so KCL forces the bus voltages into geometric consistency; at steady state
-all voltages rotate at the same frequency, and each device locks to that frequency by its own
-mechanism --- the SG by its physical rotor (integrating $\dot\delta=\omega_0\Delta\omega$), the IBR
-by a PLL driving $v_q\to0$ to align with the terminal-voltage angle (the WECC GFL uses $\angle V$
-directly, algebraically). \emph{Steady-state synchronism is therefore emergent from the network,
-not a directly imposed condition.}
-
-This is why the switch must be ``continuous at the terminal'', not ``continuous in the state'': the
-terminal current is what the network sees, so keeping $I$ from jumping is exactly not disturbing the
-network's balance. The internal variables ($\delta$ of the SG, $\omega_m,\delta_{VSM}$ of the GFM)
-belong to each device and may be re-initialised freely as long as the terminal effect stays the
-same.
-
-\subsection{The transition at a switching instant}
-Equations~\eqref{eq:sw-trap}--\eqref{eq:sw-trapalg} are \emph{not} continued across an event. At a
-switching instant $t_e$ the trajectory undergoes a hybrid-DAE transition in three ordered stages:
+Let $r_d=i_d^{*,raw}-i_d^*$ and $r_q=i_q^{*,raw}-i_q^*$. Anti-windup belongs to the outer
+$P/Q$ integrators because their output is the limited current reference:
 \begin{align}
-&q^-\;\longrightarrow\;q^+ &&\text{discrete jump},\label{eq:sw-jump}\\
-&x(t_e^+)=R_{q^-\to q^+}\!\left(x(t_e^-),y(t_e^-)\right) &&\text{state reset map},\label{eq:sw-reset}\\
-&0=g_{q^+}\!\left(x(t_e^+),y(t_e^+),u\right)\;\;\text{solve for }y(t_e^+) &&\text{right-limit algebraic solve}.\label{eq:sw-right}
+\dot\xi_P&=\begin{cases}0,&\alpha<1\ \text{and}\ k_{iP}e_Pr_d>0,\\e_P,&\text{otherwise},\end{cases}\\
+\dot\xi_Q&=\begin{cases}0,&\alpha<1\ \text{and}\ (-k_{iQ})e_Qr_q>0,\\e_Q,&\text{otherwise}.\end{cases}
 \end{align}
-Stage~\eqref{eq:sw-jump} selects the post-event admittance matrix $Y_{q^+}$ directly from the
-declared topology set by its identifier, and commits the device-mode and breaker maps as a single
-transaction: the whole update is validated before any field is written, and a failed validation
-leaves the state identical to its input. Stage~\eqref{eq:sw-reset} is described below.
-Stage~\eqref{eq:sw-right} solves \emph{only} the algebraic block, by damped Newton iteration with a
-backtracking line search, holding $x$ fixed at $x(t_e^+)$ and accepting the result only if the KCL
-residual meets the step tolerance; otherwise the whole transaction rolls back. Differential
-integration then resumes from $\left(x(t_e^+),y(t_e^+)\right)$ at the next step.
+The inner current controller has no voltage-command limiter in this model, hence
+$\dot\xi_{Id}=e_d$ and $\dot\xi_{Iq}=e_q$ without the outer-loop hold condition.
 
-Consequently two samples exist at $t_e$: a left limit and a right limit. The tables and figures in
-this report store the right limit.
+\section{GFM equations: VSG angle, no PLL}
 
-\subsection{The reset map is terminal continuity, not state copying}
-The key structural property is that the \textbf{stored state inventory never changes}. Each IBR is
-a constant-dimension 20-state superset in which the GFM states $1{:}13$ and the GFL states
-$14{:}20$ always exist. A mode change re-selects which sub-block is \emph{active}; the inactive
-block is held exactly, $\dot x_{inactive}=0$, under a frozen inactive-state rule
-(\texttt{PROJECT\_DERIVED}: continuity plus algebraic-residual minimisation). The full stored
-trajectory therefore retains 86 coordinates, but the reduced Newton residual and its Jacobian use
-the mode-dependent active set and do change order when a 7-state GFL branch is exchanged for a
-13-state GFM branch. No state is structurally deleted, which is why later transfer and SG reclose
-remain meaningful.
-
-The reset map $R$ in~\eqref{eq:sw-reset} transfers \emph{physical terminal conditions}, not state
-coordinates, and is owned by the device:
+GFM owns an absolute virtual-machine angle and frequency:
 \begin{align}
-V_{bus}&=y_{2b-1}+\mathrm jy_{2b}, &
-I^-&=I_{inj}\!\left(x^-,y,u,q^-\right),\\
-S^-&=V_{bus}\,\overline{I^-}, & P^-&=\Re S^-,\quad Q^-=\Im S^-,\\
-x^+\big|_{target}&=\mathcal I_{q^+}\!\left(V_{bus},P^-,Q^-\right), &
-x^+\big|_{inactive}&=x^-\big|_{inactive},
+\dot\theta&=\omega_b(\omega-1),\\
+M\dot\omega&=\kappa P_{ref}-P_{inv}-D_v(\omega-1),\\
+\tau_E\dot E&=k_Q(\kappa Q_{ref}-Q_{inv})-k_E(E-E_{ref}).
+\label{eq:gfm-e}
 \end{align}
-followed by the fail-closed acceptance test
+Equation~\eqref{eq:gfm-e} is the decisive correction. Replacing $E_{ref}$ by measured $|V|$
+would remove the intended external voltage-restoration term at equilibrium and changes the
+small-signal physics. The voltage reference is
 \begin{equation}
-\left|I_{inj}\!\left(x^+,y,u,q^+\right)-I^-\right|\le10^{-10}.\label{eq:sw-cont}
+v_d^*=E,\qquad v_q^*=0,qquad
+i_d^*=k_{pV}(v_d^*-v_d)+k_{iV}\xi_{Vd},\qquad
+i_q^*=k_{pV}(v_q^*-v_q)+k_{iV}\xi_{Vq}.
 \end{equation}
-$\mathcal I_{q^+}$ is the target branch's own equilibrium/transfer initialiser. The invariant
-carried across the switch is therefore the terminal pair $(V,I)$ --- equivalently $(P,Q)$ --- and
-not the state vector. No PLL angle is copied out of the GFL branch, because the GFL branch owns no
-PLL state; the GFM angle is re-derived from $V_{bus}$ and $I^-$. The bus index $b$ is resolved from
-the device's registered bus position, so the map contains no hard-coded bus identity.
-
-\subsection{Why the recursion becomes an assignment, and what equation\break is solved}
-\label{sec:sw-inverse}
-This subsection answers the most direct question: during a normal step we advance the recursion
-$x_{k+1}=x_k+\frac{h}{2}[f_q(x_k)+f_q(x_{k+1})]$, yet at a switching instant the code appears to
-simply \emph{assign} $x^+=(\text{a value})$. What equation is being solved, and what makes the two
-sides of the event sync with each other?
-
-\subsubsection{Why the recursion cannot be continued}
-Write the step that straddles the switching time $t_e$ explicitly, with $t_k<t_e<t_{k+1}$. The
-trapezoidal rule requires
+The limited current reference then enters the same physically signed inner current controller and
+command-delay plant. Here the limiter-owning states are the voltage-loop integrators:
 \begin{equation}
-x_{k+1}-x_k=\frac{h}{2}\Big[\underbrace{f_{q^-}(x_k,y_k)}_{\text{pre-switch mode}}
-+\underbrace{f_{q^+}(x_{k+1},y_{k+1})}_{\text{post-switch mode}}\Big].
-\label{eq:sw-illegal}
+\dot\xi_{Vd}=\begin{cases}0,&\alpha<1\ \text{and}\ k_{iV}e_{Vd}r_d>0,\\e_{Vd},&\text{otherwise},\end{cases}
+\quad
+\dot\xi_{Vq}=\begin{cases}0,&\alpha<1\ \text{and}\ k_{iV}e_{Vq}r_q>0,\\e_{Vq},&\text{otherwise}.\end{cases}
 \end{equation}
-Equation~\eqref{eq:sw-illegal} is \emph{mathematically invalid}, because the trapezoidal rule is
-derived from $\int_{t_k}^{t_{k+1}}f\,dt$ on the assumption that $f$ is \emph{continuous} on that
-interval; at $t_e$ the vector field jumps ($f_{q^-}\ne f_{q^+}$), so the order of accuracy collapses
-and the result approximates the integral of no field at all. The correct treatment is to
-\textbf{split the step at $t_e$} and treat $t_e$ as the boundary of two subproblems: the one on
-$[t_k,t_e]$ uses $f_{q^-}$ and the one on $[t_e,t_{k+1}]$ uses $f_{q^+}$, and each subproblem
-\emph{needs its own initial condition}. The initial condition of the second subproblem is
-$x(t_e^+)$, which is exactly what the reset map must produce. The recursion is therefore not
-``gone'' --- it \emph{ends one round and starts another}, with an initial-condition assignment in
-between.
+The inner states still satisfy $\dot\xi_{Id}=e_d$, $\dot\xi_{Iq}=e_q$. No PLL state or hidden
+PLL angle is used in this branch.
 
-\subsubsection{The equation actually solved at the switching instant}
-$x^+$ is not a value chosen out of thin air; it is the \emph{solution of an inverse problem} with
-an explicit governing equation. Let $\mathcal C_{q}(x,V)$ be the terminal current-injection
-function of mode $q$. The problem is
+\section{Equilibrium, references, and SSSA}
+
+At SG trip the full nonlinear equilibrium solves every rectangular KCL row,
 \begin{equation}
-\boxed{\;\text{find }x^+\ \text{such that}\quad
-\mathcal C_{q^+}\!\left(x^+,V_{bus}\right)-\underbrace{\mathcal C_{q^-}\!\left(x^-,V_{bus}\right)}_{=\,I^-\ \text{already known}}=0\;}
-\label{eq:sw-inverse}
+YV-I_{inj}(x,V,u)=0,
 \end{equation}
-subject to the constraint that the inactive block keeps its values,
-$x^+\big|_{inactive}=x^-\big|_{inactive}$. Equation~\eqref{eq:sw-inverse} is the equation that is
-really ``solved''. In physical terms: \emph{the controller may change its operating law instantly,
-but the current leaving the terminal must not jump}, because that current is tied to the energy
-stored in the filter inductances, which cannot change as a step without an infinite voltage. The
-continuity check~\eqref{eq:sw-cont} on $|I^+-I^-|\le10^{-10}$ is therefore not a generic numerical
-quality check; it is \textbf{a verification that the inverse problem~\eqref{eq:sw-inverse} was
-actually solved}. If the value exceeds the threshold, no consistent $x^+$ exists and the
-transaction must not commit.
+plus one $\dot E=0$ equation per selected GFM. Terminal GFM reactive power is a solved output;
+$Q_{ref}$ and $E_{ref}$ remain immutable case/event inputs. One scalar active-power mismatch is
+distributed by the frozen participation contract. A newly forming GFM holds its pre-trip
+$P_{ref}$ when GFL resources remain; those GFL resources share the lost-SG deficit by $P_{max}$.
+If every IBR is GFM, the generic post-trip participation is used because no GFL remains.
 
-\subsubsection{The closed-form inversion: GFL$\to$GFM step by step}
-The GFL$\to$GFM case at 20~s is the best example because it is solvable \emph{in closed form}
-with no iteration at all. Every step below is a direct back-substitution into the GFM branch
-equations.
+One angle coordinate per energized island is removed as a mathematical gauge. This does not mean
+that only one physical GFM may operate. Several GFMs may form the same island, but they share one
+common rotational invariance. SSSA retains all relative electromechanical and controller modes and
+quotients only that common VSG-angle direction; no eigenvalue is deleted after calculation.
 
-\textbf{Step 1 --- read the terminal condition from the left side.} Compute the current the GFL
-branch is actually injecting, using the GFL injection~\eqref{eq:gfl-current}, and convert it to
-power:
+\section{How the number of GFMs is selected}
+
+For SG-off operation the automatic selector enumerates $n_{GFM}=1,2,3,4$, every subset of that
+size, and every admissible reference member. Each candidate must pass topology, full-KCL
+equilibrium, operating limits, and the physical SSSA margin $\Omega\le-\gamma_{req}$.
+The frozen ranking is: feasible first, fewer event-left mode changes, fewer GFMs, larger damping
+margin, deterministic resource-ID tie-break. Thus the current policy means
+\emph{minimum small-signal-feasible formation}, not maximum transient robustness.
+
+For the corrected case, 15 candidates were evaluated. Composite resource indices are
+$1=$SG1, $2=$IBR2, $3=$IBR3, $4=$IBR6, and $5=$IBR8. Two candidates passed:
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}\toprule
+Selected resources & $n_{GFM}$ & Reference & $\Omega$ (s$^{-1}$) & KCL norm \\ \midrule
+$[5]$ & 1 & 5 & $-0.175750$ & $5.311\times10^{-13}$ \\
+$[2,3,4,5]$ & 4 & 2 & $-2.344851$ & $4.025\times10^{-12}$ \\
+\bottomrule\end{tabular}
+\end{center}
+The four-GFM point has the stronger local damping margin and more distributed voltage-forming
+support. The one-GFM point changes fewer devices and permits a bumpless active-power handover in
+which the remaining GFLs absorb the lost-SG deficit. Neither SSSA result alone proves survival of
+the complete large disturbance; the 200-s chronology is the falsification test.
+
+\subsection{Complete selector and SSSA mode inventory}
+
+The following table reports all 15 SG-off candidates. ``Eq.'' means that the full nonlinear
+all-KCL equilibrium stage was attempted; ``SSSA'' means that the candidate reached the full-state
+linearisation. A failed candidate is retained as falsification evidence and is not promoted to a
+readiness result.
+
+\input{figures/switch_ieee14/sssa_candidate_summary.tex}
+
+For a physical decision matrix $A_p$, right eigenvectors $R$ and the paired left-eigenvector rows
+$L$ satisfy
 \begin{equation}
-I^-=\frac{\left(I_{p,reg}\gamma(|V|)-jI_{q,reg}\right)e^{j\angle V}}{\kappa},\qquad
-S^-=V_{bus}\overline{I^-},\qquad P^-=\Re S^-,\quad Q^-=\Im S^-.
+A_pR=R\Lambda,\qquad L=R\backslash I,\qquad
+\pi_{ki}=\frac{|R_{ki}L_{ik}|}{\sum_j|R_{ji}L_{ij}|}.
 \end{equation}
-The three quantities $(V_{bus},P^-,Q^-)$ are \emph{all} that is carried across the event; no GFL
-state variable is forwarded.
+The participation values below are reporting diagnostics; they never feed candidate ranking.
+Each complex-conjugate pair is printed once, with modal frequency
+$f_i=|\Im\lambda_i|/(2\pi)$ and damping ratio
+$\zeta_i=-\Re\lambda_i/|\lambda_i|$. The owner is shown explicitly as
+device:mathematical-state-symbol. For repeated roots, especially the four exact $-10$~s$^{-1}$ dc-link
+roots, individual eigenvectors may rotate inside the repeated eigenspace; they should be
+interpreted as one dc-link family rather than four uniquely attributable modes.
 
-\textbf{Step 2 --- find the required internal voltage.} The GFM branch injects current through the
-impedance $Z_{sys}=\kappa(R_e+jX_L)$ by~\eqref{eq:gfm-current}, so for it to deliver exactly
-$I^-$ the voltage behind the impedance must be
-\begin{equation}
-E_{terminal}=V_{bus}+Z_{sys}I^-
-\;\;\Longrightarrow\;\;
-E_{VSM}=\left|E_{terminal}\right|,\quad
-\delta_{VSM}=\angle E_{terminal}.
-\label{eq:sw-inv-E}
-\end{equation}
-This is the direct \emph{inversion} of~\eqref{eq:gfm-current}: originally we have $E$ and find
-$I$; now we have $I$ and find $E$. The equation solves immediately because it is linear in $I$.
+\subsubsection*{Automatic winner: one GFM}
 
-\textbf{Step 3 --- decompose $E_{VSM},\delta_{VSM}$ back into state variables.} We now have what the
-\emph{combination} must be, and still have to split it into individual states. Start with the
-angle: the PLL is locked to the terminal-voltage angle ($\delta_{PLL}=\angle V_{bus}$, positive
-$d$-axis), so from $\delta_{VSM}=\delta_{PLL}+\delta_{IT}$,
+The active inventory is one 12-state GFM at resource 5 plus three 11-state GFLs, giving 45 full
+active states. Quotienting the common VSG angle gives 44 physical decision modes. The table has 28
+rows because conjugate pairs are shown once. The limiting pair is
+$-0.175750\pm\mathrm{j}2.159250$~s$^{-1}$ ($0.343655$~Hz), dominated by the three remaining
+GFL PLL-angle states.
+
+\input{figures/switch_ieee14/sssa_modes_n1.tex}
+
+\subsubsection*{Alternative feasible point: four GFMs}
+
+Four 12-state GFMs give 48 full active states and 47 physical decision modes after the same one-angle
+quotient. The table has 30 rows with conjugate pairs printed once. No PLL state exists in this
+configuration. The limiting root is the real mode $-2.344851$~s$^{-1}$, dominated by GFM voltage-loop
+integrators, while the principal VSG angle/frequency families appear at approximately
+17.97--23.95~Hz.
+
+\input{figures/switch_ieee14/sssa_modes_n4.tex}
+
+The exact physical coordinate inventories, including device and controller owner for every
+coordinate, are retained as generated audit tables:
+\begin{itemize}
+\item one-GFM inventory: \path{figures/switch_ieee14/sssa_states_n1.tex};
+\item four-GFM inventory: \path{figures/switch_ieee14/sssa_states_n4.tex}.
+\end{itemize}
+
+\section{Hybrid event and integration contract}
+
+At a mode transaction, the device reset map preserves the terminal port
+$(V,I,P,Q)$ and $V_{dc}$, initializes only the target controller states, then solves the exact
+right-limit full-KCL algebraic system. A failure rolls the whole transaction back. Reference
+ownership is supervisory and physical; it never replaces or removes a KCL row.
+
+Normal continuous steps use coupled implicit trapezoidal integration:
 \begin{equation}
-\delta_{IT}=\operatorname{wrap}_{\pi}\!\left(\angle E_{terminal}-\angle V_{bus}\right),
-\qquad x_{PLL}=0,\quad \Delta\omega_m=0,\quad x_w=0.
-\label{eq:sw-inv-angle}
+x_{k+1}-x_k-\frac{h}{2}\left[f(x_k,y_k)+f(x_{k+1},y_{k+1})\right]=0,qquad
+g(x_{k+1},y_{k+1})=0.
 \end{equation}
-For the magnitude, invert the voltage-PI equation~\eqref{eq:gfm-vpi} to solve for the integrator:
+After a discontinuity, only the first interval is restarted with two backward-Euler half steps,
+\begin{equation}
+x_{m+1}-x_m-\frac{h}{2}f(x_{m+1},y_{m+1})=0,
+\end{equation}
+before returning to trapezoidal integration. This Rannacher restart damps the nonphysical
+step-to-step ringing of a stiff trapezoidal discretisation; it does not smooth, clip, or modify the
+physical trajectory.
+
+If a logical output step requires dyadic subdivision, the next logical step starts from the most
+recently accepted subdivision level and then coarsens when the full step becomes feasible again.
+Every leaf still solves the identical implicit residual with the identical Newton tolerance. This
+history is only an initial step-partition choice: it changes neither the differential/algebraic
+equations nor the acceptance gate, and avoids repeatedly retrying coarse ancestors already known
+to fail in the fault and handback transients.
+
+The per-device severity used for release contains exactly the requested voltage and frequency
+terms:
+\begin{equation}
+J_{V,i}=\frac{\bigl||V_i|-|V_{i,healthy}|\bigr|}{0.10},\qquad
+J_f=\frac{|f_{COI}-60|}{0.50},\qquad
+S_i=\operatorname{sat}_{[0,1]}\!\left(0.5J_{V,i}+0.5J_f\right).
+\end{equation}
+The healthy voltage is the case-defined SG-online PF value at that IBR bus. RoCoF, active-power
+error, SCR, PLL-lock, and reference-availability diagnostics do not enter this scalar severity;
+applicable hard admissibility checks remain separate.
+
+While the SG is offline the same two-term signal is evaluated in real time. If the system severity
+remains at or above $\Gamma_{on}=0.65$ for $T_{d,on}=0.10$~s, the selector commits the smallest
+authenticated feasible strict superset of the present GFM set. If it remains below
+$\Gamma_{off}=0.35$ for $T_{d,off}=1.00$~s, it may commit a feasible subset, but at least one GFM
+and one authenticated island reference are retained. In the generated run, SG trip initially
+committed one GFM and the measured stress added three resources at 21.2~s; this is an event-driven
+one-to-four transition, not a manual four-GFM schedule.
+
+The breaker-open SG is synchronized to the live GFM-formed grid rather than to nominal zero slip.
+With $T_e=0$, define
 \begin{align}
-E_{VSM}&=V_{ref}-m_qQ_f+k_{pv}\left(V_{ref}-V_f\right)+k_{iv}x_E\notag\\
-&\Longrightarrow\quad
-x_E=\frac{E_{VSM}-V_{ref}+m_qQ_f-k_{pv}\left(V_{ref}-V_f\right)}{k_{iv}},
-\label{eq:sw-inv-xE}
+2H\dot\omega_{SG}&=P_m-D\omega_{SG}, & \dot\delta_{SG}&=\omega_0\omega_{SG},\\
+e_\theta&=\operatorname{wrap}(\angle V_{bus}-\angle V_{SG,oc}), &
+e_\omega&=\omega_g-\omega_{SG}.
 \end{align}
-which requires $k_{iv}>0$ (the code checks this and fails closed otherwise). The five filter states
-are set exactly to the measured quantities at that instant ($P_{inv,f}=\kappa P^-$,
-$Q_{inv,f}=\kappa Q^-$, $V_{inv,f}=|V_{bus}|$, and $I_{d,f},I_{q,f}$ from projecting the current
-onto the PLL frame), because a freshly restarted filter must not create a spurious transient from
-an initial value that disagrees with its input.
-
-\textbf{Step 4 --- verify the solution lies in the source-allowed region.} Before accepting $x^+$
-the code checks three layers and fails closed on each: $|I^-|$ must not exceed $I_{max}^F/\kappa$
-(if it did, the clamp would change $P,Q$, which is not acceptable), $E_{VSM}$ must lie in
-$[E_{min},E_{max}]$ of~\eqref{eq:gfm-elim}, and $\delta_{IT}$ must lie in
-$[\delta_{IT,min},\delta_{IT,max}]$. It also rejects the case where $|I^-|$ lands exactly on the
-clamp boundary, because the derivative is discontinuous there and the solution is not unique.
-
-\textbf{Step 5 --- verify by recomputing.} Feed $x^+$ back into the GFM current equation and
-compare with $I^-$ by~\eqref{eq:sw-cont}. This confirms steps 2--3 contain no error. Theoretically
-the value must be exactly zero; the $10^{-10}$ tolerance therefore covers only floating-point
-round-off, not a physical relaxation.
-
-\subsubsection{Device-level sync versus system-level sync}
-The word ``sync'' is used at two levels with two different mechanisms.
-
-\textbf{Device level} is steps 1--5 above: make the device itself consistent with the terminal
-condition at the \emph{same} voltage $V_{bus}$. Note that throughout steps 1--5 the voltage
-$V_{bus}$ is held fixed and never moves, so this is a per-device local problem that can be solved
-one device at a time.
-
-\textbf{System level} is the right-limit solve~\eqref{eq:sw-right}, needed because when several
-devices change their laws at once (and/or the topology changes $Y_{q^-}\to Y_{q^+}$), the old
-voltage $y(t_e^-)$ is in general \emph{no longer consistent} with the new KCL:
-\begin{equation}
-g_{q^+}\!\left(x^+,y(t_e^-),u\right)=Y_{q^+}V(t_e^-)-I_{bus}\!\left(x^+,y(t_e^-)\right)\ne0.
-\end{equation}
-One must therefore solve for $y(t_e^+)$ anew, \emph{holding $x^+$ fixed}, by damped Newton
-\begin{equation}
-J_{yy}\,\Delta y^{(i)}=-g_{q^+}\!\left(x^+,y^{(i)},u\right),\qquad
-y^{(i+1)}=y^{(i)}+\lambda_i\Delta y^{(i)},\qquad
-J_{yy}=\frac{\partial g_{q^+}}{\partial y},
-\label{eq:sw-newton}
-\end{equation}
-where $\lambda_i\in(0,1]$ comes from a backtracking line search that shrinks until the residual
-norm actually decreases (preventing over-long steps from diverging). It starts from
-$y^{(0)}=y(t_e^-)$ and stops when $\|g_{q^+}\|_\infty\le$ the step tolerance; if it does not
-converge, the whole transaction rolls back.
-
-The order \textbf{device first, then network} is essential and cannot be reversed: the device step
-needs a known $V_{bus}$ to invert its equations, and the network step needs a known $x^+$ to
-assemble $I_{bus}$. The two steps are therefore one transaction that commits or rolls back
-together.
-
-After this the system has a pair $\left(x(t_e^+),y(t_e^+)\right)$ consistent with both the device
-equations and KCL, and the trapezoidal recursion restarts correctly with $f_{q^+}$ as the vector
-field and this pair as the initial condition,
-\begin{equation}
-x_{k+2}-x(t_e^+)=\frac{h'}{2}\left[f_{q^+}\!\left(x(t_e^+),y(t_e^+)\right)
-+f_{q^+}\!\left(x_{k+2},y_{k+2}\right)\right],\qquad h'=t_{k+2}-t_e.
-\end{equation}
-In short, \emph{the recursion never crosses the event; it is cut into two segments joined by a
-physical continuity condition, not by continuity of the state coordinates.}
-
-\subsubsection{The SG case: why an extra synchronism gate is needed}
-The IBR case above has a ``sync'' that solves immediately in closed form, because the converter may
-freely choose its internal angle ($\delta_{IT}$ is just a number in the state). The SG \emph{cannot}
-do this: the rotor angle $\delta$ is tied to a real rotating mass and cannot change
-instantaneously. When closing the SG breaker we therefore have \emph{no freedom} to invert an
-equation for a desired $\delta^+$; whatever $\delta$ happens to be must simply be accepted.
-
-The roles are thus completely reversed: instead of \emph{solving} for the continuity condition, we
-must \emph{wait} until the physics brings the system close enough to continuity on its own. That is
-the job of the gate~\eqref{eq:guard-margin}, which compares the two phasors on either side of the
-breaker and closes only when the difference is small enough in magnitude, frequency, and angle. The
-accepted-run guard values reported with the final trajectory are evidence that the condition was made
-true before closing, not enforced after.
-
-This is the mathematical explanation of why the 145.000~s close request need not close
-immediately: \emph{the breaker closure is an event with no supporting reset map}, so it must wait
-for the state to approach continuity by itself, whereas an IBR mode switch has a solvable reset
-map and happens the instant the transaction commands it.
-
-\subsection{The SG trip and the gated reclose}
-At the trip the SG states are \emph{not} removed from $x$. The breaker-open branch
-replaces the connected-stator algebra with open-circuit physics: $I_d=I_q=0$, $T_e=0$, and
+The project-derived mechanical command is
 \begin{align}
-2H\Delta\dot\omega&=T_m(t)-D\Delta\omega, &
-T'_{d0}\dot E'_q&=E_{fd}(t)+c_dE''_q-d_dE'_q,\\
-T'_{q0}\dot E'_d&=c_qE''_d-d_qE'_d, &
-T''_{d0}\dot E''_q&=E'_q-E''_q,\\
-&&T''_{q0}\dot E''_d&=E'_d-E''_d.
+P_c&=\operatorname{sat}_{[0,P_{max}]}
+\left(D\omega_g+K_\omega e_\omega+K_\theta e_\theta\right),\\
+K_\omega&=4H\zeta\omega_n-D,qquad
+K_\theta=\frac{2H\omega_n^2}{\omega_0},\\
+T_{sv}\dot P_{sv}&=-P_{sv}+P_c,qquad
+T_{ch}\dot P_m=-P_m+P_{sv},
 \end{align}
-The current-dependent flux terms vanish and $\dot\delta=\omega_0\Delta\omega$ continues; the
-$T'_{q0}=0$ singular limit still holds $E'_d=0$. Here $T_m(t)$ is supplied by the offline exact
-prime-mover update using the deterministic phase-planner command, while the diagnostic voltage
-matcher supplies $E_{fd}(t)$. Neither input is claimed to be a frozen pre-trip constant over the
-whole outage. The rotor and open-circuit flux states therefore continue under the declared
-diagnostic preparation, which makes later resynchronisation meaningful.
+with $\omega_n=0.8$~rad/s, $\zeta=1$, $T_{sv}=0.2$~s, and $T_{ch}=0.4$~s. The voltage matcher
+acts separately on field input. The close request at 145~s is only the earliest allowed time; the
+case provides a 20-s synchronization opportunity and retains the unchanged 0.5-s dwell. The
+breaker closed at \RunReclose~s with
+$\Delta V=\RunSyncDV$~pu, $\Delta f=\RunSyncDF$~pu, and
+$\Delta\theta=\RunSyncDTheta^\circ$.
 
-The reclose is \emph{gated}, not scheduled. A guard compares the network bus phasor against the SG
-open-circuit EMF $\left(E''_q-\mathrm jE''_d\right)e^{\mathrm j\delta}$ and requires
-\begin{equation}
-|\Delta V|\le0.05~\text{pu},\qquad
-|\Delta f|\le0.001~\text{pu},\qquad
-|\Delta\theta|\le10^\circ,
-\end{equation}
-expressed as the signed margin
-\begin{equation}
-m=\min\left(0.05-|\Delta V|,\;0.001-|\Delta f|,\;10^\circ-|\Delta\theta_{wrap}|\right)\ge0,
-\label{eq:guard-margin}
-\end{equation}
-sustained for a $0.5$~s dwell. The requested close time is therefore only the earliest instant at
-which closure \emph{may} occur; the accepted close time is an output of the guard and dwell, not a
-scheduled constant.
+The post-reclose handback is not an all-device hard-coded command. SG must first pass the
+synchronism dwell. Thereafter each remaining GFM independently requires
+$S_i<\Gamma_{off}$ for $T_{d,off}$, followed by its own transfer and KCL transaction. The generated
+run records releases at \RunReleaseOne, \RunReleaseTwo, \RunReleaseThree, and
+\RunReleaseFour~s; all four IBRs are GFL from \RunFinalRelease~s onward.
 
-\section{Power-flow operating point}
-The power-flow is solved by the project Newton--Raphson routine. Q-limit
-enforcement is switched on, and the generator reactive-capability limits behind
-it are \emph{source-defined}, not assumed or tuned: they are the IEEE14
-generator data $Q_{\max}$ and $Q_{\min}$ in MVAr
-(\path{cases.case_matpower6_case14}, \texttt{mpc.gen} columns 5 and 4),
-converted to per unit with the single system base $S_{\mathrm{base}}=100$~MVA,
-\begin{equation}
-Q_{\max,\mathrm{pu}}=\frac{Q_{\max,\mathrm{MVAr}}}{100},\qquad
-Q_{\min,\mathrm{pu}}=\frac{Q_{\min,\mathrm{MVAr}}}{100},
-\label{eq:qlimits}
-\end{equation}
-with $P_{\max}$ taken the same way from \texttt{mpc.gen} column 9. Buses
-carrying no finite generator limit are left unconstrained
-($Q_{\max}=+\infty$, $Q_{\min}=-\infty$) and print a dash.
+\section{Generated event and trajectory evidence}
 
-It must be stated plainly that \emph{enabling the mechanism is not the same as
-constraining this operating point}. The PV$\to$PQ Q-limit switch is defined
-only for PV buses, and after the inverter buses are mapped to PQ resources this
-case has no PV bus at all, so the switch resolves in zero rounds and changes
-nothing. Two consequences follow and are reported rather than masked: the slack
-bus 1 settles at $Q_g=-0.196$~pu against its registered $Q_{\min}=0$, and bus 6
-at $Q_g=0.2476$~pu against $Q_{\max}=0.24$. Neither is a solver error --- a REF
-bus absorbs whatever reactive power closes the network balance and a PQ resource
-injects its scheduled $Q$ --- but neither is a limit the solve enforced. The
-limit columns therefore report registered source data, not satisfied
-constraints. The enforcement path itself is exercised by the baseline IEEE14
-case, which does carry PV buses.
+\IfFileExists{figures/switch_ieee14/table_event_timeline.tex}{%
+\input{figures/switch_ieee14/table_event_timeline.tex}}{The event table is generated after the production run.}
 
-The admissible voltage band is $\pm5\%$ about the $1.00$~pu slack reference,
-i.e.\ $V_{\max}=1.05$~pu and $V_{\min}=0.95$~pu on every bus
-(\texttt{CASE\_DEFINED} in \texttt{case\_ieee14bus\_eecon49\_switch}). This is
-a reporting and admissibility band, not a PF equation input: the slack is the
-only voltage-controlled bus in this operating point, so the band does not act
-as a PV-setpoint clamp. One observation is reported rather than masked: bus 6
-solves at $1.0575$~pu, \mbox{$7.5\times10^{-3}$~pu} above $V_{\max}$, because
-its mapped IBR6 reactive dispatch and the fixed 5--6 tap ratio are
-source/case-defined and were not adjusted to satisfy the band.
-
-The bus roles (REF/PQ/GFL) in the Type column are the \texttt{bus\_role}
-labelling descriptor (Section~\ref{sec:case-bus-roles}); being a label only,
-they do not alter \eqref{eq:qlimits} or any solved quantity.
-
-\begin{table}[htbp]\centering\small
-\caption{Bus power-flow results (pu)}
-\input{figures/switch_ieee14/table_pf_bus_results.tex}
-\end{table}
-
-\begin{table}[htbp]\centering\small
-\caption{From-end line flows and losses (pu)}
-\input{figures/switch_ieee14/table_pf_line_results.tex}
-\end{table}
-
-\section{200-s event and mode evidence}
-
-\begin{figure}[H]\centering
-\resizebox{0.95\textwidth}{!}{\input{figures/switch_ieee14/tikz_periods_en.tex}}
-\caption{Six-period disturbance sequence of the 200-s simulation from the accepted production
-event log: normal operation at 0~s, SG trip at 20~s, $P,Q$ load step $+20\%$ at 50~s, bus-9
-fault 85--85.15~s, line 6--13 trip at 110~s, and topology restoration plus the earliest SG-close
-request at 145~s. The accepted reclose and later indexed IBR release are separate logged events.}
-\end{figure}
-
-\begin{figure}[H]\centering
-\resizebox{0.98\textwidth}{!}{\input{figures/switch_ieee14/tikz_flowchart_en.tex}}
-\caption{GFL/GFM switching-strategy flowchart. The left column sets the operating point,
-parameters, and CASE\_DEFINED events; the right column is the online loop that measures the
-PCC signals each step, forms the implemented two-term severity of~\eqref{eq:agsi-legacy}, and
-separates index eligibility from the committed transaction. SG trip is the atomic all-GFM override;
-SG reclose returns the reference to the SG without changing IBR modes; subsequent per-device
-GFM$\to$GFL releases require the down-line dwell, transfer map, and right-limit KCL acceptance.}
-\end{figure}
-
+\IfFileExists{figures/switch_ieee14/ieee14_switch_200_supervisor.png}{%
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
-\caption{Bounded AGSI++, GRA, reference ownership, and the combined IBR1--IBR4 mode timeline.
-The owner trace identifies IBR1 at bus 2 as the grid-forming angle/frequency leader while the SG
-is open. All IBRs are GFL before 20~s and are atomically committed to GFM at the SG trip. At SG reclose they
-remain GFM; only the later severity-authorised transaction changes an IBR to GFL. The four mode
-traces are drawn with distinct line styles and a small display-only vertical offset ($\pm0.045$ of
-the 0/1 mode coordinate) where they coincide.}
-\end{figure}
+\caption{Raw accepted severity, reference ownership, and committed GFL/GFM modes.}
+\end{figure}}{}
 
+\IfFileExists{figures/switch_ieee14/ieee14_switch_200_electrical.png}{%
 \begin{figure}[H]\centering
 \includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_electrical.png}
-\caption{IBR and SG active/reactive power, frame currents, frequency, device-to-PCC angle,
-PCC voltage, and network minimum voltage. Solid traces are raw production results; dotted
-band-limited ripple is display-only and does not enter any equation or decision. Remaining vertical
-event excursions belong to the raw switching transient, not to the ripple.}
-\end{figure}
+\caption{Raw electrical trajectory from the accepted production result; no smoothing, clipping, filtering, or synthetic overlay is applied.}
+\end{figure}}{}
 
-\begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_angles.png}
-\caption{Angle detail. The offline SG rotor slips relative to the energized grid; the plotted
-coordinate is wrapped to $[-180,180)$ degrees.}
-\end{figure}
+The observed voltage and frequency extrema are deliberately not acceptance thresholds. A finite
+trajectory and converged all-KCL steps establish numerical completion of the requested run, while
+the excursion remains a model/controller limitation for subsequent development.
 
-At the accepted close (145.400~s), the synchronism mismatch is
-$\Delta V=9.985\times10^{-3}$~pu, $\Delta f=7.619\times10^{-6}$~pu, and
-$\Delta\theta=6.273^\circ$; all three lie inside the guard limits ($0.05$~pu, $0.001$~pu,
-$10^\circ$). The reclose right-limit KCL norm is $7.102\times10^{-10}$, and the left/right mode
-samples are GFM/GFM/GFM/GFM on both sides: reclose does not force a GFL handback. At 146.400~s the
-separate severity-dwell transaction commits all four GFM$\to$GFL transfers with right-limit KCL
-$3.022\times10^{-13}$. At 200~s the all-bus voltage range is 0.966733--1.057534~pu; no bus is below
-0.95~pu, while bus 6 remains $7.534\times10^{-3}$~pu above the 1.05 reporting band, consistent with
-the disclosed case-defined reactive dispatch. SG electrical and reactive powers are 1.331902~pu and
-$-0.195666$~pu, and $f_{COI}=60.000008$~Hz. Endpoint two-term severities are at most
-$1.048\times10^{-5}$, and the four GFL active/reactive tracking errors are below
-$1.1\times10^{-9}$~pu and $7.7\times10^{-10}$~pu, respectively.
+\section{Verification and reproduction}
 
-\section{Evidence boundary and reproduction}
-The primary run uses $\Delta t=0.10$~s. The accepted-close time (145.400~s) is an event-landed
-output of the synchronism guard, not a scheduled constant; the severity release at 146.400~s is a
-separate committed event after the 1.00-s down-line dwell. The maximum accepted-leaf residual is
-$9.685\times10^{-9}$; the maximum residual over all attempted parent/leaf steps is
-$3.539\times10^{-3}$ and the maximum subdivision depth is two. Event-time step-independence is not
-claimed. The run proves numerical execution of the declared chronology, atomic mode transfer, full
-KCL, synchronism-gated close, and index-driven return to all GFL. It does not validate the diagnostic
-synchronizer, governor parameters, energy reserve, or a general protection design against field
-measurements.
-The dotted display ripple is never used as model evidence; the solid raw traces remain visible.
+Independent targeted verification covers: fixed state ownership; GFL PLL sensitivity; GFM
+no-PLL angle ownership; the exact $E_{ref}$ coefficient in~\eqref{eq:gfm-e}; dc restoration;
+terminal-port continuity; per-unit power covariance; source-model SCR applicability; full-KCL
+equilibrium; physical SSSA; default trapezoidal equivalence; backward-Euler closed-form behavior;
+event rollback; SG reclose; and index-driven handback. The focused regression result is 71/71
+passed. The full repository suite was intentionally omitted under the repository risk policy;
+the targeted set covers the changed producer, consumers, and event failure paths.
+
+Reproduction commands are:
 \begin{verbatim}
-pf_init_paths;
-addpath(fullfile('scripts','reporting'));
-generate_ieee14_switch_report_figures(reuse_cache=true);
+matlab -batch "addpath('scripts/reporting'); ...
+  generate_gfl_gfm_sssa_tables"
+matlab -batch "addpath('scripts/diagnostics'); ...
+  run_ieee14_gfl_gfm_state_release"
+matlab -batch "addpath('scripts/reporting'); ...
+  generate_ieee14_switch_report_figures(reuse_cache=true)"
 \end{verbatim}
-All production solvers are project-owned MATLAB. The targeted numerical, producer and consumer,
-hybrid event, fail-closed, and external-solver-prohibition suites pass 108/108 tests. The full repository
-regression was intentionally omitted under the repository risk policy because these targeted gates
-cover the changed producer, consumers, and failure paths.
+The first command rebuilds the authenticated selector and all SSSA tables. The second command
+writes continuous progress and the complete transient result to:
+\begin{itemize}
+\item \path{output/diagnostics/engine_release_progress.log}
+\item \path{output/diagnostics/engine_release_result.log}
+\item \path{output/diagnostics/engine_release_result.mat}
+\end{itemize}
+The third command regenerates the figures, event table, and numerical macros used by this report.
+
+\section{Limitations}
+
+\begin{itemize}
+\item The dc-source controller is a declared project-derived closure because the case does not
+prescribe the external dc current law.
+\item The automatic selector is exhaustive only for at most four eligible IBRs. Larger systems
+fail closed pending a validated scalable search.
+\item Candidate feasibility includes full $P/Q$ balance and local operating limits at equilibrium,
+but it does not yet include a time-domain reserve/security score in its ranking.
+\item The model is balanced positive-sequence. Unbalanced and switching-frequency behavior is
+outside scope.
+\item Transient voltage oscillation is reported honestly and is not a readiness claim.
+\end{itemize}
+
 \end{document}

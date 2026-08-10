@@ -263,7 +263,13 @@ for k = 1:nr
         is_ibr = strcmpi(char(r.resource_type),'ibr');
     end
     pr.is_gfl = is_gfl && is_ibr;
-    pr.eligible_for_scr = on && is_ibr;
+    scr_profile='wecc_regca_strong_grid';
+    if isfield(r,'model_id') && strcmpi(char(r.model_id),'eecon49_dual')
+        scr_profile='not_applicable_full_state_source_model';
+    end
+    pr.scr_profile=scr_profile;
+    pr.eligible_for_scr = on && is_ibr && ...
+        strcmp(scr_profile,'wecc_regca_strong_grid');
 
     bp = find(bus_ids==pr.bus_id,1);
     pr.bus_position = bp;
@@ -271,6 +277,13 @@ for k = 1:nr
     if ~on || ~is_ibr
         pr.reason = 'offline or not IBR - not evaluated';
         pr.pass = true;
+        per_res(end+1,1)=pr;
+        continue;
+    end
+    if ~pr.eligible_for_scr
+        pr.reason=['SCR threshold not applicable to this full-state model; ' ...
+            'equilibrium, limits and full-KCL SSSA remain mandatory'];
+        pr.pass=true;
         per_res(end+1,1)=pr;
         continue;
     end
@@ -438,7 +451,7 @@ pr = struct('resource_index',[],'resource_id','', 'bus_id',NaN,'bus_position',[]
     'online',false,'is_gfl',false,'eligible_for_scr',false,...
     'Zth',complex(NaN,NaN),'absZth',NaN,'Vmag_used',NaN,'Ssc_pu',NaN,'Ssc_MVA',NaN,...
     'rating_MVA',NaN,'SCR',NaN,'threshold',3.0,'pass',false,'reason','',...
-    'failure_id','','classification',struct());
+    'failure_id','','classification',struct(),'scr_profile','');
 end
 
 function per_res = build_per_resource_empty(resources)

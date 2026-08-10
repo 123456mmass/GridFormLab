@@ -7,16 +7,17 @@ function init = mixed_ibr_reduced_initialize(dae, eq_context, reference_device_i
 %   device-state residual and physical KCL with the production closures.
 %
 %   Unknowns (single energized island):
-%     y except Im(V_ref_bus), one Q_terminal per GFM, and P_ref for exactly
-%     one selected reference GFM.  Im(V_ref_bus)=0 is coordinate elimination;
-%     no physical KCL row is removed.
+%     y except Im(V_ref_bus), plus P_ref for exactly one selected reference
+%     GFM.  Legacy voltage-reference devices additionally solve one terminal
+%     Q per GFM. Im(V_ref_bus)=0 is coordinate elimination; no physical KCL
+%     row is removed and no second device becomes REF.
 %
 %   Residuals:
-%     every rectangular network KCL row, plus |V_bus|-V_ref regulation for
-%     each GFM.  GFL P/Q and non-reference GFM P remain scheduled inputs.
-%     The selected reference GFM P is solved and reported explicitly so it
-%     balances voltage-dependent load and network losses.  Its Q is still a
-%     network-solved voltage-control output, not a Q reference.
+%     every rectangular network KCL row. Legacy voltage-reference devices
+%     also contribute |V_bus|-V_ref regulation per GFM. P/Q-reference devices
+%     retain every case/event Q_ref unchanged. The selected reference GFM P
+%     alone balances load and losses; this does not make another GFM an
+%     angle/slack reference.
 %
 %   Classification:
 %     device equations/base/signs: SOURCE_TRANSFORMED by their factories;
@@ -69,18 +70,22 @@ if isempty(online_idx)
     init.failure_reason = 'The reduced initializer requires online IBR devices.';
     return;
 end
-% Both registered dual-mode layouts implement the same equilibrium ABI.
+% The registered REGFM dual layouts implement the voltage-reference ABI.
 % The RMS10 family differs only in its GFL branch/state count; rejecting its
 % device_type here made the otherwise generic SG-off initializer silently
 % legacy-only.  Keep the allowlist explicit so an unknown future device still
 % fails closed rather than entering this initializer by name similarity.
 online_types = lower(string({dae.devices(online_idx).device_type}));
-supported_dual_types = ["ibr_dual_mode","ibr_dual_mode_rms10"];
-if any(~ismember(online_types, supported_dual_types))
+voltage_ref_types = ["ibr_dual_mode","ibr_dual_mode_rms10"];
+pq_ref_types = "ibr_eecon49_dual";
+uses_voltage_ref = all(ismember(online_types,voltage_ref_types));
+uses_pq_ref = all(ismember(online_types,pq_ref_types));
+if ~(uses_voltage_ref || uses_pq_ref)
     % This helper is deliberately not a fallback for an online SG or an
     % unknown future device. The caller retains its ordinary warm start.
     init.failure_id = 'mixed_ibr_reduced_initialize:notPureIBRIsland';
-    init.failure_reason = 'Reduced initializer applies only when every online device is a dual-mode IBR.';
+    init.failure_reason = ['Reduced initializer requires one homogeneous supported ' ...
+        'dual-mode equilibrium contract (voltage-reference or P/Q-reference).'];
     return;
 end
 if any(~ismember(lower(modes(online_idx)), ["gfl","gfm"]))
@@ -129,32 +134,58 @@ for k = online_idx(:)'
     names = string(dae.devices(k).input_names);
     p_slot(k) = find_input_slot(names,"P_ref",dae.devices(k).device_id);
     P_sched(k) = dae.devices(k).u0(p_slot(k));
-    if strcmpi(modes(k),"gfl")
+    if strcmpi(modes(k),"gfl") || uses_pq_ref
         q_slot(k) = find_input_slot(names,"Q_ref",dae.devices(k).device_id);
         Q_sched(k) = dae.devices(k).u0(q_slot(k));
+        if uses_pq_ref && strcmpi(modes(k),"gfm")
+            v_slot(k)=find_input_slot(names,"E_ref",dae.devices(k).device_id);
+            V_ref(k)=dae.devices(k).u0(v_slot(k));
+        end
     else
         v_slot(k) = find_input_slot(names,"V_ref",dae.devices(k).device_id);
         V_ref(k) = dae.devices(k).u0(v_slot(k));
     end
 end
 
-% Conventional a-priori flat-angle start. Magnitudes come from the in-house
-% PF warm start; GFM Q starts at zero as an initialization coordinate only.
+% Start from the in-house PF phasors and remove only the selected island's
+% common angle.  Discarding every PF angle creates an artificial high-voltage
+% basin for the P/Q-reference solve and can drive its balancing GFM into the
+% current limiter before the full-DAE acceptance test.
 Vpf = dae.y0(1:2:end) + 1i*dae.y0(2:2:end);
 if any(~isfinite(Vpf)) || any(abs(Vpf) <= 0)
     init.failure_id = 'mixed_ibr_reduced_initialize:badPFWarmStart';
     init.failure_reason = 'PF voltage warm start must be finite and nonzero.';
     return;
 end
-y_flat = zeros(ny,1);
-y_flat(1:2:end) = abs(Vpf);
-y_flat(gauge_var) = 0;
-q0 = zeros(numel(gfm_idx),1);
+if uses_pq_ref
+    Vseed=Vpf*exp(-1i*angle(Vpf(ref_dev.bus_position)));
+    y_flat=zeros(ny,1);
+    y_flat(1:2:end)=real(Vseed);
+    y_flat(2:2:end)=imag(Vseed);
+else
+    y_flat=zeros(ny,1);
+    y_flat(1:2:end)=abs(Vpf);
+end
+y_flat(gauge_var)=0;
 p0 = P_sched(reference_device_index);
-z0 = [y_flat(free_y); q0; p0];
-
-residual_fn = @(z) reduced_residual(z, dae, online_idx, gfm_idx, ...
-    reference_device_index, free_y, gauge_var, P_sched, Q_sched, V_ref);
+if uses_pq_ref
+    % Q_ref and E_ref remain immutable case/event inputs. Terminal Q is an
+    % equilibrium output constrained by the source GFM E-state equation.
+    % One scalar active-power mismatch is shared by selected GFMs.
+    p_participation=resolve_p_participation(opt,dae,online_idx,gfm_idx,reference_device_index);
+    q0=Q_sched(gfm_idx);
+    z0=[y_flat(free_y);q0;0.0];
+    residual_fn=@(z) pq_reference_residual(z,dae,online_idx,gfm_idx, ...
+        reference_device_index,free_y,gauge_var,P_sched,Q_sched, ...
+        p_participation,eq_context);
+else
+    p_participation=zeros(nd,1);
+    p_participation(reference_device_index)=1;
+    q0=zeros(numel(gfm_idx),1);
+    z0=[y_flat(free_y);q0;p0];
+    residual_fn=@(z) reduced_residual(z,dae,online_idx,gfm_idx, ...
+        reference_device_index,free_y,gauge_var,P_sched,Q_sched,V_ref);
+end
 J_fn = @(z) fd_jacobian(z, residual_fn, fd_eps);
 [z, niter, ok, rnorm, rc] = stability.composite_newton( ...
     z0, residual_fn, J_fn, tol, max_iter, verbose);
@@ -176,8 +207,14 @@ if ~isfinite(rc) || rc < 1e-10
     return;
 end
 
-[~, y, q_gfm, p_ref, kcl] = reduced_residual(z, dae, online_idx, gfm_idx, ...
-    reference_device_index, free_y, gauge_var, P_sched, Q_sched, V_ref);
+if uses_pq_ref
+    [~,y,q_gfm,p_ref,kcl,p_eq]=pq_reference_residual(z,dae,online_idx,gfm_idx, ...
+        reference_device_index,free_y,gauge_var,P_sched,Q_sched, ...
+        p_participation,eq_context);
+else
+    [~,y,q_gfm,p_ref,kcl]=reduced_residual(z,dae,online_idx,gfm_idx, ...
+        reference_device_index,free_y,gauge_var,P_sched,Q_sched,V_ref);
+end
 if real(y(2*ref_dev.bus_position-1)) <= 0
     init.failure_id = 'mixed_ibr_reduced_initialize:negativeReferenceVoltage';
     init.failure_reason = 'The gauge branch requires Re(V_reference)>0.';
@@ -193,15 +230,19 @@ V = y(1:2:end) + 1i*y(2:2:end);
 x = dae.x0;
 u_eq = dae.u0;
 devices_eq = dae.devices;
+if ~uses_pq_ref
+    p_eq=P_sched;
+    p_eq(reference_device_index)=p_ref;
+end
 q_by_device = NaN(nd,1);
 for iq = 1:numel(gfm_idx), q_by_device(gfm_idx(iq)) = q_gfm(iq); end
 for k = online_idx(:)'
-    P = P_sched(k);
+    P = p_eq(k);
     Q = Q_sched(k);
     if strcmpi(modes(k),"gfm")
         Q = q_by_device(k);
-        if k == reference_device_index, P = p_ref; end
     end
+    if k == reference_device_index, P = p_ref; end
     try
         xk = dae.devices(k).equilibrium_initialize( ...
             V(dae.devices(k).bus_position), P, Q, eq_context);
@@ -221,9 +262,17 @@ for k = online_idx(:)'
     x(xr) = xk(:);
 end
 
-ref_u_global = dae.u_offsets(reference_device_index) + p_slot(reference_device_index);
-u_eq(ref_u_global) = p_ref;
-devices_eq(reference_device_index).u0(p_slot(reference_device_index)) = p_ref;
+if uses_pq_ref
+    for k=online_idx(:)'
+        p_global=dae.u_offsets(k)+p_slot(k);
+        u_eq(p_global)=p_eq(k);
+        devices_eq(k).u0(p_slot(k))=p_eq(k);
+    end
+else
+    ref_u_global = dae.u_offsets(reference_device_index) + p_slot(reference_device_index);
+    u_eq(ref_u_global) = p_ref;
+    devices_eq(reference_device_index).u0(p_slot(reference_device_index)) = p_ref;
+end
 
 init.converged = true;
 init.x0 = x;
@@ -236,7 +285,91 @@ init.reference_p_scheduled_pu = p0;
 init.reference_p_solved_pu = p_ref;
 init.gfm_device_indices = gfm_idx(:)';
 init.gfm_q_solved_pu = q_gfm(:)';
+init.p_participation = p_participation(:)';
+init.p_solved_pu = p_eq(:)';
 init.physical_kcl_norm = norm(kcl,inf);
+end
+
+% =========================================================================
+function [r,y,q_gfm,p_ref,kcl_rect,p_eq] = pq_reference_residual(z,dae,online_idx, ...
+    gfm_idx,reference_device_index,free_y,gauge_var,P_sched,Q_sched, ...
+    p_participation,eq_context)
+ny=numel(dae.y0);
+nq=numel(gfm_idx);
+y=zeros(ny,1);
+y(free_y)=z(1:numel(free_y));
+y(gauge_var)=0;
+q_gfm=z(numel(free_y)+(1:nq));
+delta_p=z(end);
+p_eq=P_sched+p_participation*delta_p;
+p_ref=p_eq(reference_device_index);
+V=y(1:2:end)+1i*y(2:2:end);
+if any(~isfinite(V)) || any(abs(V)<=sqrt(eps)) || ...
+        ~isfinite(delta_p) || any(~isfinite(p_eq)) || any(~isfinite(q_gfm))
+    r=NaN(ny+nq,1); kcl_rect=NaN(ny,1); return;
+end
+Ibus=zeros(dae.nb,1);
+q_by_device=NaN(numel(dae.devices),1);
+for iq=1:nq, q_by_device(gfm_idx(iq))=q_gfm(iq); end
+for k=online_idx(:)'
+    P=p_eq(k);
+    Q=Q_sched(k);
+    if any(gfm_idx==k), Q=q_by_device(k); end
+    b=dae.devices(k).bus_position;
+    Ibus(b)=Ibus(b)+conj(complex(P,Q)/V(b));
+end
+kcl_complex=dae.Ynet*V-Ibus;
+kcl_rect=zeros(ny,1);
+kcl_rect(1:2:end)=real(kcl_complex);
+kcl_rect(2:2:end)=imag(kcl_complex);
+e_res=zeros(nq,1);
+for iq=1:nq
+    k=gfm_idx(iq);
+    dev=dae.devices(k);
+    b=dev.bus_position;
+    xk=dev.equilibrium_initialize(V(b),p_eq(k),q_gfm(iq),eq_context);
+    ur=dae.u_offsets(k)+(1:dev.nu);
+    dx=dev.f(0,xk,y,dae.u0(ur),eq_context);
+    e_local=find(strcmpi(string(dev.state_names),'gfm_E'),1);
+    if isempty(e_local)
+        error('mixed_ibr_reduced_initialize:missingEState', ...
+            'P/Q-reference GFM %s does not declare gfm_E.',dev.device_id);
+    end
+    e_res(iq)=dx(e_local);
+end
+r=[kcl_rect;e_res];
+end
+
+% =========================================================================
+function p=resolve_p_participation(opt,dae,online_idx,gfm_idx,reference_device_index)
+p=zeros(numel(dae.devices),1);
+participants=setdiff(online_idx,gfm_idx,'stable');
+if isempty(participants), participants=gfm_idx; end
+if isfield(opt,'p_participation') && isstruct(opt.p_participation) && ...
+        isscalar(opt.p_participation)
+    for k=participants(:)'
+        id=char(dae.devices(k).device_id);
+        if isfield(opt.p_participation,id)
+            p(k)=opt.p_participation.(id);
+        end
+    end
+elseif isfield(opt,'p_participation') && isnumeric(opt.p_participation) && ...
+        numel(opt.p_participation)==numel(dae.devices)
+    p=opt.p_participation(:);
+else
+    p(participants(1))=1;
+end
+if any(~isfinite(p)) || any(p<0) || ...
+        any(p(setdiff(1:numel(p),participants))~=0)
+    error('mixed_ibr_reduced_initialize:badParticipation', ...
+        'Active-power participation must be finite, nonnegative and participant-only.');
+end
+total=sum(p(participants));
+if total<=0
+    error('mixed_ibr_reduced_initialize:badParticipation', ...
+        'At least one active-power participant must have positive participation.');
+end
+p=p/total;
 end
 
 % =========================================================================

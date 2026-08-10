@@ -241,14 +241,19 @@ classdef SwitchableIbr6 < handle
             obj.latch = opts.latch;
             obj.P_ref0 = P_ref;
             obj.Q_ref0 = Q_ref;
-            obj.u = [P_ref; Q_ref];
+            E_ref=obj.V_ref;
+            if ~isempty(obj.V_ref_per_bus)
+                ir=find(obj.V_ref_per_bus(:,1)==obj.bus_id,1);
+                E_ref=obj.V_ref_per_bus(ir,2);
+            end
+            obj.u = [P_ref; Q_ref; E_ref];
             full_family = isfield(params,'ibr_model_family') && ...
                 strcmpi(string(params.ibr_model_family),'eecon49_full');
             if full_family
                 obj.gfl_dev = ibr.gfl_eecon49_full_model(string(device_id), bus_id, ...
                     bus_position, bus_ids, V0, params, P_ref, Q_ref);
                 obj.gfm_dev = ibr.gfm_eecon49_full_model(string(device_id), bus_id, ...
-                    bus_position, bus_ids, V0, params, P_ref, Q_ref);
+                    bus_position, bus_ids, V0, params, P_ref, Q_ref, E_ref);
             else
                 obj.gfl_dev = ibr.gfl_reduced6_model(string(device_id), bus_id, ...
                     bus_position, bus_ids, V0, params, P_ref, Q_ref);
@@ -279,12 +284,12 @@ classdef SwitchableIbr6 < handle
 
         function dx = f(obj, x, y)
             d = obj.active_dev();
-            dx = d.f(0, x, y, obj.u, struct());
+            dx = d.f(0, x, y, obj.branch_input(d), struct());
         end
 
         function I = current_injection(obj, x, y)
             d = obj.active_dev();
-            I = d.current_injection(0, x, y, obj.u, struct());
+            I = d.current_injection(0, x, y, obj.branch_input(d), struct());
             m = abs(I);
             if isfinite(obj.ilim) && m > obj.ilim
                 if strcmpi(obj.ilim_mode,'vi')
@@ -305,12 +310,12 @@ classdef SwitchableIbr6 < handle
 
         function Pe = electrical_power(obj, x, y)
             d = obj.active_dev();
-            Pe = d.electrical_power(0, x, y, obj.u, struct());
+            Pe = d.electrical_power(0, x, y, obj.branch_input(d), struct());
         end
 
         function rec = reconstruct(obj, x, y)
             d = obj.active_dev();
-            rec = d.reconstruct(0, x, y, obj.u, struct());
+            rec = d.reconstruct(0, x, y, obj.branch_input(d), struct());
         end
 
         function [agsi, parts] = compute_agsi(obj, x, y, t, do_update)
@@ -505,7 +510,7 @@ classdef SwitchableIbr6 < handle
                 obj.n_switch = obj.n_switch + 1; obj.last_switch_time = t;
             end
             obj.mode = 'gfl';
-            obj.u = [obj.P_ref0; obj.Q_ref0];
+            obj.u(1:2) = [obj.P_ref0; obj.Q_ref0];
             obj.mode_entry_time = t; obj.up_since = NaN; obj.down_since = NaN;
             obj.f_prev = NaN; obj.t_prev = NaN; obj.rocof_filt = NaN;
         end
@@ -517,7 +522,7 @@ classdef SwitchableIbr6 < handle
             %   below Gamma_off for T_d_off.  Restoring the dispatch at reclose
             %   prevents the island-support setpoint and the returning SG dispatch
             %   from being applied simultaneously (coordinated reference handback).
-            obj.u = [obj.P_ref0; obj.Q_ref0];
+            obj.u(1:2) = [obj.P_ref0; obj.Q_ref0];
             obj.down_since = NaN;
         end
 
@@ -529,7 +534,7 @@ classdef SwitchableIbr6 < handle
             %   the bus voltage settle back to V_ref_per_bus, so J_V falls and the
             %   local severity gates the handback (`maybe_switch` releases only
             %   when V/f are healthy again).  Calling this does NOT change mode.
-            obj.u = [obj.P_ref0; obj.Q_ref0];
+            obj.u(1:2) = [obj.P_ref0; obj.Q_ref0];
         end
 
         function reset(obj)
@@ -545,7 +550,7 @@ classdef SwitchableIbr6 < handle
             obj.t_prev = NaN;
             obj.rocof_filt = NaN;
             obj.last_index = 0;
-            obj.u = [obj.P_ref0; obj.Q_ref0];
+            obj.u(1:2) = [obj.P_ref0; obj.Q_ref0];
         end
     end
 
@@ -563,21 +568,32 @@ classdef SwitchableIbr6 < handle
             case 'GFM'
                 x_new = obj.gfm_dev.equilibrium_initialize(V, P, Q, struct());
                 x_new = x_new(:);
-                % Zero-derivative GFM start: P_ref=P (d_omega=0),
-                % Q_ref=Q+kE*(E0-|V|)/(kQ*kappa) (d(E)/dt=0).
-                p = obj.gfm_dev.provenance.params;
-                Eidx = 5;
-                if isfield(obj.gfm_dev.provenance,'E_index')
-                    Eidx = obj.gfm_dev.provenance.E_index;
+                % Zero-derivative GFM start: P_ref=P and the reactive bias
+                % uses the declared terminal-voltage reference E_t.
+                % The EECON49 full GFM branch has an explicit E_ref input and
+                % needs the source-mapped reactive bias for a zero-derivative
+                % transfer.  The legacy reduced GFM branch declares nu=2 and
+                % has no E_ref channel; applying that full-model bias there
+                % changes its Q command and prevents the diagnostic recovery
+                % path from reaching the down-line.  Keep the branch ABI and
+                % transfer map paired.
+                Eref = obj.u(3);
+                if isfield(obj.gfm_dev,'nu') && obj.gfm_dev.nu >= 3
+                    p = obj.gfm_dev.provenance.params;
+                    Eidx = 5;
+                    if isfield(obj.gfm_dev.provenance,'E_index')
+                        Eidx = obj.gfm_dev.provenance.E_index;
+                    end
+                    E0 = x_new(Eidx);
+                    Q = Q + p.kE*(E0-Eref)/(p.kQ*p.kappa);
                 end
-                E0 = x_new(Eidx);
-                obj.u = [P; Q + p.kE*(E0 - abs(V))/(p.kQ*p.kappa)];
+                obj.u = [P; Q; Eref];
                 obj.switched = true;
             case 'gfl'
                 x_new = obj.gfl_dev.equilibrium_initialize(V, P, Q, struct());
                 x_new = x_new(:);
                 % GFL equilibrium delivers (P,Q) at V with u=[P;Q].
-                obj.u = [P; Q];
+                obj.u(1:2) = [P; Q];
             otherwise
                 error('ibr:SwitchableIbr6:target','Unknown target mode "%s".', target);
             end
@@ -596,6 +612,29 @@ classdef SwitchableIbr6 < handle
             info.P = P;
             info.Q = Q;
             info.V = V;
+        end
+
+        function u = branch_input(obj, d)
+            %BRANCH_INPUT Map the supervisor's fixed input ABI to a branch.
+            % The supervisor stores [P_ref; Q_ref; E_ref] so the shared
+            % EECON49 GFM branch can consume the explicit E_ref input.  The
+            % legacy reduced pair and the EECON49 GFL branch retain their
+            % two-input ABI; passing E_ref to those models violates their
+            % declared input contract.  Dispatch by the branch's declared
+            % dimension rather than a model-name string.
+            if ~isstruct(d) || ~isfield(d,'nu') || ~isscalar(d.nu)
+                error('ibr:SwitchableIbr6:branchAbi', ...
+                    'Active branch lacks a scalar declared input dimension.');
+            end
+            switch d.nu
+                case 2
+                    u = obj.u(1:2);
+                case 3
+                    u = obj.u(1:3);
+                otherwise
+                    error('ibr:SwitchableIbr6:branchAbi', ...
+                        'Unsupported active branch input dimension %g.', d.nu);
+            end
         end
     end
 end

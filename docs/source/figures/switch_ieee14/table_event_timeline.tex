@@ -1,13 +1,17 @@
 % Generated from the accepted production event log.
 \begin{tabularx}{\textwidth}{@{}r p{0.15\textwidth} p{0.14\textwidth} p{0.19\textwidth} X@{}}\toprule
 Time (s) & Event / index & Timer & Mode before $\to$ after & Reason \\ \midrule
-20.000 & SG trip / 0.000 & reference-loss guard & all GFL $\to$ all GFM & SG opened; atomic all-GFM reference-security commit \\
-50.000 & load step / 0.010 & -- & all GFM $\to$ all GFM & base constant-impedance load increased \\
-85.000 & fault on / 0.129 & -- & all GFM $\to$ all GFM & bus-9 shunt fault applied \\
+20.000 & SG trip / 0.000 & reference-loss guard & all GFL $\to$ 1 GFM / 3 GFL & SG opened; authenticated selected-GFM transaction committed \\
+21.200 & GFM support add / 0.708 & 0.1-s severity dwell & 1 GFM / 3 GFL $\to$ all GFM & SG-off severity high; feasible strict superset committed \\
+50.000 & load step / 1.000 & -- & all GFM $\to$ all GFM & base constant-impedance load increased \\
+85.000 & fault on / 1.000 & -- & all GFM $\to$ all GFM & bus-9 shunt fault applied \\
 85.150 & fault clear / 1.000 & -- & all GFM $\to$ all GFM & fault admittance removed \\
-110.000 & line trip / 0.129 & -- & all GFM $\to$ all GFM & line 6--13 opened \\
-145.000 & topology restore / 0.120 & -- & all GFM $\to$ all GFM & base load and line restored \\
-145.000 & SG close request / 0.120 & -- & all GFM $\to$ all GFM & earliest close request; guard monitored \\
-145.400 & SG reclose / 0.019 & 0.5-s sync dwell & all GFM $\to$ all GFM & guard passed; SG owns reference; IBR modes unchanged \\
-146.400 & severity release / 0.024 & 1.0-s severity dwell & all GFM $\to$ all GFL & two-term severity dwell passed; transfer/KCL committed \\
+110.000 & line trip / 1.000 & -- & all GFM $\to$ all GFM & line 6--13 opened \\
+145.000 & topology restore / 1.000 & -- & all GFM $\to$ all GFM & base load and line restored \\
+145.000 & SG close request / 1.000 & -- & all GFM $\to$ all GFM & earliest close request; guard monitored \\
+154.300 & SG reclose / 1.000 & 0.5-s sync dwell & all GFM $\to$ all GFM & guard passed; SG owns reference; IBR modes unchanged \\
+159.200 & severity release / 0.299 & 1.0-s severity dwell & all GFM $\to$ 3 GFM / 1 GFL & two-term severity dwell passed; transfer/KCL committed \\
+162.700 & severity release / 0.583 & 1.0-s severity dwell & 3 GFM / 1 GFL $\to$ 2 GFM / 2 GFL & two-term severity dwell passed; transfer/KCL committed \\
+193.000 & severity release / 0.160 & 1.0-s severity dwell & 2 GFM / 2 GFL $\to$ 1 GFM / 3 GFL & two-term severity dwell passed; transfer/KCL committed \\
+194.100 & severity release / 0.291 & 1.0-s severity dwell & 1 GFM / 3 GFL $\to$ all GFL & two-term severity dwell passed; transfer/KCL committed \\
 \bottomrule\end{tabularx}

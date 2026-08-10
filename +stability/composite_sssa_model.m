@@ -276,10 +276,10 @@ sssa.physical_reduction_method = 'none_full_state_decision';
 sssa.physical_omega = max(real(sssa.physical_eigenvalues));
 sssa.physical_stable = all(real(sssa.physical_eigenvalues) < 0);
 
-if ~isfield(opt,'active_bound_regimes') || isempty(opt.active_bound_regimes)
-    return;
+locked = repmat(struct('dev_idx',0,'local_idx',0,'regime',''),0,1);
+if isfield(opt,'active_bound_regimes') && ~isempty(opt.active_bound_regimes)
+    locked = opt.active_bound_regimes;
 end
-locked = opt.active_bound_regimes;
 if ~isstruct(locked)
     error('composite_sssa_model:badActiveBoundRegimes', ...
         'opt.active_bound_regimes must be the final locked regime struct array.');
@@ -332,7 +332,7 @@ if ~isempty(locked_active)
     method_parts{end+1} = 'fixed_active_bound_tangent_elimination'; %#ok<AGROW>
 end
 
-[A_work,coordinate_global,gauge_meta] = quotient_common_gfm_pll( ...
+[A_work,coordinate_global,gauge_meta] = quotient_common_gfm_angle( ...
     A_work,coordinate_global,dae,event_context,opt);
 if gauge_meta.applied
     sssa.coordinate_gauge_global_index = gauge_meta.global_index;
@@ -340,7 +340,7 @@ if gauge_meta.applied
     sssa.coordinate_mode_count = 1;
     sssa.coordinate_quotient_left_map = gauge_meta.L;
     sssa.coordinate_quotient_right_map = gauge_meta.T;
-    method_parts{end+1} = 'common_gfm_pll_angle_quotient'; %#ok<AGROW>
+    method_parts{end+1} = gauge_meta.method; %#ok<AGROW>
 end
 
 sssa.physical_A = A_work;
@@ -437,29 +437,36 @@ end
 end
 
 % =========================================================================
-function [Aq,global_out,meta] = quotient_common_gfm_pll(A,global_in,dae,event_context,opt)
-meta = struct('applied',false,'global_index',[],'state_name','','L',[],'T',[]);
+function [Aq,global_out,meta] = quotient_common_gfm_angle(A,global_in,dae,event_context,opt)
+meta = struct('applied',false,'global_index',[],'state_name','', ...
+    'method','','L',[],'T',[]);
 Aq = A;
 global_out = global_in;
 if online_sg_present(dae,event_context), return; end
 
-pll_global = zeros(1,0);
-pll_dev = zeros(1,0);
+angle_global = zeros(1,0);
+angle_dev = zeros(1,0);
 for dk = 1:numel(dae.devices)
     dev = dae.devices(dk);
     if ~device_online(dev,event_context) || ~strcmpi(device_mode(dev,event_context),'gfm')
         continue;
     end
+    % The rotational gauge belongs to the angle coordinate of every online
+    % GFM, regardless of whether that controller is legacy PLL-based or a
+    % VSG without a PLL.  Explicit names keep this fail-closed for unrelated
+    % state layouts.
     local = find(strcmpi(dev.state_names,'gfm_delta_PLL') | ...
-        strcmpi(dev.state_names,'delta_PLL'),1,'first');
+        strcmpi(dev.state_names,'gfm_delta_VSG') | ...
+        strcmpi(dev.state_names,'delta_PLL') | ...
+        strcmpi(dev.state_names,'delta_VSG'),1,'first');
     if isempty(local), continue; end
     gi = dae.device_offsets(dk)+local;
     if ismember(gi,global_in)
-        pll_global(end+1) = gi; %#ok<AGROW>
-        pll_dev(end+1) = dk; %#ok<AGROW>
+        angle_global(end+1) = gi; %#ok<AGROW>
+        angle_dev(end+1) = dk; %#ok<AGROW>
     end
 end
-if isempty(pll_global), return; end
+if isempty(angle_global), return; end
 
 ref_dev = [];
 if isfield(opt,'reference_device_index') && ~isempty(opt.reference_device_index)
@@ -468,11 +475,11 @@ elseif isfield(event_context,'hybrid_state') && ...
         isfield(event_context.hybrid_state,'reference_resource_index')
     ref_dev = event_context.hybrid_state.reference_resource_index;
 end
-ref_pick = find(pll_dev == ref_dev,1,'first');
+ref_pick = find(angle_dev == ref_dev,1,'first');
 if isempty(ref_pick), ref_pick = 1; end
-ref_global = pll_global(ref_pick);
+ref_global = angle_global(ref_pick);
 ref_pos = find(global_in == ref_global,1,'first');
-pll_pos = arrayfun(@(g)find(global_in==g,1,'first'),pll_global);
+angle_pos = arrayfun(@(g)find(global_in==g,1,'first'),angle_global);
 
 n = numel(global_in);
 retain = setdiff(1:n,ref_pos,'stable');
@@ -481,7 +488,7 @@ L = zeros(numel(retain),n);
 for r = 1:numel(retain)
     q = retain(r);
     L(r,q) = 1;
-    if ismember(q,pll_pos)
+    if ismember(q,angle_pos)
         L(r,ref_pos) = -1;
     end
 end
@@ -489,8 +496,13 @@ Aq = L*A*T;
 global_out = global_in(retain);
 meta.applied = true;
 meta.global_index = ref_global;
-meta.state_name = sprintf('%s/%s',dae.devices(pll_dev(ref_pick)).device_id, ...
-    dae.devices(pll_dev(ref_pick)).state_names{ref_global-dae.device_offsets(pll_dev(ref_pick))});
+meta.state_name = sprintf('%s/%s',dae.devices(angle_dev(ref_pick)).device_id, ...
+    dae.devices(angle_dev(ref_pick)).state_names{ref_global-dae.device_offsets(angle_dev(ref_pick))});
+if contains(lower(meta.state_name),'pll')
+    meta.method='common_gfm_pll_angle_quotient';
+else
+    meta.method='common_gfm_vsg_angle_quotient';
+end
 meta.L = L;
 meta.T = T;
 end

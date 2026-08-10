@@ -13,10 +13,9 @@ function scenario = scenario_ieee14_1sg_4ibr(scenario_opt)
 %
 %   Resource table (5 entries, IEEE14-specific):
 %     SG1  - sg_emf6, bus 1, Kodsi 615 MVA, supported {"synchronous","breaker_open"}
-%     IBR2 - regfm_b1_dual, bus 2, Mbase 140, supported {"gfl","gfm","tripped"}
-%     IBR3 - regfm_b1_dual, bus 3, Mbase 100, supported {"gfl","gfm","tripped"}
-%     IBR6 - regfm_b1_dual, bus 6, Mbase 100, supported {"gfl","gfm","tripped"}
-%     IBR8 - regfm_b1_dual, bus 8, Mbase 100, supported {"gfl","gfm","tripped"}
+%     IBR2/3/6/8 - profile-owned dual-mode IBRs at buses 2/3/6/8.
+%       mission: REGFM_B1 + WECC/RMS10 family and historical nameplates.
+%       eecon49_figure4: shared-plant GFL(PLL)/GFM(VSG, no PLL), 100 MVA each.
 %
 %   STATUS: SOURCE_MODELS_IMPLEMENTED_PENDING_END_TO_END_GATES.
 %
@@ -80,8 +79,9 @@ switch ibr_profile
             'Unknown ibr_profile "%s".', ibr_profile);
 end
 
-% IBR2/3/6/8: dual-mode GFL + REGFM_B1 G2 GFM.
-% Mbase is the CASE_DEFINED nameplate proxy (IBR2=140, IBR3/6/8=100).
+% IBR2/3/6/8: profile-owned dual-mode model and machine base.
+% The mission case retains its historical nameplates. The Figure-4 source
+% case defines a common 100-MVA IBR base for every converter.
 % The EECON49 Figure-4 case additionally owns a nonzero GFL reactive-power
 % schedule in bus_data(:,6).  Preserve it in resource metadata so the generic
 % factory does not silently replace the mapped PQ operating point by unity PF.
@@ -89,11 +89,20 @@ end
 q_default_MVAr = zeros(1,4);
 if strcmp(case_profile,'eecon49_figure4')
     q_default_MVAr = case_ibr_q_dispatch_MVAr(case_data,[2 3 6 8]);
+    ibr_model_id = 'eecon49_dual';
+    ibr_Mbase = [100 100 100 100];
+    if ~isempty(gfl_family)
+        error('cases:scenario_ieee14_1sg_4ibr:profileConflict', ...
+            'eecon49_figure4 owns its GFL/GFM branches; rms10_profile_b is incompatible.');
+    end
+else
+    ibr_model_id = 'regfm_b1_dual';
+    ibr_Mbase = [140 100 100 100];
 end
-ibr2 = ibr_entry('IBR2', 2, 140.0, 'gfl', gfl_family, q_default_MVAr(1));
-ibr3 = ibr_entry('IBR3', 3, 100.0, 'gfl', gfl_family, q_default_MVAr(2));
-ibr6 = ibr_entry('IBR6', 6, 100.0, 'gfl', gfl_family, q_default_MVAr(3));
-ibr8 = ibr_entry('IBR8', 8, 100.0, 'gfl', gfl_family, q_default_MVAr(4));
+ibr2 = ibr_entry('IBR2',2,ibr_Mbase(1),'gfl',gfl_family,q_default_MVAr(1),ibr_model_id);
+ibr3 = ibr_entry('IBR3',3,ibr_Mbase(2),'gfl',gfl_family,q_default_MVAr(2),ibr_model_id);
+ibr6 = ibr_entry('IBR6',6,ibr_Mbase(3),'gfl',gfl_family,q_default_MVAr(3),ibr_model_id);
+ibr8 = ibr_entry('IBR8',8,ibr_Mbase(4),'gfl',gfl_family,q_default_MVAr(4),ibr_model_id);
 
 resource_spec = [sg1, ibr2, ibr3, ibr6, ibr8];
 
@@ -107,11 +116,20 @@ scenario.scenario_id = 'ieee14_1sg_4ibr';
 if strcmp(case_profile,'eecon49_figure4')
     scenario.scenario_id = 'ieee14_eecon49_1sg_4ibr';
 end
+if strcmp(ibr_model_id,'eecon49_dual')
+    ibr_model_label = 'project-owned full-state GFL(PLL) + GFM(VSG without PLL) shared-plant dual';
+    ibr_classification = ['AC/control equations=SOURCE_MAPPED; DC-source regulator, ' ...
+        'fixed superset and transfer=PROJECT_DERIVED; parameters/bases=CASE_DEFINED'];
+else
+    ibr_model_label = sprintf('%s GFL + REGFM_B1 G2 GFM dual-mode superset',gfl_family_label(gfl_family));
+    ibr_classification = ['SG1=CASE_DEFINED (Kodsi); IBR Mbase=CASE_DEFINED nameplate proxy; ' ...
+        'REGFM_B1 Table 1=SOURCE_VERBATIM'];
+end
 scenario.provenance = struct( ...
     'case_source', case_data.reference.network, ...
     'sg_dynamics', case_data.reference.sg_dynamics, ...
-    'ibr_model', sprintf('%s GFL + REGFM_B1 G2 GFM dual-mode superset', gfl_family_label(gfl_family)), ...
-    'classification', 'SG1=CASE_DEFINED (Kodsi); IBR Mbase=CASE_DEFINED nameplate proxy; REGFM_B1 Table 1=SOURCE_VERBATIM', ...
+    'ibr_model',ibr_model_label, ...
+    'classification',ibr_classification, ...
     'note', 'IEEE14 IDs/buses confined to this profile only; engine is case-agnostic');
 end
 
@@ -154,7 +172,7 @@ r.provenance = struct( ...
 end
 
 % =========================================================================
-function r = ibr_entry(rid, bus, Mbase, initial_mode, gfl_family, default_Q_MVAr)
+function r = ibr_entry(rid,bus,Mbase,initial_mode,gfl_family,default_Q_MVAr,model_id)
 %IBR_ENTRY  Build one dual-mode IBR resource table entry (uniform provenance).
 %   Optional GFL_FAMILY (5th arg) selects the GFL branch at construction:
 %     '' | 'wecc_regca_reeca'  -> WECC 7-state (default, 20-state dual)
@@ -164,11 +182,12 @@ function r = ibr_entry(rid, bus, Mbase, initial_mode, gfl_family, default_Q_MVAr
 %   builder. Omitting either optional value preserves the historical defaults.
 if nargin < 5, gfl_family = ''; end
 if nargin < 6, default_Q_MVAr = 0.0; end
+if nargin < 7, model_id = 'regfm_b1_dual'; end
 r = struct();
 r.resource_id = rid;
 r.bus_id = bus;
 r.resource_type = 'ibr';
-r.model_id = 'regfm_b1_dual';
+r.model_id = model_id;
 r.supported_modes = ["gfl","gfm","tripped"];
 r.voltage_forming_modes = "gfm";   % only GFM forms voltage
 r.initial_mode = initial_mode;
@@ -178,9 +197,13 @@ r.can_switch_online = true;
 r.has_current_limiter = true;
 r.has_frt = true;
 r.can_black_start = false;
-% Current limits on IBR machine base (REGFM_B1 Table 1 example, CASE_DEFINED).
+if strcmp(model_id,'eecon49_dual')
+    ImaxSS=1.2; ImaxF=1.2;
+else
+    ImaxSS=1.0; ImaxF=1.5;
+end
 r.limits = struct( ...
-    'ImaxSS', 1.0, 'ImaxF', 1.5, ...   % pu on machine base
+    'ImaxSS',ImaxSS,'ImaxF',ImaxF, ...   % pu on machine base
     'Pmax_MW', Mbase, 'Qmax_MVAr', Mbase, ...
     'Emax', 1.2, 'Emin', 0.8);
 r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, ...
@@ -189,15 +212,35 @@ r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, ...
 % REGFM_B1 parameters otherwise remain owned by their source-model defaults.
 % An optional gfl_family selects the RMS10 opt-in branch (construction-time).
 r.dynamic_params = struct('Mbase', Mbase);
-if ~isempty(gfl_family)
+if strcmp(model_id,'eecon49_dual')
+    r.dynamic_params.Sbase=100.0;
+    r.dynamic_params.fbase=60.0;
+    r.dynamic_params.gfl_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
+        'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'kpPLL',1.2,'kiPLL',5.0, ...
+        'kpP',0.8,'kiP',2.5,'kpQ',0.8,'kiQ',2.5,'kpI',0.3,'kiI',4.0);
+    r.dynamic_params.gfm_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
+        'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'M',0.08,'Dv',1.5, ...
+        'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
+        'kpI',0.3,'kiI',4.0);
+    r.dynamic_params.dc_source=struct('Tdc',0.10);
+elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
 end
+if strcmp(model_id,'eecon49_dual')
+    source='EECON49-P4 Eqs.(6)-(29), Figs.1-2 and parameter table';
+    classification=['AC/control=SOURCE_MAPPED; base/reference/parameters=CASE_DEFINED; ' ...
+        'DC-source regulator and transfer=PROJECT_DERIVED'];
+    details=sprintf(['20-state shared-plant superset; GFL controller owns PLL; ' ...
+        'GFM controller owns VSG and no PLL; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s'], ...
+        Mbase,default_Q_MVAr);
+else
+    source='WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM';
+    classification='Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED';
+    details=sprintf(['20-state superset (GFM13+GFL7); Mbase=%.0f MVA; ' ...
+        'default Q=%.9g MVAr; kappa=Sbase/Mbase at boundary'],Mbase,default_Q_MVAr);
+end
 r.provenance = struct( ...
-    'model', 'regfm_b1_dual', ...
-    'source', 'WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM', ...
-    'classification', 'Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED', ...
-    'details', sprintf(['20-state superset (GFM13+GFL7); Mbase=%.0f MVA; ' ...
-        'default Q=%.9g MVAr; kappa=Sbase/Mbase at boundary'],Mbase,default_Q_MVAr));
+    'model',model_id,'source',source,'classification',classification,'details',details);
 end
 
 function q_MVAr = case_ibr_q_dispatch_MVAr(case_data,bus_ids)

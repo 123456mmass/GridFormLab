@@ -179,6 +179,12 @@ end
 if isfield(opt,'progress_file') && ~isempty(opt.progress_file)
     ts_opt_base.progress_file = opt.progress_file;
 end
+if isfield(opt,'max_step_subdivisions') && ~isempty(opt.max_step_subdivisions)
+    ts_opt_base.max_step_subdivisions=opt.max_step_subdivisions;
+end
+if isfield(opt,'state_predictor') && ~isempty(opt.state_predictor)
+    ts_opt_base.state_predictor=opt.state_predictor;
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...
@@ -287,6 +293,18 @@ if isfield(opt,'healthy_pf_V')
 end
 if isfield(opt,'healthy_pf_bus_ids')
     ts_opt_ibr.healthy_pf_bus_ids = opt.healthy_pf_bus_ids;
+end
+% Opt-in real-time two-line AGSI supervisor.  This is deliberately separate
+% from automatic_gfm_switching: the latter authorizes the SG-trip formation,
+% while this flag authorizes subsequent SG-off support augmentation/release.
+if isfield(opt,'automatic_support_supervision')
+    ts_opt_ibr.automatic_support_supervision = opt.automatic_support_supervision;
+end
+severity_fields={'severity_gamma_on','severity_gamma_off', ...
+    'severity_T_d_on','severity_T_d_off'};
+for k=1:numel(severity_fields)
+    name=severity_fields{k};
+    if isfield(opt,name), ts_opt_ibr.(name)=opt.(name); end
 end
 % Propagate canonical value (resolved early, before device build).
 ts_opt_ibr.automatic_gfm_switching = canonical_agfm;
@@ -418,6 +436,9 @@ if isfield(ts_res,'committed_config_fingerprint')
 end
 if isfield(ts_res,'pre_event_input_fingerprint')
     result.pre_event_input_fingerprint = ts_res.pre_event_input_fingerprint;
+end
+if isfield(ts_res,'selector_table_fingerprint')
+    result.selector_table_fingerprint = ts_res.selector_table_fingerprint;
 end
 if isfield(ts_res,'t_sg_trip'), result.t_sg_trip = ts_res.t_sg_trip; end
 if isfield(ts_res,'failure_id')

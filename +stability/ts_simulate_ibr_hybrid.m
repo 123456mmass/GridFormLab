@@ -86,9 +86,20 @@ reselection_deadline = NaN;  % exact-landing target: actual_reclose + T_down
 sg_on_cand = [];  % authenticated SG_ON candidate (Step 5); [] until authenticated
 sg_on_auth_ok = false;
 % Per-device down-line timers for the opt-in severity handback.  A timer is
-% finite only while that online GFM's complete V/f evidence stays below
-% Gamma_off; each device therefore earns its own T_d_off dwell.
-severity_release_since = nan(1,numel(dae.devices));
+    % finite only while that online GFM's complete V/f evidence stays below
+    % Gamma_off; each device therefore earns its own T_d_off dwell.
+    severity_release_since = nan(1,numel(dae.devices));
+    % SG-off AGSI supervisor timers.  A single system up/down timer is used
+    % because J_f is a system signal and every online switchable IBR is checked
+    % before a configuration transaction.  Hysteresis makes the timers
+    % mutually exclusive. Rejected transactions are lockout-limited.
+    support_up_since = NaN;
+    support_down_since = NaN;
+    support_retry_after = -Inf;
+    support_status = 'DISABLED';
+    support_predictor_active = false;
+    predictor_prev_x = [];
+    predictor_prev_t = NaN;
 transaction_counter = 0;
 controller_audit = struct();
 converged = true;
@@ -104,11 +115,13 @@ accepted_steps = 0;
 internal_substeps = 0;
 domain_rejected_total = 0;
 subdivision_depth = 0;
+subdivision_hint = 0;
+rannacher_steps_remaining=0;
 % --- Phase-1 read-only resynchronization diagnostics (Mission C) -------------
-% Per-sample record of the synchronism state during the offline coast. These
+% Per-sample record of the synchronism state during the breaker-open interval. These
 % accumulators are written but never read by the integration logic, so they do
-% not alter the trajectory. They exist to explain WHY the natural coast times
-% out (Tm frozen + Te=0 -> slip monotonically -> Tm/D, far above df_max).
+% not alter the trajectory. They expose the actual grid-relative voltage,
+% frequency, and phase margins used by the reclose transaction.
 % Start as a completely empty struct (1×1, zero fields). The first appended
 % record DEFINES the field template, and every subsequent record must match it.
 % This avoids MATLAB struct-array field-type mismatch between a pre-declared
@@ -137,22 +150,50 @@ while t < settings.t_end-settings.event_tol
             target=min(target,reselection_deadline);
         end
     end
+    if settings.severity_support_enabled && ~sg_online_state(dae,ec)
+        due=[];
+        if isfinite(support_up_since)
+            due(end+1)=support_up_since+settings.severity_T_d_on; %#ok<AGROW>
+        end
+        if isfinite(support_down_since)
+            due(end+1)=support_down_since+settings.severity_T_d_off; %#ok<AGROW>
+        end
+        due=due(due>t+settings.event_tol);
+        if ~isempty(due), target=min(target,min(due)); end
+    end
     h = target-t;
     if h <= settings.event_tol
         t = target;
     else
+        x_step_left=x;
+        t_step_left=t;
         u_step=u; sync_candidate=sync_ctl;
         if sync_ctl.active
             [u_step,sync_candidate]=advance_sync_controller( ...
                 sync_ctl,x,y,t,h,dae,ec,u,case_data);
         end
         active = stability.ts_dynamic_state_indices(dae,ec);
+        predictor='hold';
+        if support_predictor_active, predictor=settings.state_predictor; end
         step_opt = struct('newton_tol',settings.newton_tol, ...
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
             'verbose',settings.verbose,'full_kcl',true,'t_now',t, ...
-            'domain_preserving_trials',true);
-        [step,retry_stats] = advance_with_subdivision( ...
-            x,y,t,h,dae,Ycurr,u_step,ec,active,step_opt,settings,0);
+            'domain_preserving_trials',true, ...
+            'state_predictor',predictor);
+        if support_predictor_active && strcmpi(predictor,'linear_kcl') && ...
+                ~isempty(predictor_prev_x) && isfinite(predictor_prev_t) && ...
+                t>predictor_prev_t+settings.event_tol
+            ratio=h/(t-predictor_prev_t);
+            step_opt.x_predictor=x+ratio*(x-predictor_prev_x);
+        end
+        if rannacher_steps_remaining>0
+            [step,retry_stats]=advance_rannacher_restart( ...
+                x,y,t,h,dae,Ycurr,u_step,ec,active,step_opt,settings);
+        else
+            [step,retry_stats] = advance_with_subdivision_hint( ...
+                x,y,t,h,dae,Ycurr,u_step,ec,active,step_opt,settings, ...
+                subdivision_hint);
+        end
         step_attempts=step_attempts+retry_stats.attempts;
         internal_substeps=internal_substeps+retry_stats.accepted_leaf_steps;
         domain_rejected_total = domain_rejected_total + retry_stats.domain_rejected_trials;
@@ -176,6 +217,18 @@ while t < settings.t_end-settings.event_tol
         end
         t = target;
         accepted_steps=accepted_steps+1;
+        subdivision_hint=next_subdivision_hint( ...
+            subdivision_hint,retry_stats,settings.max_step_subdivisions);
+        if support_predictor_active
+            predictor_prev_x=x_step_left;
+            predictor_prev_t=t_step_left;
+        else
+            predictor_prev_x=[];
+            predictor_prev_t=NaN;
+        end
+        if rannacher_steps_remaining>0
+            rannacher_steps_remaining=rannacher_steps_remaining-1;
+        end
         % Progress log (presentation-only, opt-in, default off): every
         % settings.progress_every seconds of SIM time, append the current time
         % to settings.progress_file so a long-running batch can be tailed live
@@ -186,7 +239,11 @@ while t < settings.t_end-settings.event_tol
             if t-lastp >= settings.progress_every
                 pfd = fopen(settings.progress_file,'a');
                 if pfd>0
-                    fprintf(pfd,'PROGRESS t=%.4f\n',t);
+                    fprintf(pfd,[ ...
+                        'PROGRESS t=%.4f iter=%d residual=%.3e attempts=%d ' ...
+                        'leaves=%d depth=%d\n'],t,step.iterations, ...
+                        retry_stats.accepted_residual_norm,retry_stats.attempts, ...
+                        retry_stats.accepted_leaf_steps,retry_stats.subdivision_depth);
                     fclose(pfd);
                 end
                 settings.progress_last = t;
@@ -370,6 +427,126 @@ while t < settings.t_end-settings.event_tol
     if event_applied
         active = stability.ts_dynamic_state_indices(dae,ec);
         samples = append_sample(samples,t,x,y,u,ec,active,topology,'right',group_tx_id);
+        rannacher_steps_remaining=1;
+        subdivision_hint=0;
+        predictor_prev_x=[];
+        predictor_prev_t=NaN;
+    end
+    % --- Real-time SG-off AGSI support supervisor --------------------------
+    % Event names are not switching commands. Every accepted sample is
+    % measured using only J_V and J_f. The hysteresis/dwell lines decide WHEN
+    % support changes; the authenticated SG_OFF table decides WHICH smallest
+    % admissible superset/subset may be attempted. The live-topology
+    % right-limit KCL solve remains the final atomic commit gate.
+    if settings.severity_support_enabled && ~sg_online_state(dae,ec)
+        [sev_ok, online_ibr, sev_values] = online_ibr_severity( ...
+            t,x,y,u,ec,dae,settings);
+        current_modes=current_mode_vector(dae,ec);
+        current_gfm=online_ibr(strcmpi(current_modes(online_ibr),'gfm'));
+        current_gfl=online_ibr(strcmpi(current_modes(online_ibr),'gfl'));
+        up_stress=false;
+        down_healthy=false;
+        if sev_ok
+            gfl_mask=ismember(online_ibr,current_gfl);
+            up_stress=~isempty(current_gfl) && ...
+                any(sev_values(gfl_mask)>=settings.severity_gamma_on);
+            down_healthy=~isempty(current_gfm) && ...
+                all(sev_values<settings.severity_gamma_off);
+        end
+        hold_ok=isfinite(t_trip) && ...
+            t-t_trip>=settings.T_minimum_hold-settings.event_tol;
+        if ~hold_ok
+            support_up_since=NaN; support_down_since=NaN;
+            support_status='MINIMUM_HOLD';
+        elseif ~sev_ok
+            support_up_since=NaN; support_down_since=NaN;
+            support_status='EVIDENCE_UNAVAILABLE';
+        elseif up_stress
+            if ~isfinite(support_up_since), support_up_since=t; end
+            support_down_since=NaN;
+            support_status='PENDING_UP_DWELL';
+        elseif down_healthy
+            support_up_since=NaN;
+            if ~isfinite(support_down_since), support_down_since=t; end
+            support_status='PENDING_DOWN_DWELL';
+        else
+            support_up_since=NaN; support_down_since=NaN;
+            support_status='HYSTERESIS_HOLD';
+        end
+
+        direction=''; candidate=struct(); found=false; selection_audit=struct();
+        up_due=isfinite(support_up_since) && ...
+            t-support_up_since>=settings.severity_T_d_on-settings.event_tol;
+        down_due=isfinite(support_down_since) && ...
+            t-support_down_since>=settings.severity_T_d_off-settings.event_tol;
+        if t>=support_retry_after-settings.event_tol && up_due
+            direction='augment';
+            [candidate,found,selection_audit]= ...
+                stability.select_support_augmentation_candidate( ...
+                opt.selector_table,current_gfm);
+        elseif t>=support_retry_after-settings.event_tol && down_due
+            direction='release';
+            [candidate,found,selection_audit]= ...
+                stability.select_support_release_candidate( ...
+                opt.selector_table,current_gfm);
+        end
+
+        if ~isempty(direction) && found
+            transaction_counter=transaction_counter+1;
+            support_tx_id=transaction_counter;
+            samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,support_tx_id);
+            [ok,x_new,y_new,u_new,ec_new,support_log,reason,right_norm]= ...
+                sg_off_support_transaction(t,x,y,Ycurr,u,ec,dae,settings, ...
+                candidate,direction);
+            log=new_event_log(['gfm_support_' direction],t);
+            log.transaction_id=support_tx_id;
+            log.pre_kcl_norm=kcl_norm(dae,t,x,y,Ycurr,u,ec);
+            log.right_kcl_norm=right_norm;
+            log.input_before=u; log.input_after=u_new;
+            log.selected_gfm_indices=candidate.selected_gfm_indices;
+            log.reference_resource_index=candidate.reference_resource_index;
+            if ok
+                x=x_new; y=y_new; u=u_new; ec=ec_new;
+                active=stability.ts_dynamic_state_indices(dae,ec);
+                log.applied=true; log.details=support_log.details;
+                samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',support_tx_id);
+                % The device-owned transfer already enforces terminal-current
+                % continuity and the atomic transaction enforces live KCL.
+                % A BE/Rannacher restart here was counterproductive: it moved
+                % the accepted controller state off the continuous
+                % trapezoidal branch and raised the next-step Newton count
+                % from 5 to 20--33. Keep canonical trapezoidal stepping for
+                % this bumpless mode-only transaction. Scheduled load/fault/
+                % topology discontinuities still retain their restart.
+                rannacher_steps_remaining=0;
+                subdivision_hint=0;
+                support_status=upper(['COMMITTED_' direction]);
+                support_retry_after=t+settings.T_lockout;
+                support_predictor_active=true;
+                predictor_prev_x=[];
+                predictor_prev_t=NaN;
+            else
+                log.applied=false;
+                log.failure_id='ts_simulate_ibr_hybrid:sgOffSupportTransaction';
+                log.details=reason;
+                support_status=upper(['REJECTED_' direction]);
+                support_retry_after=t+settings.T_lockout;
+            end
+            support_up_since=NaN; support_down_since=NaN;
+            event_log(end+1,1)=log; %#ok<AGROW>
+            log_status=stability.ibr_status_snapshot(log.type,t,dae,ec,active, ...
+                kcl_norm(dae,t,x,y,Ycurr,u,ec));
+            event_log(end).status=log_status;
+            status_log(end+1,1)=log_status; %#ok<AGROW>
+            append_progress_event(settings,t,log.type,log.applied,log.details);
+        elseif ~isempty(direction) && ~found
+            support_status=upper(selection_audit.reason);
+            support_retry_after=t+settings.T_lockout;
+            support_up_since=NaN; support_down_since=NaN;
+        end
+    elseif settings.severity_support_enabled
+        support_up_since=NaN; support_down_since=NaN;
+        support_status='SG_ON';
     end
 
     if sync_ctl.active && ~pending_reclose && isfield(sched,'sg_on') && ...
@@ -490,6 +667,10 @@ while t < settings.t_end-settings.event_tol
                 sync_ctl=enter_online_governor(sync_ctl,u_new,t);
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
+                subdivision_hint=0;
+                support_predictor_active=false;
+                predictor_prev_x=[];
+                predictor_prev_t=NaN;
                 log.applied=true; log.details=handler_log.details;
                 samples=append_sample(samples,t,x,y,u,ec,active,topology,'right',reclose_tx_id);
                 if isfield(sched,'coordinated_handback') && sched.coordinated_handback
@@ -750,6 +931,7 @@ res.subdivision_depth=subdivision_depth;
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
+res.support_supervision_status=support_status;
 % Propagate reference-ownership + fingerprint fields from the final event context.
 if ~isempty(res.event_context_history) && iscell(res.event_context_history)
     final_ec = res.event_context_history{end};
@@ -830,7 +1012,7 @@ if ~isfield(sched,'enabled'), error('ts_simulate_ibr_hybrid:badSchedule','Schedu
 s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
     'verbose',logical(option(opt,'verbose',false)),'newton_tol',1e-8, ...
     'max_iter',50,'fd_eps',3e-6,'kcl_tol',1e-6,'event_tol',1e-12, ...
-    'max_step_subdivisions',4, ...
+    'max_step_subdivisions',option(opt,'max_step_subdivisions',4), ...
     'sync_dwell',case_data.synchronism.dwell_s, ...
     'sync_timeout',case_data.synchronism.timeout_s, ...
     'min_off',case_data.delays.T_sg_min_off_s,'sync_overrides',struct(), ...
@@ -841,6 +1023,7 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
 s.progress_every = option(opt,'progress_every',0);
 s.progress_file  = char(option(opt,'progress_file',''));
 s.progress_last  = -Inf;
+s.state_predictor = char(option(opt,'state_predictor','hold'));
 s.healthy_pf_V = option(opt,'healthy_pf_V',[]);
 s.healthy_pf_bus_ids = option(opt,'healthy_pf_bus_ids',[]);
 has_healthy_v = isfield(opt,'healthy_pf_V') && ~isempty(opt.healthy_pf_V);
@@ -850,8 +1033,13 @@ if xor(has_healthy_v,has_healthy_bus)
         'healthy_pf_V and healthy_pf_bus_ids must be supplied together.');
 end
 s.severity_handback_enabled = has_healthy_v && has_healthy_bus;
-s.severity_gamma_off = 0.35;
-s.severity_T_d_off = 1.00;
+s.severity_support_enabled = logical(option(opt,'automatic_support_supervision',false)) && ...
+    logical(option(opt,'automatic_gfm_switching',true)) && ...
+    has_healthy_v && has_healthy_bus;
+s.severity_gamma_on = option(opt,'severity_gamma_on',0.65);
+s.severity_gamma_off = option(opt,'severity_gamma_off',0.35);
+s.severity_T_d_on = option(opt,'severity_T_d_on',0.10);
+s.severity_T_d_off = option(opt,'severity_T_d_off',1.00);
 s.severity_dV_base = 0.10;
 s.severity_df_base_Hz = 0.50;
 s.severity_f0_Hz = case_data.base_values.frequency_Hz;
@@ -866,6 +1054,15 @@ if s.severity_handback_enabled
     end
     s.healthy_pf_V=hV; s.healthy_pf_bus_ids=hB;
 end
+sev_contract=[s.severity_gamma_on,s.severity_gamma_off, ...
+    s.severity_T_d_on,s.severity_T_d_off];
+if any(~isfinite(sev_contract)) || s.severity_gamma_off<0 || ...
+        s.severity_gamma_on<=s.severity_gamma_off || ...
+        s.severity_T_d_on<0 || s.severity_T_d_off<0
+    error('ts_simulate_ibr_hybrid:invalidSeverityContract', ...
+        ['Severity thresholds/dwells must be finite, Gamma_on>Gamma_off>=0, ' ...
+         'and T_d_on/T_d_off nonnegative.']);
+end
 if isfield(opt,'synchronism_overrides'), s.sync_overrides=opt.synchronism_overrides; end
 if isfield(opt,'delays_overrides')
     d=opt.delays_overrides;
@@ -879,6 +1076,12 @@ end
 vals=[s.t_end,s.dt,s.sync_dwell,s.sync_timeout,s.min_off];
 if any(~isfinite(vals)) || s.t_end<=0 || s.dt<=0 || any(vals(3:5)<0)
     error('ts_simulate_ibr_hybrid:badOptions','Time-step and delay settings are invalid.');
+end
+if ~isscalar(s.max_step_subdivisions) || ~isfinite(s.max_step_subdivisions) || ...
+        s.max_step_subdivisions<0 || s.max_step_subdivisions~=fix(s.max_step_subdivisions) || ...
+        s.max_step_subdivisions>12
+    error('ts_simulate_ibr_hybrid:badOptions', ...
+        'max_step_subdivisions must be an integer in [0,12].');
 end
 end
 
@@ -906,14 +1109,16 @@ if trial.converged && trial.finite
     step=trial;
     return;
 end
+
 if depth>=s.max_step_subdivisions
     step=trial;
     return;
 end
 
 h2=h/2;
+[left_opt,right_opt]=subdivision_predictor_options(step_opt,x0);
 [left,left_stats]=advance_with_subdivision( ...
-    x0,y0,t0,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
+    x0,y0,t0,h2,dae,Ynet,u,ec,active,left_opt,s,depth+1);
 stats.attempts=stats.attempts+left_stats.attempts;
 stats.accepted_leaf_steps=left_stats.accepted_leaf_steps;
 stats.domain_rejected_trials=stats.domain_rejected_trials+left_stats.domain_rejected_trials;
@@ -927,7 +1132,7 @@ if ~left.converged || ~left.finite
     return;
 end
 [right,right_stats]=advance_with_subdivision( ...
-    left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,step_opt,s,depth+1);
+    left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,right_opt,s,depth+1);
 stats.attempts=stats.attempts+right_stats.attempts;
 stats.accepted_leaf_steps=left_stats.accepted_leaf_steps+right_stats.accepted_leaf_steps;
 if right.converged && right.finite
@@ -945,6 +1150,81 @@ stats.terminal_domain_failure=pick_terminal_failure(stats.terminal_domain_failur
 step=right;
 step.iterations=trial.iterations+left.iterations+right.iterations;
 step.residual_norm=max([trial.residual_norm,left.residual_norm,right.residual_norm]);
+end
+
+function [step,stats]=advance_with_subdivision_hint( ...
+    x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s,hint)
+% Use the previous accepted logical step only as a work hint. Forced leaves
+% still solve the identical implicit residual and can subdivide further.
+% No previous numerical state or correction is reused.
+hint=max(0,min(s.max_step_subdivisions,fix(hint)));
+[step,stats]=advance_forced_subdivision( ...
+    x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s,0,hint);
+end
+
+function [step,stats]=advance_forced_subdivision( ...
+    x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s,depth,remaining)
+if remaining<=0
+    [step,stats]=advance_with_subdivision( ...
+        x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s,depth);
+    return;
+end
+h2=h/2;
+[left_opt,right_opt]=subdivision_predictor_options(step_opt,x0);
+[left,ls]=advance_forced_subdivision( ...
+    x0,y0,t0,h2,dae,Ynet,u,ec,active,left_opt,s,depth+1,remaining-1);
+stats=ls;
+if ~left.converged || ~left.finite
+    step=left;
+    return;
+end
+[right,rs]=advance_forced_subdivision( ...
+    left.x_full,left.y_full,t0+h2,h2,dae,Ynet,u,ec,active,right_opt, ...
+    s,depth+1,remaining-1);
+stats.attempts=ls.attempts+rs.attempts;
+stats.accepted_leaf_steps=ls.accepted_leaf_steps+rs.accepted_leaf_steps;
+stats.domain_rejected_trials=ls.domain_rejected_trials+rs.domain_rejected_trials;
+stats.subdivision_depth=max(ls.subdivision_depth,rs.subdivision_depth);
+stats.terminal_domain_failure=pick_terminal_failure( ...
+    ls.terminal_domain_failure,rs.terminal_domain_failure,right,left);
+if right.converged && right.finite
+    stats.accepted_residual_norm=max( ...
+        ls.accepted_residual_norm,rs.accepted_residual_norm);
+end
+step=right;
+step.iterations=left.iterations+right.iterations;
+step.residual_norm=max(left.residual_norm,right.residual_norm);
+end
+
+function hint=next_subdivision_hint(previous,stats,max_depth)
+% If every forced/adaptive leaf passed on its first solve, cautiously coarsen
+% one dyadic level. Otherwise start the next step near the accepted leaf
+% count, avoiding repeated failed coarse ancestors.
+if stats.accepted_leaf_steps<=0 || ~isfinite(stats.accepted_leaf_steps)
+    hint=0;
+elseif stats.attempts==stats.accepted_leaf_steps
+    hint=max(previous-1,0);
+else
+    hint=ceil(log2(max(1,stats.accepted_leaf_steps)));
+end
+hint=max(0,min(max_depth,hint));
+end
+
+function [left_opt,right_opt]=subdivision_predictor_options(step_opt,x0)
+% A linear predictor supplied to this routine targets the END of the
+% caller's interval.  Reusing that endpoint for the left half over-predicts
+% by a factor of two at every recursion level and can dominate the work in a
+% stiff post-event transient.  Interpolate only the left-child endpoint;
+% the right child retains the original parent endpoint.  This changes the
+% Newton initial guess only, never the BE/trapezoidal residual or gate.
+left_opt=step_opt;
+right_opt=step_opt;
+if isfield(step_opt,'x_predictor') && isnumeric(step_opt.x_predictor) && ...
+        numel(step_opt.x_predictor)==numel(x0) && ...
+        all(isfinite(step_opt.x_predictor(:)))
+    xp=step_opt.x_predictor(:);
+    left_opt.x_predictor=x0+0.5*(xp-x0);
+end
 end
 
 % =========================================================================
@@ -1175,6 +1455,10 @@ if automatic_gfm_switching
     end
     try
         [ur,dispatch]=input_for_dispatch_stage(u,dae,case_data,'post_trip');
+        if isfield(cand,'eq_u_eq') && ~isempty(cand.eq_u_eq)
+            ur=apply_authenticated_candidate_inputs(ur,cand.eq_u_eq,dae);
+            dispatch=dispatch_snapshot(ur,dae);
+        end
     catch me
         stage='dispatch'; reason=sprintf('%s: %s',me.identifier,me.message); return;
     end
@@ -1276,9 +1560,8 @@ try
             diag.dV_pu = abs(abs(vb) - abs(rec.V_open_circuit));
         end
         if isfield(rec,'omega') && isfinite(rec.omega)
-            % Convention: rec.omega is deviation-from-zero (the hybrid route
-            % calls synchronism_guard with omega_ref=0.0), so df_pu = abs(omega).
-            diag.df_pu = abs(rec.omega);
+            omega_grid=reference_grid_omega(dae,x,y,u,ec);
+            diag.df_pu = abs(rec.omega-omega_grid);
         end
         if isfield(rec,'delta') && isfinite(rec.delta)
             diag.dtheta_deg = abs(angle(vb)*180/pi - rec.delta*180/pi);
@@ -1403,6 +1686,118 @@ hl = struct('applied', false, ...
     'n_gfm_required', [], 'reference_resource_index', []);
 end
 
+function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm] = ...
+    sg_off_support_transaction(t,x,y,Y,u,ec,dae,settings,candidate,direction)
+%SG_OFF_SUPPORT_TRANSACTION  Atomic live GFM support augmentation/release.
+%   Candidate identity and steady-state admissibility come only from the
+%   project-built SG_OFF table.  The event-left input is preserved for a
+%   bumpless live transfer; transfer callbacks plus a live-Y full-KCL solve
+%   are mandatory before mode/reference metadata is published.
+ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
+handler_log=struct('details',''); reason=''; right_norm=inf;
+if sg_online_state(dae,ec)
+    reason='SG-off support transaction rejected because an SG is online.';
+    return;
+end
+required={'selected_gfm_indices','reference_resource_index','ready_to_commit','feasible'};
+for k=1:numel(required)
+    if ~isfield(candidate,required{k})
+        reason=sprintf('Authenticated support candidate lacks %s.',required{k});
+        return;
+    end
+end
+selected=unique(candidate.selected_gfm_indices(:).','stable');
+ref=candidate.reference_resource_index;
+if isempty(selected) || numel(selected)~=numel(candidate.selected_gfm_indices) || ...
+        ~isequal(candidate.ready_to_commit,true) || ~isequal(candidate.feasible,true) || ...
+        ~isscalar(ref) || ~isfinite(ref) || ~ismember(ref,selected)
+    reason='Authenticated support candidate is not a ready nonempty referenced GFM set.';
+    return;
+end
+current_modes=current_mode_vector(dae,ec);
+current_gfm=find(strcmpi(current_modes,'gfm'));
+if strcmp(direction,'augment')
+    relation_ok=numel(selected)>numel(current_gfm) && all(ismember(current_gfm,selected));
+elseif strcmp(direction,'release')
+    relation_ok=numel(selected)<numel(current_gfm) && all(ismember(selected,current_gfm));
+else
+    relation_ok=false;
+end
+if ~relation_ok
+    reason=sprintf('Support %s candidate violates the required strict set relation.',direction);
+    return;
+end
+% Preserve every non-IBR mode verbatim. In particular, an offline SG must
+% remain breaker_open; the generic SG_ON target builder intentionally maps
+% SGs to synchronous and therefore is not valid in this transaction.
+target_modes=current_modes;
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    is_ibr=isfield(dev,'capabilities') && ...
+        isfield(dev.capabilities,'resource_type') && ...
+        strcmpi(char(dev.capabilities.resource_type),'ibr');
+    if ~is_ibr, continue; end
+    if ismember(k,selected), target_modes{k}='gfm'; else, target_modes{k}='gfl'; end
+end
+changing=find_mode_changes(current_modes,target_modes);
+if isempty(changing)
+    reason='Support transaction contains no physical mode change.';
+    return;
+end
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    is_ibr=isfield(dev,'capabilities') && ...
+        isfield(dev.capabilities,'resource_type') && ...
+        strcmpi(char(dev.capabilities.resource_type),'ibr');
+    if ~is_ibr && ~strcmp(current_modes{k},target_modes{k})
+        reason='SG-off support transaction attempted to mutate a non-IBR mode.';
+        return;
+    end
+end
+ec_right=ec;
+ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(ec.hybrid_state);
+for k=1:numel(changing)
+    idx=changing(k); dev=dae.devices(idx);
+    key=matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+    ec_right.hybrid_state.device_modes.(key)=target_modes{idx};
+end
+try
+    x_right=apply_device_transfers(x,y,u,ec,ec_right,dae);
+catch me
+    reason=sprintf('transfer map failed: %s: %s',me.identifier,me.message);
+    return;
+end
+hs=ec_right.hybrid_state;
+if ~isfield(hs,'reference_island_ids') || numel(hs.reference_island_ids)~=1
+    reason='SG-off support transaction requires one authenticated live island ID.';
+    return;
+end
+hs.selected_gfm_indices=selected;
+hs.n_gfm_required=numel(selected);
+hs.reference_resource_index=ref;
+hs.reference_owner_indices=ref;
+hs.gfm_reference_resource_indices=ref;
+version=0;
+if isfield(hs,'selector_table_version') && isnumeric(hs.selector_table_version) && ...
+        isscalar(hs.selector_table_version) && isfinite(hs.selector_table_version)
+    version=hs.selector_table_version;
+end
+version=version+1;
+hs.selector_table_version=version;
+hs.committed_config_fingerprint=sprintf( ...
+    'sg_off_agsi_%s|selected=%s|ref=%d|version=%d', ...
+    direction,mat2str(selected),ref,version);
+ec_right.hybrid_state=hs;
+[ok,y_right,reason,right_norm]=right_limit( ...
+    x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+if ok
+    handler_log.details=sprintf( ...
+        ['SG-off AGSI %s committed at t=%.3f; selected=%s, reference=%d, ' ...
+         '%d device(s) transitioned.'], ...
+        direction,t,mat2str(selected),ref,numel(changing));
+end
+end
+
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
     reselection_transaction(t, x, y, Y, u, ec, dae, settings, target_modes, ...
     target_selected, authority)
@@ -1516,7 +1911,21 @@ function [ok, current_gfm, severity] = post_reclose_severity( ...
 %   published diagnostic.  The function returns ok=false unless every current
 %   online switchable GFM maps uniquely to a healthy-PF voltage reference and
 %   every required measurement is finite.  An empty current_gfm is valid.
-ok=false; current_gfm=[]; severity=[];
+[ok, online_ibr, severity_all]=online_ibr_severity(t,x,y,u,ec,dae,settings);
+current_gfm=[]; severity=[];
+if ~ok, return; end
+modes=current_mode_vector(dae,ec);
+mask=strcmpi(modes(online_ibr),'gfm');
+current_gfm=online_ibr(mask);
+severity=severity_all(mask);
+end
+
+function [ok, online_ibr, severity] = online_ibr_severity( ...
+    t, x, y, u, ec, dae, settings)
+%ONLINE_IBR_SEVERITY  Complete two-term AGSI evidence for every online IBR.
+%   The scalar contains only J_V and J_f.  Feasibility, SSSA margin, current
+%   limits, and reference ownership remain separate non-tradeable gates.
+ok=false; online_ibr=[]; severity=[];
 nd=numel(dae.devices);
 freq=nan(1,nd); inertia=nan(1,nd); online=false(1,nd);
 rec_cache=cell(1,nd);
@@ -1540,7 +1949,8 @@ for k=1:nd
             isfinite(rec.H_system) && rec.H_system>0
         freq(k)=settings.severity_f0_Hz*(1+rec.omega);
         inertia(k)=rec.H_system;
-    elseif isfield(rec,'gfm') && isstruct(rec.gfm) && ...
+    elseif strcmpi(char(rec.mode),'gfm') && ...
+            isfield(rec,'gfm') && isstruct(rec.gfm) && ...
             isfield(rec.gfm,'omega_m') && isfinite(rec.gfm.omega_m) && ...
             isfield(rec.gfm,'H_system') && isfinite(rec.gfm.H_system) && ...
             rec.gfm.H_system>0
@@ -1559,13 +1969,14 @@ for k=1:nd
         strcmpi(char(dev.capabilities.resource_type),'ibr') && ...
         isfield(dev.capabilities,'voltage_forming_modes') && ...
         any(strcmpi(string(dev.capabilities.voltage_forming_modes),'gfm'));
-    if is_switchable_ibr && online(k) && strcmpi(char(rec.mode),'gfm')
-        current_gfm(end+1)=k; %#ok<AGROW>
+    if is_switchable_ibr && online(k) && ...
+            any(strcmpi(char(rec.mode),{'gfl','gfm'}))
+        online_ibr(end+1)=k; %#ok<AGROW>
     end
 end
-severity=nan(1,numel(current_gfm));
-for q=1:numel(current_gfm)
-    k=current_gfm(q); dev=dae.devices(k); bp=dev.bus_position;
+severity=nan(1,numel(online_ibr));
+for q=1:numel(online_ibr)
+    k=online_ibr(q); dev=dae.devices(k); bp=dev.bus_position;
     if ~isscalar(bp) || bp<1 || 2*bp>numel(y), return; end
     Vm=abs(complex(y(2*bp-1),y(2*bp)));
     ref_idx=find(settings.healthy_pf_bus_ids==dev.bus_id);
@@ -1576,6 +1987,25 @@ for q=1:numel(current_gfm)
     severity(q)=min(1,max(0,0.5*Jv+0.5*Jf));
 end
 ok=all(isfinite(severity));
+end
+
+function tf=sg_online_state(dae,ec)
+%SG_ONLINE_STATE  True when any synchronous resource remains connected.
+tf=false;
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    is_sg=isfield(dev,'capabilities') && ...
+        isfield(dev.capabilities,'resource_type') && ...
+        strcmpi(char(dev.capabilities.resource_type),'sg');
+    if ~is_sg, continue; end
+    key=matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+    if isfield(ec.hybrid_state,'device_online') && ...
+            isfield(ec.hybrid_state.device_online,key) && ...
+            logical(ec.hybrid_state.device_online.(key))
+        tf=true;
+        return;
+    end
+end
 end
 
 function modes = current_mode_vector(dae, ec)
@@ -1635,6 +2065,64 @@ dispatch=dispatch_snapshot(u_right,dae);
 [ok,y_right,reason,right_norm]=right_limit(x_right,y,Y,dae,u_right,ec_right,t,kcl_tol);
 end
 
+function [step,stats]=advance_rannacher_restart(x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s)
+% Two backward-Euler half steps provide the standard Rannacher restart after
+% a discontinuity. The intermediate landing is internal and unpublished.
+be_opt=step_opt;
+be_opt.integration_method='backward_euler';
+h2=h/2;
+[left,ls]=advance_with_subdivision(x0,y0,t0,h2,dae,Ynet,u,ec,active,be_opt,s,0);
+stats=ls;
+if ~left.converged || ~left.finite
+    step=left;
+    return;
+end
+[right,rs]=advance_with_subdivision(left.x_full,left.y_full,t0+h2,h2, ...
+    dae,Ynet,u,ec,active,be_opt,s,0);
+stats.attempts=ls.attempts+rs.attempts;
+stats.accepted_leaf_steps=ls.accepted_leaf_steps+rs.accepted_leaf_steps;
+stats.domain_rejected_trials=ls.domain_rejected_trials+rs.domain_rejected_trials;
+stats.subdivision_depth=max(ls.subdivision_depth,rs.subdivision_depth);
+stats.terminal_domain_failure=pick_terminal_failure( ...
+    ls.terminal_domain_failure,rs.terminal_domain_failure,right,left);
+if right.converged && right.finite
+    stats.accepted_residual_norm=max( ...
+        ls.accepted_residual_norm,rs.accepted_residual_norm);
+end
+step=right;
+step.iterations=left.iterations+right.iterations;
+step.residual_norm=max(left.residual_norm,right.residual_norm);
+end
+
+function u_new=apply_authenticated_candidate_inputs(u_new,u_candidate,dae)
+% The selector and event must use one operating-point input contract. Only
+% the project-owned P/Q-reference model consumes its authenticated P_ref/Q_ref
+% entries; legacy voltage-reference devices retain their historical path.
+if ~isvector(u_candidate) || numel(u_candidate)~=numel(u_new) || ...
+        any(~isfinite(u_candidate))
+    error('ts_simulate_ibr_hybrid:badCandidateInputs', ...
+        'Authenticated candidate inputs must match the composite input vector.');
+end
+u_candidate=u_candidate(:);
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    if ~isfield(dev,'device_type') || ...
+            ~strcmpi(char(dev.device_type),'ibr_eecon49_dual')
+        continue;
+    end
+    for wanted=["P_ref","Q_ref"]
+        slot=find(strcmpi(string(dev.input_names),wanted));
+        if numel(slot)~=1
+            error('ts_simulate_ibr_hybrid:badCandidateInputs', ...
+                'Device %s must declare exactly one %s input.', ...
+                dev.device_id,char(wanted));
+        end
+        gi=dae.u_offsets(k)+slot;
+        u_new(gi)=u_candidate(gi);
+    end
+end
+end
+
 function [u_new,dispatch]=input_for_dispatch_stage(u,dae,case_data,stage)
 %INPUT_FOR_DISPATCH_STAGE Apply the explicit CASE_DEFINED MW contract.
 % P_ref is an input, not a state jump.  The physical mode transfer is made
@@ -1656,6 +2144,14 @@ if ~isscalar(Sbase) || ~isfinite(Sbase) || Sbase<=0
     error('ts_simulate_ibr_hybrid:badDispatchContract','baseMVA must be finite positive.');
 end
 u_new=u;
+q_contract=[];
+if isfield(case_data.dispatch_contract.post_trip,'post_trip_Qg_MVAr')
+    q_contract=case_data.dispatch_contract.post_trip.post_trip_Qg_MVAr;
+    if ~isstruct(q_contract) || ~isscalar(q_contract)
+        error('ts_simulate_ibr_hybrid:badDispatchContract', ...
+            'post_trip_Qg_MVAr must be one scalar struct keyed by device_id.');
+    end
+end
 for k=1:numel(dae.devices)
     dev=dae.devices(k);
     if ~is_ibr_device(dev), continue; end
@@ -1675,6 +2171,24 @@ for k=1:numel(dae.devices)
             'Device %s must declare exactly one P_ref input.',id);
     end
     u_new(dae.u_offsets(k)+slot)=mw/Sbase;
+    if ~isempty(q_contract)
+        if ~isfield(q_contract,id)
+            error('ts_simulate_ibr_hybrid:missingDispatchEntry', ...
+                'Post-trip reactive dispatch lacks device %s.',id);
+        end
+        q_mvar=q_contract.(id);
+        if ~isnumeric(q_mvar) || ~isscalar(q_mvar) || ~isreal(q_mvar) || ...
+                ~isfinite(q_mvar)
+            error('ts_simulate_ibr_hybrid:badDispatchEntry', ...
+                'Post-trip reactive dispatch for %s must be finite real MVAr.',id);
+        end
+        q_slot=find(strcmpi(string(dev.input_names),'Q_ref'));
+        if numel(q_slot)~=1
+            error('ts_simulate_ibr_hybrid:badDispatchInput', ...
+                'Device %s must declare exactly one Q_ref input.',id);
+        end
+        u_new(dae.u_offsets(k)+q_slot)=q_mvar/Sbase;
+    end
 end
 dispatch=dispatch_snapshot(u_new,dae);
 end
@@ -1706,13 +2220,14 @@ if ~isfield(rec,'V_open_circuit') || ~isfield(rec,'omega') || ~isfield(rec,'delt
     error('ts_simulate_ibr_hybrid:missingSynchronismOutput','SG reconstruct lacks synchronism outputs.');
 end
 Vbus=complex(y(2*dev.bus_position-1),y(2*dev.bus_position));
+omega_grid=reference_grid_omega(dae,x,y,u,ec);
 gopt=struct('dV_max',case_data.synchronism.dV_max_pu, ...
     'df_max',case_data.synchronism.df_max_pu, ...
     'dtheta_max',case_data.synchronism.dtheta_max_deg, ...
     'dwell_min',settings.sync_dwell);
 names=fieldnames(settings.sync_overrides);
 for k=1:numel(names), gopt.(names{k})=settings.sync_overrides.(names{k}); end
-guard=stability.synchronism_guard(Vbus,rec.V_open_circuit,rec.delta,rec.omega,0.0,gopt);
+guard=stability.synchronism_guard(Vbus,rec.V_open_circuit,rec.delta,rec.omega,omega_grid,gopt);
 eligible=guard.passes;
 end
 
@@ -2067,9 +2582,10 @@ c=struct('enabled',false,'active',false,'online',false,'sg_index',NaN,'x_delta',
     'x_omega',NaN,'u_tm',NaN,'u_efd',NaN,'bus_position',NaN,'restore_time',NaN, ...
     'H',NaN,'D',NaN,'w0',2*pi*case_data.base_values.frequency_Hz, ...
     'Tsv',0.2,'Tch',0.4,'TA',0.02,'R',0.05,'Pref',NaN, ...
+    'omega_n',0.8,'zeta',1.0,'K_omega',NaN,'K_theta',NaN, ...
+    'design_classification','PROJECT_DERIVED', ...
     'Tmax',NaN,'Efdmax',3.0, ...
     'Psv',NaN,'Pm',NaN,'Efd',NaN,'u_end',u, ...
-    'plan_ready',false,'plan_command',0,'plan_pulse_end',NaN,'plan_target',NaN, ...
     'history_t',[],'history_Psv',[],'history_Pm',[],'history_command',[], ...
     'history_phase_error',[],'history_grid_omega',[], ...
     'history_Efd',[],'history_Efd_command',[],'history_Vopen',[]);
@@ -2094,12 +2610,13 @@ c.H=M.units.H/scale; c.D=M.units.D/scale;
 c.u_efd=dae.u_offsets(k)+efdslot;
 c.Tmax=max([u(c.u_tm),1.3462]);
 c.Pref=u(c.u_tm);
+c.K_omega=4*c.H*c.zeta*c.omega_n-c.D;
+c.K_theta=2*c.H*c.omega_n^2/c.w0;
 end
 
 function c=activate_sync_controller(c,u,t)
 if ~c.enabled, return; end
 c.active=true; c.online=false; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm); c.Efd=u(c.u_efd); c.u_end=u;
-c.plan_ready=false; c.plan_command=0; c.plan_pulse_end=NaN; c.plan_target=NaN;
 c.history_t=t; c.history_Psv=c.Psv; c.history_Pm=c.Pm;
 c.history_command=c.Pm; c.history_phase_error=NaN; c.history_grid_omega=NaN;
 c.history_Efd=c.Efd; c.history_Efd_command=c.Efd; c.history_Vopen=NaN;
@@ -2121,7 +2638,7 @@ c.history_Vopen(end+1)=NaN;
 end
 
 function [u_step,c]=advance_sync_controller(c,x,y,t,h,dae,ec,u,case_data)
-delta=x(c.x_delta); omega=x(c.x_omega); wgrid=reference_grid_omega(dae,x,y,u,ec);
+omega=x(c.x_omega); wgrid=reference_grid_omega(dae,x,y,u,ec);
 vb=complex(y(2*c.bus_position-1),y(2*c.bus_position));
 if c.online
     % Sauer-Pai (4.100), (4.116):
@@ -2150,42 +2667,20 @@ if c.online
     end
     return;
 end
-theta=angle(vb); tau=max(c.restore_time-t,0);
-coast_time=5*(2*c.H/c.D);
-prepare_horizon=coast_time+10*c.Tch;
-if ~c.plan_ready && tau<=prepare_horizon && tau>coast_time
-    c.plan_pulse_end=c.restore_time-coast_time;
-    [d0,~]=predict_sync_final(c,delta,omega,c.Psv,c.Pm,t,c.restore_time, ...
-        c.plan_pulse_end,0);
-    [d1,~]=predict_sync_final(c,delta,omega,c.Psv,c.Pm,t,c.restore_time, ...
-        c.plan_pulse_end,1);
-    sensitivity=d1-d0;
-    theta_target=theta+c.w0*wgrid*tau;
-    n0=ceil((d0-theta_target)/(2*pi)); found=false;
-    for n=n0:n0+ceil(abs(sensitivity)*c.Tmax/(2*pi))+2
-        target=theta_target+2*pi*n;
-        trial=(target-d0)/sensitivity;
-        if isfinite(trial) && trial>=0 && trial<=c.Tmax
-            c.plan_command=trial; c.plan_target=target; found=true; break;
-        end
-    end
-    if ~found
-        c.plan_command=0; c.plan_target=theta_target+2*pi*n0;
-    end
-    c.plan_ready=true;
-end
-command=0;
-if c.plan_ready && t<c.plan_pulse_end, command=c.plan_command; end
-phase_error=NaN;
-if c.plan_ready, phase_error=c.plan_target-delta; end
-esv=exp(-h/c.Tsv); ech=exp(-h/c.Tch);
-Psv1=command+(c.Psv-command)*esv;
-Pm1=command+(c.Pm-command)*ech+ ...
-    (c.Psv-command)*c.Tsv/(c.Tsv-c.Tch)*(esv-ech);
 dev=dae.devices(c.sg_index); xi=dae.device_offsets(c.sg_index)+(1:dev.nx);
 ui=dae.u_offsets(c.sg_index)+(1:dev.nu);
 rec=dev.reconstruct(t,x(xi),y,u(ui),ec);
-Vopen=NaN; if isfield(rec,'V_open_circuit'), Vopen=abs(rec.V_open_circuit); end
+if ~isfield(rec,'V_open_circuit') || ~isfinite(rec.V_open_circuit)
+    error('ts_simulate_ibr_hybrid:syncControllerVoltage', ...
+        'SG synchronizer requires one finite open-circuit voltage phasor.');
+end
+Vopen=abs(rec.V_open_circuit);
+phase_error=angle(exp(1i*(angle(vb)-angle(rec.V_open_circuit))));
+sopt=struct('H',c.H,'D',c.D,'omega_0',c.w0, ...
+    'omega_n',c.omega_n,'zeta',c.zeta,'Tsv',c.Tsv,'Tch',c.Tch, ...
+    'Pmin',0,'Pmax',c.Tmax);
+[Psv1,Pm1,command]=stability.sg_offline_synchronizer_step( ...
+    c.Psv,c.Pm,omega,wgrid,phase_error,h,sopt);
 Efd_command=c.Efd;
 if isfinite(Vopen) && Vopen>1e-8
     Efd_command=min(c.Efdmax,max(0,c.Efd*abs(vb)/Vopen));
@@ -2207,21 +2702,6 @@ end
 
 if case_data.base_values.frequency_Hz<=0
     error('ts_simulate_ibr_hybrid:syncControllerFrequency','Invalid frequency base.');
-end
-end
-
-function [delta,omega]=predict_sync_final(c,delta,omega,Psv,Pm,t,tend,pulse_end,A)
-dt0=0.01;
-while t<tend-10*eps
-    h=min(dt0,tend-t); cmd=0; if t<pulse_end, cmd=A; end
-    esv=exp(-h/c.Tsv); ech=exp(-h/c.Tch);
-    Psv1=cmd+(Psv-cmd)*esv;
-    Pm1=cmd+(Pm-cmd)*ech+(Psv-cmd)*c.Tsv/(c.Tsv-c.Tch)*(esv-ech);
-    Pav=0.5*(Pm+Pm1); a=c.D/(2*c.H); winf=Pav/c.D;
-    ea=exp(-a*h);
-    delta=delta+c.w0*(winf*h+(omega-winf)*(1-ea)/a);
-    omega=winf+(omega-winf)*ea;
-    Psv=Psv1; Pm=Pm1; t=t+h;
 end
 end
 

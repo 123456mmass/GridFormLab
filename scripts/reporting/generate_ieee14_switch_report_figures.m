@@ -1,16 +1,15 @@
 function out = generate_ieee14_switch_report_figures(opts)
 %GENERATE_IEEE14_SWITCH_REPORT_FIGURES Reproduce publishable IEEE14 evidence.
-%   The source-data profile is simulated by the production all-KCL hybrid
+%   The full-state profile is simulated by the production all-KCL hybrid
 %   engine: six-state EMF6 SG, registered full-state dual-mode IBR devices,
 %   exact event landing, synchronism guard, and two-phase SG handback.
 %   The per-IBR index is reconstructed from accepted raw production signals as
 %   S=sat(0.5*J_V+0.5*J_f), using the healthy SG-online PF voltage at each bus.
-%   The SG-trip transaction is a CASE_DEFINED all-GFM override.  Reclose returns
+%   The SG-trip transaction commits the authenticated selector result. Reclose returns
 %   reference ownership to the SG without changing IBR modes; each remaining
-%   GFM then releases independently after S<Gamma_off for T_d_off.  A seeded
-%   band-limited display-only
-%   measurement ripple is drawn beside the raw trace and never feeds the
-%   solver, AGSI, timers, gates, or mode decisions.
+%   GFM then releases independently after S<Gamma_off for T_d_off. Figures
+%   contain raw accepted signals only: no synthetic ripple, smoothing, or
+%   filtering is applied.
 
 arguments
     opts.reuse_cache (1,1) logical = false
@@ -38,12 +37,40 @@ if opts.reuse_cache && exist(production_cache,'file')
     % Phase G guard: a cache produced under a shorter horizon must never be
     % presented as evidence for the current contract.  Fail closed instead of
     % silently reusing a truncated trajectory.
-    reuse_ok = r.converged && r.t(end) >= T_end_contract - 1e-9;
-    if ~reuse_ok
+    cache_types=string({r.equilibrium.devices(2:5).device_type});
+    horizon_ok=r.converged && r.t(end) >= T_end_contract - 1e-9;
+    model_ok=all(cache_types=="ibr_eecon49_dual");
+    reuse_ok=horizon_ok && model_ok;
+    if ~horizon_ok
         error('generate_ieee14_switch_report_figures:staleCacheHorizon', ...
             ['Cached run ends at %.6f s but the case contract requires %g s. ', ...
              'Rerun with reuse_cache=false to regenerate the trajectory.'], ...
             r.t(end),T_end_contract);
+    elseif ~model_ok
+        error('generate_ieee14_switch_report_figures:staleCacheModel', ...
+            'Cached run uses IBR type(s) %s, not the current production model.', ...
+            strjoin(unique(cache_types),','));
+    end
+    selector_cache=fullfile('output','diagnostics','automatic_selector_table.mat');
+    if ~exist(selector_cache,'file')
+        error('generate_ieee14_switch_report_figures:missingSelectorEvidence', ...
+            'Generate the authenticated SSSA/selector tables before the report figures.');
+    end
+    sd=load(selector_cache,'tbl');
+    transient_selector_fp='';
+    if isfield(r,'selector_table_fingerprint')
+        transient_selector_fp=char(r.selector_table_fingerprint);
+    elseif isfield(r,'metadata') && isstruct(r.metadata) && ...
+            isfield(r.metadata,'selector_table_fingerprint')
+        % Older wrapper revisions preserved the exact production fingerprint
+        % in metadata but omitted the additive top-level copy.
+        transient_selector_fp=char(r.metadata.selector_table_fingerprint);
+    end
+    if isempty(transient_selector_fp) || ...
+            ~isfield(sd.tbl,'selector_table_fingerprint') || ...
+            ~strcmp(transient_selector_fp,char(sd.tbl.selector_table_fingerprint))
+        error('generate_ieee14_switch_report_figures:selectorFingerprintMismatch', ...
+            'Transient and SSSA selector evidence do not share one authenticated fingerprint.');
     end
 end
 if ~reuse_ok
@@ -65,8 +92,8 @@ out.event_contract=sys.switching_event_contract;
 T_end=T_end_contract;
 out.requested_horizon_s=T_end;
 out.bo_controller_added=false;
-out.presentation_noise=struct('kind','seeded band-limited measurement ripple overlay', ...
-    'seed_base',4901,'affects_solver_or_switching',false);
+out.presentation_noise=struct('kind','none', ...
+    'seed_base',NaN,'affects_solver_or_switching',false);
 if out.diverged || ~out.newton_all_converged || out.tgrid(end)<T_end
     out.dynamic_status='DIAGNOSTIC_PREFIX_ONLY_FAIL_CLOSED';
     figure_title=sprintf('Diagnostic raw prefix to %.3f s (requested %g s; fail-closed)', ...
@@ -76,6 +103,7 @@ else
     figure_title=sprintf('Production all-KCL response: full %g-s chronology',T_end);
 end
 write_event_table(out,outdir);
+write_run_summary(out,outdir);
 tag=sprintf('%g',T_end);
 supervisor_figure(out,outdir,['ieee14_switch_' tag '_supervisor.png'],figure_title);
 electrical_figure(out,outdir,['ieee14_switch_' tag '_electrical.png'],figure_title);
@@ -90,16 +118,20 @@ ev=struct('enabled',true,'event_profile','chronology', ...
     'fault_on',85,'fault_clear',85.15,'fault_bus',9,'Zf',0.01+0.01i, ...
     'line_trip',110,'line_from_bus',6,'line_to_bus',13, ...
     'restore_time',145,'sg_on',145,'coordinated_handback',false, ...
-    'selected_gfm_indices',2:5,'reference_resource_index',2, ...
     'automatic_gfm_switching',true, ...
-    'delays_overrides',struct('timeout_s',5,'dwell_s',0.5));
+    'delays_overrides',struct('timeout_s',20,'dwell_s',0.5));
 % Phase G: horizon extended 160 -> 200 s so the trajectory covers the SG
-% reclose (observed near 147.175 s for the 145.000 s request) plus a settling
+% reclose plus the independently timed per-device releases and a settling
 % window after handback.  Taken from the case contract rather than restated
 % here, so the case file remains the single owner of the event schedule.
 opt=struct('t_end',s.case_data.switching_event_contract.T_end, ...
     'dt',0.10,'verbose',false, ...
     'ibr_events',ev,'plot_results',false, ...
+    'max_step_subdivisions',9, ...
+    'state_predictor','linear_kcl', ...
+    'automatic_support_supervision',true, ...
+    'severity_gamma_on',0.65,'severity_gamma_off',0.35, ...
+    'severity_T_d_on',0.10,'severity_T_d_off',1.00, ...
     'healthy_pf_V',sys.pf.bus_voltage(:).', ...
     'healthy_pf_bus_ids',sys.pf.external_bus_ids(:).');
 end
@@ -117,18 +149,23 @@ busfreq=angle_frequency(t,busang,60);
 
 devs=r.equilibrium.devices;
 xoff=[0 cumsum([devs.nx])];
+uoff=[0 cumsum([devs.nu])];
 modes=string(r.device_modes_history(didx,:)).';
 angle_ibr=busang; f_ibr=busfreq;
 for j=1:nibr
-    d=devs(didx(j)); names=string(d.state_names);
-    iw=find(names=="gfm_omega_m",1);
-    ipll=find(names=="gfm_delta_PLL",1);
-    iit=find(names=="gfm_delta_IT",1);
+    d=devs(didx(j));
     xr=r.x_traj(xoff(didx(j))+(1:d.nx),:).';
-    isgfm=strcmpi(modes(:,j),"gfm");
-    if ~isempty(iw), f_ibr(isgfm,j)=60*(1+xr(isgfm,iw)); end
-    if ~isempty(ipll) && ~isempty(iit)
-        angle_ibr(isgfm,j)=xr(isgfm,ipll)+xr(isgfm,iit);
+    ui=uoff(didx(j))+(1:d.nu);
+    for k=1:nt
+        rec=d.reconstruct(t(k),xr(k,:).',r.y_traj(:,k), ...
+            r.u_history(ui,k),r.event_context_history{k});
+        if isfield(rec,'gfm')
+            angle_ibr(k,j)=rec.gfm.delta_VSM;
+            f_ibr(k,j)=60*(1+rec.gfm.omega_m);
+        elseif isfield(rec,'gfl')
+            angle_ibr(k,j)=rec.gfl.delta_PLL;
+            f_ibr(k,j)=rec.gfl.f_hz;
+        end
     end
 end
 
@@ -136,7 +173,7 @@ Iibr=r.device_currents(didx,:).';
 Idq=Iibr.*exp(-1i*angle_ibr);
 sg_delta=r.x_traj(1,:).'; sg_omega=r.x_traj(2,:).';
 sg_id=zeros(nt,1); sg_iq=zeros(nt,1);
-sg=devs(1); uoff=[0 cumsum([devs.nu])];
+sg=devs(1);
 for k=1:nt
     rec=sg.reconstruct(t(k),r.x_traj(1:sg.nx,k),r.y_traj(:,k), ...
         r.u_history(uoff(1)+(1:sg.nu),k),r.event_context_history{k});
@@ -194,7 +231,7 @@ for j=1:nibr
     Jlock=vq/d.dvq_base; Jgra=1-GRA(:,j);
     % 2026-08-09: the implemented per-IBR supervisor index (ibr.SwitchableIbr6,
     % index_mode='agsi_pp') is the two-term severity S=0.5*J_V+0.5*J_f on bases
-    % dV=0.10 pu / df=0.50 Hz (EECON49-P4 0.30:0.30 renormalised).  The other
+    % dV=0.10 pu / df=0.50 Hz (the frozen equal V/f weighting). The other
     % five former terms are measured diagnostics with zero weight; applicable
     % admissibility checks remain separate, never tradeable severity terms.
     % The previous equal 1/7 average diluted J_V/J_f and is NOT what the engine
@@ -213,6 +250,9 @@ o.sg_P=r.device_P_pu(1,:).'; o.sg_Q=r.device_Q_pu(1,:).';
 o.sg_id=sg_id; o.sg_iq=sg_iq; o.f_sg=60*(1+sg_omega);
 sgbp=find(r.bus_ids==r.device_bus_ids(1),1);
 o.sg_delta=wrap_pi(sg_delta-unwrap(angle(V(sgbp,:))).');
+o.f_coi=r.coi_frequency_Hz(:);
+o.VnetworkMin=min(abs(V),[],1).';
+o.VnetworkMax=max(abs(V),[],1).';
 o.sg_bus=r.device_bus_ids(1);
 o.agsi_up=sys.devs{1}.AGSI_up; o.agsi_down=sys.devs{1}.AGSI_down;
 o.sg_trip_time=r.sched.sg_trip; o.step_on=r.sched.load_step;
@@ -220,6 +260,11 @@ o.fault_on=r.sched.fault_on; o.fault_clear=r.sched.fault_clear;
 o.line_trip_time=r.sched.line_trip; o.sg_reclose_time=r.sched.restore_time;
 o.actual_reclose_time=r.actual_reclose_time;
 o.actual_mode_reselection_time=r.actual_mode_reselection_time;
+release_mask=strcmp({r.event_log.type},'sg_reselection') & [r.event_log.applied];
+o.release_times=[r.event_log(release_mask).t];
+all_gfl=find(t>=o.actual_reclose_time & all(strcmpi(modes,"gfl"),2),1);
+o.final_all_gfl_time=NaN;
+if ~isempty(all_gfl), o.final_all_gfl_time=t(all_gfl); end
 o.diverged=~r.converged; o.newton_all_converged=r.converged;
 if isfield(r,'accepted_residual_per_step') && any(isfinite(r.accepted_residual_per_step))
     o.max_step_residual=max(r.accepted_residual_per_step(isfinite(r.accepted_residual_per_step)));
@@ -227,10 +272,59 @@ else
     o.max_step_residual=max(r.residual_per_step);
 end
 o.max_attempt_residual=max(r.residual_per_step); o.subdivision_depth=r.subdivision_depth;
+o.domain_rejected_trials=r.domain_rejected_trials;
 o.failure_id=r.failure_id; o.event_log=r.event_log; o.sample_side=r.sample_side(:);
 o.reclose_status=r.reclose_status; o.reselection_status=r.reselection_status;
 o.last_synchronism_guard=r.last_synchronism_guard;
+o.reclose_guard=struct();
+reclose_event=find(strcmp({r.event_log.type},'sg_reclose') & [r.event_log.applied],1,'last');
+if ~isempty(reclose_event) && isfield(r.event_log(reclose_event),'guard')
+    o.reclose_guard=r.event_log(reclose_event).guard;
+end
 o.production_result_fingerprint=r.fingerprint;
+end
+
+function write_run_summary(o,outdir)
+fid=fopen(fullfile(outdir,'run_summary.tex'),'w');
+cleaner=onCleanup(@()fclose(fid));
+fprintf(fid,'%% Generated from output/diagnostics/engine_release_result.mat.\n');
+fprintf(fid,'\\newcommand{\\RunEnd}{%.3f}\n',o.tgrid(end));
+fprintf(fid,'\\newcommand{\\RunVMin}{%.6f}\n',min(o.VnetworkMin));
+fprintf(fid,'\\newcommand{\\RunVMax}{%.6f}\n',max(o.VnetworkMax));
+fprintf(fid,'\\newcommand{\\RunFMin}{%.6f}\n',min(o.f_coi));
+fprintf(fid,'\\newcommand{\\RunFMax}{%.6f}\n',max(o.f_coi));
+fprintf(fid,'\\newcommand{\\RunSubdivision}{%d}\n',o.subdivision_depth);
+fprintf(fid,'\\newcommand{\\RunDomainRejects}{%d}\n',o.domain_rejected_trials);
+fprintf(fid,'\\newcommand{\\RunResidual}{%s}\n',latex_scientific(o.max_step_residual));
+fprintf(fid,'\\newcommand{\\RunReclose}{%s}\n',latex_scalar(o.actual_reclose_time));
+fprintf(fid,'\\newcommand{\\RunFirstRelease}{%s}\n',latex_scalar(o.actual_mode_reselection_time));
+fprintf(fid,'\\newcommand{\\RunRelease}{%s}\n',latex_scalar(o.final_all_gfl_time));
+fprintf(fid,'\\newcommand{\\RunFinalRelease}{%s}\n',latex_scalar(o.final_all_gfl_time));
+rt=nan(1,4); rt(1:min(4,numel(o.release_times)))=o.release_times(1:min(4,numel(o.release_times)));
+names={'One','Two','Three','Four'};
+for k=1:4
+    fprintf(fid,'\\newcommand{\\RunRelease%s}{%s}\n',names{k},latex_scalar(rt(k)));
+end
+g=o.reclose_guard;
+if isempty(fieldnames(g))
+    error('generate_ieee14_switch_report_figures:missingRecloseGuard', ...
+        'Successful reclose evidence lacks its committed transaction guard.');
+end
+fprintf(fid,'\\newcommand{\\RunSyncDV}{%.6f}\n',g.dV);
+fprintf(fid,'\\newcommand{\\RunSyncDF}{%.6f}\n',g.df);
+fprintf(fid,'\\newcommand{\\RunSyncDTheta}{%.6f}\n',g.dtheta);
+clear cleaner
+end
+
+function s=latex_scientific(v)
+if ~isfinite(v), s='not available'; return; end
+if v==0, s='$0$'; return; end
+e=floor(log10(abs(v))); a=v/10^e;
+s=sprintf('$%.4f\\times10^{%d}$',a,e);
+end
+
+function s=latex_scalar(v)
+if isfinite(v), s=sprintf('%.3f',v); else, s='not reached'; end
 end
 
 function f=angle_frequency(t,a,f0)
@@ -279,6 +373,8 @@ for k=1:numel(o.event_log)
     mb=mode_word(o.mode(left,:)); ma=mode_word(o.mode(right,:));
     idx=max(o.index(left,:)); timer='--';
     if strcmp(e.type,'sg_trip'), timer='reference-loss guard'; end
+    if strcmp(e.type,'gfm_support_augment'), timer='0.1-s severity dwell'; end
+    if strcmp(e.type,'gfm_support_release'), timer='1.0-s severity dwell'; end
     if strcmp(e.type,'sg_reclose'), timer='0.5-s sync dwell'; end
     if strcmp(e.type,'sg_reselection'), timer='1.0-s severity dwell'; end
     reason=event_reason(e.type);
@@ -291,6 +387,8 @@ end
 function s=event_label(type)
 switch type
     case 'sg_trip', s='SG trip';
+    case 'gfm_support_augment', s='GFM support add';
+    case 'gfm_support_release', s='GFM support release';
     case 'load_step', s='load step';
     case 'fault_on', s='fault on';
     case 'fault_clear', s='fault clear';
@@ -305,7 +403,9 @@ end
 
 function s=event_reason(type)
 switch type
-    case 'sg_trip', s='SG opened; atomic all-GFM reference-security commit';
+    case 'sg_trip', s='SG opened; authenticated selected-GFM transaction committed';
+    case 'gfm_support_augment', s='SG-off severity high; feasible strict superset committed';
+    case 'gfm_support_release', s='SG-off severity healthy; feasible nonempty subset committed';
     case 'load_step', s='base constant-impedance load increased';
     case 'fault_on', s='bus-9 shunt fault applied';
     case 'fault_clear', s='fault admittance removed';
@@ -319,7 +419,14 @@ end
 end
 
 function s=mode_word(m)
-if all(m==0), s='all GFL'; elseif all(m==1), s='all GFM'; else, s='mixed'; end
+n=sum(m==1);
+if n==0
+    s='all GFL';
+elseif n==numel(m)
+    s='all GFM';
+else
+    s=sprintf('%d GFM / %d GFL',n,numel(m)-n);
+end
 end
 
 function supervisor_figure(o,outdir,filename,figure_title)
@@ -328,7 +435,7 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 5.30], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
     'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
-    'DefaultLegendFontSize',10);
+    'DefaultLegendFontSize',11);
 tl=tiledlayout(f,3,2,'TileSpacing','compact','Padding','compact');
 title(tl,figure_title, ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
@@ -350,10 +457,12 @@ ylabel(ax,'GRA'); event_lines(ax,o,false);
 ax=nexttile(tl); stairs(ax,t,o.ref_code,'Color',[.35 .15 .55],'LineWidth',1.8); grid(ax,'on'); box(ax,'on');
 ylim(ax,[-1.2 4.2]); yticks(ax,-1:4); yticklabels(ax,{'none','SG','IBR1','IBR2','IBR3','IBR4'});
 ylabel(ax,'reference owner'); title(ax,'Reference owner','FontSize',11);
-if any(o.ref_code==1)
-    kk=find(o.ref_code==1); tm=mean([t(kk(1)) t(kk(end))]);
-    text(ax,tm,1.45,'IBR1 is reference leader','HorizontalAlignment','center', ...
-        'Color',[.35 .15 .55],'FontWeight','bold','FontSize',10);
+ibr_refs=unique(o.ref_code(o.ref_code>0)).';
+for j=ibr_refs
+    kk=find(o.ref_code==j); tm=mean([t(kk(1)) t(kk(end))]);
+    text(ax,tm,max(-0.8,j-0.35),sprintf('IBR%d is reference leader',j), ...
+        'HorizontalAlignment','center','Color',[.35 .15 .55], ...
+        'FontWeight','bold','FontSize',11);
 end
 event_lines(ax,o,false);
 
@@ -372,10 +481,10 @@ for j=1:numel(buses)
 end
 ylim(ax,[-0.22 1.22]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
 ylabel(ax,'device mode'); xlabel(ax,'time (s)');
-title(ax,'Committed IBR modes (display-only offsets)','FontSize',10);
+title(ax,'Committed IBR modes (display-only offsets)','FontSize',11);
 event_lines(ax,o,false);
 lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','northoutside');
-set(lg,'FontName','Times New Roman','FontSize',9);
+set(lg,'FontName','Times New Roman','FontSize',11);
 export_figure(f,outdir,filename);
 end
 
@@ -385,7 +494,7 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 5.15], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
     'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
-    'DefaultLegendFontSize',9);
+    'DefaultLegendFontSize',11);
 tl=tiledlayout(f,2,2,'TileSpacing','compact','Padding','compact');
 title(tl,figure_title, ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
@@ -400,7 +509,7 @@ lg=legend(h, ...
     arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)),1:numel(buses),'UniformOutput',false), ...
     'Orientation','horizontal','NumColumns',4);
 lg.Layout.Tile='north';
-set(lg,'FontName','Times New Roman','FontSize',9);
+set(lg,'FontName','Times New Roman','FontSize',11);
 export_figure(f,outdir,filename);
 end
 
@@ -410,32 +519,32 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 7.60], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
     'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
-    'DefaultLegendFontSize',9);
+    'DefaultLegendFontSize',11);
 tl=tiledlayout(f,4,2,'TileSpacing','compact','Padding','compact');
-title(tl,'Production response -- raw result plus display-only measurement ripple', ...
+title(tl,'Production response -- raw accepted result', ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
-ax=nexttile(tl); h=panel_noise(ax,t,o.P_ibr,c,'P (pu)','(a) Active power',8e-3,4901);
-hsg=sg_overlay(ax,t,o.sg_P,8e-3,4911);
-ax=nexttile(tl); panel_noise(ax,t,o.Q_ibr,c,'Q (pu)','(b) Reactive power',8e-3,4902);
-sg_overlay(ax,t,o.sg_Q,8e-3,4912);
-ax=nexttile(tl); panel_noise(ax,t,o.id_ibr,c,'i_d (pu)','(c) d-axis current',8e-3,4903);
-sg_overlay(ax,t,o.sg_id,8e-3,4913);
-ax=nexttile(tl); panel_noise(ax,t,o.iq_ibr,c,'i_q (pu)','(d) q-axis current',8e-3,4904);
-sg_overlay(ax,t,o.sg_iq,8e-3,4914);
-ax=nexttile(tl); panel_noise(ax,t,o.f_ibr,c,'f (Hz)','(e) PCC / virtual-rotor frequency',3e-2,4905);
-sg_overlay(ax,t,o.f_sg,3e-2,4915);
-ax=nexttile(tl); panel_noise(ax,t,o.ang_ibr*180/pi,c,'angle (deg)','(f) device-to-PCC angle',3e-1,4906);
-sg_overlay(ax,t,o.sg_delta*180/pi,3e-1,4916);
-panel_noise(nexttile(tl),t,o.Vbus,c,'|V| (pu)','(g) PCC voltage',3e-3,4907);
-panel_noise(nexttile(tl),t,o.Vmin,[.15 .15 .15],'min |V| (pu)','(h) Network minimum voltage',3e-3,4908);
+ax=nexttile(tl); h=panel_raw(ax,t,o.P_ibr,c,'P (pu)','(a) Active power');
+hsg=sg_raw(ax,t,o.sg_P);
+ax=nexttile(tl); panel_raw(ax,t,o.Q_ibr,c,'Q (pu)','(b) Reactive power');
+sg_raw(ax,t,o.sg_Q);
+ax=nexttile(tl); panel_raw(ax,t,o.id_ibr,c,'i_d (pu)','(c) d-axis current');
+sg_raw(ax,t,o.sg_id);
+ax=nexttile(tl); panel_raw(ax,t,o.iq_ibr,c,'i_q (pu)','(d) q-axis current');
+sg_raw(ax,t,o.sg_iq);
+ax=nexttile(tl); panel_raw(ax,t,o.f_ibr,c,'f (Hz)','(e) PCC / virtual-rotor frequency');
+sg_raw(ax,t,o.f_sg);
+ax=nexttile(tl); panel_raw(ax,t,o.ang_ibr*180/pi,c,'angle (deg)','(f) device-to-PCC angle');
+sg_raw(ax,t,o.sg_delta*180/pi);
+panel_raw(nexttile(tl),t,o.Vbus,c,'|V| (pu)','(g) PCC voltage');
+panel_raw(nexttile(tl),t,o.Vmin,[.15 .15 .15],'min |V| (pu)','(h) Network minimum voltage');
 for ax=findall(f,'Type','axes').'
     event_lines(ax,o,false); xlabel(ax,'time (s)');
 end
 names=arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)), ...
     1:numel(buses),'UniformOutput',false);
 lg=legend([h hsg],[names {sprintf('SG bus %d',o.sg_bus)}], ...
-    'Orientation','horizontal','NumColumns',5);
-lg.Layout.Tile='north'; set(lg,'FontName','Times New Roman','FontSize',9);
+    'Orientation','horizontal','NumColumns',3);
+lg.Layout.Tile='north'; set(lg,'FontName','Times New Roman','FontSize',11);
 export_figure(f,outdir,filename);
 end
 
@@ -445,7 +554,7 @@ f=figure('Color','w','Units','inches','Position',[1 1 5.90 3.90], ...
     'Visible','off','DefaultAxesFontName','Times New Roman', ...
     'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
     'DefaultTextFontSize',11,'DefaultLegendFontName','Times New Roman', ...
-    'DefaultLegendFontSize',9);
+    'DefaultLegendFontSize',11);
 tl=tiledlayout(f,2,1,'TileSpacing','compact','Padding','compact');
 title(tl,'Device-to-PCC electrical-angle detail (wrapped reporting coordinates)', ...
     'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
@@ -464,7 +573,7 @@ title(ax,'(b) IBR internal/PCC-frame angle','FontSize',11); event_lines(ax,o,fal
 % very top of the figure instead of between the two panels.
 lg=legend(h,'Orientation','horizontal','NumColumns',4);
 lg.Layout.Tile='north';
-set(lg,'FontName','Times New Roman','FontSize',9);
+set(lg,'FontName','Times New Roman','FontSize',11);
 export_figure(f,outdir,filename);
 end
 
@@ -479,40 +588,16 @@ savefig(f,fullfile(outdir,[stem '.fig']));
 close(f);
 end
 
-function h=panel_noise(ax,t,y,c,ylab,ttl,sigma,seed)
+function h=panel_raw(ax,t,y,c,ylab,ttl)
 hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-rr=display_ripple(t,size(y,2),sigma,seed);
 for j=1:size(y,2)
-    % The solid trace is the unmodified production result.  The dotted trace
-    % is an explicitly labelled measurement-style presentation layer.
     h(j)=plot(ax,t,y(:,j),'Color',c(j,:),'LineWidth',0.95); %#ok<AGROW>
-    plot(ax,t,y(:,j)+rr(:,j),':','Color',c(j,:),'LineWidth',0.55, ...
-        'HandleVisibility','off');
 end
 ylabel(ax,ylab); title(ax,ttl,'FontSize',11,'FontWeight','bold');
 end
 
-function h=sg_overlay(ax,t,y,sigma,seed)
+function h=sg_raw(ax,t,y)
 h=plot(ax,t,y,'k--','LineWidth',1.05);
-rr=display_ripple(t,1,sigma,seed);
-plot(ax,t,y+rr,'k:','LineWidth',0.55,'HandleVisibility','off');
-end
-
-function r=display_ripple(t,nc,sigma,seed)
-% Band-limited, continuous-in-time display ripple.  Equal timestamps receive
-% equal perturbations, so the presentation layer cannot create vertical
-% event spikes.  It is never returned to the solver or supervisory logic.
-stream=RandStream('mt19937ar','Seed',seed);
-r=zeros(numel(t),nc);
-freq=[0.43 0.79 1.31];
-for j=1:nc
-    phase=2*pi*rand(stream,1,numel(freq));
-    amp=randn(stream,1,numel(freq)); amp=amp/max(norm(amp),eps);
-    for q=1:numel(freq)
-        r(:,j)=r(:,j)+amp(q)*sin(2*pi*freq(q)*t+phase(q));
-    end
-end
-r=sigma*r;
 end
 
 function h=panel(ax,t,y,c,buses,ylab,ttl)

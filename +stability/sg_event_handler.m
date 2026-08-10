@@ -1,5 +1,5 @@
 function [hybrid_state, event_log] = sg_event_handler(hybrid_state, event, devices, topology)
-%SG_EVENT_HANDLER  Atomic SG trip and explicitly committed GFM selection.
+%SG_EVENT_HANDLER  Atomic SG trip and authenticated GFM selection commit.
 %   A sg_trip_request must carry event.committed_selection with:
 %     selected_gfm_indices, n_gfm_required, reference_resource_index.
 %   The indices refer to DEVICES order. The complete trip and mode-selection
@@ -138,7 +138,7 @@ next.committed_config_fingerprint = sprintf( ...
 hs = next;
 log.applied = true;
 log.failure_id = '';
-log.details = sprintf('Tripped %d SG(s); committed %d explicitly selected GFM resource(s).', ...
+log.details = sprintf('Tripped %d SG(s); committed %d authenticated selected-GFM resource(s).', ...
     numel(transaction.sg_indices), transaction.n_gfm_required);
 log.selected_gfm_indices = transaction.selected_gfm_indices;
 log.n_gfm_required = transaction.n_gfm_required;

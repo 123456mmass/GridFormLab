@@ -33,6 +33,7 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %   Factory dispatch (model_id -> factory):
 %     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
 %     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
+%     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (20-state shared-plant dual)
 %   Future single-mode IBR factories are added here ONLY (no engine change).
 %
 %   SCENARIO_OPT may carry:
@@ -103,7 +104,7 @@ for k = 1:nr
             % only for the engine field (factory keeps its internal mode).
             dev.mode = 'synchronous';
             dev.initial_mode = 'synchronous';
-        case 'regfm_b1_dual'
+        case {'regfm_b1_dual','eecon49_dual'}
             % Dispatch + P_ref from scenario_opt.dispatch (system-base MW -> pu).
             P_ref_MW = 0.0;
             if isfield(scenario_opt,'dispatch') && isfield(scenario_opt.dispatch, rid)
@@ -116,7 +117,11 @@ for k = 1:nr
             % controller output.  Consume the case-owned value when declared;
             % legacy resources without the additive field remain unity PF.
             Q_ref_MVAr = 0.0;
-            if isfield(r,'ratings') && isfield(r.ratings,'default_Q_MVAr') && ...
+            if isfield(scenario_opt,'reactive_dispatch') && ...
+                    isstruct(scenario_opt.reactive_dispatch) && ...
+                    isfield(scenario_opt.reactive_dispatch,rid)
+                Q_ref_MVAr=scenario_opt.reactive_dispatch.(rid);
+            elseif isfield(r,'ratings') && isfield(r.ratings,'default_Q_MVAr') && ...
                     ~isempty(r.ratings.default_Q_MVAr)
                 Q_ref_MVAr = r.ratings.default_Q_MVAr;
             end
@@ -134,8 +139,13 @@ for k = 1:nr
             % dual_mode_ibr_model expects mode in {"gfl","GFM","tripped"}.
             ibr_mode = mode;
             if strcmp(ibr_mode, "gfm"), ibr_mode = "GFM"; end
-            dev = ibr.dual_mode_ibr_model(string(rid), bus, bp, bus_ids(:)', ...
-                V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            if strcmp(mid,'eecon49_dual')
+                dev = ibr.eecon49_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
+                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            else
+                dev = ibr.dual_mode_ibr_model(string(rid), bus, bp, bus_ids(:)', ...
+                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            end
             dev.mode = lower(ibr_mode);
             dev.initial_mode = lower(ibr_mode);
         otherwise

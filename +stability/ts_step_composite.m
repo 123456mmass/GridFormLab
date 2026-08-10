@@ -28,6 +28,20 @@ t_now = option_value(opt,'t_now',0.0);
 % sets this flag; ts_simulate_composite, equilibrium, and SSSA callers use
 % the default-off path so their behavior is unchanged.
 domain_preserving = logical(option_value(opt,'domain_preserving_trials',false));
+integration_method=lower(string(option_value(opt,'integration_method','trapezoidal')));
+state_predictor=lower(string(option_value(opt,'state_predictor','hold')));
+if ~isscalar(integration_method) || ...
+        ~ismember(integration_method,["trapezoidal","backward_euler"])
+    error('ts_step_composite:badIntegrationMethod', ...
+        'integration_method must be trapezoidal or backward_euler.');
+end
+if ~isscalar(state_predictor) || ...
+        ~ismember(state_predictor,["hold","explicit_euler", ...
+        "explicit_euler_kcl","linear_kcl"])
+    error('ts_step_composite:badStatePredictor', ...
+        ['state_predictor must be hold, explicit_euler, ' ...
+         'explicit_euler_kcl, or linear_kcl.']);
+end
 
 nx = numel(x0);
 ny = numel(y0);
@@ -62,11 +76,44 @@ if any(~isfinite(f0))
     error('ts_step_composite:nonFiniteRhs', ...
         'The composite pre-step RHS contains NaN or Inf.');
 end
-z0 = [x0(active_indices);y0(free_vars)];
+x_guess=x0(active_indices);
+y_guess=y0(free_vars);
+if state_predictor=="explicit_euler" || ...
+        state_predictor=="explicit_euler_kcl" || state_predictor=="linear_kcl"
+    % NUMERICAL_METHOD predictor only: it changes the Newton initial guess,
+    % never the trapezoidal/BE residual or acceptance tolerance.  This is
+    % valuable for fast angle states after a bumpless multi-GFM transfer.
+    trial=x_guess+h*f0(active_indices);
+    if state_predictor=="linear_kcl" && isfield(opt,'x_predictor') && ...
+            isnumeric(opt.x_predictor) && numel(opt.x_predictor)==nx && ...
+            all(isfinite(opt.x_predictor(:)))
+        trial=opt.x_predictor(active_indices);
+    end
+    if all(isfinite(trial))
+        x_guess=trial;
+        if (state_predictor=="explicit_euler_kcl" || ...
+                state_predictor=="linear_kcl") && full_kcl
+            x_pred=x0; x_pred(active_indices)=x_guess;
+            g_pred=@(xx,yy,YY) dae.dae_g(t_now+h,xx,yy,YY,u,event_context);
+            try
+                [yp,ainfo]=stability.ts_algebraic_solve( ...
+                    x_pred,y0,Ynet,g_pred,@stability.ts_jac_y_fd,tol);
+                if ainfo.converged && all(isfinite(yp)), y_guess=yp(free_vars); end
+            catch
+                % Predictor failure is not a step failure. Fall back to the
+                % accepted algebraic state; the coupled residual/gate below
+                % remains the sole acceptance authority.
+                x_guess=x0(active_indices);
+                y_guess=y0(free_vars);
+            end
+        end
+    end
+end
+z0 = [x_guess;y_guess];
 residual_fn = @(z) coupled_residual(z,x0,f0,h,active_indices, ...
     frozen_indices,free_vars,free_rows,vcon_vars,vcon_ref,ny,dae,Ynet,u, ...
-    event_context,full_kcl,t_now+h);
-jacobian_fn = @(z) forward_fd(z,residual_fn,fd_eps);
+    event_context,full_kcl,t_now+h,integration_method);
+jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps);
 newton_opt = struct();
 if domain_preserving
     newton_opt.trial_exception_classifier = @trial_domain_classifier;
@@ -77,12 +124,18 @@ end
 [z_sol,niter,ok,residual_norm,rcond_val,~,newton_info] = ...
     stability.composite_newton(z0,residual_fn,jacobian_fn,tol,max_iter, ...
     verbose,newton_opt);
+terminal_residual=residual_fn(z_sol);
+na=numel(active_indices);
+candidate_x=x0;
+candidate_x(active_indices)=z_sol(1:na);
+candidate_y=zeros(ny,1);
+candidate_y(vcon_vars)=vcon_ref;
+candidate_y(free_vars)=z_sol(na+1:end);
 
 x1 = x0;
 y1 = zeros(ny,1);
 y1(vcon_vars) = vcon_ref;
 if ok
-    na = numel(active_indices);
     x1(active_indices) = z_sol(1:na);
     y1(free_vars) = z_sol(na+1:end);
 else
@@ -98,10 +151,13 @@ step = struct('x_full',x1,'y_full',y1,'converged',ok, ...
 % every caller sees a stable shape).
 step.newton_info = newton_info;
 step.domain_rejected_trials = newton_info.domain_rejected_trials;
+step.terminal_residual_vector=terminal_residual;
+step.terminal_candidate_x=candidate_x;
+step.terminal_candidate_y=candidate_y;
 end
 
 function r = coupled_residual(z,x0,f0,h,active,frozen,free_vars,free_rows, ...
-    vcon_vars,vcon_ref,ny,dae,Ynet,u,event_context,full_kcl,t_next)
+    vcon_vars,vcon_ref,ny,dae,Ynet,u,event_context,full_kcl,t_next,method)
 na = numel(active);
 x1 = x0;
 x1(active) = z(1:na);
@@ -116,7 +172,11 @@ y1(vcon_vars) = vcon_ref;
 y1(free_vars) = z(na+1:end);
 f1 = dae.dae_f(t_next,x1,y1,u,event_context);
 g1 = dae.dae_g(t_next,x1,y1,Ynet,u,event_context);
-rx_full = x1-x0-0.5*h*(f0+f1);
+if method=="backward_euler"
+    rx_full=x1-x0-h*f1;
+else
+    rx_full=x1-x0-0.5*h*(f0+f1);
+end
 if full_kcl
     rg = g1;
 else

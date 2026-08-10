@@ -153,6 +153,10 @@ elseif isfield(case_data,'dispatch_contract') && isfield(case_data.dispatch_cont
         dispatch = case_data.dispatch_contract.post_trip.post_trip_Pg_MW;
     end
 end
+if is_source_full_state_resources(resources)
+    dispatch=mode_aware_source_dispatch(case_data,resources, ...
+        cand.selected_gfm_indices,dispatch);
+end
 % Also check opt.scenario_opt.dispatch
 if isfield(opt,'scenario_opt') && isstruct(opt.scenario_opt) && ...
         isfield(opt.scenario_opt,'dispatch') && ...
@@ -166,6 +170,12 @@ try
     scenario_opt = struct();
     if ~isempty(dispatch)
         scenario_opt.dispatch = dispatch;
+    end
+    if isfield(case_data,'dispatch_contract') && ...
+            isfield(case_data.dispatch_contract,'post_trip') && ...
+            isfield(case_data.dispatch_contract.post_trip,'post_trip_Qg_MVAr')
+        scenario_opt.reactive_dispatch = ...
+            case_data.dispatch_contract.post_trip.post_trip_Qg_MVAr;
     end
     % Apply candidate modes as initial_modes override for builder?
     % build_mixed_resource_devices uses resources.initial_mode, not scenario_opt.
@@ -382,4 +392,51 @@ end
 function tf = has_dispatch_values(dispatch)
 tf = isstruct(dispatch) && isscalar(dispatch) && ...
     ~isempty(fieldnames(dispatch));
+end
+
+function tf=is_source_full_state_resources(resources)
+ibr_idx=find(arrayfun(@(r)isfield(r,'resource_type') && ...
+    strcmpi(char(r.resource_type),'ibr'),resources));
+tf=~isempty(ibr_idx) && all(arrayfun(@(k)isfield(resources(k),'model_id') && ...
+    strcmpi(char(resources(k).model_id),'eecon49_dual'),ibr_idx));
+end
+
+function dispatch=mode_aware_source_dispatch(case_data,resources,selected,fallback)
+dispatch=fallback;
+if ~isfield(case_data,'dispatch_contract') || ...
+        ~isfield(case_data.dispatch_contract,'pre_fault') || ...
+        ~isfield(case_data.dispatch_contract,'post_trip') || ...
+        ~isfield(case_data.dispatch_contract.post_trip,'deficit_MW')
+    error('stability:ibr_candidate_evaluate:missingModeAwareDispatch', ...
+        'The full-state source model requires pre-fault dispatch and lost-SG deficit.');
+end
+ibr_idx=find(arrayfun(@(r)isfield(r,'resource_type') && ...
+    strcmpi(char(r.resource_type),'ibr'),resources));
+gfl_idx=setdiff(ibr_idx,selected,'stable');
+if isempty(gfl_idx), return; end
+pre=case_data.dispatch_contract.pre_fault;
+weights=zeros(size(gfl_idx));
+for j=1:numel(gfl_idx)
+    k=gfl_idx(j);
+    if ~isfield(resources(k),'limits') || ...
+            ~isfield(resources(k).limits,'Pmax_MW') || ...
+            ~isfinite(resources(k).limits.Pmax_MW) || resources(k).limits.Pmax_MW<=0
+        error('stability:ibr_candidate_evaluate:badModeAwareDispatch', ...
+            'GFL resource %s lacks a positive finite Pmax_MW.',resources(k).resource_id);
+    end
+    weights(j)=resources(k).limits.Pmax_MW;
+end
+weights=weights/sum(weights);
+deficit=case_data.dispatch_contract.post_trip.deficit_MW;
+for k=ibr_idx(:)'
+    id=char(resources(k).resource_id);
+    field=[id '_Pg_MW'];
+    if ~isfield(pre,field) || ~isfinite(pre.(field))
+        error('stability:ibr_candidate_evaluate:missingModeAwareDispatch', ...
+            'Pre-fault dispatch lacks %s.',field);
+    end
+    dispatch.(id)=pre.(field);
+    pos=find(gfl_idx==k,1);
+    if ~isempty(pos), dispatch.(id)=dispatch.(id)+deficit*weights(pos); end
+end
 end

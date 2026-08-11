@@ -55,6 +55,17 @@ published numbers, so it needs its own Plan-Mode cycle, a separate audit +
 tests (AGENTS.md), correct interaction with exact event landing / AGSI dwell
 timers / reclose sync windows, and full report re-validation.
 
+Status update (2026-08-12): the adaptive follow-up is now **planned** (plan
+`snug-wobbling-church.md`; ownership claimed in `TRACK_COORDINATION.md`):
+opt-in `stepper='adaptive'` on `ts_simulate_ibr_hybrid`, default fixed stays
+byte-identical, plus a diagnosis-first Phase-2 for the reclose timeout. Two
+new production runs confirm the reclose outcome is config/gate-driven, not
+dt-driven: 250 s at `dt=0.10` (~32 min) and 250 s at `dt=0.01` (27.5 min,
+25011 samples) both converge to `t_end=250` and both give
+`reclose=SYNC_TIMEOUT` at the CASE_DEFINED deadline (145+20=165 s). Earlier
+SUCCESS-at-154.3 figures came from the stale diagnostic-variant cache and the
+older code state, not from these runs.
+
 
 ## 2026-08-04 — IEEE14 160-s controller comparison
 

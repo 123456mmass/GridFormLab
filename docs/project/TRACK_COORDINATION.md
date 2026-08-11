@@ -166,6 +166,40 @@ different versions of the same shared interface.
 > published numbers and therefore needs its own plan + full re-validation.
 > Original request retained below for provenance.
 >
+> **2026-08-12 Adaptive hybrid stepping interface request (OPEN, one owner):**
+> approved plan (`snug-wobbling-church.md`) adds an **opt-in** adaptive-step
+> path (step-doubling trapezoidal + Richardson LTE, mirroring the
+> `ts_adaptive_driver` algorithm as a separate composite-kernel
+> implementation) to `stability.run_hybrid_case` →
+> `ts_simulate_ibr_hybrid`. Default remains `'fixed'` and must stay
+> byte-identical; the adaptive branch is additive behind a `stepper`
+> option. Requested allowlist:
+>
+> - `+stability/ts_simulate_ibr_hybrid.m` (option normalization in
+>   `initialize`, new per-run variables, and the adaptive branch of the step
+>   region only; the fixed path and the supervisor region untouched);
+> - `+stability/run_hybrid_case.m` (pass-through of the new options only);
+> - new tests `tests/test_ts_hybrid_{adaptive_lte,adaptive_rollback,
+>   fixed_bitident,adaptive_compare,decision_parity,event_landing}.m`;
+> - new validation script `scripts/validation/hybrid_adaptive_compare_fixed.m`.
+>
+> NOT edited (reuse exactly): `+stability/ts_step_composite.m`,
+> `+stability/ts_adaptive_driver.m`, `+stability/ts_simulate.m`,
+> `+stability/composite_dae.m`, `+stability/composite_newton.m`,
+> `+stability/ts_algebraic_solve*.m`, `+stability/ibr_event_schedule.m`.
+> The declared numerical budget is NOT bit-identity: adaptive is a different
+> discretization by design (finer solution accepted). Acceptance is
+> fixed-mode bit-identity + pre-declared adaptive-vs-fixed agreement
+> (`G-COI`, ASSUMED_DIAGNOSTIC bound) + event decision parity. The published
+> numbers WILL change, so full report re-validation is required before
+> release. Host-file decision recorded: `ts_simulate_composite.m` remains
+> STRUCTURAL_ONLY and is NOT the adaptive host (it has no event supervisor);
+> this is Phase H of the execution plan re-homed onto the production driver.
+> A follow-up Phase-2 item under the same claim: diagnosis-first of the
+> reclose `SYNC_TIMEOUT` (new gates added at `b6e510f`), with an explicit
+> stop condition that safety gates are never relaxed to force a successful
+> reclose.
+>
 > **2026-08-11 TS runtime-performance interface request (OPEN, one owner):**
 > the switched TS production run (`stability.run_hybrid_case` via
 > `scripts/reporting/generate_ieee14_switch_report_figures.m`) costs ~2-3 h of

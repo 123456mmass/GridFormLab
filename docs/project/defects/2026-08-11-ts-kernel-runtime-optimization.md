@@ -231,8 +231,23 @@ gate in this work's targeted suite.
   the full production chronology reaches (reclose/handback) that the
   compressed arm does not.
 - 200-s production rerun: completed in **1219 s (20.3 min)** vs the 2–3 h
-  baseline; converged; reached t=200.000; reclose SUCCESS at 154.3 s,
-  reselection at 159.2 s, handback complete — i.e. a healthy full chronology.
+  baseline; converged; reached t=200.000; reclose **SYNC_TIMEOUT** at the
+  CASE_DEFINED deadline (sg_on 145 + timeout_s 20 = t=165), reselection
+  NOT_REQUESTED — i.e. the decisions the current `production_request` config
+  gives at this code state. **Correction (2026-08-12):** an earlier revision
+  of this record stated "reclose SUCCESS at 154.3 s, reselection at 159.2 s,
+  handback complete" for this rerun. That was wrong: those SUCCESS values
+  belong to the stale diagnostic-variant cache (`engine_release_result.mat`
+  produced by `run_engine_release_tmp.m` with support supervision off,
+  timeout_s=5, at an older code state), not to the rerun. Independently
+  confirmed by a fresh 250-s run at `dt=0.01` (27.5 min, converged,
+  t(end)=250): it also gives `reclose=SYNC_TIMEOUT at NaN` — the timeout is
+  dt-independent and config/gate-driven, not a timestep artifact. The
+  misattribution arose from misreading the direction of the
+  `compare_ts_equivalence` output (cache vs rerun). No numerical result in
+  this record depends on the misattribution: bit-identity was established by
+  the compressed arm and `fd_structure_check`, and the rerun's role was
+  wall-clock only.
 - Full-production clean-HEAD (`b6e510f`, per-column FD) vs my-tree A/B at
   `tol=0`: **intentionally not completed.** It was launched (to confirm S1+S2
   bit-identity on the exact production path including reclose/handback) but

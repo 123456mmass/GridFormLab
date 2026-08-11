@@ -113,23 +113,34 @@ end
 
 bp = bus_position;
 
+% Runtime hybrid_state field key, computed once. resolve_online used to rebuild
+% it with matlab.lang.makeValidName on every sg_f / sg_current call, i.e. twice
+% per composite residual evaluation, and the coupled FD Jacobian evaluates the
+% residual once per unknown column. Measured on the compressed diagnostic arm
+% (scripts/diagnostics/profile_switch_ts_kernel.m, tag s0b): 503,961
+% resolve_online calls costing 42.3 s of a 400.9 s profiled run. device_id is
+% constant for the life of this device and makeValidName is idempotent on an
+% already valid name, so the resolved field name is the identical string.
+status_key = matlab.lang.makeValidName(char(device_id), ...
+    'ReplacementStyle', 'underscore');
+
 % --- Differential RHS (5-arg ABI) ---------------------------------------------
 %   online: full EMF6 differential_residual (single-machine slice).
 %   offline: open-circuit flux decay (I=0) + coast swing (Te=0, Tm frozen).
 f = @(t, x_dev, y, u_dev, event_context) sg_f( ...
-    x_dev, y, u_dev, bp, machine, units, event_context, device_id);
+    x_dev, y, u_dev, bp, machine, units, event_context, status_key);
 
 % --- current_injection (5-arg): stator Id/Iq -> network frame (correction 2) ---
 current_injection = @(t, x_dev, y, u_dev, event_context) sg_current( ...
-    x_dev, y, bp, machine, units, event_context, device_id);
+    x_dev, y, bp, machine, units, event_context, status_key);
 
 % --- electrical_power (5-arg): direct air-gap Te (not reverse from Pe/V) ------
 electrical_power = @(t, x_dev, y, u_dev, event_context) sg_pe( ...
-    x_dev, y, bp, machine, units, event_context, device_id);
+    x_dev, y, bp, machine, units, event_context, status_key);
 
 % --- reconstruct (5-arg) -------------------------------------------------------
 reconstruct = @(t, x_dev, y, u_dev, event_context) sg_reconstruct( ...
-    x_dev, y, u_dev, bp, machine, units, event_context, device_id);
+    x_dev, y, u_dev, bp, machine, units, event_context, status_key);
 
 dev = struct();
 dev.name = char(device_id);
@@ -266,17 +277,17 @@ r = Vd + machine.Ra(1)*Id - machine.Xq(1)*Iq;
 end
 
 % =========================================================================
-function online = resolve_online(event_context, device_id)
+function online = resolve_online(event_context, status_key)
 % Read online flag from hybrid_state snapshot; default online when ec empty.
+% STATUS_KEY is the sanitized field name computed once by the constructor.
 if isempty(event_context) || ~isstruct(event_context) || ...
         ~isfield(event_context, 'hybrid_state') || isempty(event_context.hybrid_state)
     online = true; return;
 end
 hs = event_context.hybrid_state;
 if isfield(hs, 'device_online') && isstruct(hs.device_online)
-    key = matlab.lang.makeValidName(char(device_id), 'ReplacementStyle', 'underscore');
-    if isfield(hs.device_online, key)
-        online = logical(hs.device_online.(key));
+    if isfield(hs.device_online, status_key)
+        online = logical(hs.device_online.(status_key));
     else
         online = true;
     end
@@ -286,8 +297,8 @@ end
 end
 
 % =========================================================================
-function dx = sg_f(x_dev, y, u_dev, bp, machine, units, event_context, device_id)
-online = resolve_online(event_context, device_id);
+function dx = sg_f(x_dev, y, u_dev, bp, machine, units, event_context, status_key)
+online = resolve_online(event_context, status_key);
 [Tm, Efd] = resolve_controls(u_dev);
 k = 1;
 delta = x_dev(1); w = x_dev(2);
@@ -328,8 +339,8 @@ dx = [dx1; dx2; dx3; dx4; dx5; dx6];
 end
 
 % =========================================================================
-function Ig = sg_current(x_dev, y, bp, machine, units, event_context, device_id)
-online = resolve_online(event_context, device_id);
+function Ig = sg_current(x_dev, y, bp, machine, units, event_context, status_key)
+online = resolve_online(event_context, status_key);
 if online
     Ig = stability.sg_stator_current(x_dev, y, bp, machine, units, 1);
 else
@@ -338,8 +349,8 @@ end
 end
 
 % =========================================================================
-function Pe = sg_pe(x_dev, y, bp, machine, units, event_context, device_id)
-online = resolve_online(event_context, device_id);
+function Pe = sg_pe(x_dev, y, bp, machine, units, event_context, status_key)
+online = resolve_online(event_context, status_key);
 if online
     [Id, Iq, Vd, Vq] = sg_machine_algebraic(x_dev, y, bp, machine, 1);
     Te = Vd*Id + Vq*Iq + machine.Ra(1)*(Id^2 + Iq^2);
@@ -350,8 +361,8 @@ end
 end
 
 % =========================================================================
-function out = sg_reconstruct(x_dev, y, u_dev, bp, machine, units, event_context, device_id)
-online = resolve_online(event_context, device_id);
+function out = sg_reconstruct(x_dev, y, u_dev, bp, machine, units, event_context, status_key)
+online = resolve_online(event_context, status_key);
 [Tm, Efd] = resolve_controls(u_dev);
 out = struct('mode','sg','online',online,'bus_position',bp, ...
     'delta',x_dev(1),'omega',x_dev(2),'Eqp',x_dev(3),'Edp',x_dev(4), ...

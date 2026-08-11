@@ -73,17 +73,29 @@ u0=[P_ref_pu;Q_ref_pu;E_ref_pu];
 gfl_active=1:11;
 gfm_active=[1:3 12:20];
 
-f=@(t,x,y,u,ec) dual_f(t,x,y,u,ec,device_id,mode,gfl_dev,gfm_dev,u0);
-current=@(t,x,y,u,ec) dual_current(t,x,y,u,ec,device_id,mode,gfl_dev,gfm_dev,u0);
+% Runtime hybrid_state field key. This is a pure function of the constant
+% device_id, but resolve_status used to rebuild it with
+% matlab.lang.makeValidName on EVERY closure call. Profiling the compressed
+% chronology arm (3.5 s of simulated time) measured 2,025,509 resolve_status
+% calls costing 157.3 s of a 400.8 s profiled run, because the coupled FD
+% Jacobian evaluates the residual once per unknown column and each residual
+% evaluation calls both dual_f and dual_current for every device. Hoisting the
+% key changes no value anywhere: the same string is now computed once here and
+% threaded into the closures.
+status_key=matlab.lang.makeValidName(char(device_id), ...
+    'ReplacementStyle','underscore');
+
+f=@(t,x,y,u,ec) dual_f(t,x,y,u,ec,status_key,mode,gfl_dev,gfm_dev,u0);
+current=@(t,x,y,u,ec) dual_current(t,x,y,u,ec,status_key,mode,gfl_dev,gfm_dev,u0);
 power=@(t,x,y,u,ec) real(bus_voltage(y,bus_position)*conj( ...
     current(t,x,y,u,ec)));
-recon=@(t,x,y,u,ec) dual_reconstruct(t,x,y,u,ec,device_id,mode, ...
+recon=@(t,x,y,u,ec) dual_reconstruct(t,x,y,u,ec,status_key,mode, ...
     gfl_dev,gfm_dev,u0,bus_position);
-eq=@(V,P,Q,ec) equilibrium_initialize(V,P,Q,ec,device_id,mode, ...
+eq=@(V,P,Q,ec) equilibrium_initialize(V,P,Q,ec,status_key,mode, ...
     gfl_dev,gfm_dev,x0);
-active=@(ec) active_indices(ec,device_id,mode,gfl_active,gfm_active);
+active=@(ec) active_indices(ec,status_key,mode,gfl_active,gfm_active);
 transfer=@(x,y,u,ecl,target,ecr,varargin) transfer_state( ...
-    x,y,u,ecl,target,ecr,device_id,mode,gfl_dev,gfm_dev,u0, ...
+    x,y,u,ecl,target,ecr,status_key,mode,gfl_dev,gfm_dev,u0, ...
     bus_position,varargin{:});
 
 state_names={'i_d','i_q','V_dc', ...
@@ -272,7 +284,11 @@ info=struct('Vbus',V,'I_left',Ileft,'I_right',Iright, ...
     'Vdc_left',xl(3),'Vdc_right',xr(3));
 end
 
-function ec=set_context_mode(ec,fallback,id,target)
+function ec=set_context_mode(ec,fallback,key,target)
+% KEY is the sanitized hybrid_state field name produced once by the
+% constructor (status_key). It is already a valid MATLAB name, and
+% matlab.lang.makeValidName is idempotent on a valid name, so using it
+% directly writes the identical field this function wrote before.
 if isempty(ec) || ~isstruct(ec), ec=fallback; end
 if isempty(ec) || ~isstruct(ec), ec=struct(); end
 if ~isfield(ec,'hybrid_state') || ~isstruct(ec.hybrid_state)
@@ -286,14 +302,16 @@ if ~isfield(ec.hybrid_state,'device_online') || ...
         ~isstruct(ec.hybrid_state.device_online)
     ec.hybrid_state.device_online=struct();
 end
-key=matlab.lang.makeValidName(char(id),'ReplacementStyle','underscore');
 ec.hybrid_state.device_modes.(key)=target;
 ec.hybrid_state.device_online.(key)=true;
 end
 
-function [online,m]=resolve_status(ec,id,default_mode)
+function [online,m]=resolve_status(ec,key,default_mode)
+% KEY is the constructor's status_key (see the hoist note at the top of this
+% file). Reading it straight from the argument removes the per-call
+% matlab.lang.makeValidName that dominated the profile; the resolved field name
+% is bit-for-bit the same string, so online/mode resolution is unchanged.
 online=true; raw=char(default_mode);
-key=matlab.lang.makeValidName(char(id),'ReplacementStyle','underscore');
 if ~isempty(ec) && isstruct(ec) && isfield(ec,'hybrid_state') && ...
         isstruct(ec.hybrid_state)
     hs=ec.hybrid_state;

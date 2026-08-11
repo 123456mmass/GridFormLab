@@ -130,6 +130,37 @@ for k = 1:nd
     nu_total = nu_total + dev.nu;
 end
 
+% --- Flattened per-device dispatch tables --------------------------------
+% composite_f/composite_Ibus/composite_Pe/composite_reconstruct previously ran
+% `dev = devices(k)` and rebuilt the x/u index ranges on every call. Indexing a
+% struct array copies the whole element (function handles, provenance, params),
+% and the coupled FD Jacobian evaluates the residual once per unknown column,
+% so those copies executed millions of times per run. Measured on the
+% compressed diagnostic arm (scripts/diagnostics/profile_switch_ts_kernel.m,
+% tag s0b): composite_f 30.2 s and composite_Ibus 30.2 s of SELF time out of
+% 400.9 s total, at ~120 us per call for a five-device loop.
+%
+% The tables below hold exactly the same function handles and exactly the same
+% index ranges that were rebuilt per call, so every device receives
+% bit-identical arguments in the same order. Only the lookup cost changes; no
+% residual, offset, or state-order contract is affected.
+dev_f = cell(nd,1);
+dev_inj = cell(nd,1);
+dev_pe = cell(nd,1);
+dev_recon = cell(nd,1);
+dev_xr = cell(nd,1);
+dev_ur = cell(nd,1);
+dev_has_u = false(nd,1);
+for k = 1:nd
+    dev_f{k} = devices(k).f;
+    dev_inj{k} = devices(k).current_injection;
+    dev_pe{k} = devices(k).electrical_power;
+    dev_recon{k} = devices(k).reconstruct;
+    dev_xr{k} = (offsets(k)+1):(offsets(k)+devices(k).nx);
+    dev_ur{k} = (u_offsets(k)+1):(u_offsets(k)+devices(k).nu);
+    dev_has_u(k) = devices(k).nu > 0;
+end
+
 % --- Composite x0, u0 -----------------------------------------------------
 x0 = zeros(nx_total,1);
 u0 = zeros(nu_total,1);
@@ -227,20 +258,20 @@ end
 % --- Composite closures ---------------------------------------------------
 % dae_f(t,x,y,u,event_context): concatenate device differential RHS.
 dae_f = @(t,x,y,u,event_context) composite_f(t, x, y, u, event_context, ...
-    devices, offsets, u_offsets);
+    dev_f, dev_xr, dev_ur, dev_has_u);
 % dae_g(t,x,y,Y,u,event_context): network KCL g = Y*V - Ibus (canonical YV-I),
 % with declared vcon rows REPLACED by vcon_eq components (B4).
 dae_g = @(t,x,y,Y,u,event_context) composite_g(t, x, y, Y, u, event_context, ...
-    devices, offsets, u_offsets, bus_map, nb, vcon);
+    dev_inj, dev_xr, dev_ur, dev_has_u, bus_map, nb, vcon);
 % current_injection(t,x,y,u,event_context): Ibus per bus (complex).
 current_injection = @(t,x,y,u,event_context) composite_Ibus(t, x, y, u, ...
-    event_context, devices, offsets, u_offsets, bus_map, nb);
+    event_context, dev_inj, dev_xr, dev_ur, dev_has_u, bus_map, nb);
 % electrical_power(t,x,y,u,event_context): per-device Pe.
 electrical_power = @(t,x,y,u,event_context) composite_Pe(t, x, y, u, ...
-    event_context, devices, offsets, u_offsets);
+    event_context, dev_pe, dev_xr, dev_ur, dev_has_u);
 % reconstruct(t,x,y,u,event_context): per-device outputs.
 reconstruct = @(t,x,y,u,event_context) composite_reconstruct(t, x, y, u, ...
-    event_context, devices, offsets, u_offsets);
+    event_context, dev_recon, dev_xr, dev_ur, dev_has_u);
 
 % --- Assemble dae struct --------------------------------------------------
 dae = struct();
@@ -289,28 +320,25 @@ end
 end
 
 % =========================================================================
-function dx = composite_f(t, x, y, u, event_context, devices, offsets, u_offsets)
-nd = numel(devices);
+function dx = composite_f(t, x, y, u, event_context, dev_f, dev_xr, dev_ur, dev_has_u)
 dx = zeros(numel(x),1);
-for k = 1:nd
-    dev = devices(k);
-    xr = offsets(k)+1 : offsets(k)+dev.nx;
-    ur = u_offsets(k)+1 : u_offsets(k)+dev.nu;
-    if dev.nu == 0
-        u_dev = [];
+for k = 1:numel(dev_f)
+    xr = dev_xr{k};
+    if dev_has_u(k)
+        u_dev = u(dev_ur{k});
     else
-        u_dev = u(ur);
+        u_dev = [];
     end
-    dx(xr) = dev.f(t, x(xr), y, u_dev, event_context);
+    dx(xr) = dev_f{k}(t, x(xr), y, u_dev, event_context);
 end
 end
 
-function g = composite_g(t, x, y, Y, u, event_context, devices, offsets, u_offsets, bus_map, nb, vcon)
+function g = composite_g(t, x, y, Y, u, event_context, dev_inj, dev_xr, dev_ur, dev_has_u, bus_map, nb, vcon)
 % Canonical KCL: g = Y*V - Ibus (YV-I). Devices return positive injection.
 % B4: when vcon is declared, the KCL residual rows in vcon.rows are
 % REPLACED (exactly once each) by the corresponding vcon_eq(x,y) components.
 V = complex(y(1:2:end), y(2:2:end));
-Ibus = composite_Ibus(t, x, y, u, event_context, devices, offsets, u_offsets, bus_map, nb);
+Ibus = composite_Ibus(t, x, y, u, event_context, dev_inj, dev_xr, dev_ur, dev_has_u, bus_map, nb);
 gc = Y*V - Ibus;   % canonical YV-I
 g = zeros(2*nb,1);
 g(1:2:end) = real(gc); g(2:2:end) = imag(gc);
@@ -326,51 +354,49 @@ if ~isempty(vcon.rows)
 end
 end
 
-function Ibus = composite_Ibus(t, x, y, u, event_context, devices, offsets, u_offsets, bus_map, nb)
-Ibus = zeros(nb,1);
-for k = 1:numel(devices)
-    dev = devices(k);
-    xr = offsets(k)+1 : offsets(k)+dev.nx;
-    ur = u_offsets(k)+1 : u_offsets(k)+dev.nu;
-    if dev.nu == 0
-        u_dev = [];
+function Ibus = composite_Ibus(t, x, y, u, event_context, dev_inj, dev_xr, dev_ur, dev_has_u, bus_map, nb)
+% Allocated complex up front. Previously this was zeros(nb,1) (real) and the
+% first device injection forced a real-to-complex reallocation of the whole
+% array on every call. The accumulated values are unchanged: a real zero and a
+% complex zero add identically.
+Ibus = complex(zeros(nb,1));
+for k = 1:numel(dev_inj)
+    xr = dev_xr{k};
+    if dev_has_u(k)
+        u_dev = u(dev_ur{k});
     else
-        u_dev = u(ur);
+        u_dev = [];
     end
-    Iinj = dev.current_injection(t, x(xr), y, u_dev, event_context);
+    Iinj = dev_inj{k}(t, x(xr), y, u_dev, event_context);
     Ibus(bus_map(k)) = Ibus(bus_map(k)) + Iinj;
 end
 end
 
-function Pe = composite_Pe(t, x, y, u, event_context, devices, offsets, u_offsets)
-nd = numel(devices);
+function Pe = composite_Pe(t, x, y, u, event_context, dev_pe, dev_xr, dev_ur, dev_has_u)
+nd = numel(dev_pe);
 Pe = zeros(nd,1);
 for k = 1:nd
-    dev = devices(k);
-    xr = offsets(k)+1 : offsets(k)+dev.nx;
-    ur = u_offsets(k)+1 : u_offsets(k)+dev.nu;
-    if dev.nu == 0
-        u_dev = [];
+    xr = dev_xr{k};
+    if dev_has_u(k)
+        u_dev = u(dev_ur{k});
     else
-        u_dev = u(ur);
+        u_dev = [];
     end
-    Pe(k) = dev.electrical_power(t, x(xr), y, u_dev, event_context);
+    Pe(k) = dev_pe{k}(t, x(xr), y, u_dev, event_context);
 end
 end
 
-function out = composite_reconstruct(t, x, y, u, event_context, devices, offsets, u_offsets)
-nd = numel(devices);
+function out = composite_reconstruct(t, x, y, u, event_context, dev_recon, dev_xr, dev_ur, dev_has_u)
+nd = numel(dev_recon);
 out.devices = cell(nd,1);
 for k = 1:nd
-    dev = devices(k);
-    xr = offsets(k)+1 : offsets(k)+dev.nx;
-    ur = u_offsets(k)+1 : u_offsets(k)+dev.nu;
-    if dev.nu == 0
-        u_dev = [];
+    xr = dev_xr{k};
+    if dev_has_u(k)
+        u_dev = u(dev_ur{k});
     else
-        u_dev = u(ur);
+        u_dev = [];
     end
-    out.devices{k} = dev.reconstruct(t, x(xr), y, u_dev, event_context);
+    out.devices{k} = dev_recon{k}(t, x(xr), y, u_dev, event_context);
 end
 end
 

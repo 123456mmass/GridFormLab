@@ -185,6 +185,16 @@ end
 if isfield(opt,'state_predictor') && ~isempty(opt.state_predictor)
     ts_opt_base.state_predictor=opt.state_predictor;
 end
+% FD Jacobian construction knobs. 'auto' grouping is the kernel default and
+% builds the same dense Jacobian as the historical per-column path;
+% 'off' forces per-column construction and 'fd_structure_check' builds both
+% and requires exact equality. Forwarded so a verification run can pin them.
+if isfield(opt,'fd_grouping') && ~isempty(opt.fd_grouping)
+    ts_opt_base.fd_grouping=opt.fd_grouping;
+end
+if isfield(opt,'fd_structure_check') && ~isempty(opt.fd_structure_check)
+    ts_opt_base.fd_structure_check=opt.fd_structure_check;
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...

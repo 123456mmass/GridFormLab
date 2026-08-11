@@ -21,6 +21,32 @@ end
 tol = option_value(opt,'newton_tol',1e-8);
 max_iter = option_value(opt,'max_iter',50);
 fd_eps = option_value(opt,'fd_eps',3e-6);
+% FD perturbation rule. 'absolute' (default) perturbs every unknown by the
+% same fd_eps, which is the historical behavior of this kernel and is what
+% every existing caller gets. 'scaled' uses the rule this repository already
+% derived for the coupled Jacobian in stability.ts_coupled_jacobian
+% (:32-51), h_j = fd_eps*(1+|z_j|), so a state whose magnitude is far from
+% unity is perturbed proportionally instead of being over- or under-resolved.
+% The choice is a NUMERICAL_METHOD option only; it changes no equation, no
+% state order and no acceptance gate. Opt-in per caller.
+fd_perturbation = lower(string(option_value(opt,'fd_perturbation','absolute')));
+if ~isscalar(fd_perturbation) || ...
+        ~ismember(fd_perturbation,["absolute","scaled"])
+    error('ts_step_composite:badFdPerturbation', ...
+        'fd_perturbation must be absolute or scaled.');
+end
+% FD column grouping. 'auto' asks stability.ts_fd_column_groups for the
+% structurally disjoint grouping of the state columns and falls back to one
+% column per group when the structure cannot be established; 'off' forces the
+% historical per-column construction. Both build the same dense Jacobian.
+% 'fd_structure_check' additionally rebuilds the Jacobian per column and
+% requires exact equality — expensive, for verification runs and tests.
+fd_grouping = lower(string(option_value(opt,'fd_grouping','auto')));
+fd_structure_check = logical(option_value(opt,'fd_structure_check',false));
+if ~isscalar(fd_grouping) || ~ismember(fd_grouping,["auto","off"])
+    error('ts_step_composite:badFdGrouping', ...
+        'fd_grouping must be auto or off.');
+end
 verbose = logical(option_value(opt,'verbose',false));
 full_kcl = logical(option_value(opt,'full_kcl',true));
 t_now = option_value(opt,'t_now',0.0);
@@ -113,7 +139,26 @@ z0 = [x_guess;y_guess];
 residual_fn = @(z) coupled_residual(z,x0,f0,h,active_indices, ...
     frozen_indices,free_vars,free_rows,vcon_vars,vcon_ref,ny,dae,Ynet,u, ...
     event_context,full_kcl,t_now+h,integration_method);
-jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps);
+if fd_grouping == "off"
+    nz0 = numel(z0);
+    fd_groups = num2cell(1:nz0);
+    fd_rowsets = repmat({{}},1,nz0);
+    fd_info = struct('grouped',false,'n_groups',nz0, ...
+        'n_state_groups',numel(active_indices), ...
+        'n_state_columns',numel(active_indices), ...
+        'fallback_reason','disabled_by_option');
+else
+    [fd_groups,fd_rowsets,fd_info] = stability.ts_fd_column_groups( ...
+        dae,active_indices,numel(free_vars),full_kcl);
+end
+if fd_perturbation == "absolute"
+    % Scalar step: forward_fd takes the byte-for-byte historical path.
+    jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps,fd_groups,fd_rowsets, ...
+        fd_structure_check);
+else
+    jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps*(1+abs(z)), ...
+        fd_groups,fd_rowsets,fd_structure_check);
+end
 newton_opt = struct();
 if domain_preserving
     newton_opt.trial_exception_classifier = @trial_domain_classifier;
@@ -151,6 +196,7 @@ step = struct('x_full',x1,'y_full',y1,'converged',ok, ...
 % every caller sees a stable shape).
 step.newton_info = newton_info;
 step.domain_rejected_trials = newton_info.domain_rejected_trials;
+step.fd_column_groups = fd_info;
 step.terminal_residual_vector=terminal_residual;
 step.terminal_candidate_x=candidate_x;
 step.terminal_candidate_y=candidate_y;
@@ -185,13 +231,68 @@ end
 r = [rx_full(active);rg(:)];
 end
 
-function J = forward_fd(z,residual_fn,fd_eps)
+function J = forward_fd(z,residual_fn,fd_eps,groups,rowsets,structure_check)
+%FORWARD_FD  Dense forward-difference Jacobian of the coupled residual.
+%   GROUPS partitions the columns; every column of one group is perturbed in
+%   the same residual evaluation. For a singleton group the whole difference
+%   vector becomes that column, which is byte-for-byte the historical
+%   per-column construction. For a multi-column group each member takes only
+%   its own residual rows: by the derivation in
+%   stability.ts_fd_column_groups those rows are computed from inputs that do
+%   not include the other members' perturbations, and every row outside all
+%   members' row sets is an exact zero in both constructions.
+%
+%   FD_EPS is either a scalar step applied to every column (the historical
+%   absolute rule) or a length-numel(z) vector of per-column steps. With a
+%   scalar the arithmetic below is the same expression in the same order as
+%   the scalar-only version, so the Jacobian is bit-identical.
 r0 = residual_fn(z);
-J = zeros(numel(r0),numel(z));
-for j = 1:numel(z)
+nz = numel(z);
+J = zeros(numel(r0),nz);
+scalar_step = isscalar(fd_eps);
+for gi = 1:numel(groups)
+    cols = groups{gi};
+    if scalar_step
+        hc = fd_eps;
+    else
+        hc = fd_eps(cols);
+    end
     zp = z;
-    zp(j) = zp(j)+fd_eps;
-    J(:,j) = (residual_fn(zp)-r0)/fd_eps;
+    zp(cols) = zp(cols)+hc;
+    if isscalar(cols)
+        J(:,cols) = (residual_fn(zp)-r0)/hc;
+    else
+        dr = residual_fn(zp)-r0;
+        rs = rowsets{gi};
+        for m = 1:numel(cols)
+            rws = rs{m};
+            if scalar_step
+                J(rws,cols(m)) = dr(rws)/hc;
+            else
+                J(rws,cols(m)) = dr(rws)/hc(m);
+            end
+        end
+    end
+end
+if structure_check
+    Jref = zeros(numel(r0),nz);
+    for j = 1:nz
+        if scalar_step
+            hj = fd_eps;
+        else
+            hj = fd_eps(j);
+        end
+        zp = z;
+        zp(j) = zp(j)+hj;
+        Jref(:,j) = (residual_fn(zp)-r0)/hj;
+    end
+    if ~isequal(J,Jref)
+        error('ts_step_composite:fdGroupingMismatch', ...
+            ['Grouped FD Jacobian differs from the per-column Jacobian ' ...
+             '(max abs difference %.17g). The structural derivation in ' ...
+             'stability.ts_fd_column_groups does not hold for this model.'], ...
+            max(abs(J(:)-Jref(:))));
+    end
 end
 end
 

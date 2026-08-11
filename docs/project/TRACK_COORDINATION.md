@@ -153,6 +153,55 @@ An agent needing one of these files must first record an interface request and
 wait for ownership to be assigned. Two branches must not independently create
 different versions of the same shared interface.
 
+> **2026-08-11 TS runtime-performance interface request (RELEASED 2026-08-12):**
+> DELIVERED as PERF-2026-08-11-01. S1 (constant status-key threading + flat
+> composite dispatch tables) and S2 (structurally derived FD column grouping,
+> 82->41 columns) landed bit-identical; the 200-s production run dropped from
+> 2-3 h to 20.3 min (grouped-vs-per-column A/B measured 1.72x in-session).
+> Iterate-path ideas (FD-step scaling, an extrapolating ordinary-step
+> predictor, subdivision-hint hysteresis) were falsified by measurement and
+> reverted. The shared TS kernel / composite DAE / device files are released
+> back to shared ownership. A separate, still-unstarted follow-up is an
+> audited adaptive (or finer-fixed-dt) stepping route, which will change the
+> published numbers and therefore needs its own plan + full re-validation.
+> Original request retained below for provenance.
+>
+> **2026-08-11 TS runtime-performance interface request (OPEN, one owner):**
+> the switched TS production run (`stability.run_hybrid_case` via
+> `scripts/reporting/generate_ieee14_switch_report_figures.m`) costs ~2-3 h of
+> wall clock per horizon, which makes report-evidence regeneration impractical.
+> One implementation owner is reducing that cost under the plan recorded with
+> this request. Requested allowlist:
+>
+> - `+stability/ts_step_composite.m` (FD Jacobian column construction only);
+> - `+stability/composite_newton.m` (additive opt-in option only; the default
+>   `J_final`/`rcond`-at-root contract in `test_composite_newton_contract.m`
+>   is unchanged);
+> - `+stability/composite_dae.m` (per-device index/handle precomputation only;
+>   no change to `g = Y*V - Ibus`, offsets, or state order);
+> - `+stability/ts_simulate_ibr_hybrid.m` (forwarding of the FD-construction
+>   options to the step kernel, and in-source notes recording the falsified
+>   alternatives; no event, transaction, or sample-contract change);
+> - `+stability/run_hybrid_case.m` (pass-through of `fd_grouping` /
+>   `fd_structure_check` only, each applied solely when the caller sets it);
+> - `+ibr/eecon49_dual_mode_model.m`, `+ibr/dual_mode_ibr_model.m`,
+>   `+stability/sg_composite_device.m` (hoisting of per-call constants only);
+> - new diagnostic scripts under `scripts/diagnostics/`.
+>
+> Not in scope: `dt`, `t_end`, event times, published sample grid, `kcl_tol`,
+> `newton_tol`, `max_iter`, `max_step_subdivisions`, device equations, the
+> 20-state IBR ABI, state ordering, sparse storage, and Parallel Computing
+> Toolbox. Declared numerical budget, **tightened by measurement**: bit-identical
+> (`AbsTol 0`) accepted `x_traj`/`y_traj`. The originally declared 1e-10 budget
+> for iterate-path changes proved unusable on this runtime path: because a step
+> subdivides exactly when its Newton iteration count reaches `max_iter`, any
+> change that moves iteration counts changes the accepted dyadic structure and
+> hence the discretization, which produced O(1) trajectory differences in two
+> separate measured attempts (see defect PERF-2026-08-11-01). Iterate-path
+> changes are therefore deferred and require a full-horizon rerun as their gate.
+> No other track may modify the shared one-step TS kernel while this request is
+> OPEN. Release this note when the work is delivered.
+
 ## 4. Work that may proceed in parallel
 
 The following work may run concurrently:

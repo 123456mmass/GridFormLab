@@ -182,6 +182,8 @@ while t < settings.t_end-settings.event_tol
             'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
             'verbose',settings.verbose,'full_kcl',true,'t_now',t, ...
             'domain_preserving_trials',true, ...
+            'fd_grouping',settings.fd_grouping, ...
+            'fd_structure_check',settings.fd_structure_check, ...
             'state_predictor',predictor);
         if support_predictor_active && strcmpi(predictor,'linear_kcl') && ...
                 ~isempty(predictor_prev_x) && isfinite(predictor_prev_t) && ...
@@ -1065,6 +1067,23 @@ s.progress_every = option(opt,'progress_every',0);
 s.progress_file  = char(option(opt,'progress_file',''));
 s.progress_last  = -Inf;
 s.state_predictor = char(option(opt,'state_predictor','hold'));
+% Falsified alternative (2026-08-11, do not reintroduce without new
+% evidence): using an extrapolating predictor for ORDINARY steps instead of
+% 'hold'. At one recorded stiff state it looked decisive -- 'hold' spends 21
+% coupled Newton iterations, 17 of them line-search backtracks, while
+% 'explicit_euler_kcl' converges in 4 with alpha==1 throughout and moves the
+% accepted point by only 3.3e-12 (scripts/diagnostics/probe_fd_step_sensitivity.m).
+% Over a whole switching arm it is worse and NOT equivalent: 4083 vs 2725
+% Newton iterations, subdivision depth 7 vs 5, max|dx|=280.7. A changed
+% iteration count flips whether individual steps exhaust max_iter, which
+% changes the accepted dyadic structure and therefore the discretization.
+% FD Jacobian construction, forwarded to stability.ts_step_composite. The
+% kernel defaults are 'auto' grouping (same dense Jacobian as the historical
+% per-column build) and no structure check; a verification run can force
+% 'off' to rebuild per column, or true to build both and require exact
+% equality.
+s.fd_grouping = char(option(opt,'fd_grouping','auto'));
+s.fd_structure_check = logical(option(opt,'fd_structure_check',false));
 s.healthy_pf_V = option(opt,'healthy_pf_V',[]);
 s.healthy_pf_bus_ids = option(opt,'healthy_pf_bus_ids',[]);
 has_healthy_v = isfield(opt,'healthy_pf_V') && ~isempty(opt.healthy_pf_V);
@@ -1241,6 +1260,16 @@ function hint=next_subdivision_hint(previous,stats,max_depth)
 % If every forced/adaptive leaf passed on its first solve, cautiously coarsen
 % one dyadic level. Otherwise start the next step near the accepted leaf
 % count, avoiding repeated failed coarse ancestors.
+%
+% Falsified alternative (2026-08-11, do not reintroduce without new
+% evidence): requiring K consecutive clean steps before coarsening was
+% expected to remove the doomed full-length parent trial that a hint
+% oscillation pays on every other step, with the accepted leaves unchanged.
+% Measured on the compressed switching arm it is both slower and NOT
+% equivalent: 3829 vs 2725 Newton iterations and max|dx|=126. Reason:
+% retaining a hint of 2 or more does not merely skip a doomed trial, it
+% forces a FINER dyadic structure than the coarsening path would have
+% accepted, so the published trajectory is a different discretization.
 if stats.accepted_leaf_steps<=0 || ~isfinite(stats.accepted_leaf_steps)
     hint=0;
 elseif stats.attempts==stats.accepted_leaf_steps

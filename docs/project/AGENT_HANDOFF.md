@@ -7,6 +7,55 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-12 — Switched-TS kernel runtime optimization (PERF-2026-08-11-01)
+
+The switched-TS production run (`stability.run_hybrid_case` via
+`generate_ieee14_switch_report_figures.m`) cost 2–3 h per 200-s horizon. Two
+bit-identical changes landed:
+
+- **S1** — the dual-mode IBR and SG devices rebuilt a constant event-context
+  field name with `matlab.lang.makeValidName` on every residual evaluation
+  (2,532,277 calls, ~38% of runtime); it is now computed once per device and
+  threaded through the closures. `composite_dae` precomputes flat
+  handle/index dispatch tables instead of copying a device struct per visit.
+- **S2** — `+stability/ts_fd_column_groups.m` (new) derives, from
+  `composite_dae`'s dispatch layout alone, which FD state columns may be
+  perturbed together (device k's rows read only `x(xr_k)`; its injection hits
+  only KCL row `bus_map(k)`; `Y*V` is x-independent). FD columns per Jacobian
+  drop 82→41. `forward_fd` keeps the singleton path byte-for-byte, and a new
+  `fd_structure_check` rebuilds both ways and requires exact equality.
+
+**Wall clock: 200-s production run 2–3 h → 20.3 min** (grouped-vs-per-column
+A/B measured 1.72× in-session; S1's share is the profiler's 38% makeValidName
+attribution). Bit-identity is established by the compressed-arm `tol=0`
+comparison (all arrays + 16 decision fields + 36 event-log checks), a
+whole-arm `fd_structure_check` (2735 Jacobians, no mismatch; the derivation is
+structural so it holds trajectory-wide), and 102/103 targeted tests (the one
+failure is the pre-existing, unrelated `test_algebraic_residual_in_tol_range`,
+TEST-2026-08-11-01).
+
+Falsified and reverted (measured, not bit-identical): FD-step scaling
+(iteration count is flat across `fd_eps` 1e-9…1e-3), an extrapolating
+ordinary-step predictor (4083 vs 2725 iters, `max|dx|=280.7`), and
+subdivision-hint hysteresis (3829 vs 2725 iters, `max|dx|=126`). The
+structural reason both trajectory-changing ideas failed: a step subdivides
+exactly when its Newton count hits `max_iter=50`, so any change to iteration
+counts changes the accepted dyadic structure and hence the discretization.
+
+The existing cache `output/diagnostics/engine_release_result.mat` is a stale
+pre-fix diagnostic-variant artifact (mtime predates `d63f48d`/`b6e510f`;
+written by `run_engine_release_tmp.m` with support supervision off, timeout 5,
+subdiv 4) and is NOT a valid equivalence oracle. The full-production
+clean-HEAD A/B was launched then stopped mid-run per the maintainer's decision
+to accept the targeted-gate evidence.
+
+Follow-up requested by the maintainer, not started: an **adaptive (or finer
+fixed-dt) stepping** route to cut the stiff-window cost further. It changes the
+published numbers, so it needs its own Plan-Mode cycle, a separate audit +
+tests (AGENTS.md), correct interaction with exact event landing / AGSI dwell
+timers / reclose sync windows, and full report re-validation.
+
+
 ## 2026-08-04 — IEEE14 160-s controller comparison
 
 Starting commit `f7ff316`. The existing REGFM_B1/all-KCL 160-s trajectory was

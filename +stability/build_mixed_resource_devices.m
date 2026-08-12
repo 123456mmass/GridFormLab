@@ -33,7 +33,7 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %   Factory dispatch (model_id -> factory):
 %     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
 %     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
-%     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (20-state shared-plant dual)
+%     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (16-state shared-plant dual)
 %   Future single-mode IBR factories are added here ONLY (no engine change).
 %
 %   SCENARIO_OPT may carry:

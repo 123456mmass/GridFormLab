@@ -215,11 +215,26 @@ r.dynamic_params = struct('Mbase', Mbase);
 if strcmp(model_id,'eecon49_dual')
     r.dynamic_params.Sbase=100.0;
     r.dynamic_params.fbase=60.0;
+    % Converter command/actuation delay (source eq.(20)-(21), first-order lag
+    % v_del/v_cmd = 1/(1+T_d s)) is REDUCED OUT of the state vector. The delay
+    % is NOT source-specified: PROJECT_DERIVED, owner-set 2026-08-12 from
+    % digital-VSC control physics -- T_d = 1.5*Ts = 1.5/f_sw (computation 1
+    % sample + PWM/zero-order hold 0.5 sample). At the utility-scale switching/
+    % control frequency f_sw = 5 kHz (Ts = 0.2 ms) this is T_d = 3.0e-4 s, which
+    % is >300x below the phasor step dt = 0.10 s. By singular perturbation the
+    % fast lag collapses onto its slow manifold v_del = v_cmd, so the two delay
+    % states per branch are removed and the AC current dynamics use the
+    % commanded voltage directly (see the device models). This retires the
+    % earlier placeholder T_d = 0.02 s, whose ~530 Hz-class pole the RMS network
+    % model cannot resolve and which produced a spurious +1.29@11.4 Hz mode
+    % (defect TD-2026-08-12-01). f_sw is stored below as the reduction basis;
+    % no Td parameter is passed to the device builders.
+    r.dynamic_params.f_sw_Hz=5000;
     r.dynamic_params.gfl_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-        'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'kpPLL',1.2,'kiPLL',5.0, ...
+        'Vdc_ref',1.0,'Imax',1.2,'kpPLL',1.2,'kiPLL',5.0, ...
         'kpP',0.8,'kiP',2.5,'kpQ',0.8,'kiQ',2.5,'kpI',0.3,'kiI',4.0);
     r.dynamic_params.gfm_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-        'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'M',0.08,'Dv',1.5, ...
+        'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',1.5, ...
         'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
         'kpI',0.3,'kiI',4.0);
     r.dynamic_params.dc_source=struct('Tdc',0.10);
@@ -230,7 +245,7 @@ if strcmp(model_id,'eecon49_dual')
     source='EECON49-P4 Eqs.(6)-(29), Figs.1-2 and parameter table';
     classification=['AC/control=SOURCE_MAPPED; base/reference/parameters=CASE_DEFINED; ' ...
         'DC-source regulator and transfer=PROJECT_DERIVED'];
-    details=sprintf(['20-state shared-plant superset; GFL controller owns PLL; ' ...
+    details=sprintf(['16-state shared-plant superset; GFL controller owns PLL; ' ...
         'GFM controller owns VSG and no PLL; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s'], ...
         Mbase,default_Q_MVAr);
 else

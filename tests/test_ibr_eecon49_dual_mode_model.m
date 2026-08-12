@@ -8,21 +8,27 @@ pf_init_paths();
 end
 
 function testExactStateOwnershipAndMetadata(testCase)
+% Contract updated 2026-08-12 (defect TD-2026-08-12-01): the two command-delay
+% states per branch (source Eqs. 20-21) were removed by singular-perturbation
+% reduction (T_d = 1.5/f_sw ~= 0.3 ms << phasor step dt = 0.10 s, so
+% v_del = v_cmd algebraically). Superset 20 -> 16, active GFL 11 -> 9,
+% active GFM 12 -> 10. Independent oracle: chk_gstate_tmp branch-RHS/current
+% match and mode-transfer current continuity under the new index maps.
 [dev,~,~,~,~]=fixture('gfl');
 expected={'i_d','i_q','V_dc', ...
     'gfl_delta_PLL','gfl_xi_PLL','gfl_xi_P','gfl_xi_Q', ...
-    'gfl_xi_Id','gfl_xi_Iq','gfl_Vd_del','gfl_Vq_del', ...
+    'gfl_xi_Id','gfl_xi_Iq', ...
     'gfm_delta_VSG','gfm_omega_VSG','gfm_E','gfm_xi_Vd','gfm_xi_Vq', ...
-    'gfm_xi_Id','gfm_xi_Iq','gfm_Vd_del','gfm_Vq_del'};
+    'gfm_xi_Id','gfm_xi_Iq'};
 verifyEqual(testCase,dev.state_names,expected);
-verifyEqual(testCase,dev.active_state_indices,1:11);
+verifyEqual(testCase,dev.active_state_indices,1:9);
 verifyEmpty(testCase,dev.frozen_state_indices);
-verifyTrue(testCase,any(contains(string(dev.state_names(4:11)),'PLL')));
-verifyFalse(testCase,any(contains(string(dev.state_names(12:20)),'PLL','IgnoreCase',true)));
+verifyTrue(testCase,any(contains(string(dev.state_names(4:9)),'PLL')));
+verifyFalse(testCase,any(contains(string(dev.state_names(10:16)),'PLL','IgnoreCase',true)));
 meta=ibr.device_contract_metadata(dev);
 verifyEqual(testCase,meta.contract_id,'eecon49_dual');
-verifyEqual(testCase,numel(meta.state_metadata),20);
-verifyEqual(testCase,{meta.state_metadata(12:20).state_branch},repmat({'gfm'},1,9));
+verifyEqual(testCase,numel(meta.state_metadata),16);
+verifyEqual(testCase,{meta.state_metadata(10:16).state_branch},repmat({'gfm'},1,7));
 verifyEqual(testCase,dev.input_names,{'P_ref','Q_ref','E_ref'});
 verifyEqual(testCase,{meta.input_metadata.input_name},{'P_ref','Q_ref','E_ref'});
 end
@@ -43,7 +49,7 @@ if isfield(params,'gfm_eecon49')
     if isfield(params.gfm_eecon49,'kE'), kE=params.gfm_eecon49.kE; end
     if isfield(params.gfm_eecon49,'tauE'), tauE=params.gfm_eecon49.tauE; end
 end
-verifyEqual(testCase,dx1(14)-dx0(14),kE*dEref/tauE,'AbsTol',1e-12);
+verifyEqual(testCase,dx1(12)-dx0(12),kE*dEref/tauE,'AbsTol',1e-12);
 
 % A rigid rotation changes neither |V| nor the direct amplitude reference.
 % With x held fixed it may change measured P/Q, but cannot impersonate the
@@ -51,7 +57,7 @@ verifyEqual(testCase,dx1(14)-dx0(14),kE*dEref/tauE,'AbsTol',1e-12);
 phi=0.019;
 Vr=complex(y(1),y(2))*exp(1i*phi);
 dxr=dev.f(0,x,[real(Vr);imag(Vr)],u,ec);
-verifyGreaterThan(testCase,abs((dxr(14)-dx0(14))-kE*dEref/tauE),1e-6);
+verifyGreaterThan(testCase,abs((dxr(12)-dx0(12))-kE*dEref/tauE),1e-6);
 end
 
 function testBranchRhsAndCurrentMatchStandaloneModels(testCase)
@@ -59,16 +65,16 @@ for mode={'gfl','GFM'}
     [dev,V,y,ec,params]=fixture(mode{1});
     if strcmp(mode{1},'gfl')
         branch=ibr.gfl_eecon49_full_model('IBR_TEST',2,1,2,V,params,0.45,0.08);
-        bx=[dev.x0(1:11);0];
-        expected_idx=1:11;
-        branch_idx=1:11;
-        inactive_idx=12:20;
+        bx=[dev.x0(1:9);0];
+        expected_idx=1:9;
+        branch_idx=1:9;
+        inactive_idx=10:16;
     else
         branch=ibr.gfm_eecon49_full_model('IBR_TEST',2,1,2,V,params,0.45,0.08);
-        bx=[dev.x0(1:3);dev.x0(12:20)];
-        expected_idx=[1:3 12:20];
-        branch_idx=1:12;
-        inactive_idx=4:11;
+        bx=[dev.x0(1:3);dev.x0(10:16)];
+        expected_idx=[1:3 10:16];
+        branch_idx=1:10;
+        inactive_idx=4:9;
     end
     dd=dev.f(0,dev.x0,y,dev.u0,ec);
     db=branch.f(0,bx,y,dev.u0(1:2),ec);
@@ -98,21 +104,21 @@ end
 function testGfmLimiterAntiWindupActsOnVoltageLoop(testCase)
 [dev,V,y,ec]=fixture('GFM');
 x=dev.x0;
-x(15)=2.0; % large voltage-loop integral drives positive d current limiting
+x(13)=2.0; % large voltage-loop integral drives positive d current limiting
 
 % Outward voltage error and positive limiter residual must hold xi_Vd.
-x(14)=abs(V)+0.10;
+x(12)=abs(V)+0.10;
 dx=dev.f(0,x,y,dev.u0,ec);
-[idref,~]=limited_reference(1.20*0.10+4.50*x(15),4.50*x(16),1.20);
-verifyEqual(testCase,dx(15),0,'AbsTol',0);
-verifyEqual(testCase,dx(17),idref-x(1),'AbsTol',1e-12);
-verifyGreaterThan(testCase,abs(dx(17)),1e-3, ...
+[idref,~]=limited_reference(1.20*0.10+4.50*x(13),4.50*x(14),1.20);
+verifyEqual(testCase,dx(13),0,'AbsTol',0);
+verifyEqual(testCase,dx(15),idref-x(1),'AbsTol',1e-12);
+verifyGreaterThan(testCase,abs(dx(15)),1e-3, ...
     'The unclamped inner current PI must continue integrating current error.');
 
 % Reversing only the voltage error releases the same saturated outer loop.
-x(14)=abs(V)-0.10;
+x(12)=abs(V)-0.10;
 dx=dev.f(0,x,y,dev.u0,ec);
-verifyEqual(testCase,dx(15),-0.10,'AbsTol',2e-14);
+verifyEqual(testCase,dx(13),-0.10,'AbsTol',2e-14);
 end
 
 function testGflLimiterAntiWindupActsOnPowerLoop(testCase)
@@ -145,7 +151,7 @@ for mode={'gfl','GFM'}
     x(1)=1.30; x(2)=-0.20;
     I=dev.current_injection(0,x,y,dev.u0,ec);
     theta=x(4);
-    if strcmpi(mode{1},'GFM'), theta=x(12); end
+    if strcmpi(mode{1},'GFM'), theta=x(10); end
     expected=complex(x(1),x(2))*exp(1i*theta);
     verifyEqual(testCase,I,expected,'AbsTol',1e-13);
     verifyGreaterThan(testCase,abs(I),1.20, ...
@@ -156,15 +162,15 @@ end
 function testGfmAngleIsVsgOwnedWithoutPll(testCase)
 [dev,~,y,ec,params]=fixture('GFM');
 x=dev.x0;
-x(13)=1.01;
+x(11)=1.01;
 dx1=dev.f(0,x,y,dev.u0,ec);
 phi=0.07;
 V=complex(y(1),y(2))*exp(1i*phi);
 y2=[real(V);imag(V)];
 dx2=dev.f(0,x,y2,dev.u0,ec);
 wb=2*pi*params.fbase;
-verifyEqual(testCase,dx1(12),wb*(x(13)-1),'AbsTol',1e-12);
-verifyEqual(testCase,dx2(12),dx1(12),'AbsTol',1e-12);
+verifyEqual(testCase,dx1(10),wb*(x(11)-1),'AbsTol',1e-12);
+verifyEqual(testCase,dx2(10),dx1(10),'AbsTol',1e-12);
 end
 
 function testGflPllRespondsToQAxisVoltage(testCase)
@@ -215,9 +221,9 @@ s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
 verifyEqual(testCase,{s.resources(2:5).model_id},repmat({'eecon49_dual'},1,4));
 for k=2:5
     verifyEqual(testCase,devices(k).device_type,'ibr_eecon49_dual');
-    verifyEqual(testCase,devices(k).nx,20);
+    verifyEqual(testCase,devices(k).nx,16);
     verifyEqual(testCase,s.resources(k).ratings.Mbase,100,'AbsTol',0);
-    verifyFalse(testCase,any(contains(string(devices(k).state_names(12:20)),'PLL','IgnoreCase',true)));
+    verifyFalse(testCase,any(contains(string(devices(k).state_names(10:16)),'PLL','IgnoreCase',true)));
 end
 eq=stability.mixed_equilibrium_solve(s.case_data,struct('devices',devices),struct('verbose',false));
 verifyTrue(testCase,eq.converged,eq.failure_reason);

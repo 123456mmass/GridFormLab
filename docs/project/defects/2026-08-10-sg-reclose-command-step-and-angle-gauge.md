@@ -1,6 +1,6 @@
 # SG reclose command step and SG-online angle-gauge defect
 
-**ID:** `SWITCH-2026-08-10-02`
+**ID:** `SWITCH-2026-08-10-03`
 
 **Status:** `IMPLEMENTED_PENDING_250S_EVIDENCE`
 

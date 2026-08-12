@@ -7,18 +7,23 @@ function dev = eecon49_dual_mode_model(device_id,bus_id,bus_position, ...
 % distinct.  This corrects the former source mismatch in which the EECON49
 % case dispatched to WECC GFL (no PLL) + REGFM_B1 GFM (with PLL).
 %
-% Superset state (20, fixed):
+% Superset state (16, fixed):
 %   common plant 1:3
 %     [i_d i_q V_dc]
-%   GFL controller 4:11 (PLL present)
-%     [delta_PLL xi_PLL xi_P xi_Q xi_Id xi_Iq Vd_del Vq_del]
-%   GFM controller 12:20 (NO PLL)
-%     [delta_VSG omega_VSG E xi_Vd xi_Vq xi_Id xi_Iq Vd_del Vq_del]
+%   GFL controller 4:9 (PLL present)
+%     [delta_PLL xi_PLL xi_P xi_Q xi_Id xi_Iq]
+%   GFM controller 10:16 (NO PLL)
+%     [delta_VSG omega_VSG E xi_Vd xi_Vq xi_Id xi_Iq]
 %
-% Active states are 11 in GFL and 12 in GFM. The source publishes the DC
-% energy balance but not its I_dc law, so the shared V_dc state is closed by
-% a project-derived current-source regulator: exact instantaneous converter-
-% power feed-forward plus proportional voltage restoration with declared Tdc.
+% Active states are 9 in GFL and 10 in GFM. The two command-delay states per
+% branch (source Eqs. 20-21) are reduced out by singular perturbation: the
+% physical actuation delay T_d = 1.5/f_sw ~= 0.3 ms (f_sw = 5 kHz) is >300x
+% below the phasor step dt = 0.10 s, so v_del = v_cmd algebraically and the
+% AC current dynamics use the commanded voltage directly (defect
+% TD-2026-08-12-01). The source publishes the DC energy balance but not its
+% I_dc law, so the shared V_dc state is closed by a project-derived current-
+% source regulator: exact instantaneous converter-power feed-forward plus
+% proportional voltage restoration with declared Tdc.
 %
 % Fixed input ABI:
 %   u = [P_ref; Q_ref; E_ref].
@@ -57,9 +62,9 @@ gfl_dev=ibr.gfl_eecon49_full_model(device_id,bus_id,bus_position, ...
 gfm_dev=ibr.gfm_eecon49_full_model(device_id,bus_id,bus_position, ...
     bus_ids,V0,params,P_ref_pu,Q_ref_pu,E_ref_pu);
 
-if gfl_dev.nx~=12 || gfm_dev.nx~=12
+if gfl_dev.nx~=10 || gfm_dev.nx~=10
     error('ibr:eecon49_dual_mode_model:branchLayout', ...
-        'EECON49 branch adapters must each expose 12 states.');
+        'EECON49 branch adapters must each expose 10 states.');
 end
 
 gx=gfl_dev.x0(:); mx=gfm_dev.x0(:);
@@ -70,8 +75,8 @@ end
 x0=merge_branches(gx,mx,mode);
 u0=[P_ref_pu;Q_ref_pu;E_ref_pu];
 
-gfl_active=1:11;
-gfm_active=[1:3 12:20];
+gfl_active=1:9;
+gfm_active=[1:3 10:16];
 
 % Runtime hybrid_state field key. This is a pure function of the constant
 % device_id, but resolve_status used to rebuild it with
@@ -100,16 +105,16 @@ transfer=@(x,y,u,ecl,target,ecr,varargin) transfer_state( ...
 
 state_names={'i_d','i_q','V_dc', ...
     'gfl_delta_PLL','gfl_xi_PLL','gfl_xi_P','gfl_xi_Q', ...
-    'gfl_xi_Id','gfl_xi_Iq','gfl_Vd_del','gfl_Vq_del', ...
+    'gfl_xi_Id','gfl_xi_Iq', ...
     'gfm_delta_VSG','gfm_omega_VSG','gfm_E','gfm_xi_Vd','gfm_xi_Vq', ...
-    'gfm_xi_Id','gfm_xi_Iq','gfm_Vd_del','gfm_Vq_del'};
+    'gfm_xi_Id','gfm_xi_Iq'};
 
 dev=struct();
 dev.name=char(device_id); dev.device_id=char(device_id);
 dev.bus_id=bus_id; dev.bus_position=bus_position; dev.bus_ids=bus_ids(:).';
 dev.device_type='ibr_eecon49_dual';
 dev.mode=char(mode); dev.initial_mode=char(mode); dev.initial_online=true;
-dev.nx=20; dev.nu=3; dev.state_names=state_names;
+dev.nx=16; dev.nu=3; dev.state_names=state_names;
 dev.input_names={'P_ref','Q_ref','E_ref'};
 dev.x0=x0; dev.u0=u0; dev.f=f; dev.current_injection=current;
 dev.electrical_power=power; dev.reconstruct=recon;
@@ -132,23 +137,24 @@ dev.provenance=struct( ...
     'model','EECON49_GFL_GFM_SHARED_PLANT_DUAL', ...
     'source','EECON49-P4 Eqs.(6)-(29), Figs.1-2 and parameter table', ...
     'classification','SOURCE_MAPPED AC/control equations; PROJECT_DERIVED fixed superset/transfer/DC regulator', ...
-    'details',['20 states = common plant 3 + GFL controller 8 (PLL) + ' ...
-        'GFM controller 9 (VSG, no PLL); active GFL=11 and active GFM=12']);
+    'details',['16 states = common plant 3 + GFL controller 6 (PLL) + ' ...
+        'GFM controller 7 (VSG, no PLL); active GFL=9 and active GFM=10; ' ...
+        'command-delay states reduced (v_del=v_cmd, T_d<<dt)']);
 end
 
 % -------------------------------------------------------------------------
 function dx=dual_f(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
 validate_state(x); u=resolve_u(u,u0);
 [online,m]=resolve_status(ec,id,default_mode);
-dx=zeros(20,1);
+dx=zeros(16,1);
 if ~online || strcmp(m,'tripped'), return; end
 switch m
 case 'gfl'
     dg=gfl.f(t,to_gfl(x),y,u(1:2),ec);
-    dx(1:3)=dg(1:3); dx(4:11)=dg(4:11);
+    dx(1:3)=dg(1:3); dx(4:9)=dg(4:9);
 case 'GFM'
     dm=gfm.f(t,to_gfm(x),y,u,ec);
-    dx(1:3)=dm(1:3); dx(12:20)=dm(4:12);
+    dx(1:3)=dm(1:3); dx(10:16)=dm(4:10);
 end
 if any(~isfinite(dx))
     error('ibr:eecon49_dual_mode_model:nonfiniteRhs','Non-finite EECON49 RHS.');
@@ -280,7 +286,7 @@ end
 info=struct('Vbus',V,'I_left',Ileft,'I_right',Iright, ...
     'P_left',P,'Q_left',Q,'P_right',Pright,'Q_right',Qright, ...
     'tol',tol,'source_mode',source,'target_mode',target, ...
-    'common_indices',1:3,'gfl_indices',4:11,'gfm_indices',12:20, ...
+    'common_indices',1:3,'gfl_indices',4:9,'gfm_indices',10:16, ...
     'Vdc_left',xl(3),'Vdc_right',xr(3));
 end
 
@@ -361,21 +367,21 @@ end
 end
 
 function validate_state(x)
-if ~isvector(x) || numel(x)~=20 || any(~isfinite(x))
+if ~isvector(x) || numel(x)~=16 || any(~isfinite(x))
     error('ibr:eecon49_dual_mode_model:badState', ...
-        'Expected 20 finite EECON49 superset states.');
+        'Expected 16 finite EECON49 superset states.');
 end
 end
 
 function x=merge_branches(g,m,mode)
-x=zeros(20,1);
+x=zeros(16,1);
 if strcmpi(mode,'GFM'), x(1:3)=m(1:3); else, x(1:3)=g(1:3); end
-x(4:11)=g(4:11); x(12:20)=m(4:12);
+x(4:9)=g(4:9); x(10:16)=m(4:10);
 end
-function g=to_gfl(x), g=[x(1:11);0]; end
-function m=to_gfm(x), m=[x(1:3);x(12:20)]; end
-function x=put_gfl(x,g), x(1:3)=g(1:3); x(4:11)=g(4:11); end
-function x=put_gfm(x,m), x(1:3)=m(1:3); x(12:20)=m(4:12); end
+function g=to_gfl(x), g=[x(1:9);0]; end
+function m=to_gfm(x), m=[x(1:3);x(10:16)]; end
+function x=put_gfl(x,g), x(1:3)=g(1:3); x(4:9)=g(4:9); end
+function x=put_gfm(x,m), x(1:3)=m(1:3); x(10:16)=m(4:10); end
 
 function V=bus_voltage(y,bp)
 if numel(y)<2*bp || any(~isfinite(y(2*bp-1:2*bp)))

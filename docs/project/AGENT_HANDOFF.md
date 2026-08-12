@@ -7,6 +7,41 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-13 — EECON49 16-state reduction + synchronizer Pmin fix (commit 1)
+
+`TD-2026-08-12-01` and `RECLOSE-2026-08-12-01` (RESOLVED). This commit
+delivers the two gated bodies of work that share the same tested tree:
+
+- **Command-delay reduction** — the source Eqs. (20)-(21) delay states
+  (`Vd_del/Vq_del`) are removed by singular perturbation: the physical delay
+  `T_d = 1.5/f_sw = 0.3 ms` (`f_sw = 5 kHz`, PROJECT_DERIVED owner-set) is
+  >300x below the phasor step `dt = 0.10 s`, so the fast lag collapses onto
+  `v_del = v_cmd`. Dual superset 20→16 states, standalone GFL/GFM 12→10,
+  active GFL 11→9, active GFM 12→10. Equilibrium and retained dynamics
+  unchanged; the spurious +1.29 @ 11.4 Hz all-GFL mode disappears
+  (all-GFL SG-online now stable at −0.065). Secondary consequence: the
+  retired lag had smoothed the fault-onset command jump, so the fault window
+  needs `dt<=0.05` (sweep: 0.05/0.02/0.01/0.005 integrate; 0.10 stalls).
+- **Synchronizer Pmin floor** — the breaker-open synchronizer command was
+  floored at `Pmin=0`; when the SG leads the grid the angle term demands a
+  negative command that clipped to 0, freezing the angle ~106 deg and timing
+  the reclose out. Symmetric authority `Pmin=-Pmax` (PROJECT_DERIVED; the
+  online governor keeps `Pmin=0`) restores the critically-damped capture
+  loop. Oracle + unit test prove convergence from either sign.
+- `docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md` updated to the 16-state
+  layout with the reduction derivation retained beside the source equations.
+
+Gates on this tree: G-STATE 29/29, G-EQUIL/G-SSSA (all_gfl −0.065,
+all_gfm −0.231), `test_sg_offline_synchronizer_retard` 3/3, plus the five
+eecon49 state/model test files 21/21. Full repository regression omitted
+under the risk policy (targeted producer/consumer/failure-path coverage).
+Pre-droop baseline evidence for the follow-up parameter change is captured
+read-only in `output/diagnostics/baseline_dv150.mat`.
+
+FOLLOW-UP (not in this commit): islanded-VSG reclose reachability diagnosis
+(defect record drafted on the follow-up branch of this work), and the
+report re-validation it requires.
+
 ## 2026-08-12 — Switched-TS kernel runtime optimization (PERF-2026-08-11-01)
 
 The switched-TS production run (`stability.run_hybrid_case` via
@@ -65,6 +100,26 @@ dt-driven: 250 s at `dt=0.10` (~32 min) and 250 s at `dt=0.01` (27.5 min,
 `reclose=SYNC_TIMEOUT` at the CASE_DEFINED deadline (145+20=165 s). Earlier
 SUCCESS-at-154.3 figures came from the stale diagnostic-variant cache and the
 older code state, not from these runs.
+
+Phase-1 landed (2026-08-12, commit `f9b710b`): opt-in `stepper='adaptive'` on
+`ts_simulate_ibr_hybrid` is implemented and pushed. The default fixed path is
+byte-identical (G-BITID 3/3, AbsTol 0). Gates: G-LTE 3/3 (analytic SHO oracle),
+G-ROLLBACK 4/4, decision-parity PASS (converged / reclose_status /
+reselection / all 7 event times identical between fixed and adaptive on the
+compressed arm), event-landing PASS. The compressed worst-case arm completes
+`conv=1, t=3.5, 3402 samples`. The hard part was `ADAPT-2026-08-12-01`: the
+adaptive path died at `t~1.6` because the pre-event step (grown to ~0.5 in the
+quiet coast) was carried into the order-1 post-event backward-Euler restart,
+injecting an O(0.1) state error the controller then chased into the pre-existing
+fine-`dt` composite-Newton wall (`IBR-2026-07-20-01`). Fix: reinitialize
+`dt_adaptive=dt_min` at each event (standard discontinuity restart; step size
+only). On this coast-free arm adaptive is ~6-11x slower than fixed `dt=0.10`
+(expected; the arm is the adaptive worst case and wall-clock is judged on the
+250-s production case). The arm also confirmed fixed `dt=0.10` is materially
+under-converged through the transient (device current ~387% of limit), i.e. the
+coarse grid steps over the stiff window; recorded as context in the defect.
+Phase-2 (reclose diagnosis) and Phase-3 (production adaptive run + report
+re-validation) are the remaining plan steps.
 
 
 ## 2026-08-04 — IEEE14 160-s controller comparison

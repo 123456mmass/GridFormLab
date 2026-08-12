@@ -118,14 +118,20 @@ for j = 1:nib
     if lower(opts.case_profile) == "eecon49_figure4"
         % EECON49-P4 parameter table.  The full-state route keeps the
         % source blocks (AC filter, DC link, PLL/VSG, outer voltage/power PI,
-        % inner current PI and command delay) explicit.  The paper parameter
-        % table specifies kp_Idq=0.30 and ki_Idq=4.00.
+        % inner current PI) explicit.  The paper parameter table specifies
+        % kp_Idq=0.30 and ki_Idq=4.00.
         params.ibr_model_family = 'eecon49_full';
+        % Command/actuation-delay states eq.(20)-(21) are reduced out
+        % (v_del=v_cmd): the physical T_d = 1.5/f_sw ~= 0.3 ms (f_sw = 5 kHz) is
+        % >300x below the phasor step dt = 0.10 s, so by singular perturbation
+        % the fast lag collapses onto its slow manifold. See defect
+        % TD-2026-08-12-01 and the device models for the derivation. No Td
+        % parameter is passed.
         params.gfl_eecon49 = struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-            'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'kpPLL',1.20,'kiPLL',5.00, ...
+            'Vdc_ref',1.0,'Imax',1.2,'kpPLL',1.20,'kiPLL',5.00, ...
             'kpP',0.80,'kiP',2.50,'kpQ',0.80,'kiQ',2.50,'kpI',0.30,'kiI',4.00);
         params.gfm_eecon49 = struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-            'Vdc_ref',1.0,'Imax',1.2,'Td',0.02,'M',0.08,'Dv',1.50, ...
+            'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',1.50, ...
             'tauE',0.05,'kQ',0.25,'kE',8.00,'kpV',1.20,'kiV',4.50, ...
             'kpI',0.30,'kiI',4.00);
     end

@@ -3470,9 +3470,24 @@ if ~isfield(rec,'V_open_circuit') || ~isfinite(rec.V_open_circuit)
 end
 Vopen=abs(rec.V_open_circuit);
 phase_error=angle(exp(1i*(angle(vb)-angle(rec.V_open_circuit))));
+% Breaker-open synchronizer command bound. Pmin MUST be negative: the model's
+% damping torque D*omega vanishes at omega=0 (deviation), so with a non-negative
+% command floor the synchronizer cannot RETARD a rotor that already matches grid
+% speed but leads the grid angle. Then the proportional angle term K_theta*e_theta,
+% when it needs to decelerate (e_theta demanding a negative command), is clipped
+% to 0, the rotor coasts to omega=0 and the angle FREEZES at a standing offset
+% (observed ~106 deg -> reclose SYNC_TIMEOUT). The offline command is the
+% project-derived synchronizer actuator (a governor speed/torque bias during
+% breaker-open alignment, not literal turbine output), so a symmetric authority
+% Pmin=-Pmax restores the closed loop
+%   2H de_omega/dt = -(D+K_omega) e_omega - K_theta e_theta,  de_theta/dt = w0 e_omega
+% i.e. d2 e_theta/dt2 + 2*zeta*wn*d e_theta/dt + wn^2 e_theta = 0, which drives
+% e_theta->0 from EITHER sign (proven by chk_sync_fix_oracle_tmp: Pmin=0 freezes,
+% Pmin=-Pmax converges in ~5 s). The online governor (post-close) keeps Pmin=0
+% because a loaded turbine genuinely cannot absorb power.
 sopt=struct('H',c.H,'D',c.D,'omega_0',c.w0, ...
     'omega_n',c.omega_n,'zeta',c.zeta,'Tsv',c.Tsv,'Tch',c.Tch, ...
-    'Pmin',0,'Pmax',c.Tmax);
+    'Pmin',-c.Tmax,'Pmax',c.Tmax);
 [Psv1,Pm1,command]=stability.sg_offline_synchronizer_step( ...
     c.Psv,c.Pm,omega,wgrid,phase_error,h,sopt);
 Efd_command=c.Efd;

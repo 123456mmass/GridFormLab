@@ -5,13 +5,17 @@ function dev = gfm_eecon49_full_model(device_id,bus_id,bus_position,bus_ids,V0,p
 % converter energy, voltage-loop and current-loop states that are present in
 % the EECON49 block diagram.  This route keeps those states explicitly:
 %
-%   [i_d i_q V_dc theta omega E xi_Vd xi_Vq xi_Id xi_Iq Vd_del Vq_del]
+%   [i_d i_q V_dc theta omega E xi_Vd xi_Vq xi_Id xi_Iq]
 %
 % The equations are the positive-sequence VSG/voltage-forming equations from
 % EECON49-P4 (eqs. 22--29) coupled to the common L-filter/DC-link and the
-% shared inner PI/command-delay structure from eqs. 16--21 and Fig. 2.
-% command-delay states.  The printed parameter table specifies kp_Idq=0.30
-% and ki_Idq=4.00.
+% shared inner PI structure from eqs. 16--19 and Fig. 2.  The command-delay
+% lag (eqs. 20--21, T_d = 1.5/f_sw ~= 0.3 ms at f_sw = 5 kHz) is >300x below
+% the phasor step dt = 0.10 s, so by singular perturbation it collapses onto
+% its slow manifold v_del = v_cmd; the two delay states are removed
+% algebraically and the AC current dynamics use the commanded voltage vcd/vcq
+% directly (see gfl_eecon49_full_model and defect TD-2026-08-12-01).  The
+% printed parameter table specifies kp_Idq=0.30 and ki_Idq=4.00.
 
 arguments
     device_id (1,1) string
@@ -40,7 +44,7 @@ if isfield(params,'gfm_eecon49') && isstruct(params.gfm_eecon49), g=params.gfm_e
 dc=struct();
 if isfield(params,'dc_source') && isstruct(params.dc_source), dc=params.dc_source; end
 Lf=getv(g,'Lf',0.15); Rf=getv(g,'Rf',0.015); Cdc=getv(g,'Cdc',0.10);
-Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2); Td=getv(g,'Td',0.02);
+Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2);
 Tdc=getv(dc,'Tdc',0.10);
 M=getv(g,'M',0.08); Dv=getv(g,'Dv',1.50); tauE=getv(g,'tauE',0.05);
 kQ=getv(g,'kQ',0.25); kE=getv(g,'kE',8.0);
@@ -48,44 +52,44 @@ kpV=getv(g,'kpV',1.20); kiV=getv(g,'kiV',4.50);
 kpI=getv(g,'kpI',0.30); kiI=getv(g,'kiI',4.00);
 wb=2*pi*fbase; kappa=Sbase/Mbase;
 dq_power_scale=1;
-validateattributes([Lf Rf Cdc Vdc_ref Imax Td Tdc M Dv tauE kQ kE kpV kiV kpI kiI wb kappa],{'double'},{'finite'});
-if any([Lf Cdc Vdc_ref Imax Td Tdc M tauE kpV kiV]<=0) || any([Rf Dv kQ kE kpI kiI]<0)
+validateattributes([Lf Rf Cdc Vdc_ref Imax Tdc M Dv tauE kQ kE kpV kiV kpI kiI wb kappa],{'double'},{'finite'});
+if any([Lf Cdc Vdc_ref Imax Tdc M tauE kpV kiV]<=0) || any([Rf Dv kQ kE kpI kiI]<0)
     error('ibr:gfm_eecon49:params','invalid GFM parameter sign or magnitude.');
 end
 
 x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiV);
 u0=[P_ref;Q_ref;E_ref];
-f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,Td,Tdc, ...
+f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,Tdc, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
 current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
-recon=@(t,x,y,u,ec) reconstruct(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,Td, ...
+recon=@(t,x,y,u,ec) reconstruct(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
 eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiV);
 dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, ...
     'bus_position',bus_position,'bus_ids',bus_ids(:).','device_type','ibr_gfm_eecon49_full', ...
-    'mode','GFM','nx',12,'nu',3, ...
-    'state_names',{{'i_d','i_q','V_dc','theta','omega','E','xi_Vd','xi_Vq','xi_Id','xi_Iq','Vd_del','Vq_del'}}, ...
+    'mode','GFM','nx',10,'nu',3, ...
+    'state_names',{{'i_d','i_q','V_dc','theta','omega','E','xi_Vd','xi_Vq','xi_Id','xi_Iq'}}, ...
     'input_names',{{'P_ref','Q_ref','E_ref'}},'x0',x0,'u0',u0,'f',f,'current_injection',current, ...
     'electrical_power',power,'reconstruct',recon,'equilibrium_initialize',eq, ...
-    'active_state_indices',@(ec) 1:12, ...
+    'active_state_indices',@(ec) 1:10, ...
     'provenance',struct('model','EECON49_GFM_FULL_STATE_MAPPED', ...
-        'source','EECON49-P4 eqs.(6)-(8),(16)-(29), Fig.2 and parameter table', ...
+        'source','EECON49-P4 eqs.(6)-(8),(16)-(29), Fig.2 and parameter table; command-delay eqs.(20)-(21) reduced (T_d<<dt)', ...
         'source_classification','SOURCE_MAPPED', ...
-        'state_contract','AC L-filter + DC-link + VSG + voltage PI + current PI + command delay', ...
+        'state_contract','AC L-filter + DC-link + VSG + voltage PI + current PI (command delay reduced, v_del=v_cmd)', ...
         'E_index',6,'theta_index',4,'omega_index',5, ...
     'params',struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',wb,'E_ref',E_ref, ...
             'Lf',Lf,'Rf',Rf,'Cdc',Cdc, ...
-            'Vdc_ref',Vdc_ref,'Imax',Imax,'Td',Td,'Tdc',Tdc,'M',M,'Dv',Dv,'tauE',tauE, ...
+            'Vdc_ref',Vdc_ref,'Imax',Imax,'Tdc',Tdc,'M',M,'Dv',Dv,'tauE',tauE, ...
             'kQ',kQ,'kE',kE,'kpV',kpV,'kiV',kiV,'kpI',kpI,'kiI',kiI, ...
             'kappa',kappa,'dq_power_scale',dq_power_scale), ...
         'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES'));
 end
 
-function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,Td,Tdc,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
+function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,Tdc,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
 V=busv(y,bp); id=x(1); iq=x(2);
 vdc=x(3); th=x(4); om=x(5); E=x(6);
-xiVd=x(7); xiVq=x(8); xiId=x(9); xiIq=x(10); vd_del=x(11); vq_del=x(12);
+xiVd=x(7); xiVq=x(8); xiId=x(9); xiIq=x(10);
 Vdq=V*exp(-1i*th); vd=real(Vdq); vq=imag(Vdq); Vmag=abs(V);
 I=complex(id,iq)*exp(1i*th)/k; S=V*conj(I); Pinv=k*real(S); Qinv=k*imag(S);
 
@@ -110,9 +114,11 @@ vcq=vq+R*iq+om*L*id+kpI*eq+kiI*xiIq;
 % PROJECT_DERIVED DC-source closure; the same physical port and declared Tdc
 % are shared across GFL/GFM. See the GFL branch for the derivation.
 Pac=vcd*id+vcq*iq;
-dx=zeros(12,1);
-dx(1)=(vd_del-vd-R*id+om*L*iq)/(L/wb);
-dx(2)=(vq_del-vq-R*iq-om*L*id)/(L/wb);
+% Command-delay states reduced (T_d << dt, slow manifold v_del = v_cmd): the
+% inner-loop commanded voltage vcd/vcq drives the AC current dynamics directly.
+dx=zeros(10,1);
+dx(1)=(vcd-vd-R*id+om*L*iq)/(L/wb);
+dx(2)=(vcq-vq-R*iq-om*L*id)/(L/wb);
 dx(3)=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,Pac); dx(4)=dth; dx(5)=dw; dx(6)=dE;
 % Anti-windup belongs to the voltage-loop integrators because their output
 % is the current-reference vector clipped by Imax. The inner current PI has
@@ -121,11 +127,10 @@ dx(3)=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,Pac); dx(4)=dth; dx(5)=dw; dx(6)=dE;
 dx(7)=conditional_hold(evd,kiV,ri_d,sat);
 dx(8)=conditional_hold(evq,kiV,ri_q,sat);
 dx(9)=ed; dx(10)=eq;
-dx(11)=(vcd-vd_del)/Td; dx(12)=(vcq-vq_del)/Td;
 if any(~isfinite(dx)), error('ibr:gfm_eecon49:nonfinite','non-finite RHS.'); end
 end
 
-function out=reconstruct(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,Td,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
+function out=reconstruct(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
 V=busv(y,bp); th=x(4); id=x(1); iq=x(2); I=complex(id,iq)*exp(1i*th)/k; S=V*conj(I);
 Vdq=V*exp(-1i*th);
 Eref=Eref0; if numel(u)>=3, Eref=u(3); end
@@ -140,15 +145,13 @@ out=struct('i_d',x(1),'i_q',x(2),'Vdc',x(3),'theta',th,'delta',th,'omega',x(5),'
     'L',L,'R',R,'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES');
 end
 
-function x=equilibrium(V,P,Q,k,Vdc,L,R,kiV)
+function x=equilibrium(V,P,Q,k,Vdc,L,R,kiV) %#ok<INUSD>
 if ~isfinite(V) || abs(V)<=0, error('ibr:gfm_eecon49:eq','low voltage.'); end
 I_sys=conj(complex(P,Q)/V);
 I_inv=k*I_sys;
 th=angle(V); E=abs(V);
 Idq=I_inv*exp(-1i*th); id=real(Idq); iq=imag(Idq);
-Vdq=V*exp(-1i*th); vd=real(Vdq); vq=imag(Vdq);
-vcd=vd+R*id-L*iq; vcq=vq+R*iq+L*id;
-x=[id;iq;Vdc;th;1;E;id/kiV;iq/kiV;0;0;vcd;vcq];
+x=[id;iq;Vdc;th;1;E;id/kiV;iq/kiV;0;0];
 end
 function I=current_out(x,y,bp,k,Imax) %#ok<INUSD>
 busv(y,bp); I=complex(x(1),x(2))*exp(1i*x(4))/k;

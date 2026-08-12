@@ -13,7 +13,7 @@ s=ibr.build_ieee14_switch_system(case_profile="eecon49_figure4",index_mode="agsi
 verifyEqual(testCase,s.sg.device_type,'sg_emf6');
 verifyEqual(testCase,s.sg.nx,6);
 for j=1:numel(s.devs)
-    verifyEqual(testCase,s.devs{j}.nx(),12);
+    verifyEqual(testCase,s.devs{j}.nx(),10);
     verifyEqual(testCase,s.devs{j}.gfl_dev.device_type,'ibr_gfl_eecon49_full');
     verifyEqual(testCase,s.devs{j}.gfm_dev.device_type,'ibr_gfm_eecon49_full');
     verifyLessThan(testCase,norm(s.devs{j}.f(s.x_ibr0{j},s.y0),inf),1e-9);

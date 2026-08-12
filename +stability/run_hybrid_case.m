@@ -195,6 +195,18 @@ end
 if isfield(opt,'fd_structure_check') && ~isempty(opt.fd_structure_check)
     ts_opt_base.fd_structure_check=opt.fd_structure_check;
 end
+% Adaptive-step options (opt-in, 2026-08-12). Forwarded only when the caller
+% sets each; the fixed path reads none of them, so the default run is
+% untouched. All defaults live in ts_simulate_ibr_hybrid's initialize and are
+% declared NUMERICAL_METHOD in the adaptive-hybrid plan.
+for afield = {'stepper','dt_min','dt_max','dt_max_armed', ...
+        'atol_x','rtol_x','atol_y','rtol_y', ...
+        'controller_fac','controller_fac_min','controller_fac_max', ...
+        'reject_limit','rannacher_window_dt','rannacher_n'}.'
+    if isfield(opt,afield{1}) && ~isempty(opt.(afield{1}))
+        ts_opt_base.(afield{1}) = opt.(afield{1});
+    end
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...
@@ -482,6 +494,16 @@ copy_fields = {'sample_side','topology_history','active_state_history', ...
     'last_synchronism_guard','transaction_id'};
 for k = 1:numel(copy_fields)
     name = copy_fields{k};
+    if isfield(ts_res,name), result.(name) = ts_res.(name); end
+end
+% Stepper provenance + adaptive-only diagnostics. res.stepper is always
+% published by the TS driver; the dt/LTE/rejection records exist only on the
+% adaptive path, so a fixed run keeps its exact prior field set aside from the
+% additive provenance label.
+adaptive_fields = {'stepper','dt_history','lte_history','rejected_steps', ...
+    'floor_accepted_steps','rejection_history'};
+for k = 1:numel(adaptive_fields)
+    name = adaptive_fields{k};
     if isfield(ts_res,name), result.(name) = ts_res.(name); end
 end
 

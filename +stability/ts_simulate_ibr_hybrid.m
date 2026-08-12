@@ -117,6 +117,18 @@ domain_rejected_total = 0;
 subdivision_depth = 0;
 subdivision_hint = 0;
 rannacher_steps_remaining=0;
+% --- Adaptive-step controller state (opt-in; unused on the fixed path) -------
+% dt_adaptive carries the proposed nominal step between accepted steps and is
+% reinitialized to dt_min at each event (discontinuity restart). The rejection
+% record mirrors ts_adaptive_driver's rejection_history schema.
+dt_adaptive = settings.dt;
+rejected_steps = 0;
+floor_accepted_steps = 0;
+dt_history = [];
+lte_history = [];
+rejection_history = repmat(struct('t',NaN,'attempted_dt',NaN,'error_norm',NaN, ...
+    'alg_residual',NaN,'converged',false,'reject_count',0,'reason','', ...
+    'retry_dt',NaN),0,1);
 % --- Phase-1 read-only resynchronization diagnostics (Mission C) -------------
 % Per-sample record of the synchronism state during the breaker-open interval. These
 % accumulators are written but never read by the integration logic, so they do
@@ -129,7 +141,21 @@ rannacher_steps_remaining=0;
 resync_diag = struct();
 
 while t < settings.t_end-settings.event_tol
-    target = min(t+settings.dt,settings.t_end);
+    if settings.stepper=="adaptive"
+        % Error-controlled proposal. dt_max_armed keeps event-crossing
+        % detection on a cadence comparable to the fixed grid while a
+        % supervisor decision is pending (decision-parity safeguard, not a
+        % reclose fix). The post-event Rannacher restart is handled by the
+        % dt_adaptive=dt_min reinitialization at the event, not a proposal cap.
+        dt_prop = dt_adaptive;
+        if pending_reclose || pending_reselection || ...
+                (settings.severity_support_enabled && ~sg_online_state(dae,ec))
+            dt_prop = min(dt_prop,settings.dt_max_armed);
+        end
+        target = min(t+dt_prop,settings.t_end);
+    else
+        target = min(t+settings.dt,settings.t_end);
+    end
     if event_cursor <= numel(events)
         target = min(target,events(event_cursor).t);
     end
@@ -167,6 +193,221 @@ while t < settings.t_end-settings.event_tol
     h = target-t;
     if h <= settings.event_tol
         t = target;
+    elseif settings.stepper=="adaptive"
+        % --- Error-controlled adaptive step (step-doubling trapezoidal) -------
+        % Operates on local temporaries; nothing outside {rejected_steps,
+        % rejection_history, counters} is written until the single atomic
+        % commit below, so a rejected trial advances no supervisor state.
+        x_step_left=x;
+        t_step_left=t;
+        active = stability.ts_dynamic_state_indices(dae,ec);
+        predictor='hold';
+        if support_predictor_active, predictor=settings.state_predictor; end
+        step_opt = struct('newton_tol',settings.newton_tol, ...
+            'max_iter',settings.max_iter,'fd_eps',settings.fd_eps, ...
+            'verbose',settings.verbose,'full_kcl',true,'t_now',t, ...
+            'domain_preserving_trials',true, ...
+            'fd_grouping',settings.fd_grouping, ...
+            'fd_structure_check',settings.fd_structure_check, ...
+            'state_predictor',predictor);
+        % NOTE: the linear predictor is rebuilt per ATTEMPT below, because it
+        % scales with the trial step. Building it once from the nominal h and
+        % reusing it across halved retries hands Newton an initial guess a
+        % factor h/h_try too far along the trajectory, which is what makes a
+        % small-step retry fail where the full step converged.
+        predictor_usable = support_predictor_active && ...
+            strcmpi(predictor,'linear_kcl') && ~isempty(predictor_prev_x) && ...
+            isfinite(predictor_prev_t) && t>predictor_prev_t+settings.event_tol;
+        % Post-event restart mirrors the FIXED path exactly (its
+        % rannacher_steps_remaining=1 is consumed by ONE backward-Euler step):
+        % the next step and only the next is a single damped-BE solve of the
+        % full target h, convergence-controlled (no LTE gate), after which
+        % trapezoidal stepping resumes. A small BE window followed by
+        % LTE-controlled trapezoidal steps cannot reproduce this: the
+        % trapezoidal controller then tries to meet the tolerance across the
+        % event-induced kink by halving all the way to dt_min, where Newton
+        % itself loses convergence on the low-voltage state. The fixed path
+        % never does that; neither does this.
+        use_be = rannacher_steps_remaining>0;
+        reject_count=0; h_try=h; target_try=target;
+        attempt_iterations=0; floor_accepted=false;
+        be_floor=false;   % order-reduction rescue at the dt_min floor (set below)
+        while true
+            attempt_opt=step_opt;
+            if predictor_usable
+                ratio=h_try/(t-predictor_prev_t);
+                attempt_opt.x_predictor=x+ratio*(x-predictor_prev_x);
+            end
+            step_is_be = use_be || be_floor;
+            [cand,est,astats]=advance_adaptive_step( ...
+                x,y,t,h_try,dae,Ycurr,u,ec,active,attempt_opt,settings, ...
+                sync_ctl,step_is_be,case_data);
+            step_attempts=step_attempts+1;
+            total_iterations=total_iterations+astats.iterations;
+            attempt_iterations=attempt_iterations+astats.iterations;
+            domain_rejected_total=domain_rejected_total+astats.domain_rejected;
+            at_floor = h_try <= settings.dt_min*(1+1e-12);
+            if step_is_be
+                % Backward-Euler step (post-event window OR floor rescue). The
+                % coupled Newton solves the FULL KCL rows to newton_tol
+                % (1e-8 < kcl_tol), so convergence already certifies the
+                % algebraic residual; there is no Richardson estimate to gate.
+                accept_this=cand.converged;
+                lte_ok=true;
+                % A mid-coast BE step (be_floor, not an event restart) is a
+                % floor acceptance: it took the dt_min step the trapezoidal
+                % controller could not.
+                floor_accepted = accept_this && be_floor && ~use_be;
+            else
+                lte_ok = cand.converged && est.usable && ...
+                    est.err<=1 && est.alg_res<=settings.kcl_tol;
+                % Floor acceptance for the non-smooth current-limiter kink:
+                % at dt_min a fully solved trapezoidal step (Newton converged
+                % AND KCL residual within kcl_tol) is ACCEPTED even when the
+                % Richardson LTE cannot be met, because the LTE is measuring a
+                % C0 switching kink, not a resolvable smooth error, and further
+                % halving cannot reduce it. Every such step still satisfies the
+                % same newton_tol/kcl_tol contract as a fixed step (which also
+                % descends to ~dt/2^max_step_subdivisions at hard points via
+                % failure-driven subdivision). This is a NUMERICAL_METHOD
+                % step-control policy for a switched system; it relaxes no
+                % physical gate and is fully recorded (floor_accepted +
+                % lte_history). It is NOT a silent fixed-step fallback: the
+                % step taken is dt_min, not the nominal dt.
+                floor_ok = at_floor && cand.converged && est.usable && ...
+                    est.alg_res<=settings.kcl_tol;
+                accept_this = lte_ok || floor_ok;
+                floor_accepted = accept_this && ~lte_ok;
+            end
+            if accept_this, break; end
+            rejected_steps=rejected_steps+1; reject_count=reject_count+1;
+            rejection_history(end+1)=struct('t',t,'attempted_dt',h_try, ...
+                'error_norm',est.err,'alg_residual',est.alg_res, ...
+                'converged',cand.converged,'reject_count',reject_count, ...
+                'reason',adaptive_reject_reason(cand,est,settings), ...
+                'retry_dt',max(settings.dt_min,h_try/2)); %#ok<AGROW>
+            if at_floor
+                if ~step_is_be
+                    % Order-reduction rescue. At a C0 current-limiter switching
+                    % kink the trapezoidal fixed-point iteration averages f at
+                    % the two endpoints straddling the switch, which are
+                    % inconsistent, so Newton cannot converge and halving only
+                    % sharpens the corner. Retry the SAME dt_min step with
+                    % L-stable backward-Euler (single-endpoint evaluation),
+                    % exactly the order reduction the post-event Rannacher
+                    % restart and TR-BDF2 use at a discontinuity. This is NOT a
+                    % fixed-step fallback: the step is dt_min (not the nominal
+                    % dt), it is recorded, and if BE at dt_min ALSO fails the
+                    % run fails closed below. The trajectory is still validated
+                    % against the fixed reference by decision-parity + COI.
+                    be_floor=true;
+                    continue;   % retry at the same h_try under backward-Euler
+                end
+                % At the floor and STILL not acceptable under BE: the DAE itself
+                % could not be solved here. Genuine fail-closed; no fallback.
+                converged=false;
+                failure_id='ts_simulate_ibr_hybrid:adaptiveDtMin';
+                failure_reason=sprintf(['Adaptive step could not satisfy the ' ...
+                    'DAE at dt_min=%.3e, t=%.6f (err=%.3e alg_res=%.3e ' ...
+                    'converged=%d, backward-Euler rescue attempted). ' ...
+                    'No silent fixed-step fallback.'], ...
+                    settings.dt_min,t,est.err,est.alg_res,cand.converged);
+                break;
+            elseif reject_count>=settings.reject_limit
+                converged=false;
+                failure_id='ts_simulate_ibr_hybrid:adaptiveRejectLimit';
+                failure_reason=sprintf(['Adaptive step exceeded reject_limit=%d ' ...
+                    'at t=%.6f (last err=%.3e). No silent fixed-step fallback.'], ...
+                    settings.reject_limit,t,est.err);
+                break;
+            end
+            h_try=max(settings.dt_min,h_try/2); target_try=t+h_try;
+        end
+        if ~converged
+            step_iterations(end+1)=attempt_iterations; %#ok<AGROW>
+            step_residuals(end+1)=cand.residual_norm; %#ok<AGROW>
+            accepted_step_residuals(end+1)=cand.residual_norm; %#ok<AGROW>
+            max_residual=max(max_residual,cand.residual_norm);
+            break;
+        end
+        % --- atomic commit (mirrors the fixed accept block) ------------------
+        x=cand.x; y=cand.y;
+        if sync_ctl.active
+            sync_ctl=cand.sync;
+            u=sync_ctl.u_end;
+        end
+        t=target_try;
+        accepted_steps=accepted_steps+1;
+        internal_substeps=internal_substeps+1;
+        if use_be
+            % The Rannacher restart step has been taken; consume the flag so
+            % the next step returns to trapezoidal (mirrors the fixed path).
+            rannacher_steps_remaining=rannacher_steps_remaining-1;
+        end
+        if floor_accepted, floor_accepted_steps=floor_accepted_steps+1; end
+        max_residual=max(max_residual,cand.residual_norm);
+        step_iterations(end+1)=attempt_iterations; %#ok<AGROW>
+        step_residuals(end+1)=cand.residual_norm; %#ok<AGROW>
+        accepted_step_residuals(end+1)=cand.residual_norm; %#ok<AGROW>
+        dt_history(end+1)=h_try; %#ok<AGROW>
+        if step_is_be
+            % A backward-Euler step (event-restart window OR floor rescue)
+            % carries no Richardson estimate; record NaN rather than the
+            % unusable sentinel so the diagnostic never reads as "an accepted
+            % step had infinite error".
+            lte_history(end+1)=NaN; %#ok<AGROW>
+        else
+            lte_history(end+1)=est.err; %#ok<AGROW>
+        end
+        if ~step_is_be
+            % Controller update on the step ACTUALLY taken (h_try), not on the
+            % stale proposal: the clamps at the top of the loop routinely cut
+            % the step to land on an event or a supervisor deadline, and
+            % scaling a nominal the integrator never used lets dt_adaptive
+            % drift away from the achieved step. err==0 is the exact-step case
+            % (an equilibrium window, where trapezoidal is exact); the
+            % reference controller accelerates by fac_max there rather than
+            % leaving dt frozen (ts_adaptive_driver.m:240-244).
+            if isfinite(est.err) && est.err>0
+                factor=min(settings.controller_fac_max, ...
+                    max(settings.controller_fac_min, ...
+                    settings.controller_fac*(1/est.err)^(1/3)));
+            else
+                factor=settings.controller_fac_max;
+            end
+            dt_adaptive=min(settings.dt_max,max(settings.dt_min,h_try*factor));
+        else
+            % Resume cautiously after any BE step (Rannacher window or a floor
+            % rescue through a limiter kink): re-enter trapezoidal at the small
+            % Rannacher window size, not at fac_max*dt_min, so the controller
+            % re-earns a larger step from a fresh LTE measurement.
+            dt_adaptive=max(settings.dt_min,settings.rannacher_window_dt);
+        end
+        if support_predictor_active
+            predictor_prev_x=x_step_left;
+            predictor_prev_t=t_step_left;
+        else
+            predictor_prev_x=[];
+            predictor_prev_t=NaN;
+        end
+        if settings.progress_every > 0 && ~isempty(settings.progress_file)
+            lastp = settings.progress_last;
+            if t-lastp >= settings.progress_every
+                pfd = fopen(settings.progress_file,'a');
+                if pfd>0
+                    fprintf(pfd,[ ...
+                        'PROGRESS t=%.4f iter=%d residual=%.3e dt=%.3e ' ...
+                        'rejects=%d be=%d\n'],t,attempt_iterations, ...
+                        cand.residual_norm,h_try,reject_count,use_be);
+                    fclose(pfd);
+                end
+                settings.progress_last = t;
+            end
+        end
+        is_event_left = event_cursor<=numel(events) && ...
+            abs(t-events(event_cursor).t)<=settings.event_tol;
+        side = ternary(is_event_left,'left','continuous');
+        samples = append_sample(samples,t,x,y,u,ec,active,topology,side);
     else
         x_step_left=x;
         t_step_left=t;
@@ -436,6 +677,22 @@ while t < settings.t_end-settings.event_tol
         subdivision_hint=0;
         predictor_prev_x=[];
         predictor_prev_t=NaN;
+        % Adaptive discontinuity restart: an event is a C0 (or worse) break in
+        % the trajectory, so the pre-event step size is meaningless afterward.
+        % Every production adaptive DAE integrator reinitializes the step at a
+        % discontinuity (CVODE, ode15s, ...); carrying the coarse pre-event dt
+        % into the post-event Rannacher step made the order-1 BE restart span
+        % the sharpest part of the transient and injected an O(0.1) state error
+        % that the controller then chased down to the dt_min Newton wall. Reset
+        % to the floor and let the LTE controller ramp the step back up (fac_max
+        % per accepted step) from a measured error. This reinitializes STEP SIZE
+        % only; it changes no error tolerance, equation, or gate, so it is not a
+        % post-hoc tolerance retune. Guarded on the adaptive stepper: settings
+        % has no dt_min field on the fixed path (initialize only sets the
+        % adaptive schema under stepper=='adaptive').
+        if settings.stepper=="adaptive"
+            dt_adaptive = settings.dt_min;
+        end
     end
     % --- Real-time SG-off AGSI support supervisor --------------------------
     % Event names are not switching commands. Every accepted sample is
@@ -967,6 +1224,16 @@ res.accepted_steps=accepted_steps;
 res.internal_substeps=internal_substeps;
 res.domain_rejected_trials=domain_rejected_total;
 res.subdivision_depth=subdivision_depth;
+% Stepper provenance + adaptive diagnostics (fixed path publishes only the
+% label so its trajectory arrays stay byte-identical).
+res.stepper=char(settings.stepper);
+if settings.stepper=="adaptive"
+    res.dt_history=dt_history;
+    res.lte_history=lte_history;
+    res.rejected_steps=rejected_steps;
+    res.floor_accepted_steps=floor_accepted_steps;
+    res.rejection_history=rejection_history;
+end
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
@@ -1142,6 +1409,66 @@ if ~isscalar(s.max_step_subdivisions) || ~isfinite(s.max_step_subdivisions) || .
         s.max_step_subdivisions>12
     error('ts_simulate_ibr_hybrid:badOptions', ...
         'max_step_subdivisions must be an integer in [0,12].');
+end
+% --- Adaptive-step options (opt-in). All NUMERICAL_METHOD ------------------
+% Default 'fixed' leaves the fixed path byte-identical: none of these fields
+% is read on the fixed branch. Mirrors the step-doubling trapezoidal +
+% Richardson LTE algorithm of stability.ts_adaptive_driver (a separate
+% implementation driving ts_step_composite; ts_adaptive_driver itself is
+% never edited), including controller_fac/fac_min/fac_max = 0.9/0.2/5.0 and
+% the weight norm sc = atol + rtol*max(|x_n|,|x_cand|).
+s.stepper = lower(string(option(opt,'stepper','fixed')));
+if ~isscalar(s.stepper) || ~ismember(s.stepper,["fixed","adaptive"])
+    error('ts_simulate_ibr_hybrid:badStepper', ...
+        'stepper must be fixed or adaptive.');
+end
+if s.stepper=="adaptive"
+    % Tolerances mirror ts_adaptive_driver's defaults. Classification
+    % PROPOSED: tolerance selection for the SG adaptive track is documented
+    % as NOT_READY (TRACK_A_ADAPTIVE_TS); these values are declared in the
+    % plan and the tests before any metric is viewed, and are overridden
+    % per-caller, never retuned after seeing results.
+    s.atol_x = option(opt,'atol_x',1e-6);
+    s.rtol_x = option(opt,'rtol_x',1e-4);
+    s.atol_y = option(opt,'atol_y',1e-5);
+    s.rtol_y = option(opt,'rtol_y',1e-4);
+    % dt_min is tied to the subdivision floor the fixed path already has:
+    % with max_step_subdivisions the fixed kernel resolves stiffness down to
+    % dt/2^max_step_subdivisions, so the adaptive path keeps the same reach
+    % with headroom rather than a coarser floor.
+    s.dt_min = option(opt,'dt_min',s.dt/(2^(s.max_step_subdivisions+1)));
+    s.dt_max = option(opt,'dt_max',s.dt*10);
+    % Armed-window ceiling: keeps event-crossing detection (good_since,
+    % support timers, severity releases) on a cadence comparable to the
+    % fixed grid while supervisor decisions are pending. This is a
+    % decision-parity safeguard, NOT a reclose fix (dt=0.01 also times out
+    % under this config; see PERF-2026-08-11-01).
+    s.dt_max_armed = option(opt,'dt_max_armed',s.sync_dwell/10);
+    s.controller_fac = option(opt,'controller_fac',0.9);
+    s.controller_fac_min = option(opt,'controller_fac_min',0.2);
+    s.controller_fac_max = option(opt,'controller_fac_max',5.0);
+    s.reject_limit = option(opt,'reject_limit',10);
+    s.rannacher_n = option(opt,'rannacher_n',2);
+    s.rannacher_window_dt = option(opt,'rannacher_window_dt',s.dt_max_armed);
+    advals=[s.atol_x,s.rtol_x,s.atol_y,s.rtol_y,s.dt_min,s.dt_max, ...
+        s.dt_max_armed,s.controller_fac,s.controller_fac_min, ...
+        s.controller_fac_max,s.reject_limit,s.rannacher_n, ...
+        s.rannacher_window_dt];
+    if any(~isfinite(advals)) || any(advals(1:12)<=0)
+        error('ts_simulate_ibr_hybrid:badAdaptiveOptions', ...
+            'All adaptive controller parameters must be finite and positive.');
+    end
+    if s.dt_min>=s.dt_max || s.dt_max_armed<s.dt_min || ...
+            s.dt_max_armed>s.dt_max || s.rannacher_window_dt<s.dt_min
+        error('ts_simulate_ibr_hybrid:badAdaptiveOptions', ...
+            ['Adaptive dt bounds must satisfy dt_min < dt_max and ' ...
+             'dt_min <= dt_max_armed <= dt_max, dt_min <= rannacher_window_dt.']);
+    end
+    if s.reject_limit<1 || s.reject_limit~=fix(s.reject_limit) || ...
+            s.rannacher_n<0 || s.rannacher_n~=fix(s.rannacher_n)
+        error('ts_simulate_ibr_hybrid:badAdaptiveOptions', ...
+            'reject_limit and rannacher_n must be positive/nonnegative integers.');
+    end
 end
 end
 
@@ -2318,6 +2645,169 @@ end
 u_right=u;
 dispatch=dispatch_snapshot(u_right,dae);
 [ok,y_right,reason,right_norm]=right_limit(x_right,y,Y,dae,u_right,ec_right,t,kcl_tol);
+end
+
+function [cand,est,stats]=advance_adaptive_step(x0,y0,t0,h,dae,Ynet,u,ec, ...
+    active,step_opt,s,sync_ctl,use_be,case_data)
+%ADVANCE_ADAPTIVE_STEP One trial of the opt-in error-controlled stepper.
+% Mirrors the step-doubling trapezoidal + Richardson-LTE algorithm of
+% stability.ts_adaptive_driver (that file is never edited) but drives the
+% canonical composite kernel stability.ts_step_composite exactly once per
+% solve (no second composite residual/Jacobian; see ts_step_composite.m:6).
+% Pure: operates on copies of the sync controller, never mutating the caller's
+% state. Returns the FULL step, the fine two-half candidate, and a Richardson
+% error estimate restricted to the active differential states.
+%
+%   cand : accepted-candidate fields {x,y,sync,u_end,converged,finite,
+%          iterations,residual_norm}. On the trapezoidal path the candidate is
+%          the FINE (two-half) solution; on a backward-Euler window step it is
+%          the single BE solve.
+%   est  : {usable,err,alg_res}. err is the weighted RMS Richardson estimate;
+%          alg_res is the KCL residual at the fine solution (last ny entries of
+%          the coupled terminal residual). Unusable/inf on a BE step or a
+%          non-converged solve.
+%   stats: {iterations,residual_norm,domain_rejected,solves} for counters.
+
+% Advance the sync controller on a COPY over the full interval [t0,t0+h].
+if use_be
+    % Post-event Rannacher restart, mirroring the FIXED path exactly: TWO
+    % backward-Euler half-steps (advance_rannacher_restart), convergence-
+    % controlled, no Richardson estimate. The single full-h BE solve an
+    % earlier revision used is a DIFFERENT trajectory from the fixed restart
+    % and landed Newton deeper in the post-event low-voltage kink. Two half
+    % steps are also the numerically gentler option for a C0 discontinuity.
+    h2=h/2;
+    if sync_ctl.active
+        [u_h1,sync_h1]=advance_sync_controller(sync_ctl,x0,y0,t0,h2,dae,ec,u,case_data);
+    else
+        u_h1=u; sync_h1=sync_ctl;
+    end
+    opt_l=step_opt; opt_l.t_now=t0; opt_l.integration_method='backward_euler';
+    left=stability.ts_step_composite(x0,y0,h2,dae,Ynet,u_h1,ec,active,opt_l);
+    cand=struct('x',left.x_full,'y',left.y_full,'sync',sync_h1, ...
+        'u_end',sync_h1.u_end,'converged',left.converged&&left.finite, ...
+        'finite',left.finite,'iterations',left.iterations, ...
+        'residual_norm',left.residual_norm);
+    est=struct('usable',false,'err',inf,'alg_res',inf);
+    stats=struct('iterations',left.iterations,'residual_norm',left.residual_norm, ...
+        'domain_rejected',left.domain_rejected_trials,'solves',1);
+    if ~(left.converged && left.finite), return; end
+    if sync_ctl.active
+        [u_h2,sync_h2]=advance_sync_controller(sync_h1,left.x_full,left.y_full, ...
+            t0+h2,h2,dae,ec,u,case_data);
+    else
+        u_h2=u; sync_h2=sync_h1;
+    end
+    opt_r=step_opt; opt_r.t_now=t0+h2; opt_r.integration_method='backward_euler';
+    right=stability.ts_step_composite(left.x_full,left.y_full,h2,dae,Ynet, ...
+        u_h2,ec,active,opt_r);
+    stats.iterations=stats.iterations+right.iterations;
+    stats.residual_norm=max(stats.residual_norm,right.residual_norm);
+    stats.domain_rejected=stats.domain_rejected+right.domain_rejected_trials;
+    stats.solves=2;
+    cand.x=right.x_full; cand.y=right.y_full; cand.sync=sync_h2;
+    cand.u_end=sync_h2.u_end; cand.converged=right.converged&&right.finite;
+    cand.finite=right.finite; cand.iterations=stats.iterations;
+    cand.residual_norm=stats.residual_norm;
+    return;   % BE restart: order 1, no LTE gate
+end
+if sync_ctl.active
+    [u_full,sync_full]=advance_sync_controller(sync_ctl,x0,y0,t0,h,dae,ec,u,case_data);
+else
+    u_full=u; sync_full=sync_ctl;
+end
+opt_full=step_opt; opt_full.t_now=t0;
+full=stability.ts_step_composite(x0,y0,h,dae,Ynet,u_full,ec,active,opt_full);
+
+cand=struct('x',full.x_full,'y',full.y_full,'sync',sync_full, ...
+    'u_end',sync_full.u_end,'converged',full.converged&&full.finite, ...
+    'finite',full.finite,'iterations',full.iterations, ...
+    'residual_norm',full.residual_norm);
+est=struct('usable',false,'err',inf,'alg_res',inf);
+stats=struct('iterations',full.iterations,'residual_norm',full.residual_norm, ...
+    'domain_rejected',full.domain_rejected_trials,'solves',1);
+
+if ~(full.converged && full.finite)
+    return;   % reject; est stays unusable
+end
+
+% Fine (two composed half-step) solution for the Richardson estimate.
+h2=h/2;
+if sync_ctl.active
+    [u_h1,sync_h1]=advance_sync_controller(sync_ctl,x0,y0,t0,h2,dae,ec,u,case_data);
+else
+    u_h1=u; sync_h1=sync_ctl;
+end
+% Each half-step needs its OWN predictor: an x_predictor built for a step of
+% length h overshoots by 2x on an h/2 solve. Rescale when the caller supplied
+% one (it is an extrapolation from x0, so the increment scales with the step).
+opt_h1=step_opt; opt_h1.t_now=t0;
+if isfield(step_opt,'x_predictor')
+    opt_h1.x_predictor = x0 + (step_opt.x_predictor - x0)/2;
+end
+h1=stability.ts_step_composite(x0,y0,h2,dae,Ynet,u_h1,ec,active,opt_h1);
+stats.iterations=stats.iterations+h1.iterations;
+stats.residual_norm=max(stats.residual_norm,h1.residual_norm);
+stats.domain_rejected=stats.domain_rejected+h1.domain_rejected_trials;
+stats.solves=2;
+if ~(h1.converged && h1.finite)
+    cand.converged=false; return;
+end
+if sync_ctl.active
+    [u_h2,sync_h2]=advance_sync_controller(sync_h1,h1.x_full,h1.y_full, ...
+        t0+h2,h2,dae,ec,u,case_data);
+else
+    u_h2=u; sync_h2=sync_h1;
+end
+% The second half starts from the first half's solution, so the caller's
+% predictor (an extrapolation from x0) no longer applies. Continue the same
+% linear trend from the new base instead of reusing a stale target.
+opt_h2=step_opt; opt_h2.t_now=t0+h2;
+if isfield(step_opt,'x_predictor')
+    opt_h2.x_predictor = h1.x_full + (h1.x_full - x0);
+end
+hh=stability.ts_step_composite(h1.x_full,h1.y_full,h2,dae,Ynet,u_h2,ec,active,opt_h2);
+stats.iterations=stats.iterations+hh.iterations;
+stats.residual_norm=max(stats.residual_norm,hh.residual_norm);
+stats.domain_rejected=stats.domain_rejected+hh.domain_rejected_trials;
+stats.solves=3;
+if ~(hh.converged && hh.finite)
+    cand.converged=false; return;
+end
+
+% Accept the FINE solution and its controller state.
+cand.x=hh.x_full; cand.y=hh.y_full; cand.sync=sync_h2; cand.u_end=sync_h2.u_end;
+cand.converged=true; cand.finite=hh.finite;
+cand.iterations=stats.iterations; cand.residual_norm=stats.residual_norm;
+
+% Richardson LTE (trapezoidal p=2, denominator 2^p-1=3), weighted RMS over the
+% ACTIVE differential states only (frozen coordinates are identical in both
+% solves so they contribute zero and would only dilute the norm).
+ax=active(:)';
+e=(hh.x_full-full.x_full)/3;
+sc_x=s.atol_x + s.rtol_x.*max(abs(x0(ax)),abs(hh.x_full(ax)));
+err_x=sqrt(mean((e(ax)./sc_x).^2));
+ey=hh.y_full-full.y_full;
+sc_y=s.atol_y + s.rtol_y.*max(abs(y0),abs(hh.y_full));
+err_y=sqrt(mean((ey./sc_y).^2));
+est.err=max(err_x,err_y);
+% Algebraic error: the coupled terminal residual is [rx(active); g_kcl], so the
+% KCL residual at the fine solution is its last ny entries (no new residual).
+ny=numel(y0);
+est.alg_res=norm(hh.terminal_residual_vector(end-ny+1:end),inf);
+est.usable=isfinite(est.err) && isfinite(est.alg_res);
+end
+
+function reason=adaptive_reject_reason(cand,est,s)
+if ~cand.converged
+    reason='newton_nonconvergence';
+elseif ~est.usable
+    reason='nonfinite_estimate';
+elseif est.alg_res>s.kcl_tol
+    reason='algebraic_residual';
+else
+    reason='lte_exceeded';
+end
 end
 
 function [step,stats]=advance_rannacher_restart(x0,y0,t0,h,dae,Ynet,u,ec,active,step_opt,s)

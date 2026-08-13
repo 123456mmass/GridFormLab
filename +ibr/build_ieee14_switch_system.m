@@ -131,9 +131,23 @@ for j = 1:nib
             'Vdc_ref',1.0,'Imax',1.2,'kpPLL',1.20,'kiPLL',5.00, ...
             'kpP',0.80,'kiP',2.50,'kpQ',0.80,'kiQ',2.50,'kpI',0.30,'kiI',4.00);
         params.gfm_eecon49 = struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-            'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',1.50, ...
+            'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',20.0, ...
             'tauE',0.05,'kQ',0.25,'kE',8.00,'kpV',1.20,'kiV',4.50, ...
             'kpI',0.30,'kiI',4.00);
+        % Dv=20.0: PROJECT_DERIVED islanded grid-forming value.  The frozen
+        % design target it meets is a 5 % P-f droop.  In this single-coefficient
+        % VSG the same Dv also fixes the swing damping: at the MEASURED
+        % synchronising coefficient K = 0.1135..0.1862 pu/rad (full-KCL
+        % Schur-reduced SSSA, all-GFM SG-online) Dv=20 gives zeta = 4.22..5.40,
+        % i.e. heavily over-damped, so droop and damping cannot both be placed
+        % here.  An earlier note in this file quoted zeta ~= 0.81 from an
+        % unmeasured K ~= 5 pu/rad estimate; that number was wrong.  The
+        % source-printed value is Dv=1.50 (66.7 % droop, zeta = 0.41), verified
+        % in docs/text/EECON49_[Nui].pdf p.5 with `pdftotext -layout` -- the PDF
+        % is NOT encrypted; only the Read tool cannot render it.  See
+        % docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md and, for the model
+        % that separates the two roles,
+        % docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md.
     end
     d = ibr.SwitchableIbr6(sprintf("IBR%d",b), b, bp, bus_ids, V0, params, P, Q, ...
         index_mode=opts.index_mode, AGSI_up=opts.AGSI_up, AGSI_down=opts.AGSI_down, ...

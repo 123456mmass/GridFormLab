@@ -46,7 +46,7 @@ if isfield(params,'dc_source') && isstruct(params.dc_source), dc=params.dc_sourc
 Lf=getv(g,'Lf',0.15); Rf=getv(g,'Rf',0.015); Cdc=getv(g,'Cdc',0.10);
 Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2);
 Tdc=getv(dc,'Tdc',0.10);
-M=getv(g,'M',0.08); Dv=getv(g,'Dv',1.50); tauE=getv(g,'tauE',0.05);
+M=getv(g,'M',0.08); Dv=getv(g,'Dv',20.0); tauE=getv(g,'tauE',0.05);
 kQ=getv(g,'kQ',0.25); kE=getv(g,'kE',8.0);
 kpV=getv(g,'kpV',1.20); kiV=getv(g,'kiV',4.50);
 kpI=getv(g,'kpI',0.30); kiI=getv(g,'kiI',4.00);

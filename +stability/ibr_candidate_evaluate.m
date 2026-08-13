@@ -441,10 +441,16 @@ tf = isstruct(dispatch) && isscalar(dispatch) && ...
 end
 
 function tf=is_source_full_state_resources(resources)
+% Both project full-state dual families use the mode-aware source dispatch
+% contract: 'eecon49_dual' (16-state, coupled swing) and 'decoupled_dual'
+% (17-state, decoupled swing).  Omitting a family here does not throw; it
+% silently selects the fallback dispatch and therefore a different operating
+% point, so the list must be kept complete.
 ibr_idx=find(arrayfun(@(r)isfield(r,'resource_type') && ...
     strcmpi(char(r.resource_type),'ibr'),resources));
 tf=~isempty(ibr_idx) && all(arrayfun(@(k)isfield(resources(k),'model_id') && ...
-    strcmpi(char(resources(k).model_id),'eecon49_dual'),ibr_idx));
+    any(strcmpi(char(resources(k).model_id), ...
+        {'eecon49_dual','decoupled_dual'})),ibr_idx));
 end
 
 function dispatch=mode_aware_source_dispatch(case_data,resources,selected,fallback)

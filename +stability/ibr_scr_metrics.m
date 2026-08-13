@@ -264,7 +264,11 @@ for k = 1:nr
     end
     pr.is_gfl = is_gfl && is_ibr;
     scr_profile='wecc_regca_strong_grid';
-    if isfield(r,'model_id') && strcmpi(char(r.model_id),'eecon49_dual')
+    % Both project full-state dual families model the plant explicitly, so the
+    % WECC strong-grid SCR screening profile does not apply to them.  A family
+    % missing from this list silently becomes SCR-eligible and changes the gate.
+    if isfield(r,'model_id') && ...
+            any(strcmpi(char(r.model_id),{'eecon49_dual','decoupled_dual'}))
         scr_profile='not_applicable_full_state_source_model';
     end
     pr.scr_profile=scr_profile;

@@ -349,7 +349,8 @@ if ~isnan(pos)
     return;
 end
 % Not active. Distinguish inactive-mode anchor vs source-frozen.
-if any(strcmp(char(dev.device_type),{'ibr_dual_mode','ibr_dual_mode_rms10','ibr_eecon49_dual'}))
+if any(strcmp(char(dev.device_type),{'ibr_dual_mode','ibr_dual_mode_rms10', ...
+        'ibr_eecon49_dual','ibr_decoupled_dual'}))
     % Dual-mode: the non-selected branch is an inactive-mode anchor.
     active_branch = branch_from_mode(mode);
     if strcmp(branch, active_branch)

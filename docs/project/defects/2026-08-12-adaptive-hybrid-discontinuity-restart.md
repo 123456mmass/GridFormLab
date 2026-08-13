@@ -1,9 +1,20 @@
 # Adaptive-hybrid TS: post-event step not reinitialized across discontinuity
 
 Date: 2026-08-12
-Status: RESOLVED
+Status: RESOLVED_EVIDENCE_CORRECTED
 Failure ID: `ts_simulate_ibr_hybrid:adaptiveDtMin` (symptom); root cause is a
 step-size reinitialization defect in the opt-in adaptive path.
+
+> **Evidence correction, 2026-08-13 (`ADAPT-2026-08-13-02`):** the
+> discontinuity-restart code correction remains implemented, but a later audit
+> proved that `run_hybrid_case` forwarded only `stepper`; caller overrides such
+> as `dt_max=0.5`, `dt_max_armed=0.05`, and `reject_limit=12` were silently
+> dropped by a transposed cell-array loop. Consequently, the historical exact
+> counts and wall time below describe the driver's defaults, not the listed
+> override tuple. They are retained as historical observations but are not
+> current acceptance evidence. Fresh post-forwarding LTE, rollback, exact-event
+> landing, and fixed-path bit-identity gates pass 11/11; see
+> `2026-08-13-adaptive-option-forwarding-cell-orientation.md`.
 
 ## Symptom
 
@@ -90,17 +101,20 @@ order-reduction rescue at the `dt_min` floor for C0 limiter kinks.
 
 ## Verification
 
-`chk_adaptive_arm_tmp.m` after the fix: `converged=1`, `t(end)=3.5000`,
-`samples=3402`, `rejected=235`, `floor_accepted=27`, 6 BE steps,
+Historical post-fix run: `converged=1`, `t(end)=3.5000`, `samples=3402`,
+`rejected=235`, `floor_accepted=27`, 6 BE steps, observed
 `dt∈[9.77e-05, 0.5]`, median `6.4e-4`, `wall≈410 s`. Every event
 (`sg_trip, load_step, fault_on, fault_clear, line_trip, topology_restore,
-sg_on`) is crossed with Newton residuals `~1e-9` and `iter≈10`.
+sg_on`) was crossed with Newton residuals `~1e-9` and `iter≈10`.
 
-Adaptive is ~6–11× SLOWER than fixed `dt=0.10` ON THIS ARM — expected: the
-compressed arm has no quiet coast (events every ≤0.5 s), so it is the adaptive
-worst case, and it resolves a transient the fixed `dt=0.10` grossly overshoots.
-Per the adaptive-hybrid plan, wall-clock is judged on the production 250 s case
-(long coast windows), not this arm; the arm is a correctness instrument only.
+**Correction:** because `ADAPT-2026-08-13-02` later proved the non-`stepper`
+caller overrides were dropped, these exact counts, the stated `dt_max=0.5`, and
+the ~6–11× timing comparison are historical diagnostic observations under the
+driver defaults—not verified evidence for the requested option tuple. They must
+not support a production-performance or parameter-forwarding claim. Current
+post-forwarding acceptance evidence is the fresh 11/11 targeted gate recorded
+in the correction note above; a current-tree full arm/performance rerun remains
+required before publishing replacement metrics.
 
 ## Falsified hypotheses
 

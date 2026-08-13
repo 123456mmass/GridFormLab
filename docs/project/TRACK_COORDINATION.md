@@ -200,6 +200,47 @@ different versions of the same shared interface.
 > stop condition that safety gates are never relaxed to force a successful
 > reclose.
 >
+> **2026-08-13 allowlist extension under the same Phase-2 claim (OPEN):** the
+> reclose diagnosis reached the SG-off support-transaction region, which the
+> claim above had explicitly excluded ("the supervisor region untouched"). The
+> extension is one function: `sg_off_support_transaction` in
+> `+stability/ts_simulate_ibr_hybrid.m` now installs the committed candidate's
+> own certified `candidate.eq_u_eq` (reusing the existing
+> `apply_authenticated_candidate_inputs`, which writes only `P_ref`/`Q_ref` of
+> `ibr_eecon49_dual` devices) and fails closed when a candidate carries none,
+> so a configuration is never committed against an input for which nothing was
+> certified (`RECLOSE-2026-08-13-01`). Added test:
+> `tests/test_ts_hybrid_support_certified_input.m`.
+> NOT changed under this extension: `reselection_transaction` (it receives no
+> candidate row, so closing the same gap there needs the candidate plumbed from
+> the caller and touches the SG-online handback path stabilised by
+> `SWITCH-2026-08-10-03` / `RECLOSE-2026-08-12-01`) and no threshold, timeout,
+> gate, or `SOURCE_DEFINED` parameter. Published arm numbers change because the
+> augmentation now runs a different input, so report re-validation is required
+> before release.
+>
+> **2026-08-13 decoupled-GFM model + reference-AGSI overlay (DELIVERED):** one
+> owner added a project-owned GFM family alongside the EECON49-mapped baseline,
+> which is kept byte-faithful. New files `+ibr/gfm_decoupled_full_model.m`
+> (nx=11), `+ibr/decoupled_dual_mode_model.m` (nx=17),
+> `+stability/agsi_reference_terms.m`, plus four test files and
+> `docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md`. Registration touched nine
+> shared consumers (`device_contract_metadata`, `build_mixed_resource_devices`,
+> `ibr_candidate_evaluate`, `ibr_scr_metrics`, `ts_simulate_ibr_hybrid`,
+> `mixed_ibr_reduced_initialize`, `state_inventory_snapshot`,
+> `scenario_ieee14_1sg_4ibr`, `generate_gfl_gfm_sssa_tables`) by ADDING the new
+> family to each existing allowlist; no existing branch changed behaviour and no
+> threshold, dwell, timeout, `Imax`, event time, tolerance or acceptance gate was
+> touched. The reference-AGSI overlay is opt-in (`agsi_reference`), pure
+> post-processing, forms no aggregate index, and is proven byte-identical on the
+> trajectory, the decision fields and the event log. `Dv`-related damping figures
+> in `EECON49_GFL_GFM_SOURCE_CONTRACT.md` were corrected against a measured
+> synchronising coefficient, and the false "source PDF is password-protected"
+> claim was withdrawn (`MODEL-2026-08-13-01`). `+ibr/build_ieee14_switch_system.m`
+> Path-B route was deliberately NOT extended, so the shared files are released
+> back to shared ownership. Still blocked and NOT claimed: the `Dv=20`
+> post-line chronology (`TS-2026-08-13-03`) and any regenerated production report.
+>
 > **2026-08-11 TS runtime-performance interface request (OPEN, one owner):**
 > the switched TS production run (`stability.run_hybrid_case` via
 > `scripts/reporting/generate_ieee14_switch_report_figures.m`) costs ~2-3 h of

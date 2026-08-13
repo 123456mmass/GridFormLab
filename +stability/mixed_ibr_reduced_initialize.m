@@ -77,7 +77,7 @@ end
 % fails closed rather than entering this initializer by name similarity.
 online_types = lower(string({dae.devices(online_idx).device_type}));
 voltage_ref_types = ["ibr_dual_mode","ibr_dual_mode_rms10"];
-pq_ref_types = "ibr_eecon49_dual";
+pq_ref_types = ["ibr_eecon49_dual","ibr_decoupled_dual"];
 uses_voltage_ref = all(ismember(online_types,voltage_ref_types));
 uses_pq_ref = all(ismember(online_types,pq_ref_types));
 if ~(uses_voltage_ref || uses_pq_ref)

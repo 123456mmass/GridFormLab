@@ -7,6 +7,65 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-13 — Decoupled GFM model + reference-AGSI overlay (`MODEL-2026-08-13-01`)
+
+A project-owned GFM family now sits alongside the EECON49-mapped baseline, which
+stays byte-faithful (SHA-256 verified, its two test files pass unmodified). The
+new swing block separates the three roles that the source structure conflates:
+
+```text
+M d(omega)/dt = kappa P_ref - P_inv - (1/R)(omega-1) - D_t (omega - omega_f)
+d(omega_f)/dt = w_D (omega - omega_f)
+```
+
+`R` alone fixes the steady-state droop, `D_t` alone adds transient damping
+through the washout, `M` alone fixes inertia. The extra state is unavoidable:
+two proportional speed terms collapse to one coefficient, which is why the
+in-repo REGFM_B1 reference ships `D1=0` and damps through `D2` + washout.
+
+**The measurement that changed the story.** `K` had never been measured; the
+contract used an estimate `K~=5 pu/rad`. Read off the full-KCL Schur-reduced
+SSSA matrix, `K_ii = 0.1135..0.1862 pu/rad` — 27–44x smaller. So at 5 % droop
+the coupled VSG is **over-damped** (`zeta = 4.22..5.40`), not `zeta~=0.81`;
+`Dv=1.50` gives `0.41`, not `0.06`; and `M=5.0` gives `0.68`, not `0.10`, which
+voids the earlier reason for rejecting `H_v=2.5 s`. Those three figures are
+withdrawn in `EECON49_GFL_GFM_SOURCE_CONTRACT.md`. The `Dv=20` **droop**
+justification is unaffected; only its damping claim was wrong. Production
+decoupled values `R=0.05, w_D=3.0, D_t=20` hold 5 % droop AND `zeta~=1/sqrt(2)`
+across the measured `K` range — a point no single `Dv` can reach, since
+`zeta=1/sqrt(2)` would require 30–38 % droop.
+
+Trap for future retunes: `zeta(D_t)` is **non-monotone**, so the small-`D_t`
+approximation must not be used; solve the exact cubic (a test asserts this).
+
+**Reference-AGSI overlay (opt-in `agsi_reference`).**
+`+stability/agsi_reference_terms.m` publishes `J_R/J_P/J_SCR/J_lock` plus the
+trigger pair with per-sample in-band flags, as pure post-processing, with **no
+aggregate index**. Switching still consumes `J_V/J_f` only, proven byte-identical
+on 13 arrays, all decision fields and the event log; with the option omitted the
+result carries no new field at all. First observations on the compressed arm:
+`J_f` stays in band while `J_V/J_R/J_P/J_SCR` leave it at the islanding instant
+(`J_R` peaks near 377 Hz/s, consistent with the recorded 94 % inertia loss).
+Classified `ASSUMED_DIAGNOSTIC`; never citable for readiness.
+
+**Provenance correction.** The claim that `docs/text/EECON49_[Nui].pdf` is
+password-protected was false — it is not encrypted and page 5 is readable with
+`pdftotext -layout`; the Read tool simply cannot render it. `Dv=1.50` is
+`SOURCE_PRINTED`. That makes it a verified quotation, not a validated result:
+EECON49 remains an unvalidated peer M.Sc. baseline, not authority.
+
+Gates on this tree: 24/24 new tests (8 dual-model, 6 decoupling oracle, 5
+end-to-end registration, 5 AGSI overlay), 163/163 targeted batch A
+(metadata/selector/inventory/baseline), 26/27 batch B — the one failure is
+`TEST-2026-08-13-04`, reproduced identically on a pristine `e233b6c` worktree
+and therefore pre-existing. Full regression omitted under the `AGENTS.md` risk
+policy. The strongest single oracle: with `D_t=0` the all-GFM spectrum equals the
+baseline spectrum plus exactly four eigenvalues at `-w_D`, remainder to 4.1e-12.
+
+NOT claimed: this does not resolve `TS-2026-08-13-03` (post-line
+limiter/Newton wall), no islanded `K` was measured, and no production report was
+regenerated.
+
 ## 2026-08-13 — EECON49 16-state reduction + synchronizer Pmin fix (commit 1)
 
 `TD-2026-08-12-01` and `RECLOSE-2026-08-12-01` (RESOLVED). This commit
@@ -102,24 +161,24 @@ SUCCESS-at-154.3 figures came from the stale diagnostic-variant cache and the
 older code state, not from these runs.
 
 Phase-1 landed (2026-08-12, commit `f9b710b`): opt-in `stepper='adaptive'` on
-`ts_simulate_ibr_hybrid` is implemented and pushed. The default fixed path is
-byte-identical (G-BITID 3/3, AbsTol 0). Gates: G-LTE 3/3 (analytic SHO oracle),
-G-ROLLBACK 4/4, decision-parity PASS (converged / reclose_status /
-reselection / all 7 event times identical between fixed and adaptive on the
-compressed arm), event-landing PASS. The compressed worst-case arm completes
-`conv=1, t=3.5, 3402 samples`. The hard part was `ADAPT-2026-08-12-01`: the
-adaptive path died at `t~1.6` because the pre-event step (grown to ~0.5 in the
-quiet coast) was carried into the order-1 post-event backward-Euler restart,
-injecting an O(0.1) state error the controller then chased into the pre-existing
-fine-`dt` composite-Newton wall (`IBR-2026-07-20-01`). Fix: reinitialize
-`dt_adaptive=dt_min` at each event (standard discontinuity restart; step size
-only). On this coast-free arm adaptive is ~6-11x slower than fixed `dt=0.10`
-(expected; the arm is the adaptive worst case and wall-clock is judged on the
-250-s production case). The arm also confirmed fixed `dt=0.10` is materially
-under-converged through the transient (device current ~387% of limit), i.e. the
-coarse grid steps over the stiff window; recorded as context in the defect.
-Phase-2 (reclose diagnosis) and Phase-3 (production adaptive run + report
-re-validation) are the remaining plan steps.
+`ts_simulate_ibr_hybrid` is implemented and pushed. The default fixed path was
+byte-identical and the discontinuity restart reinitializes
+`dt_adaptive=dt_min` after each event (`ADAPT-2026-08-12-01`).
+
+**Evidence correction (2026-08-13, `ADAPT-2026-08-13-02`):** the
+`run_hybrid_case` pass-through loop transposed its cell list, so it forwarded
+only `stepper`; caller overrides such as `dt_max`, tolerances,
+`reject_limit`, and Rannacher options were silently dropped. The historical
+`3402`-sample, `235`-reject, ~410-s and ~6--11x arm metrics therefore describe
+the driver's defaults, not the requested override tuple, and are no longer
+current acceptance evidence. Removing the transpose restores every option.
+Fresh post-correction gates pass 11/11: fixed-path bit identity and validator
+forwarding 4/4, analytic LTE 3/3, rollback/determinism/exact event landing 4/4.
+A corrected all-four `reject_limit=12` diagnostic now genuinely crosses the
+old lease but still fails after `line_trip` at a separate nonsmooth
+DAE/Newton-conditioning wall; no equation, threshold, tolerance, or default
+was changed. Phase-3 production/report re-validation remains blocked until
+that chronology result is represented honestly.
 
 
 ## 2026-08-04 — IEEE14 160-s controller comparison

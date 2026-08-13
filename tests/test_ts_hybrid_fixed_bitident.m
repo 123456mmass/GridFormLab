@@ -90,3 +90,22 @@ testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badStepper', ..
 testCase.verifyEqual(char(r.metadata.failure), 'ts_simulate_ibr_hybrid:badStepper');
 end
 
+function test_nonstepper_adaptive_option_reaches_driver(testCase)
+% Regression for the pass-through loop: transposing the row cell array made
+% MATLAB execute the loop once with the whole option list in one column, so
+% only afield{1} ('stepper') reached the driver. reject_limit=0 is deliberately
+% invalid and must therefore be rejected by the driver's existing validator;
+% if this option is silently dropped, the run proceeds under the default 10.
+[scenario,opt] = compressed_arm();
+opt.stepper = 'adaptive';
+opt.reject_limit = 0;
+r = stability.run_hybrid_case(scenario,opt);
+testCase.verifyFalse(r.converged, ...
+    'an invalid forwarded adaptive option must fail closed');
+testCase.verifyEqual(char(r.failure_id), ...
+    'ts_simulate_ibr_hybrid:badAdaptiveOptions', ...
+    'reject_limit must reach the hybrid-driver validator');
+testCase.verifyEqual(char(r.metadata.failure), ...
+    'ts_simulate_ibr_hybrid:badAdaptiveOptions');
+end
+

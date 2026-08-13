@@ -202,9 +202,20 @@ end
 for afield = {'stepper','dt_min','dt_max','dt_max_armed', ...
         'atol_x','rtol_x','atol_y','rtol_y', ...
         'controller_fac','controller_fac_min','controller_fac_max', ...
-        'reject_limit','rannacher_window_dt','rannacher_n'}.'
+        'reject_limit','rannacher_window_dt','rannacher_n'}
     if isfield(opt,afield{1}) && ~isempty(opt.(afield{1}))
         ts_opt_base.(afield{1}) = opt.(afield{1});
+    end
+end
+% Reference-AGSI in-band overlay (opt-in, DIAGNOSTIC ONLY, 2026-08-13). The
+% switching supervisor keeps consuming J_V and J_f alone; these options only
+% enable a post-processed publication of the remaining standard sub-indices and
+% let the caller override their band bases. Forwarded only when set, so a run
+% that omits them is byte-identical and carries no extra result field.
+for gfield = {'agsi_reference','agsi_rocof_base_Hz_s','agsi_dP_base_pu', ...
+        'agsi_scr_floor','agsi_vq_base_pu'}
+    if isfield(opt,gfield{1}) && ~isempty(opt.(gfield{1}))
+        ts_opt_base.(gfield{1}) = opt.(gfield{1});
     end
 end
 ts_devices = devices;
@@ -501,7 +512,8 @@ end
 % adaptive path, so a fixed run keeps its exact prior field set aside from the
 % additive provenance label.
 adaptive_fields = {'stepper','dt_history','lte_history','rejected_steps', ...
-    'floor_accepted_steps','rejection_history'};
+    'floor_accepted_steps','rejection_history', ...
+    'agsi_reference'};
 for k = 1:numel(adaptive_fields)
     name = adaptive_fields{k};
     if isfield(ts_res,name), result.(name) = ts_res.(name); end

@@ -1,7 +1,7 @@
 # Placeholder command-delay instability and quasi-static reduction (EECON49 IBR)
 
 Date: 2026-08-12
-Status: RESOLVED (device reduction + gates; production 250 s @ dt=0.05 confirmation in progress)
+Status: RESOLVED_EVIDENCE_CORRECTED (device reduction + local gates; full chronology blocked by TS-2026-08-13-03)
 Failure ID: SSSA `physical_omega = +1.29` @ 11.4 Hz (all-GFL SG-online); TS
 `ts_simulate_ibr_hybrid:stepNewton` at the bolted fault (secondary, see below).
 
@@ -63,10 +63,19 @@ commanded voltage before the stiff AC-filter current dynamics
 command jump at the bolted bus-9 fault (`Zf = 0.01+0.01i`). A fixed-`dt` sweep
 of the reduced model (`chk_arm_dtsweep_tmp.m`) shows `dt = 0.10` stalls at fault
 onset (`stepNewton`, residual 1.3e-2 even at subdivision depth 9) while
-`dt in {0.05, 0.02, 0.01, 0.005}` all integrate to `t_end`. The production
-report run therefore uses `dt = 0.05` (NUMERICAL_METHOD accuracy/stability
-choice; owner-approved 2026-08-12). This is a step-size resolution matter, not a
-model defect: the reduced model is fully integrable at `dt <= 0.05`.
+`dt in {0.05, 0.02, 0.01, 0.005}` all integrate through the fault window. The
+production report run therefore uses `dt = 0.05` (NUMERICAL_METHOD accuracy/
+stability choice; owner-approved 2026-08-12). This is a step-size resolution
+matter, not a model defect.
+
+**Correction (2026-08-13):** the earlier claim that these `dt` values complete
+the whole production 250-s chronology is superseded. That claim was measured at
+the historical `Dv = 1.50`. At the production `Dv = 20` the canonical chronology
+no longer reaches reclose — automatic selection commits fewer GFMs that fail in
+the fault window, and a forced all-four configuration hits a separate post-line
+nonsmooth Newton wall (`TS-2026-08-13-03`). The reduced model is fully
+integrable through the fault window, but full-chronology completion at `Dv = 20`
+is a separate, currently-blocked question. No 250-s completion is claimed.
 
 ## Verification
 
@@ -80,8 +89,9 @@ model defect: the reduced model is fully integrable at `dt <= 0.05`.
   6/6 (incl. coordinated handback returns all-GFL, 2 switches each), TS-kernel
   determinism (`adaptive_rollback`, `fixed_bitident`) pass.
 - SSSA tables regenerated (16-state inventory; all-GFL `Omega_worst=-0.065`).
-- PENDING: full 250 s production chronology at `dt=0.05` (converged + reclose
-  characterization).
+- BLOCKED (not pending): a full 250-s production chronology at `dt=0.05` and
+  `Dv=20` does not reach reclose; see `TS-2026-08-13-03` and
+  `RECLOSE-2026-08-13-01`. It is fail-closed, not a completed gate.
 
 ## Narrative correction
 

@@ -136,6 +136,106 @@ The paper-to-project Q and cross-coupling signs are transformed only to satisfy
 the network injection convention above; independent tests enforce terminal
 `S=V*conj(I)`, equilibrium residual, and rigid-frame covariance.
 
+## GFM swing droop and damping — two values, two roles
+
+In the VSG swing equation (`gfm_eecon49_full_model`)
+
+```text
+M d(omega)/dt = kappa P_ref - P_inv - Dv (omega - 1)
+```
+
+`Dv` is the ONLY term producing a steady-state P--omega characteristic, so the
+droop is `1/Dv`; the same coefficient also sets the swing damping
+`zeta = Dv / (2 sqrt(M omega_b K))` with synchronising coefficient K. This
+single-coefficient damping/droop conflation is a documented limitation of the
+VSG structure in the literature.
+
+**Source-printed value, VERIFIED 2026-08-13.** The source parameter table on
+page 5 of `docs/text/EECON49_[Nui].pdf` prints `Dv = 1.50 p.u.`, `M = 0.08`,
+`tau_E = 0.05`, `T_d = 0.02` and `H_SG = 2.5`. The PDF is **not** encrypted
+(`pdfinfo` reports `Encrypted: no`) and its page 5 is readable with
+`pdftotext -layout -f 5 -l 5`; the sibling `.docx` under
+`docs/text/กลับห้อง (2)/กลับห้อง/EECON49/EECON49_P4.docx` corroborates it.
+An earlier revision of this document stated that the PDF was password-protected
+and classified `Dv = 1.50` as
+`IN_REPO_HISTORICAL_UNVERIFIED_SOURCE_ATTRIBUTION`. That statement was wrong:
+the Read tool used at the time cannot render this PDF, which is a tool
+limitation and not encryption. `Dv = 1.50` is therefore `SOURCE_PRINTED`.
+Separately, the EECON49 source is a peer M.Sc. work that this project has not
+independently validated, so it is used as a comparison baseline and strategy
+template, not as numerical authority; a source-printed value is a verified
+*quotation*, not a verified *result*.
+
+**Project value (islanded grid-forming role), owner-set 2026-08-13.**
+`Dv = 20` is `PROJECT_DERIVED`. The design target it meets is:
+
+- `1/Dv = 5 %` P--f droop. Primary CAISO/WECC material states governor droop
+  practice of 3--5 %, while ERCOT's GFM functional test framework explicitly
+  bases one criterion on GFM droop `<=5 %`.
+
+**Damping, corrected 2026-08-13 with a measured K.** An earlier revision of
+this section assumed a *local estimate* `K ~= 5 pu/rad` and reported
+`zeta ~= 0.81` at `Dv = 20`, `zeta ~= 0.06` at `Dv = 1.50`, and
+`zeta ~= 0.10` at `M = 5.0`. Those three numbers are **withdrawn**: `K` was
+never measured. `K` is now measured directly as `K_ii = -M * A(row_omega_i,
+col_delta_i)` from the full-KCL Schur-reduced SSSA state matrix
+(`stability.composite_sssa_model` with `full_kcl=true`) of the IEEE14 all-GFM
+SG-online configuration:
+
+```text
+K_ii = 0.1653, 0.1421, 0.1862, 0.1135 pu/rad   (IBR2, IBR3, IBR6, IBR8)
+range 0.1135 .. 0.1862 pu/rad
+```
+
+That is 27--44x smaller than the withdrawn estimate, so with `M = 0.08`:
+
+| `Dv` | droop | `zeta = Dv/(2 sqrt(M K omega_b))` at `K=0.1135 .. 0.1862` |
+|---|---|---|
+| 1.50 (source-printed) | 66.7 % | 0.41 .. 0.32 |
+| 2.6 .. 3.4 | 38 .. 30 % | 0.71 (the `1/sqrt(2)` target) |
+| 20 (project) | 5.0 % | 5.40 .. 4.22 |
+
+The correct statement is therefore that at 5 % droop this VSG is heavily
+**over-damped** (`zeta = 4.2 .. 5.4`, above the 5.0 upper end of the NESO
+GBGF-I equivalent-damping range at the low-`K` device), and that placing
+`zeta = 1/sqrt(2)` would require 30--38 % droop. Over-damping is not an
+instability -- the configuration is small-signal stable
+(`max Re = -0.2308`) -- but it is a sluggish frequency response, and there is
+no `Dv` that satisfies both the droop band and a damping target. That is the
+quantified limitation the project's own decoupled model addresses; see
+`docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md`.
+
+Reproduce the measurement with `chk_decoupled_ksync_tmp.m` (repo root,
+uncommitted diagnostic) or by reading `sssa.A` at the same operating point.
+
+Primary/reference URLs used for this design basis:
+
+- NESO, GB Grid Forming guidance, item 7 and Schedule-20 damping field:
+  `https://www.neso.energy/document/289921/download`.
+- IEEE 2800-2022 joint IEEE/EPRI/ESIG/ERC webinar (response damping target):
+  `https://sagroups.ieee.org/2800/wp-content/uploads/sites/336/2022/06/ieee28002022jointieeeesigpserccurentwebinarmay220221652272172771.pdf`.
+- CAISO, *Using Renewables to Operate a Low-Carbon Grid* (3 % and 5 % droop
+  tests): `https://www.caiso.com/documents/usingrenewablestooperatelow-carbongrid.pdf`.
+- ERCOT, *Advanced Grid Support Inverter-Based ESR Functional Specification and
+  Test Framework*, slide-44 rationale (`droop <=5 %`):
+  `https://www.ercot.com/files/docs/2024/07/10/2024_07_ERCOT_IBRWG_Advanced%20Grid%20Support%20Inverter-Based%20ESR%20Functional%20Specification%20and%20Test%20Framework_v1.pdf`.
+
+Measured consequence, reported as verification of the choice and never as its
+motivation: at the source-printed value the islanded role is unreachable -- the
+measured ride-through envelope is 0.85 pu survivable / 0.90 pu lost against
+the 1.3319 pu deficit the SG trip applies, and aggregate droop `4 x 1.5 = 6`
+pu/pu alone gives `f_ss = 46.7 Hz` at that deficit. At `Dv = 20` the same
+deficit resynchronises (`f_ss = 59.001 Hz`, minimum frequency 58.589 Hz,
+swing 21.1 deg).
+
+`M = 0.08` is retained unchanged, because it is the source-printed value and
+because holding it fixed lets the coupled and decoupled structures be compared
+at equal inertia. The earlier rejection of `H_v = 2.5 s` (`M = 5.0`) rested on
+the withdrawn `zeta ~= 0.10` figure; at the measured `K` that configuration
+would give `zeta = 0.68 .. 0.54` at `Dv = 20`, so the earlier reason does not
+hold. Raising `M` remains out of scope here: it would replace a source-printed
+value and needs its own virtual-inertia sizing derivation.
+
 ## Initialization, transfer, and residuals
 
 Device initialization uses the in-house PF terminal voltage and the exact

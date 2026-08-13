@@ -66,6 +66,13 @@ pre_event_input_fp = sprintf('pre_event_input|%s', mat2str(pre_event_input(:).')
 sync_ctl=initialize_sync_controller(dae,u,sched,case_data);
 
 samples = new_samples(x,y,u,ec,active,topology);
+% Admittance log for the opt-in reference-AGSI overlay only. It records the
+% (time, label, Y) of every topology in force so the post-processor can compute
+% a topology-correct Thevenin/SCR. Empty and untouched when the overlay is off.
+Ylog = struct('t',{},'topology',{},'Y',{});
+if settings.agsi_reference_enabled
+    Ylog(1)=struct('t',0,'topology',topology,'Y',Ycurr);
+end
 event_log = repmat(new_event_log('',NaN),0,1);
 status_log = stability.ibr_status_snapshot('initial_configuration',0,dae,ec,active, ...
     kcl_norm(dae,0,x,y,Ycurr,u,ec));
@@ -673,6 +680,9 @@ while t < settings.t_end-settings.event_tol
     if event_applied
         active = stability.ts_dynamic_state_indices(dae,ec);
         samples = append_sample(samples,t,x,y,u,ec,active,topology,'right',group_tx_id);
+        if settings.agsi_reference_enabled
+            Ylog(end+1)=struct('t',t,'topology',topology,'Y',Ycurr); %#ok<AGROW>
+        end
         rannacher_steps_remaining=1;
         subdivision_hint=0;
         predictor_prev_x=[];
@@ -1284,6 +1294,19 @@ catch me
         meta.partial_diagnostic_failure_reason=me.message;
     end
 end
+% --- Reference-AGSI in-band overlay (opt-in, DIAGNOSTIC ONLY) --------------
+% Strictly post-processing: it reads the completed sample record and cannot
+% affect a single accepted step, the severity scalar, the hysteresis/dwell
+% logic, or any acceptance gate. Failure to build it is never a run failure.
+if settings.agsi_reference_enabled
+    try
+        res.agsi_reference=stability.agsi_reference_terms(res,dae,settings,Ylog);
+    catch me
+        res.agsi_reference=struct('status','OVERLAY_FAILED', ...
+            'failure_id',me.identifier,'failure_reason',me.message, ...
+            'classification','ASSUMED_DIAGNOSTIC');
+    end
+end
 meta.method='trapezoidal_coupled_newton_shared';
 meta.full_kcl=true;
 meta.event_aware=true;
@@ -1370,6 +1393,33 @@ s.severity_T_d_off = option(opt,'severity_T_d_off',1.00);
 s.severity_dV_base = 0.10;
 s.severity_df_base_Hz = 0.50;
 s.severity_f0_Hz = case_data.base_values.frequency_Hz;
+% --- Reference-AGSI in-band overlay (opt-in, DIAGNOSTIC ONLY) --------------
+% The switching supervisor consumes J_V and J_f ONLY; that contract is
+% unchanged. When this flag is set the driver additionally publishes the
+% remaining standard AGSI sub-indices as a POST-PROCESSED reference so the run
+% can be checked against the published bands, and never feeds them into the
+% severity scalar, the hysteresis, the dwell timers, or any gate. It is
+% computed after the trajectory is complete, from the recorded samples, so it
+% cannot influence a single accepted step. Default false, so an omitted option
+% leaves the result schema and the runtime byte-identical.
+s.agsi_reference_enabled = logical(option(opt,'agsi_reference',false));
+% Normalization bases. ASSUMED_DIAGNOSTIC: the reference AGSI formulation the
+% owner supplied fixes the J_V/J_f bases (0.10 pu, 0.50 Hz -- already used by
+% the production trigger above) and gives 1.0 Hz/s and 0.20 pu for the ROCOF and
+% power-tracking terms; the PLL-lock base is the project's own 0.10 pu q-axis
+% residual. These are diagnostic band references, never acceptance gates, and
+% every one of them is overridable by the caller.
+s.agsi_rocof_base_Hz_s = option(opt,'agsi_rocof_base_Hz_s',1.0);
+s.agsi_dP_base_pu = option(opt,'agsi_dP_base_pu',0.20);
+s.agsi_scr_floor = option(opt,'agsi_scr_floor',3.0);
+s.agsi_vq_base_pu = option(opt,'agsi_vq_base_pu',0.10);
+if s.agsi_reference_enabled
+    b=[s.agsi_rocof_base_Hz_s s.agsi_dP_base_pu s.agsi_scr_floor s.agsi_vq_base_pu];
+    if any(~isfinite(b)) || any(b<=0)
+        error('ts_simulate_ibr_hybrid:invalidAgsiReferenceBases', ...
+            'Reference-AGSI normalization bases must be finite and positive.');
+    end
+end
 if s.severity_handback_enabled
     hV=s.healthy_pf_V(:).'; hB=s.healthy_pf_bus_ids(:).';
     if numel(hV)~=numel(hB) || isempty(hV) || ...
@@ -2255,8 +2305,9 @@ function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm] = .
     sg_off_support_transaction(t,x,y,Y,u,ec,dae,settings,candidate,direction)
 %SG_OFF_SUPPORT_TRANSACTION  Atomic live GFM support augmentation/release.
 %   Candidate identity and steady-state admissibility come only from the
-%   project-built SG_OFF table.  The event-left input is preserved for a
-%   bumpless live transfer; transfer callbacks plus a live-Y full-KCL solve
+%   project-built SG_OFF table.  The committed candidate's own certified
+%   equilibrium input is installed with it, because the table certifies the PAIR
+%   (configuration, eq_u_eq); transfer callbacks plus a live-Y full-KCL solve
 %   are mandatory before mode/reference metadata is published.
 ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
 handler_log=struct('details',''); reason=''; right_norm=inf;
@@ -2290,6 +2341,32 @@ else
 end
 if ~relation_ok
     reason=sprintf('Support %s candidate violates the required strict set relation.',direction);
+    return;
+end
+% Honour the certificate as a PAIR.  ibr_candidate_evaluate certifies
+% feasibility/SSSA for (configuration, eq_u_eq) and stores that input on every
+% candidate row (ibr_candidate_evaluate:325, persisted by
+% ibr_config_selector:393).  trip_transaction already installs it.  This
+% transaction previously kept u_right=u for a bumpless transfer, which committed
+% the new configuration while leaving the PREVIOUS configuration's operating
+% point in force -- on the IEEE14 arm up to 0.355 pu per unit away from the
+% committed set's own certificate, with only the algebraic right-limit KCL as an
+% acceptance test.  Install the committed candidate's certified input instead,
+% and fail closed when a candidate carries none, so a configuration is never
+% committed against an input for which nothing was certified
+% (RECLOSE-2026-08-13-01).  apply_authenticated_candidate_inputs writes only the
+% P_ref/Q_ref entries of the project-owned dual devices, so the offline SG
+% synchronizer actuator and every E_ref remain untouched.
+if ~isfield(candidate,'eq_u_eq') || isempty(candidate.eq_u_eq)
+    reason=sprintf( ...
+        'Support %s candidate carries no certified equilibrium input; refusing to commit an uncertified operating point.', ...
+        direction);
+    return;
+end
+try
+    u_right=apply_authenticated_candidate_inputs(u,candidate.eq_u_eq,dae);
+catch me
+    reason=sprintf('Certified support input rejected: %s: %s',me.identifier,me.message);
     return;
 end
 % Preserve every non-IBR mode verbatim. In particular, an offline SG must
@@ -2851,8 +2928,13 @@ end
 u_candidate=u_candidate(:);
 for k=1:numel(dae.devices)
     dev=dae.devices(k);
+    % Both project-owned P/Q-reference dual families are covered: the 16-state
+    % coupled-swing model and the 17-state decoupled-swing model. A family left
+    % out of this list is skipped silently, so the committed configuration would
+    % run against the PREVIOUS operating point (RECLOSE-2026-08-13-01).
     if ~isfield(dev,'device_type') || ...
-            ~strcmpi(char(dev.device_type),'ibr_eecon49_dual')
+            ~any(strcmpi(char(dev.device_type), ...
+                {'ibr_eecon49_dual','ibr_decoupled_dual'}))
         continue;
     end
     for wanted=["P_ref","Q_ref"]

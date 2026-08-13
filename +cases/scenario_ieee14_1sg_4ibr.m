@@ -16,6 +16,9 @@ function scenario = scenario_ieee14_1sg_4ibr(scenario_opt)
 %     IBR2/3/6/8 - profile-owned dual-mode IBRs at buses 2/3/6/8.
 %       mission: REGFM_B1 + WECC/RMS10 family and historical nameplates.
 %       eecon49_figure4: shared-plant GFL(PLL)/GFM(VSG, no PLL), 100 MVA each.
+%       decoupled_figure4: the same case and GFL branch with the project GFM
+%         swing whose droop, transient damping and inertia are independent
+%         (ibr.decoupled_dual_mode_model, 17 states).
 %
 %   STATUS: SOURCE_MODELS_IMPLEMENTED_PENDING_END_TO_END_GATES.
 %
@@ -35,6 +38,11 @@ switch case_profile
     case 'mission'
         case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
     case 'eecon49_figure4'
+        case_data = cases.case_ieee14bus_eecon49_switch();
+    case 'decoupled_figure4'
+        % Same immutable network/base/dispatch/event case as the source
+        % profile, so the two GFM structures are compared on identical inputs.
+        % Only the IBR GFM swing model and its parameters differ.
         case_data = cases.case_ieee14bus_eecon49_switch();
     otherwise
         error('cases:scenario_ieee14_1sg_4ibr:badCaseProfile', ...
@@ -87,13 +95,18 @@ end
 % factory does not silently replace the mapped PQ operating point by unity PF.
 % Other profiles retain their historical Q_ref=0 default exactly.
 q_default_MVAr = zeros(1,4);
-if strcmp(case_profile,'eecon49_figure4')
+if any(strcmp(case_profile,{'eecon49_figure4','decoupled_figure4'}))
     q_default_MVAr = case_ibr_q_dispatch_MVAr(case_data,[2 3 6 8]);
-    ibr_model_id = 'eecon49_dual';
+    if strcmp(case_profile,'decoupled_figure4')
+        ibr_model_id = 'decoupled_dual';
+    else
+        ibr_model_id = 'eecon49_dual';
+    end
     ibr_Mbase = [100 100 100 100];
     if ~isempty(gfl_family)
         error('cases:scenario_ieee14_1sg_4ibr:profileConflict', ...
-            'eecon49_figure4 owns its GFL/GFM branches; rms10_profile_b is incompatible.');
+            '%s owns its GFL/GFM branches; rms10_profile_b is incompatible.', ...
+            case_profile);
     end
 else
     ibr_model_id = 'regfm_b1_dual';
@@ -115,11 +128,19 @@ scenario.resource_schema = schema;
 scenario.scenario_id = 'ieee14_1sg_4ibr';
 if strcmp(case_profile,'eecon49_figure4')
     scenario.scenario_id = 'ieee14_eecon49_1sg_4ibr';
+elseif strcmp(case_profile,'decoupled_figure4')
+    scenario.scenario_id = 'ieee14_decoupled_1sg_4ibr';
 end
 if strcmp(ibr_model_id,'eecon49_dual')
     ibr_model_label = 'project-owned full-state GFL(PLL) + GFM(VSG without PLL) shared-plant dual';
     ibr_classification = ['AC/control equations=SOURCE_MAPPED; DC-source regulator, ' ...
         'fixed superset and transfer=PROJECT_DERIVED; parameters/bases=CASE_DEFINED'];
+elseif strcmp(ibr_model_id,'decoupled_dual')
+    ibr_model_label = ['project-owned full-state GFL(PLL) + GFM(decoupled VSG ' ...
+        'without PLL, independent droop/damping/inertia) shared-plant dual'];
+    ibr_classification = ['GFL and shared-plant AC/control equations=SOURCE_MAPPED; ' ...
+        'GFM swing block (R_droop/D_t/wD washout), DC-source regulator, fixed ' ...
+        'superset and transfer=PROJECT_DERIVED; bases=CASE_DEFINED'];
 else
     ibr_model_label = sprintf('%s GFL + REGFM_B1 G2 GFM dual-mode superset',gfl_family_label(gfl_family));
     ibr_classification = ['SG1=CASE_DEFINED (Kodsi); IBR Mbase=CASE_DEFINED nameplate proxy; ' ...
@@ -197,7 +218,7 @@ r.can_switch_online = true;
 r.has_current_limiter = true;
 r.has_frt = true;
 r.can_black_start = false;
-if strcmp(model_id,'eecon49_dual')
+if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     ImaxSS=1.2; ImaxF=1.2;
 else
     ImaxSS=1.0; ImaxF=1.5;
@@ -212,7 +233,7 @@ r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, ...
 % REGFM_B1 parameters otherwise remain owned by their source-model defaults.
 % An optional gfl_family selects the RMS10 opt-in branch (construction-time).
 r.dynamic_params = struct('Mbase', Mbase);
-if strcmp(model_id,'eecon49_dual')
+if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     r.dynamic_params.Sbase=100.0;
     r.dynamic_params.fbase=60.0;
     % Converter command/actuation delay (source eq.(20)-(21), first-order lag
@@ -233,10 +254,50 @@ if strcmp(model_id,'eecon49_dual')
     r.dynamic_params.gfl_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
         'Vdc_ref',1.0,'Imax',1.2,'kpPLL',1.2,'kiPLL',5.0, ...
         'kpP',0.8,'kiP',2.5,'kpQ',0.8,'kiQ',2.5,'kpI',0.3,'kiI',4.0);
+    if strcmp(model_id,'eecon49_dual')
     r.dynamic_params.gfm_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-        'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',1.5, ...
+        'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',20.0, ...
         'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
         'kpI',0.3,'kiI',4.0);
+    % Dv=20.0 is PROJECT_DERIVED (owner-set 2026-08-13) for the islanded
+    % grid-forming role.  The frozen design target it meets is a 5 % P-f droop
+    % (within the WECC/CAISO 3-5 % practice and the ERCOT GFM test assumption
+    % <=5 %).  The source-printed value is Dv=1.50 (66.7 % droop), verified in
+    % docs/text/EECON49_[Nui].pdf p.5 -- readable with `pdftotext -layout`;
+    % only the Read tool cannot render it, which is a tool limitation and NOT
+    % encryption.  In this single-coefficient VSG the same Dv also sets the
+    % swing damping: at the MEASURED synchronising coefficient
+    % K = 0.1135..0.1862 pu/rad (full-KCL Schur-reduced SSSA, all-GFM
+    % SG-online) Dv=20 gives zeta = 4.22..5.40, i.e. heavily over-damped, and
+    % Dv=1.50 gives zeta = 0.41.  Reaching zeta = 1/sqrt(2) here would need
+    % Dv = 2.6..3.4, i.e. 30-38 % droop.  Droop and damping therefore cannot
+    % both be placed by this structure; that documented limitation is what
+    % ibr.gfm_decoupled_full_model addresses.  M=0.08 (H_v=0.04 s) unchanged.
+    % Derivation and both values side by side:
+    % docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md, "GFM swing droop and
+    % damping".
+    else
+    % Decoupled GFM swing (PROJECT_DERIVED, this project's own model).  Each
+    % coefficient answers one requirement and the derivation is recorded in
+    % docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md:
+    %   R_droop=0.05  5 % P-f droop, the same grid-code band as above and the
+    %                 same static droop as the Dv=20 baseline, so the two
+    %                 structures are compared at equal droop;
+    %   M=0.08        unchanged source-printed inertia (H_v=0.04 s), so the
+    %                 comparison is at equal inertia as well;
+    %   wD=3.0 rad/s  washout corner from this plant's own measured swing
+    %                 frequency wn=23.1..29.6 rad/s: wD/wn=0.10..0.13 keeps the
+    %                 washout gain >=0.984 at the swing frequency while
+    %                 tau=1/wD=0.333 s is far inside the primary-response
+    %                 window, so the DC droop is untouched;
+    %   D_t=20.0      exact-cubic solution for zeta=1/sqrt(2) at the measured
+    %                 K; attained zeta is 0.7072..0.7151 across that K range.
+    r.dynamic_params.gfm_decoupled=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
+        'Vdc_ref',1.0,'Imax',1.2,'M',0.08, ...
+        'R_droop',0.05,'D_t',20.0,'wD',3.0, ...
+        'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
+        'kpI',0.3,'kiI',4.0);
+    end
     r.dynamic_params.dc_source=struct('Tdc',0.10);
 elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
@@ -248,6 +309,17 @@ if strcmp(model_id,'eecon49_dual')
     details=sprintf(['16-state shared-plant superset; GFL controller owns PLL; ' ...
         'GFM controller owns VSG and no PLL; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s'], ...
         Mbase,default_Q_MVAr);
+elseif strcmp(model_id,'decoupled_dual')
+    source=['GFL branch and shared plant: EECON49-P4 Eqs.(6)-(19); GFM swing: ' ...
+        'PROJECT_DERIVED decoupled droop/damping/inertia (see ' ...
+        'docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md)'];
+    classification=['GFL and shared-plant AC/control=SOURCE_MAPPED; GFM swing ' ...
+        '(R_droop/D_t/wD)=PROJECT_DERIVED from measured K; base/reference=CASE_DEFINED; ' ...
+        'DC-source regulator and transfer=PROJECT_DERIVED'];
+    details=sprintf(['17-state shared-plant superset; GFL controller owns PLL; ' ...
+        'GFM controller owns the decoupled VSG (no PLL) with washout state ' ...
+        'omega_f last; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s; ' ...
+        'R_droop=0.05, D_t=20.0, wD=3.0, M=0.08'],Mbase,default_Q_MVAr);
 else
     source='WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM';
     classification='Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED';

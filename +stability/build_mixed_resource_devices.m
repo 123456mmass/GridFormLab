@@ -34,6 +34,8 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
 %     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
 %     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (16-state shared-plant dual)
+%     "decoupled_dual"  -> ibr.decoupled_dual_mode_model (17-state dual, decoupled
+%                          GFM swing: independent droop/damping/inertia)
 %   Future single-mode IBR factories are added here ONLY (no engine change).
 %
 %   SCENARIO_OPT may carry:
@@ -104,7 +106,7 @@ for k = 1:nr
             % only for the engine field (factory keeps its internal mode).
             dev.mode = 'synchronous';
             dev.initial_mode = 'synchronous';
-        case {'regfm_b1_dual','eecon49_dual'}
+        case {'regfm_b1_dual','eecon49_dual','decoupled_dual'}
             % Dispatch + P_ref from scenario_opt.dispatch (system-base MW -> pu).
             P_ref_MW = 0.0;
             if isfield(scenario_opt,'dispatch') && isfield(scenario_opt.dispatch, rid)
@@ -141,6 +143,9 @@ for k = 1:nr
             if strcmp(ibr_mode, "gfm"), ibr_mode = "GFM"; end
             if strcmp(mid,'eecon49_dual')
                 dev = ibr.eecon49_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
+                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            elseif strcmp(mid,'decoupled_dual')
+                dev = ibr.decoupled_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
                     V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
             else
                 dev = ibr.dual_mode_ibr_model(string(rid), bus, bp, bus_ids(:)', ...

@@ -162,19 +162,25 @@ verifyEqual(testCase,d1.provenance.params.Dv_static_equivalent, ...
 verifyEqual(testCase,d1.provenance.params.Dv_static_equivalent,1/R,'AbsTol',1e-12);
 end
 
-function testCoupledBaselineCannotMeetBothTargetsButDecoupledCan(testCase)
-% Contribution oracle, stated on this plant's MEASURED synchronising
-% coefficient K = 0.1135..0.1862 pu/rad (full-KCL Schur-reduced SSSA of the
-% all-GFM SG-online configuration; reproduced by chk_decoupled_ksync_tmp).
-% Targets frozen before the numbers: 5 % P-f droop (grid-code band) and swing
-% damping ratio 1/sqrt(2) at the unchanged source-printed M = 0.08.
-%   coupled baseline: zeta = Dv/(2 sqrt(M K wb)) and droop = 1/Dv are ONE
-%     number, so 5 % droop forces zeta > 4 and zeta = 1/sqrt(2) forces droop
-%     near 30-38 %.  Neither point satisfies both targets.
-%   decoupled: R = 0.05 with wD = 3.0 and D_t = 20.0 holds 5 % droop and
-%     zeta ~= 1/sqrt(2) across the whole measured K range.
-% This test fails if the production defaults or the swing equation stop
-% delivering that property.
+function testCoupledBaselineCannotSeparateDroopFromDampingButThisModelCan(testCase)
+% STRUCTURAL oracle, stated on the single-machine characteristic polynomial and
+% deliberately NOT extended to a system claim.
+%
+% Corrected 2026-08-13. The previous version of this test asserted that the
+% production defaults "meet both targets" (5 % droop and zeta = 1/sqrt(2)) as if
+% that were a property of the studied network. That was wrong in scope: the
+% oracle is a single-machine polynomial evaluated at the SG-ONLINE synchronising
+% coefficient, and the measured island/SG-online SSSA surface showed the modes
+% D_t owns are not the modes that bind this network's margin -- while the
+% wD = 3.0 corner it recommended made the all-four island unstable
+% (Omega = +0.336 against the coupled baseline's -0.483). The measured evidence
+% is in docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md section 7a, and the
+% production D_t is now 0.
+%
+% What survives, and is asserted here, is the structural statement: in the
+% coupled baseline droop and damping ARE one number, so no Dv places both; in
+% this model they are separate coefficients. The system-level consequences are
+% pinned by test_ieee14_decoupled_full_state instead.
 wb=2*pi*60; M=0.08; Ks=[0.1135 0.1862]; ztgt=1/sqrt(2);
 for K=Ks
     z_at_5pct=(1/0.05)/(2*sqrt(M*K*wb));
@@ -183,26 +189,31 @@ for K=Ks
     Dv_for_target=2*ztgt*sqrt(M*K*wb);
     verifyGreaterThan(testCase,100/Dv_for_target,10, ...
         'the coupled baseline would need a droop far outside the 3-5 % band');
-    z_dec=swing_zeta(M,0.05,20.0,3.0,K,wb);
-    verifyEqual(testCase,z_dec,ztgt,'AbsTol',0.02, ...
-        'the production decoupled defaults must hold zeta ~= 1/sqrt(2)');
+    % In THIS model the same droop is available with a damping coefficient that
+    % is free to be anything, including zero.
+    for Dt=[0 5 20]
+        z_dec=swing_zeta(M,0.05,Dt,50.0,K,wb);
+        verifyTrue(testCase,isinf(z_dec) || z_dec>0, ...
+            'the decoupled characteristic must stay well posed for any D_t>=0');
+    end
 end
-% The production defaults of the device itself must be the designed values.
+% The production defaults must be the values the measurement supports.
 d=ibr.gfm_decoupled_full_model('D',2,1,[2 3],1.02, ...
     struct('Sbase',100,'Mbase',100,'fbase',60, ...
         'dc_source',struct('Tdc',0.10)),0.4,0.15,1.02);
 p=d.provenance.params;
 verifyEqual(testCase,p.R_droop,0.05,'AbsTol',0);
-verifyEqual(testCase,p.D_t,20.0,'AbsTol',0);
-verifyEqual(testCase,p.wD,3.0,'AbsTol',0);
 verifyEqual(testCase,p.M,0.08,'AbsTol',0);
-% wD must stay well below the swing frequency, or the washout would remove the
-% authority of D_t at exactly the frequency it is meant to damp.
-for K=Ks
-    wn=sqrt(K*wb/p.M);
-    verifyLessThan(testCase,p.wD/wn,0.2);
-    verifyGreaterThan(testCase,wn^2/(wn^2+p.wD^2),0.98);
-end
+verifyEqual(testCase,p.D_t,0.0,'AbsTol',0, ...
+    ['D_t must default to 0: no positive value is defensible on this ' ...
+     'network (contract section 7a)']);
+verifyEqual(testCase,p.wD,50.0,'AbsTol',0, ...
+    'wD must default to the REGFM_B1 Table-1 corner, clear of the island mode');
+% Whatever wD is, it must stay well clear of the island's slowest mode so that a
+% caller enabling D_t does not repeat the withdrawn wD=3.0 placement error.
+island_mode_rad_s=3.92;   % measured: -0.4829 +- 3.917j at D_t=0
+verifyGreaterThan(testCase,p.wD/island_mode_rad_s,5, ...
+    'the default washout corner must sit far above the island swing mode');
 end
 
 % -------------------------------------------------------------------------

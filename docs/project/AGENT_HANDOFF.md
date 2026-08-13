@@ -30,13 +30,48 @@ the coupled VSG is **over-damped** (`zeta = 4.22..5.40`), not `zeta~=0.81`;
 `Dv=1.50` gives `0.41`, not `0.06`; and `M=5.0` gives `0.68`, not `0.10`, which
 voids the earlier reason for rejecting `H_v=2.5 s`. Those three figures are
 withdrawn in `EECON49_GFL_GFM_SOURCE_CONTRACT.md`. The `Dv=20` **droop**
-justification is unaffected; only its damping claim was wrong. Production
-decoupled values `R=0.05, w_D=3.0, D_t=20` hold 5 % droop AND `zeta~=1/sqrt(2)`
-across the measured `K` range — a point no single `Dv` can reach, since
-`zeta=1/sqrt(2)` would require 30–38 % droop.
+justification is unaffected; only its damping claim was wrong. On the
+single-machine characteristic no `Dv` reaches both 5 % droop and
+`zeta ≈ 1/sqrt(2)` — the latter would require 30–38 % droop — which is the
+structural gap the decoupled model closes.
 
 Trap for future retunes: `zeta(D_t)` is **non-monotone**, so the small-`D_t`
 approximation must not be used; solve the exact cubic (a test asserts this).
+
+**Correction the same day (`MODEL-2026-08-13-02`) — read this before setting
+`D_t`.** The first values shipped, `w_D = 3.0` and `D_t = 20`, were sized on that
+single-machine cubic at the SG-online `K`. Running the production chronology
+falsified the basis at once: the authenticated all-four SG-off island became
+small-signal **unstable** (`Omega = +0.336` versus the coupled baseline's
+`-0.483`), the SG-trip transaction refused to commit an uncertified
+configuration, and the run failed closed at `t = 1.0` with `candidateNotReady`.
+
+Cause is filter placement. At `D_t = 0` the island's slowest mode is
+`-0.4829 ± 3.917j`, i.e. 0.623 Hz (3.92 rad/s); `w_D = 3.0 rad/s` is 0.48 Hz, so
+the washout corner sat on the mode it was meant to damp, all four washout poles
+migrated into it, and the phase lag made the damping path positive feedback. The
+basis was wrong because `w_D` was sized from the SG-online `w_n = 23..30 rad/s`.
+Measured on the island through the production dispatch path, the synchronising
+coefficients are `[-0.0151, 0.0015, 0.1169, 0.0525] pu/rad` — two of them `<= 0`,
+so the single-machine cubic has no real `w_n` there at all. Designing a
+grid-forming damping term at the SG-online operating point was the underlying
+error: the island is the point the device exists to serve.
+
+The measured `(w_D × D_t)` surface then settled the question: **no** `D_t > 0`
+improves this system at any `w_D` from 3 to 100, while the SG-online margin moves
+by `1.1e-6` across the same 25 points. `D_t` is therefore `0` on measured
+evidence and `w_D` is `50` (REGFM_B1 Table-1 `SOURCE_VERBATIM`, ~13× above the
+island mode, so an enabled `D_t` cannot repeat the placement error). The
+"5 % droop AND `zeta ≈ 1/sqrt(2)`" claim is withdrawn as a single-machine figure
+that was given system scope; its test was rewritten to assert only the structural
+separation, and a new island oracle keeps the withdrawn pair refused.
+
+What survives intact: the separation itself. `D_t = 0` reproduces the coupled
+baseline bit-for-bit (island margin agrees to `1.2e-13`), `R` alone fixes the
+droop, and `D_t` moves the Schur-reduced trace by exactly `-4 D_t/M`. The damping
+knob is delivered, characterised, and set to zero — on this island it has no
+beneficial setting, which is a measured property of the network, reported as
+found.
 
 **Reference-AGSI overlay (opt-in `agsi_reference`).**
 `+stability/agsi_reference_terms.m` publishes `J_R/J_P/J_SCR/J_lock` plus the
@@ -54,17 +89,21 @@ password-protected was false — it is not encrypted and page 5 is readable with
 `SOURCE_PRINTED`. That makes it a verified quotation, not a validated result:
 EECON49 remains an unvalidated peer M.Sc. baseline, not authority.
 
-Gates on this tree: 24/24 new tests (8 dual-model, 6 decoupling oracle, 5
-end-to-end registration, 5 AGSI overlay), 163/163 targeted batch A
-(metadata/selector/inventory/baseline), 26/27 batch B — the one failure is
-`TEST-2026-08-13-04`, reproduced identically on a pristine `e233b6c` worktree
-and therefore pre-existing. Full regression omitted under the `AGENTS.md` risk
-policy. The strongest single oracle: with `D_t=0` the all-GFM spectrum equals the
-baseline spectrum plus exactly four eigenvalues at `-w_D`, remainder to 4.1e-12.
+Gates on this tree: 25/25 new tests (8 dual-model, 6 decoupling oracle, 6
+end-to-end registration incl. the island oracle, 5 AGSI overlay), 163/163
+targeted batch A (metadata/selector/inventory/baseline), 26/27 batch B — the one
+failure is `TEST-2026-08-13-04`, reproduced identically on a pristine `e233b6c`
+worktree and therefore pre-existing. Full regression omitted under the
+`AGENTS.md` risk policy. Strongest oracles: with `D_t=0` the SG-online all-GFM
+spectrum equals the baseline spectrum plus exactly four eigenvalues at `-w_D`
+(remainder 4.1e-12) and the island margin equals the baseline's to `1.2e-13`.
 
-NOT claimed: this does not resolve `TS-2026-08-13-03` (post-line
-limiter/Newton wall), no islanded `K` was measured, and no production report was
-regenerated.
+NOT claimed: this does not resolve `TS-2026-08-13-03`. Measured on the paired
+production chronology, the coupled baseline reaches `t=2.55/2.56` at
+`dt=0.05/0.02` and fails there with `stepNewton`; **reclose is not reached by
+either structure**, and no production report was regenerated. The damping knob
+has no beneficial setting on this island (`D_t=0`), so the delivered
+configuration is numerically equivalent to the coupled baseline.
 
 ## 2026-08-13 — EECON49 16-state reduction + synchronizer Pmin fix (commit 1)
 

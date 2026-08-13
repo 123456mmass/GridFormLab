@@ -44,8 +44,8 @@ verifyTrue(testCase,contains(string(pr.details),'omega_f'));
 % Every derived swing coefficient must reach the resource dynamic parameters.
 gp=s.resources(2).dynamic_params.gfm_decoupled;
 verifyEqual(testCase,gp.R_droop,0.05,'AbsTol',0);
-verifyEqual(testCase,gp.D_t,20.0,'AbsTol',0);
-verifyEqual(testCase,gp.wD,3.0,'AbsTol',0);
+verifyEqual(testCase,gp.D_t,0.0,'AbsTol',0);
+verifyEqual(testCase,gp.wD,50.0,'AbsTol',0);
 verifyEqual(testCase,gp.M,0.08,'AbsTol',0);
 verifyFalse(testCase,isfield(s.resources(2).dynamic_params,'gfm_eecon49'), ...
     'the decoupled profile must not also ship the baseline GFM parameters');
@@ -158,12 +158,14 @@ verifyEqual(testCase,sort(real(sssad.physical_eigenvalues)), ...
 end
 
 function testAllGfmSpectrumAddsExactlyFourWashoutModesAtZeroDamping(testCase)
-% Full-system counterpart of the single-machine factorisation oracle: with
-% D_t = 0 the four washout states must be dynamically inert, so the all-GFM
-% reduced spectrum is the baseline spectrum plus exactly four eigenvalues at
-% -wD.  With the production D_t the spectrum must actually move, otherwise the
-% damping knob would be inert in the coupled system.
-wD=3.0; M=0.08; Dt=20.0;
+% Full-system counterpart of the single-machine factorisation oracle: at the
+% production D_t = 0 the four washout states must be dynamically inert, so the
+% SG-online all-GFM reduced spectrum is the baseline spectrum plus exactly four
+% eigenvalues at -wD. A deliberately non-default D_t must then move the swing
+% rows by exactly -D_t/M, which is what proves the knob is wired to the equation
+% it claims -- while max Re stays put, which is the measured reason the knob has
+% no beneficial setting on this network (contract section 7a).
+wD=50.0; M=0.08; Dt=20.0;
 [eq0,s0,~]=solve_profile('decoupled_figure4',2:5,0.0);
 [eqb,sb,~]=solve_profile('eecon49_figure4',2:5,[]);
 [eqp,sp,~]=solve_profile('decoupled_figure4',2:5,Dt);
@@ -176,18 +178,80 @@ verifyEqual(testCase,sum(at_wD),4, ...
     'exactly four washout eigenvalues must sit at -wD when D_t=0');
 rest=sort(real(lam0(~at_wD)));
 verifyEqual(testCase,rest,sort(real(sb.physical_eigenvalues)),'AbsTol',1e-9);
-% The production damping value must move the spectrum, and the largest shift
-% must be the declared -D_t/M added to the swing damping rows.
+% A nonzero D_t must move the spectrum by exactly what the equation declares.
+% The invariant to use is the SUM of real parts, not the shift of any single
+% mode: D_t enters only the diagonal entry d(dom_i)/d(om_i) = -(1/R+D_t)/M of
+% each of the four devices, and it does not touch the algebraic block, so the
+% Schur-reduced trace must move by exactly -4*D_t/M. Individual modes share that
+% total differently depending on how close the washout pole sits to them, which
+% is precisely the sensitivity that made wD placement matter.
 d=sort(real(sp.physical_eigenvalues)); e=sort(real(s0.physical_eigenvalues));
-shift=min(d-e);
-verifyLessThan(testCase,shift,-1e-3, ...
-    'the production D_t must damp the coupled system, not leave it unchanged');
-verifyEqual(testCase,shift,-Dt/M,'RelTol',0.05, ...
-    'the dominant shift must be the declared -D_t/M');
-% Stability must not be degraded relative to the baseline configuration.
+verifyEqual(testCase,sum(d)-sum(e),-4*Dt/M,'RelTol',1e-6, ...
+    'the trace must move by exactly -4*D_t/M (four devices)');
+verifyLessThan(testCase,min(d-e),-1e-3, ...
+    'at least one mode must actually move');
+% Measured property of THIS network, and the reason the production D_t is 0:
+% the modes D_t owns are far from the dominant one, so the SG-online margin does
+% not improve. If a future change makes D_t improve this margin, that is a real
+% finding and this assertion should be revisited with evidence -- not deleted.
 verifyLessThan(testCase,max(real(sp.physical_eigenvalues)),0);
 verifyEqual(testCase,max(real(sp.physical_eigenvalues)), ...
-    max(real(sb.physical_eigenvalues)),'AbsTol',1e-4);
+    max(real(sb.physical_eigenvalues)),'AbsTol',1e-4, ...
+    'D_t must not move the SG-online dominant mode on this network');
+end
+
+function testIslandSpectrumEqualsBaselineAtProductionDefaults(testCase)
+% System-level oracle for the production configuration, added 2026-08-13 after
+% the measured island surface forced D_t back to 0.
+%
+% Two facts are pinned, both through the PRODUCTION candidate path
+% (stability.ibr_candidate_evaluate with the frozen gamma_req = 0.1), because
+% that is what the SG-trip transaction actually consults before committing:
+%   1. at the production defaults the authenticated all-four ISLAND must be
+%      certified and must match the coupled baseline's margin -- if a future
+%      edit reintroduces a positive default D_t, or changes wD in a way that
+%      moves the island margin, this fails;
+%   2. the withdrawn (wD=3.0, D_t=20) pair must still be REFUSED, so the
+%      recorded failure mode cannot be quietly re-enabled and forgotten.
+base=island_candidate('eecon49_figure4',[]);
+prod=island_candidate('decoupled_figure4',[]);
+verifyTrue(testCase,base.ready_to_commit, ...
+    'the coupled baseline island must remain certified (control)');
+verifyTrue(testCase,prod.ready_to_commit, ...
+    'the decoupled island must be certified at the production defaults');
+verifyEqual(testCase,prod.omega,base.omega,'AbsTol',1e-9, ...
+    ['at D_t=0 the island margin must equal the coupled baseline: the swing ' ...
+     'block reduces to it exactly']);
+verifyLessThan(testCase,prod.omega,-0.1);
+% The documented failure mode: wD on the island swing mode with a large D_t.
+bad=island_candidate('decoupled_figure4',struct('D_t',20.0,'wD',3.0));
+verifyFalse(testCase,bad.ready_to_commit, ...
+    'the withdrawn (wD=3.0, D_t=20) pair must stay refused');
+verifyGreaterThan(testCase,bad.omega,0, ...
+    'that pair puts the island in the right half plane; keep the record honest');
+end
+
+function c=island_candidate(prof,override)
+s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile',prof));
+resources=s.resources;
+if ~isempty(override)
+    for k=2:numel(resources)
+        if isfield(resources(k).dynamic_params,'gfm_decoupled')
+            for f=fieldnames(override).'
+                resources(k).dynamic_params.gfm_decoupled.(f{1})=override.(f{1});
+            end
+        end
+    end
+end
+scr=stability.ibr_scr_metrics(s.case_data,resources,struct());
+cand=struct('selected_gfm_indices',2:5,'reference_resource_index',2, ...
+    'n_gfm_required',4,'resource_ids',{{resources.resource_id}}, ...
+    'modes',{{'breaker_open','GFM','GFM','GFM','GFM'}}, ...
+    'online',[false true true true true], ...
+    'resource_type',{{resources.resource_type}}, ...
+    'n_mode_changes',4,'tie_break',0,'ordering_key',1);
+c=stability.ibr_candidate_evaluate(s.case_data,resources,cand,scr,0.1, ...
+    struct('sg_online_context',false));
 end
 
 % -------------------------------------------------------------------------

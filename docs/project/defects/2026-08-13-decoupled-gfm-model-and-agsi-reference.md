@@ -105,16 +105,36 @@ quotation is not a verified result.
 |---|---|---|---|
 | `R_droop` | 0.05 | `PROJECT_DERIVED` | 5 % P--f droop; equal to the baseline's static droop so the structures compare at equal droop |
 | `M` | 0.08 | source-printed, retained | equal-inertia comparison |
-| `w_D` | 3.0 rad/s | `PROJECT_DERIVED` | `w_D/w_n = 0.10..0.13` at the measured `w_n = 23.1..29.6 rad/s`, so the washout gain is `>=0.984` where `D_t` must act, while `tau = 0.333 s` is far inside the primary-response window. REGFM_B1's `wD = 50` is deliberately NOT inherited (different `2H`, different swing frequency). |
-| `D_t` | 20.0 | `PROJECT_DERIVED` | exact-cubic bisection for `zeta = 1/sqrt(2)`; attained `0.7072 .. 0.7151` across the measured `K` |
+| `w_D` | 50.0 rad/s | `SOURCE_VERBATIM` (REGFM_B1 Table 1) | ~13x above the island's slowest mode (3.92 rad/s), so an enabled `D_t` keeps the washout pole clear of the mode that sets the island margin |
+| `D_t` | 0.0 | `PROJECT_DERIVED` from measurement | no positive value is defensible on this network — see `MODEL-2026-08-13-02` |
+
+**Correction, same day (`MODEL-2026-08-13-02`).** The first delivery of this
+work shipped `w_D = 3.0, D_t = 20.0`, sized by solving the single-machine cubic
+for `zeta = 1/sqrt(2)` at the SG-online `K`. Running the production chronology
+falsified that basis immediately: the authenticated all-four SG-off candidate
+became small-signal **unstable** (`Omega = +0.336` against the coupled
+baseline's `-0.483`), so the SG-trip transaction refused to commit and the run
+failed closed at `t = 1.0` with `candidateNotReady`.
+
+Cause: `w_D = 3.0 rad/s = 0.48 Hz` sat essentially on the island's own swing
+mode (0.623 Hz, 3.92 rad/s); all four washout poles migrated into it and the
+phase lag turned the damping path into positive feedback. The island
+synchronising coefficients are `[-0.0151, 0.0015, 0.1169, 0.0525] pu/rad` — two
+of them `<= 0` — so the single-machine cubic had no valid natural frequency
+there and the SG-online basis was simply the wrong operating point for a
+grid-forming damping term. The measured `(w_D x D_t)` surface then showed that
+**no** `D_t > 0` improves this system at any `w_D` from 3 to 100, while SG-online
+margins move by `1.1e-6` over the same sweep. `D_t` is therefore 0 on measured
+evidence, and the "holds 5 % droop AND `zeta ~= 1/sqrt(2)`" claim below is
+withdrawn as out of scope. Full record: `MODEL-2026-08-13-02`.
 
 A trap worth recording: `zeta(D_t)` is **not monotone** — it has an interior
 extremum, because large `D_t` moves the system out of the second-order regime.
 The small-`D_t` approximation
 `zeta ~= [1/R + D_t g(w_n)]/(2 sqrt(M K w_b))` therefore cannot be used to pick
-`D_t`; at `D_t = 20` it predicts `1.55` against a true `0.715`. All design values
-are solved on the exact cubic, and a test asserts the non-monotonicity so the
-approximation cannot be silently reintroduced.
+`D_t`; at `D_t = 20` it predicts `1.55` against a true `0.715`. A second and
+larger trap: even the exact cubic is a single-machine statement, and on this
+network the modes it describes are not the modes that bind the margin.
 
 A second design decision worth recording: on entry to GFM the washout state is
 initialised TRACKED (`omega_f = omega_VSG`) after the PLL-frequency carry-over.
@@ -157,7 +177,7 @@ MATLAB R2026a, branch `main`, tested working tree on top of `e233b6c`.
 ```text
 tests/test_ibr_decoupled_dual_mode_model.m            8/8
 tests/test_ibr_decoupled_swing_decoupling_oracle.m    6/6
-tests/test_ieee14_decoupled_full_state.m              5/5
+tests/test_ieee14_decoupled_full_state.m              6/6   (+1 island oracle)
 tests/test_ts_hybrid_agsi_reference.m                 5/5
 targeted batch A (11 files, metadata/selector/inventory/baseline)  163/163
 targeted batch B (7 files, TS driver + equilibrium)  26/27
@@ -172,13 +192,17 @@ Decisive measurements:
   unmodified;
 - **all-GFL**: decoupled equilibrium and reduced spectrum identical to the
   baseline profile at `AbsTol 0` / `1e-12`;
-- **all-GFM at `D_t = 0`**: spectrum equals the baseline spectrum plus exactly
-  four eigenvalues at `-w_D = -3.0`, remainder to `4.1e-12`. This is the
-  strongest single oracle: it proves the washout state is dynamically inert when
-  the damping knob is off, in the coupled 49-state system, not just in the
-  device;
-- **all-GFM at `D_t = 20`**: dominant real-part shift `-249.4` against the
-  declared `-D_t/M = -250`, with `max Re` unchanged at `-0.2308`;
+- **SG-online all-GFM at `D_t = 0`**: spectrum equals the baseline spectrum plus
+  exactly four eigenvalues at `-w_D`, remainder to `4.1e-12`;
+- **ISLAND all-GFM at `D_t = 0`**: `Omega = -0.48290852` against the coupled
+  baseline's `-0.48290852`, agreeing to `1.2e-13`. Together these are the
+  strongest oracle in the delivery: the washout state is dynamically inert with
+  the knob off, at system level, in both configurations — which is what
+  falsified an implementation defect once the island proved sensitive to `D_t`;
+- **`D_t` acts exactly as declared**: with `D_t = 20` the Schur-reduced trace
+  moves by exactly `-4 D_t/M` (four devices) and four SG-online modes shift from
+  about `-244` to about `-494`, while `max Re` stays `-0.2308` — the knob is
+  correct and the modes it owns simply do not bind this network;
 - **G-AGSI-BITIDENT**: enabling the overlay leaves 13 published arrays
   byte-identical (`max|diff| = 0`), every decision field `isequaln`, and the
   event log identical in type/time/applied; with the option omitted the result
@@ -190,13 +214,16 @@ coverage above is the delivered evidence under the `AGENTS.md` risk policy.
 ## 7. What is NOT claimed
 
 1. The decoupled model does **not** resolve `TS-2026-08-13-03` (the post-line
-   nonsmooth current-limiter/Newton wall). No chronology completion, reclose
-   outcome, or regenerated production report is claimed for it.
-2. No islanded (SG-off) `K` was measured: that equilibrium did not converge in
-   the measurement harness. The design is instead shown robust over
-   `K in [0.05, 0.4]` (`zeta in [0.71, 0.83]`), which brackets the measured
-   range about 2x either side, and the islanded configuration remains gated by
-   the existing selector/candidate SSSA path.
+   nonsmooth current-limiter/Newton wall). Measured on the paired production
+   chronology: the coupled baseline reaches `t = 2.55/2.56` at `dt = 0.05/0.02`
+   and fails there with `stepNewton`, exactly as that record states. Reclose is
+   not reached by either structure, and no chronology completion or regenerated
+   production report is claimed.
+2. The **damping knob has no beneficial setting on this network**
+   (`MODEL-2026-08-13-02`). `D_t = 0` is the production value on measured
+   evidence, which makes the default configuration numerically equivalent to the
+   coupled baseline. Only the droop and inertia knobs are exercised here. The
+   separation itself is proven; its usefulness on THIS island is not.
 3. The reference-AGSI terms are `ASSUMED_DIAGNOSTIC` and must never be cited for
    a readiness or production claim. First measured values on the compressed arm
    show `J_f` in band throughout while `J_V`, `J_R`, `J_P` and `J_SCR` leave the
@@ -213,6 +240,7 @@ coverage above is the delivered evidence under the `AGENTS.md` risk policy.
 - `+stability/agsi_reference_terms.m`
 - `docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md`
 - `docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md`
+- `2026-08-13-decoupled-washout-corner-island-instability.md`
 - `2026-08-13-dv20-post-line-nonsmooth-newton-wall.md`
 - `2026-08-13-islanded-vsg-inertia-reclose-unreachable.md`
 - `2026-08-13-standalone-emf6-oracle-equilibrium.md`

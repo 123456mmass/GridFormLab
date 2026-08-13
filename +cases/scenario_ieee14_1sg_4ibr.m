@@ -277,24 +277,30 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     % docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md, "GFM swing droop and
     % damping".
     else
-    % Decoupled GFM swing (PROJECT_DERIVED, this project's own model).  Each
-    % coefficient answers one requirement and the derivation is recorded in
+    % Decoupled GFM swing (PROJECT_DERIVED, this project's own model).  Values
+    % corrected 2026-08-13 after the island SSSA surface was measured; the
+    % derivation and the withdrawn earlier basis are in
     % docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md:
-    %   R_droop=0.05  5 % P-f droop, the same grid-code band as above and the
-    %                 same static droop as the Dv=20 baseline, so the two
-    %                 structures are compared at equal droop;
+    %   R_droop=0.05  5 % P-f droop, the same grid-code band and the same static
+    %                 droop as the Dv=20 baseline, so the two structures are
+    %                 compared at equal droop.  Unaffected by D_t and wD.
     %   M=0.08        unchanged source-printed inertia (H_v=0.04 s), so the
-    %                 comparison is at equal inertia as well;
-    %   wD=3.0 rad/s  washout corner from this plant's own measured swing
-    %                 frequency wn=23.1..29.6 rad/s: wD/wn=0.10..0.13 keeps the
-    %                 washout gain >=0.984 at the swing frequency while
-    %                 tau=1/wD=0.333 s is far inside the primary-response
-    %                 window, so the DC droop is untouched;
-    %   D_t=20.0      exact-cubic solution for zeta=1/sqrt(2) at the measured
-    %                 K; attained zeta is 0.7072..0.7151 across that K range.
+    %                 comparison is also at equal inertia;
+    %   D_t=0.0       measured result, not an omission: in the authenticated
+    %                 all-four ISLAND every D_t>0 degrades the margin
+    %                 monotonically at every washout corner tested (wD=3..100),
+    %                 and SG-online D_t does not move the dominant mode at all
+    %                 (1e-6 across the same sweep).  No positive value is
+    %                 defensible on this system.  An earlier D_t=20 with wD=3.0
+    %                 put the island at +0.336 (unstable) where the coupled
+    %                 baseline is -0.483;
+    %   wD=50.0       REGFM_B1 Table-1 SOURCE_VERBATIM washout corner, ~13x
+    %                 above this island's slowest mode (3.92 rad/s), so a caller
+    %                 that does enable D_t keeps the washout pole clear of the
+    %                 mode that sets the island margin.
     r.dynamic_params.gfm_decoupled=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
         'Vdc_ref',1.0,'Imax',1.2,'M',0.08, ...
-        'R_droop',0.05,'D_t',20.0,'wD',3.0, ...
+        'R_droop',0.05,'D_t',0.0,'wD',50.0, ...
         'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
         'kpI',0.3,'kiI',4.0);
     end
@@ -319,7 +325,7 @@ elseif strcmp(model_id,'decoupled_dual')
     details=sprintf(['17-state shared-plant superset; GFL controller owns PLL; ' ...
         'GFM controller owns the decoupled VSG (no PLL) with washout state ' ...
         'omega_f last; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s; ' ...
-        'R_droop=0.05, D_t=20.0, wD=3.0, M=0.08'],Mbase,default_Q_MVAr);
+        'R_droop=0.05, D_t=0.0, wD=50.0, M=0.08'],Mbase,default_Q_MVAr);
 else
     source='WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM';
     classification='Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED';

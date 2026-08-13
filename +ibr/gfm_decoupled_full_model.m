@@ -39,6 +39,10 @@ function dev = gfm_decoupled_full_model(device_id,bus_id,bus_position,bus_ids,V0
 %     D_t s/(s + w_D) contributes D_t w^2/(w^2 + w_D^2) of real damping at
 %     frequency w, so the effective damping ratio is
 %     zeta ~= [1/R + D_t w_n^2/(w_n^2 + w_D^2)] / (2 sqrt(M omega_b K)).
+%     That expression is a SINGLE-MACHINE statement and it is not a system
+%     result: on this network the modes it moves are not the modes that set the
+%     stability margin.  Read the "Measured system behaviour of D_t" section of
+%     docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md before setting D_t > 0.
 %   * INERTIA is M alone, unchanged in meaning from the baseline.
 %   * D_t = 0 reproduces the baseline exactly with Dv = 1/R, which is the
 %     equivalence oracle for this implementation.
@@ -96,17 +100,29 @@ Lf=getv(g,'Lf',0.15); Rf=getv(g,'Rf',0.015); Cdc=getv(g,'Cdc',0.10);
 Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2);
 Tdc=getv(dc,'Tdc',0.10);
 M=getv(g,'M',0.08); tauE=getv(g,'tauE',0.05);
-% R_droop / D_t / wD defaults are the PROJECT_DERIVED production values,
-% derived in docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md from the MEASURED
-% synchronising coefficient K = 0.1135..0.1862 pu/rad (full-KCL Schur-reduced
-% SSSA of the IEEE14 all-GFM SG-online configuration), not from an estimate:
-%   R_droop = 0.05   5 % P-f droop (WECC/CAISO 3-5 %, ERCOT GFM <= 5 %)
-%   wD      = 3.0    wD/wn = 0.10..0.13 so the washout gain is >= 0.984 at the
-%                    swing frequency, while tau = 1/wD = 0.333 s stays far
-%                    inside the primary-frequency-response window
-%   D_t     = 20.0   exact-cubic solution for zeta = 1/sqrt(2) at the measured
-%                    K; the attained zeta is 0.7072..0.7151 across that range
-Rd=getv(g,'R_droop',0.05); Dt=getv(g,'D_t',20.0); wD=getv(g,'wD',3.0);
+% R_droop / D_t / wD defaults, corrected 2026-08-13 after the island SSSA
+% surface was measured (see docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md,
+% "Measured system behaviour of D_t"):
+%   R_droop = 0.05   5 % P-f droop (WECC/CAISO 3-5 %, ERCOT GFM <= 5 %). This
+%                    is the steady-state characteristic and it is unaffected by
+%                    the two coefficients below.
+%   D_t     = 0.0    NO transient damping by default. Measured, not assumed: in
+%                    the authenticated all-four ISLAND every D_t > 0 degrades
+%                    the margin monotonically at every washout corner tested
+%                    (wD = 3..100), and in the SG-online configuration D_t does
+%                    not move the dominant mode at all (1e-6 over the same
+%                    sweep). No positive value is defensible on this system, so
+%                    the default is the value the evidence supports. The knob
+%                    itself is exact and available -- see the contract document
+%                    before setting it.
+%   wD      = 50.0   SOURCE_VERBATIM value of the in-repo NREL REGFM_B1 washout
+%                    (regfm_b1_vsg_model.m:175, Table 1). Retained because it
+%                    is ~13x above this island's slowest mode (3.92 rad/s), so
+%                    if a caller does enable D_t the washout pole stays clear of
+%                    the mode that sets the island margin. An earlier
+%                    project-chosen wD = 3.0 sat ON that mode and was the direct
+%                    cause of the island instability.
+Rd=getv(g,'R_droop',0.05); Dt=getv(g,'D_t',0.0); wD=getv(g,'wD',50.0);
 kQ=getv(g,'kQ',0.25); kE=getv(g,'kE',8.0);
 kpV=getv(g,'kpV',1.20); kiV=getv(g,'kiV',4.50);
 kpI=getv(g,'kpI',0.30); kiI=getv(g,'kiI',4.00);

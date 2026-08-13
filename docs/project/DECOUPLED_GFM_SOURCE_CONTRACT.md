@@ -170,50 +170,147 @@ An earlier revision of `EECON49_GFL_GFM_SOURCE_CONTRACT.md` used an unmeasured
 `K ~= 5 pu/rad`, which is 27--44x too large; the damping figures derived from it
 are withdrawn there.
 
-**Limitation.** These are SG-online values. The islanded (SG-off) measurement
-was attempted with the case post-trip dispatch and its equilibrium did not
-converge in that harness, so no islanded `K` is claimed here. The chosen design
-is therefore checked for robustness over a wide `K` sweep (below) and the
-islanded configuration is gated by the existing selector/candidate SSSA path
-rather than by an islanded `K` figure.
+**The islanded values, measured after the first attempt failed.** The SG-off
+measurement initially did not converge in the standalone harness, and that gap
+was recorded here as a limitation. It has since been closed by going through the
+production dispatch path (post-trip `P`/`Q` schedule + `mixed_ibr_reduced_initialize`
++ `mixed_equilibrium_solve`, residual `6.6e-11`):
+
+```text
+island    K_ii = [-0.0151, 0.0015, 0.1169, 0.0525] pu/rad
+SG-online K_ii = [ 0.1653, 0.1421, 0.1862, 0.1135] pu/rad
+```
+
+Two islanded values are `<= 0`, so `w_n = sqrt(K w_b / M)` is not real for those
+devices and the single-machine cubic has no valid natural frequency there at all.
+Designing on the SG-online values alone was therefore not conservative — it was
+the wrong operating point for the role this device exists to serve. Section 7a
+records what that cost.
 
 ## 7. Parameter derivation
 
 | symbol | value | classification | derivation |
 |---|---|---|---|
-| `R_droop` | 0.05 | `PROJECT_DERIVED` | 5 % P--f droop. CAISO/WECC governor practice is 3--5 %; ERCOT's GFM functional test framework bases a criterion on GFM droop `<= 5 %`. Chosen equal to the `Dv = 20` baseline's static droop so the two structures are compared at equal droop. |
+| `R_droop` | 0.05 | `PROJECT_DERIVED` | 5 % P--f droop. CAISO/WECC governor practice is 3--5 %; ERCOT's GFM functional test framework bases a criterion on GFM droop `<= 5 %`. Chosen equal to the `Dv = 20` baseline's static droop so the two structures are compared at equal droop. Unaffected by `D_t`/`w_D` — this is the one coefficient the separation makes independent, and it holds exactly. |
 | `M` | 0.08 | source-printed, retained | `M = 0.08` (`H_v = 0.04 s`) is printed in the source parameter table (p.5). Held fixed so the comparison is also at equal inertia. |
-| `w_D` | 3.0 rad/s | `PROJECT_DERIVED` | Timescale separation on both sides. Upper bound: `w_D/w_n = 0.10..0.13` at the measured `w_n`, so the washout gain `w_n^2/(w_n^2+w_D^2)` is `0.984..0.990` — the washout does not remove `D_t`'s authority at the frequency it must damp. Lower bound: `tau = 1/w_D = 0.333 s`, one to two orders below any primary-frequency-response settling window, so the DC droop is untouched. REGFM_B1's Table-1 `wD = 50` is NOT inherited: its `2H` is far larger, so its swing frequency and washout corner differ. |
-| `D_t` | 20.0 | `PROJECT_DERIVED` | Exact-cubic bisection for `zeta = 1/sqrt(2)` (maximally-flat second-order design) at the measured `K`, with `R` and `M` already fixed above. Attained `zeta = 0.7072 (K=0.1862) .. 0.7151 (K=0.1135)`, i.e. within 1.1 % of target across the measured range. |
+| `D_t` | **0.0** | `PROJECT_DERIVED` from measurement | No positive value is defensible on this system. See section 7a: in the authenticated all-four ISLAND every `D_t > 0` degrades the margin monotonically at every washout corner tested, and in the SG-online configuration `D_t` does not move the dominant mode at all. |
+| `w_D` | **50.0 rad/s** | `SOURCE_VERBATIM` (REGFM_B1 Table 1), retained | `regfm_b1_vsg_model.m:175`. Inactive while `D_t = 0`, but retained rather than left arbitrary because it is ~13x above this island's slowest mode (3.92 rad/s), so a caller who does enable `D_t` keeps the washout pole clear of the mode that sets the island margin. |
 
-Robustness of `(w_D, D_t) = (3.0, 20.0)` over a wide `K` sweep, `R = 0.05`,
-`M = 0.08`:
+## 7a. Measured system behaviour of D_t — and what was withdrawn
 
-| `K` [pu/rad] | 0.02 | 0.05 | 0.1135 | 0.1862 | 0.4 | >= 1.0 |
-|---|---|---|---|---|---|---|
-| `zeta` | overdamped | 0.827 | 0.715 | 0.707 | 0.782 | overdamped |
+An earlier revision of this document sized `D_t = 20.0` and `w_D = 3.0` by
+solving the single-machine cubic of section 5 for `zeta = 1/sqrt(2)` at the
+SG-online `K`. Both values, and the contribution claim built on them, are
+**withdrawn**. What the measurement showed:
 
-The design holds `zeta` in `[0.71, 0.83]` over `K in [0.05, 0.4]`, which brackets
-the measured range by roughly 2x on each side. Outside that band the response
-becomes over-damped, i.e. sluggish but stable — never under-damped.
+**The island becomes unstable.** With the authenticated all-four SG-off
+candidate evaluated through the production path
+(`stability.ibr_candidate_evaluate`, `gamma_req = 0.1`):
 
-## 8. What the separation buys, quantified
+```text
+coupled  Dv=20                      island Omega = -0.48291   ready
+decoupled R=0.05, D_t=0             island Omega = -0.48291   ready   (identical to 1.2e-13)
+decoupled R=0.05, wD=3.0, D_t=20    island Omega = +0.33598   REFUSED
+```
 
-At the measured `K` and the unchanged `M = 0.08`, with the two targets frozen
-before the numbers (5 % droop; `zeta = 1/sqrt(2)`):
+The production chronology therefore never even reached the SG trip: the
+transaction refused to commit an uncertified configuration and failed closed
+with `stability:gfm_selection:candidateNotReady` at `t = 1.0`.
 
-| structure | droop | `zeta` | both targets? |
-|---|---|---|---|
-| coupled, `Dv = 1.50` (source-printed) | 66.7 % | 0.41 .. 0.32 | no — droop far outside 3--5 % |
-| coupled, `Dv = 2.6 .. 3.4` | 38 .. 30 % | 0.71 | no — droop far outside 3--5 % |
-| coupled, `Dv = 20` (project baseline) | 5.0 % | 5.40 .. 4.22 | no — heavily over-damped |
-| decoupled, `R=0.05, w_D=3.0, D_t=20` | 5.0 % | 0.715 .. 0.707 | yes |
+**The mechanism.** At `D_t = 0` the island's slowest mode is
+`-0.4829 +- 3.917j`, i.e. 0.623 Hz (3.92 rad/s) — an inter-machine/island swing
+mode — and the four washout poles sit exactly at `-w_D`. At `D_t = 20` with
+`w_D = 3.0` all four washout poles have vanished into that mode and the pair has
+crossed to `+0.336 +- 3.396j` (0.540 Hz, `zeta = -0.0985`). The chosen washout
+corner `w_D = 3.0 rad/s = 0.48 Hz` sits essentially **on** the mode it was meant
+to damp, so the washout's phase lag turns the transient-damping path into
+positive feedback at that frequency. This is a filter-placement error, not a
+device-equation error.
 
-There is no `Dv` that satisfies both, because droop and damping are the same
-number. This is the contribution: not a stability fix — the coupled
-configuration is small-signal stable (`max Re = -0.2308`) — but the ability to
-place the steady-state characteristic and the transient response independently,
-with each coefficient defensible on its own grounds.
+**Why the design basis missed it.** The `w_D` criterion used was `w_D << w_n`
+with `w_n = 23..30 rad/s` from the SG-online `K`. Measured on the island through
+the production dispatch path, the synchronising coefficients are
+
+```text
+island    K_ii = [-0.0151, 0.0015, 0.1169, 0.0525] pu/rad
+SG-online K_ii = [ 0.1653, 0.1421, 0.1862, 0.1135] pu/rad   (the basis used)
+```
+
+Two island values are `<= 0`, so `w_n = sqrt(K w_b / M)` is not even real for
+those devices and the single-machine cubic has no valid natural frequency there.
+The mode that actually had to be respected is the island swing mode at
+3.92 rad/s, 6--8x below the frequency the design basis assumed. `w_D = 3.0`
+landed on it.
+
+**The full surface.** Island and SG-online margins over
+`w_D in {3,10,30,50,100}` x `D_t in {0,5,10,20,40}`:
+
+| `w_D` | `D_t`=0 | 5 | 10 | 20 | 40 |
+|---|---|---|---|---|---|
+| 3 | −0.4829 | −0.1586 | **+0.0628** | **+0.3360** | **+0.5900** |
+| 10 | −0.4829 | −0.3093 | −0.1398 | **+0.1476** | **+0.5126** |
+| 30 | −0.4829 | −0.4301 | −0.3732 | −0.2504 | **+0.0062** |
+| 50 | −0.4829 | −0.4529 | −0.4212 | −0.3532 | −0.2023 |
+| 100 | −0.4829 | −0.4686 | −0.4539 | −0.4232 | −0.3565 |
+
+(bold = refused by `gamma_req`.) Over the same 25 points the SG-online all-four
+margin moves from `-0.2050217` to `-0.2050206` — a change of `1.1e-6`.
+
+Two conclusions follow, and neither is what the design intended:
+
+1. **`D_t > 0` never improves this system.** Every entry is worse than the
+   `D_t = 0` column. A larger `w_D` only reduces the harm; it does not turn it
+   into a benefit.
+2. **`D_t` does move real modes, but not the binding ones.** At SG-online,
+   `D_t = 20` shifts four modes from about `-244` to about `-494`, exactly the
+   declared `-D_t/M = -250`. Those modes are far from the `-0.205` dominant
+   mode, so the shift is invisible in the margin. The single-machine cubic
+   describes the modes `D_t` owns; it does not describe the modes that limit
+   this network.
+
+`D_t = 0` is therefore the value the evidence supports, and it is recorded as a
+measured result rather than a default left unset. The knob remains exact and
+available — `D_t = 0` reproduces the coupled baseline bit-for-bit, and any
+positive value moves the swing rows exactly as declared — but on THIS system
+there is no positive value with a defensible justification. A different network,
+or an island whose binding mode is the swing mode rather than an inter-machine
+mode, could well use it; that would need its own island-level derivation.
+
+## 8. What the separation actually buys, and what it does not
+
+Stated at the measured `K` and the unchanged `M = 0.08`, separating the
+statements that hold from the one that was withdrawn.
+
+**Holds — the structural result.** In the coupled baseline droop and damping are
+one number, so the two cannot be placed independently. On the single-machine
+characteristic at the SG-online `K`:
+
+| structure | droop | single-machine `zeta` |
+|---|---|---|
+| coupled, `Dv = 1.50` (source-printed) | 66.7 % | 0.41 .. 0.32 |
+| coupled, `Dv = 2.6 .. 3.4` | 38 .. 30 % | 0.71 |
+| coupled, `Dv = 20` (project baseline) | 5.0 % | 5.40 .. 4.22 |
+
+No `Dv` gives both 5 % droop and a damping ratio near `1/sqrt(2)`. The decoupled
+structure removes that coupling exactly: `R` alone fixes the droop (proved at
+`AbsTol 0`), and `D_t` alone moves the swing rows by exactly `-D_t/M` (measured
+in the coupled 49-state system as a `-249.4` shift against a declared `-250`).
+
+**Withdrawn — the system-level claim.** An earlier revision of this section
+asserted that `R = 0.05, w_D = 3.0, D_t = 20` "holds 5 % droop AND
+`zeta ~= 1/sqrt(2)`" as if that were a property of the studied system. It is
+not. Section 7a shows that on this network the modes `D_t` owns are not the modes
+that bind the margin, and that this particular `(w_D, D_t)` pair makes the
+all-four island unstable. The `zeta` figure was a single-machine number
+presented with more scope than it had.
+
+**So the honest summary is:** the contribution delivered here is a GFM whose
+droop, transient damping and inertia are *provably independent knobs*, with the
+baseline reproduced bit-for-bit at `D_t = 0` and each knob's effect verified
+against its declared equation. On the IEEE14 island studied, the damping knob has
+no beneficial setting — that is a measured property of this network, reported as
+found. The droop and inertia knobs are used; the damping knob is delivered,
+characterised, and set to zero.
 
 ## 9. Registration surface
 
@@ -264,19 +361,29 @@ Key measured results:
 
 - all-GFL: decoupled equilibrium and reduced spectrum identical to the baseline
   profile at `AbsTol 0` / `1e-12` (the appended state cannot leak into GFL);
-- all-GFM at `D_t = 0`: spectrum = baseline spectrum plus exactly four
-  eigenvalues at `-w_D = -3.0`, remainder matching to `4.1e-12`;
-- all-GFM at `D_t = 20`: dominant shift `-249.4` against the declared
-  `-D_t/M = -250`, and `max Re` unchanged at `-0.2308`;
+- all-GFM SG-online at `D_t = 0`: spectrum = baseline spectrum plus exactly four
+  eigenvalues at `-w_D`, remainder matching to `4.1e-12`;
+- all-GFM ISLAND at `D_t = 0`: `Omega = -0.48291` versus the coupled baseline's
+  `-0.48291`, agreeing to `1.2e-13` — the equivalence holds at system level in
+  the islanded configuration too, which is what falsified an implementation
+  defect when the island later proved sensitive to `D_t`;
+- SG-online at `D_t = 20`: the four swing rows shift from about `-244` to about
+  `-494`, i.e. the declared `-D_t/M = -250`, while `max Re` stays `-0.2308` —
+  the knob acts exactly as specified on modes that do not bind the margin;
 - Jacobian rows equal the declared coefficients to `2.7e-11` relative over a
-  36-point parameter grid.
+  36-point parameter grid;
+- island/SG-online margin surface over `w_D x D_t` (section 7a), which is the
+  evidence for `D_t = 0`.
 
 Full-repository regression not run; targeted producer/consumer/failure-path
 coverage above is the delivered evidence, per the risk policy in `AGENTS.md`.
 
 ## 11. Limitations
 
-1. No islanded (SG-off) `K` measurement — see section 6.
+1. The damping knob has no beneficial setting on this network (section 7a). It
+   is delivered, characterised and set to zero, so the default configuration is
+   numerically equivalent to the coupled baseline. Only the droop and inertia
+   knobs are exercised here.
 2. The decoupled model does not address `TS-2026-08-13-03`; no chronology or
    reclose claim is made for it, and no production report has been regenerated
    with it.

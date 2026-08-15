@@ -7,6 +7,144 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-15 — SG RECLOSE SUCCEEDS AND THE 250-s CHRONOLOGY COMPLETES (AGSI-2026-08-14-02 + RECLOSE-2026-08-15-01)
+
+Tested working tree: on top of `f786f0d` (== `origin/main`).
+
+**Both blockers are resolved and the canonical chronology now runs end to end:**
+
+```text
+conv=1  t_end=250.000000  failure_id=[]  wall=533.4 s
+requested_sg_on=145   actual_reclose=159.3436   status=SUCCESS
+dV 0.004743/0.05   df 1.59e-05/0.001   dtheta 0.9677/10 deg   limiting_gate=none
+terminal: f_coi=60.000000 Hz  bus |V| 0.9667..1.0575  handback C1_COMPLETE
+          reselection_status=NO_FEASIBLE_SG_ON_ONE_STEP  (correct fail-closed)
+          rejected_steps=137  floor_accepted_steps=0
+```
+
+The reclose closes on merit inside the unchanged 20-s timeout with positive
+margin on all three synchronism sub-gates. No threshold, dwell, timeout, event
+time, tolerance, limit, AGSI weight, or test expectation was changed anywhere.
+
+**Independent oracle.** The terminal state reproduces the published EECON49
+Figure-4 operating point, which neither correction touches:
+
+```text
+dev    mode   |I|       P pu      Q pu      |S| pu   published
+SG1    sg     1.34620   1.33190  -0.19567   1.3462   134.62 MVA
+IBR2   GFM    0.36623   0.31718   0.17674   0.3631    36.31 MVA
+IBR3   gfl    0.34156   0.28844   0.16073   0.3302    33.02 MVA
+IBR6   gfl    0.48093   0.44428   0.24757   0.5086    50.86 MVA
+IBR8   gfl    0.29199   0.26765   0.14915   0.3064    30.64 MVA
+```
+
+IBR2's terminal current matches its certified SG_ON `[2]` equilibrium value
+`0.366232` to five decimals — 69 % below the limit it had previously been pinned
+on for 12 s.
+
+### Correction 1 — `AGSI-2026-08-14-02`, transition certificate (opt-in)
+
+The unconditional form of the incumbent-`xi` conditioning was FALSIFIED by
+measurement (it turns the healthy `t=22.05` arrival from a 19.7 deg stable swing
+into a 376 deg slip). The transaction now evaluates candidates
+**least-intervention-first**: (1) the arrival exactly as the ordinary transfer
+maps leave it, committed untouched if a forward trial with the production kernel
+rides it; (2) only if that fails, the incumbent-conditioned variant; (3) if
+neither rides, refuse fail-closed. Over 250 s conditioning fires at exactly ONE
+transaction — `t=53.4025`, untouched 195.1 deg rejected, conditioned 15.562 deg
+accepted — and the other four certificate-bearing commits go untouched. Opt-in
+`support_transition_certificate`, default OFF, default path proven
+byte-identical. Slip limit is the unstable-equilibrium separation (180 deg), not
+the steady-state pull-out limit (90 deg).
+
+### Correction 2 — `RECLOSE-2026-08-15-01`, post-reclose command timescale (opt-in)
+
+`derive_handback_duration` returns ONE duration
+`T = max(T_minimum_hold, t_mode, t_control)` and `enter_online_governor` used it
+for EVERY post-reclose command. The SG field voltage therefore walked
+`0.169925 -> 0.989169` over `t_mode = 13.875 s`, which is **11.6x** the declared
+actuator response `t_control = -log(rho)*max([Tsv Tch TA]) = 1.198 s`. The
+machine stayed under-excited, IBR2's voltage-loop q integrator overshot its
+equilibrium by 5.3x (`xi_Vq` `-0.2114` vs `-0.0396`), `|I_ref|` reached
+`Imax = 1.2`, `conditional_hold` froze both integrators to six figures for 12 s,
+and the coupled algebraic system lost solvability at any step size.
+
+Fix: split the timescales. `derive_handback_duration` also returns `t_control`;
+`enter_online_governor` takes an optional `T_efd`; only the FIELD-VOLTAGE command
+uses it. Mechanical power and the IBR P/Q references keep the full duration, so
+`SWITCH-2026-08-10-03`'s 1.28758 pu command-step concern is unaffected. New
+option `handback_efd_timescale` in {`mode` (default, byte-identical), `control`}.
+The alternative duration is the expression the same function already computed for
+the declared lags, frozen by test — not a fitted number.
+
+Also plumbed: `fd_perturbation` (existing kernel FD rule) through the driver,
+default `absolute` and byte-identical.
+
+### Falsified during this work, recorded so nobody re-runs it
+
+Four numerical arms all die at the same place, so the wall was never a solver
+artefact: baseline `173.005724`, `fd_perturbation='scaled'` `173.005776`,
+`reject_limit=40` `173.005724` (bit-identical), fixed `dt=0.02` `172.580000`.
+Also falsified: inner-loop integrator windup (`xi_Id` stays ~1e-6); a large
+angular displacement (a rad-vs-deg unit error of mine — the true pairwise gap is
+~10 deg); a stale `E_ref` (it equals the terminal voltage at the certified
+destination to `0.000e+00`); and the undocumented `handback_complete` ordering
+gate as the primary cause (with excitation restored on the actuator timescale the
+ramp completes, the gate opens by itself, and the release is then refused on its
+merits).
+
+**Diagnostic-harness defect worth knowing:** passing `s.scenario_opt` as the
+`scenario` argument to `stability.ibr_selector_table` makes
+`ibr_config_selector.m:305-320` resolve NO dispatch, so every SG_ON row is
+certified at IBR `P_ref = 0` with the SG carrying 2.55-2.73 pu. Production
+`run_hybrid_case.m:410-411` passes the full struct and is unaffected. Arithmetic
+tell: the defective `[2]` row gives `omega = -0.194035` and hence
+`handback_duration_s = 15.439096`; the correct one gives `-0.215905` and
+`13.875225`.
+
+Gates: G0 clean · G1 oracle PASS on all three commits · G4 **outcome (a)
+SATISFIED** · targeted regression recorded below. Full repository regression not
+run — optional per repository policy; the targeted gates cover the changed
+producer and its consumers.
+
+Residual items left for the owner, neither blocking: the `handback_complete`
+conjunct in `hold_ok` (`ts_simulate_ibr_hybrid.m:1078-1081`) is still
+undocumented and untested; and `ibr_config_selector` still ignores a dispatch
+supplied under a key it does not consume instead of failing closed.
+
+## 2026-08-14 — Incumbent-GFM xi conditioning: implemented, gate-failed, NOT delivered (AGSI-2026-08-14-01)
+
+Approved plan: map incumbent EECON49 GFMs' `gfm_xi_Vd/gfm_xi_Vq` to the
+authenticated candidate `eq_x0` inside `sg_off_support_transaction` (new pure
+helper `+stability/condition_eecon49_incumbent_gfm_state.m`, named-state only,
+`1e-10` current guard, atomic fail-closed; `ibr_decoupled_dual` byte-identical
+no-op). Contract evidence 50/50 (8 pure + 8 integration + regressions), no
+parameter/gate/threshold/event change anywhere.
+
+**Gate outcome: FAILED — reclose still not reached, and the tree now fails
+earlier (adaptiveDtMin at t=24.917 s vs baseline t=152.017 s).** Three facts
+rule out an implementation defect: (1) baseline and corrected runs are
+bit-identical up to the first xi assignment, which then equals the certificate
+exactly; (2) replay at the t=24.06 all-four commit slips WITH the conditioning
+(1095 deg) and WITHOUT it (2060 deg), while continuing the `[2 4]` island
+without the commit converges; (3) the corrected supervisor path simply commits
+all-four mid-transient (arriving voltage-profile distance to the certificate
+0.064 pu vs 0.020 pu at the baseline's settled t=53.40 commit). The defect has
+two components and this correction removes only one: stale incumbent xi at an
+admissible commit (fixed), and inadmissible mid-transient commits (unfixed,
+and now actively reached). Correction class 2 (arriving-state admissibility /
+transition certification, fail-closed refusal) or a supervisor settle interlock
+is the candidate next plan; neither is approved.
+
+Disposition: the helper and tests remain UNCOMMITTED in the working tree
+(committing a gate-failing production transaction would publish a regressed
+chronology); `AGSI-2026-08-14-01` stays OPEN with the full evaluation appended;
+the TRACK_COORDINATION claim is HELD (not released) until the owner decides
+discard-vs-extend. Also recorded: the plan's 60-s short-chronology gate G5 is
+infeasible on the canonical chronology (`fault_clear <= t_end` schedule
+contract forbids t_end<85.15 s), and the helper's current guard is structurally
+blind to the conditioned coordinates (terminal current = state `i_d/i_q`).
+
 ## 2026-08-13 — Decoupled GFM model + reference-AGSI overlay (`MODEL-2026-08-13-01`)
 
 A project-owned GFM family now sits alongside the EECON49-mapped baseline, which

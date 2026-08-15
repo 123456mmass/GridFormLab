@@ -219,6 +219,69 @@ different versions of the same shared interface.
 > augmentation now runs a different input, so report re-validation is required
 > before release.
 >
+> **2026-08-14 incumbent-GFM destination-state correction (GATE FAILED, claim held, one owner):**
+> one implementation owner on `main` claimed the `sg_off_support_transaction`
+> region of `+stability/ts_simulate_ibr_hybrid.m`, new helper
+> `+stability/condition_eecon49_incumbent_gfm_state.m`, the two support-state
+> tests, and the associated source-contract/defect/handoff records for
+> `AGSI-2026-08-14-01`. Authenticated basin replay proved that an incumbent
+> EECON49 GFM retained stale `gfm_xi_Vd/gfm_xi_Vq` when the support transaction
+> changed the destination configuration, while the same all-GFM certificate is
+> synchronized when only those two dependent PI coordinates are taken from its
+> fingerprint-covered `eq_x0`. The correction may copy only those named states
+> after ordinary mode transfers and before right-limit KCL, with terminal-current
+> continuity and atomic rollback. It may not alter device equations/state order,
+> `Dv`, `M`, `Imax`, event timing, thresholds, tolerance, selector ranking/schema,
+> adaptive stepping, `reselection_transaction`, the decoupled family, or any
+> `chk_*_tmp.m` file. OUTCOME 2026-08-14: implemented as approved; 50/50
+> targeted contract tests pass; the unchanged full 250-s reclose gate FAILED at
+> `t=24.917` (baseline failed at `t=152.017`) — the conditioning is exact
+> (bit-identical runs up to the first assignment) but it changes the supervisor
+> path so the all-four commit lands mid-transient, where the arriving state is
+> outside the certificate's basin with OR without conditioning (replay arms
+> A/B/C in the defect record). No commit was made; the helper and tests remain
+> in the working tree. The claim stays HELD until the owner decides to discard
+> or extend into an arriving-state admissibility plan, so no other owner edits
+> `sg_off_support_transaction` or the helper in the meantime. EXTENSION
+> 2026-08-15: owner approved the extension — the same claim now also covers the
+> class-2 simulation-based transition certificate (`AGSI-2026-08-14-02`):
+> new helper `+stability/certify_support_transition.m`, its opt-in wiring and
+> tests, which insert a pre-commit forward trial into the same transaction
+> region. `severity_T_d_on=0.10 s` remains untouched: a 2026-08-15 read-only
+> provenance review found it unclassified in the repo record (a verbatim
+> EECON49-P4 sec 4.1 quotation, frozen in 70+ callers, but not registered
+> CASE_DEFINED/SOURCE_DEFINED); classification is left to the owner.
+> OUTCOME 2026-08-15: the unconditional form of the class-1 conditioning was
+> FALSIFIED by measurement, so the transaction now evaluates candidates
+> least-intervention-first (untouched arrival preferred; conditioned variant only
+> when a forward trial with the production kernel rejects the untouched one;
+> fail-closed refusal when neither rides). On the canonical 250-s chronology the
+> `t=53.4025` all-four commit is APPLIED for the first time (untouched 195.1 deg
+> rejected, conditioned 15.562 deg accepted) and **SG reclose SUCCEEDS at
+> `t=159.3436`** with positive margin on all three synchronism sub-gates inside
+> the unchanged 20-s timeout. Conditioning fires at exactly ONE transaction in
+> 250 s; the other four certificate-bearing commits are committed untouched; the
+> feature is opt-in with a byte-identical default path.
+> **DELIVERED 2026-08-15: the chronology now completes to 250 s.** The residual
+> post-reclose wall was root-caused as `RECLOSE-2026-08-15-01`: a single
+> `derive_handback_duration` result was used for EVERY post-reclose command, so
+> the SG field voltage walked over the destination mode's decay time (13.875 s)
+> instead of the declared actuator response (`-log(rho)*max([Tsv Tch TA])` =
+> 1.198 s), keeping the machine under-excited until IBR2's voltage-loop integrator
+> overshot 5.3x, hit `Imax`, and froze under anti-windup. The claim therefore now
+> also covers the opt-in `handback_efd_timescale` split (field voltage only;
+> mechanical power and IBR references keep the full duration) and the
+> `fd_perturbation` plumbing, both default-unchanged. Verified: `conv=1`,
+> `t_end=250.000000`, `reclose_status=SUCCESS`, `f_coi=60.000000 Hz`, and the
+> terminal state reproduces the published EECON49 figure (SG1 134.62 MVA, IBR
+> 36.31/33.02/50.86/30.64 MVA), with IBR2 at 0.36623 against its certified
+> equilibrium 0.366232. Nothing was tuned: no threshold, dwell, timeout, event
+> time, tolerance, limit, AGSI weight, or test expectation changed. Two residual
+> items are left for the owner and block nothing: the undocumented and untested
+> `handback_complete` conjunct in `hold_ok`
+> (`ts_simulate_ibr_hybrid.m:1078-1081`), and `ibr_config_selector` silently
+> ignoring a dispatch supplied under a key it does not consume.
+>
 > **2026-08-13 decoupled-GFM model + reference-AGSI overlay (DELIVERED):** one
 > owner added a project-owned GFM family alongside the EECON49-mapped baseline,
 > which is kept byte-faithful. New files `+ibr/gfm_decoupled_full_model.m`

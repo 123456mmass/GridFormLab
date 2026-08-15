@@ -195,6 +195,17 @@ end
 if isfield(opt,'fd_structure_check') && ~isempty(opt.fd_structure_check)
     ts_opt_base.fd_structure_check=opt.fd_structure_check;
 end
+% FD perturbation rule (opt-in). 'absolute' is the kernel and driver default, so
+% an omitted option leaves the run byte-identical; 'scaled' selects the
+% magnitude-proportional step h_j = fd_eps*(1+|z_j|).
+if isfield(opt,'fd_perturbation') && ~isempty(opt.fd_perturbation)
+    ts_opt_base.fd_perturbation=opt.fd_perturbation;
+end
+% Post-reclose field-voltage command timescale (opt-in). 'mode' is the default
+% and historical behaviour; 'control' walks Efd over the declared actuator lags.
+if isfield(opt,'handback_efd_timescale') && ~isempty(opt.handback_efd_timescale)
+    ts_opt_base.handback_efd_timescale=opt.handback_efd_timescale;
+end
 % Adaptive-step options (opt-in, 2026-08-12). Forwarded only when the caller
 % sets each; the fixed path reads none of them, so the default run is
 % untouched. All defaults live in ts_simulate_ibr_hybrid's initialize and are
@@ -343,6 +354,13 @@ end
 ts_opt_ibr.automatic_gfm_switching = canonical_agfm;
 if isfield(opt,'controller_mode') && ~isempty(opt.controller_mode)
     ts_opt_ibr.controller_mode=opt.controller_mode;
+end
+% Support transition certificate (opt-in, AGSI-2026-08-14-02). Forwarded only
+% when the caller sets it, so an omitted run stays byte-identical and carries
+% no extra field. The kernel default is OFF.
+if isfield(opt,'support_transition_certificate') && ...
+        ~isempty(opt.support_transition_certificate)
+    ts_opt_ibr.support_transition_certificate = opt.support_transition_certificate;
 end
 if isfield(opt,'controller_trial_evidence') && ~isempty(opt.controller_trial_evidence)
     ts_opt_ibr.controller_trial_evidence=opt.controller_trial_evidence;

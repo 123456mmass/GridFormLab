@@ -57,6 +57,13 @@ if sched.enabled && isfield(sched,'has_chronology') && sched.has_chronology
         sched.line_to_bus,dae.bus_ids);
 end
 topology = 'pre';
+% Live-network bookkeeping for the support-transaction destination
+% certificate (AGSI-2026-08-14-02): the current load multiplier and the
+% chronology line-open flag are the ONLY inputs needed to rebuild the case
+% the committed candidate must be certified against. They mirror the
+% admittance bookkeeping above (Ybase_current/Yload_delta/Yline_stamp).
+load_mult = 1.0;
+chronology_line_open = false;
 x = x0(:);
 y = y0(:);
 t = 0.0;
@@ -216,6 +223,7 @@ while t < settings.t_end-settings.event_tol
             'domain_preserving_trials',true, ...
             'fd_grouping',settings.fd_grouping, ...
             'fd_structure_check',settings.fd_structure_check, ...
+            'fd_perturbation',settings.fd_perturbation, ...
             'state_predictor',predictor);
         % NOTE: the linear predictor is rebuilt per ATTEMPT below, because it
         % scales with the trial step. Building it once from the nominal h and
@@ -432,6 +440,7 @@ while t < settings.t_end-settings.event_tol
             'domain_preserving_trials',true, ...
             'fd_grouping',settings.fd_grouping, ...
             'fd_structure_check',settings.fd_structure_check, ...
+            'fd_perturbation',settings.fd_perturbation, ...
             'state_predictor',predictor);
         if support_predictor_active && strcmpi(predictor,'linear_kcl') && ...
                 ~isempty(predictor_prev_x) && isfinite(predictor_prev_t) && ...
@@ -560,6 +569,12 @@ while t < settings.t_end-settings.event_tol
             log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             if ok
                 y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='load_step';
+                % load_step_factor is the DELTA added to the base admittance
+                % (Yload_delta = factor*Yload_base, :53-55), so the total load
+                % multiplier is 1+factor. Passing the raw factor here would
+                % make the destination-equilibrium certificate solve at 20 %
+                % of the base load instead of 120 % (found by G4).
+                load_mult=1+sched.load_step_factor;
                 log.applied=true; log.details='All base constant-impedance loads increased by the frozen factor.';
             else
                 [converged,failure_id,failure_reason,log]=transition_failure( ...
@@ -571,6 +586,7 @@ while t < settings.t_end-settings.event_tol
             log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             if ok
                 y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='line_trip';
+                chronology_line_open=true;
                 log.applied=true; log.details='Scheduled branch stamp removed.';
             else
                 [converged,failure_id,failure_reason,log]=transition_failure( ...
@@ -582,6 +598,10 @@ while t < settings.t_end-settings.event_tol
             log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             if ok
                 y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate; topology='restored';
+                % topology_restore returns the network to Ypre: base loads and
+                % the scheduled branch are both restored, so the live-network
+                % bookkeeping for the destination certificate must reset too.
+                load_mult=1.0; chronology_line_open=false;
                 log.applied=true; log.details='Base loads and scheduled branch restored before SG reclose request.';
             else
                 [converged,failure_id,failure_reason,log]=transition_failure( ...
@@ -769,7 +789,8 @@ while t < settings.t_end-settings.event_tol
             samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,support_tx_id);
             [ok,x_new,y_new,u_new,ec_new,support_log,reason,right_norm]= ...
                 sg_off_support_transaction(t,x,y,Ycurr,u,ec,dae,settings, ...
-                candidate,direction);
+                candidate,direction,case_data,sched,load_mult, ...
+                chronology_line_open,topology);
             log=new_event_log(['gfm_support_' direction],t);
             log.transaction_id=support_tx_id;
             log.pre_kcl_norm=kcl_norm(dae,t,x,y,Ycurr,u,ec);
@@ -916,12 +937,28 @@ while t < settings.t_end-settings.event_tol
             resync_diag(end+1) = rec; %#ok<AGROW> % subsequent records append
         end
         if eligible && dwell_ok && off_ok
-            [handback_T,handback_status]=derive_handback_duration( ...
+            [handback_T,handback_status,handback_T_control]= ...
+                derive_handback_duration( ...
                 opt.selector_table,dae,ec,settings,sync_ctl);
             if ~isfinite(handback_T)
                 good_since=NaN;
                 reclose_status=handback_status;
                 continue;
+            end
+            % Excitation-command timescale (opt-in). The default 'mode' keeps the
+            % historical behaviour: every command, including the field voltage,
+            % is walked over the destination mode's 95 % decay time. 'control'
+            % walks the field-voltage command over the 95 % response time of the
+            % declared exciter/governor lags instead, which is the timescale the
+            % actuator itself is specified on. The mechanical and IBR references
+            % are untouched in both cases, so the concern that produced the C1
+            % ramp (an instantaneous 1.28758 pu command reset, SWITCH-2026-08-10-03)
+            % is unaffected. NUMERICAL_METHOD/PROJECT_DERIVED: no equation, limit,
+            % threshold or acceptance gate changes.
+            handback_T_efd=handback_T;
+            if strcmpi(settings.handback_efd_timescale,'control') && ...
+                    isfinite(handback_T_control) && handback_T_control>0
+                handback_T_efd=handback_T_control;
             end
             transaction_counter=transaction_counter+1;
             reclose_tx_id=transaction_counter;
@@ -943,7 +980,8 @@ while t < settings.t_end-settings.event_tol
                 % Sauer-Pai non-reheat turbine/governor at the restored
                 % equilibrium input so Tm is bumpless and frequency remains
                 % regulated after the SG resumes network power balance.
-                sync_ctl=enter_online_governor(sync_ctl,u_new,t,handback_T);
+                sync_ctl=enter_online_governor(sync_ctl,u_new,t,handback_T, ...
+                    handback_T_efd);
                 active=stability.ts_dynamic_state_indices(dae,ec);
                 actual_reclose=t; pending_reclose=false; reclose_status='SUCCESS';
                 subdivision_hint=0;
@@ -1374,6 +1412,29 @@ s.state_predictor = char(option(opt,'state_predictor','hold'));
 % equality.
 s.fd_grouping = char(option(opt,'fd_grouping','auto'));
 s.fd_structure_check = logical(option(opt,'fd_structure_check',false));
+% FD perturbation rule, forwarded to stability.ts_step_composite (:23-36).
+% 'absolute' is the kernel default and the historical behaviour of this driver,
+% so an omitted option is byte-identical. 'scaled' uses h_j = fd_eps*(1+|z_j|),
+% the rule derived for the coupled Jacobian in stability.ts_coupled_jacobian, so
+% a state whose magnitude is far from unity is perturbed proportionally instead
+% of being over- or under-resolved. NUMERICAL_METHOD: this changes only how the
+% Jacobian is estimated, never an equation, a limit, or an acceptance gate.
+s.fd_perturbation = char(option(opt,'fd_perturbation','absolute'));
+if ~ismember(lower(string(s.fd_perturbation)),["absolute","scaled"])
+    error('ts_simulate_ibr_hybrid:badFdPerturbation', ...
+        'fd_perturbation must be absolute or scaled.');
+end
+% Timescale for the post-reclose FIELD-VOLTAGE command ramp (opt-in).
+% 'mode' (default) is the historical behaviour: the field voltage shares the C1
+% handback duration, which derive_handback_duration takes from the destination
+% mode's 95 % decay time. 'control' walks the field-voltage command over the
+% 95 % response time of the declared exciter/governor lags instead. Mechanical
+% power and the IBR P/Q references keep the full handback duration either way.
+s.handback_efd_timescale = char(option(opt,'handback_efd_timescale','mode'));
+if ~ismember(lower(string(s.handback_efd_timescale)),["mode","control"])
+    error('ts_simulate_ibr_hybrid:badHandbackEfdTimescale', ...
+        'handback_efd_timescale must be mode or control.');
+end
 s.healthy_pf_V = option(opt,'healthy_pf_V',[]);
 s.healthy_pf_bus_ids = option(opt,'healthy_pf_bus_ids',[]);
 has_healthy_v = isfield(opt,'healthy_pf_V') && ~isempty(opt.healthy_pf_V);
@@ -1390,6 +1451,13 @@ s.severity_gamma_on = option(opt,'severity_gamma_on',0.65);
 s.severity_gamma_off = option(opt,'severity_gamma_off',0.35);
 s.severity_T_d_on = option(opt,'severity_T_d_on',0.10);
 s.severity_T_d_off = option(opt,'severity_T_d_off',1.00);
+% --- Support transition certificate (opt-in, AGSI-2026-08-14-02) -----------
+% When enabled, sg_off_support_transaction forward-simulates the accepted
+% right state before committing and refuses fail-closed if the island would
+% lose synchronism. Default false keeps every existing run byte-identical
+% (same opt-in contract as the adaptive stepper / agsi_reference).
+s.support_transition_certificate_enabled = ...
+    logical(option(opt,'support_transition_certificate',false));
 s.severity_dV_base = 0.10;
 s.severity_df_base_Hz = 0.50;
 s.severity_f0_Hz = case_data.base_values.frequency_Hz;
@@ -2263,14 +2331,18 @@ hl = struct('applied', false, ...
     'n_gfm_required', [], 'reference_resource_index', []);
 end
 
-function [T,status]=derive_handback_duration(table,dae,ec,settings,sync_ctl)
+function [T,status,t_control]=derive_handback_duration(table,dae,ec,settings,sync_ctl)
 %DERIVE_HANDBACK_DURATION  Frozen C1 duration from the exact SG_ON spectrum.
 %   The current GFM subset must have one authenticated SG_ON equilibrium/SSSA
 %   row.  The duration is the maximum of the case minimum hold, the 95-percent
 %   decay time of its least-damped physical mode, and the 95-percent response
 %   time of the declared governor/exciter command lags.  No transient result
 %   enters this calculation.
-T=NaN; status='NO_AUTHENTICATED_SG_ON_HANDBACK';
+%
+%   The third output returns the actuator-lag term on its own, so a caller may
+%   walk a command whose actuator is specified on that timescale over it rather
+%   than over the destination mode's decay time.  T and status are unchanged.
+T=NaN; status='NO_AUTHENTICATED_SG_ON_HANDBACK'; t_control=NaN;
 if ~isstruct(table) || ~isfield(table,'sg_on') || ...
         ~isfield(table.sg_on,'configurations')
     return;
@@ -2302,13 +2374,25 @@ status='C1_DURATION_AUTHENTICATED';
 end
 
 function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm] = ...
-    sg_off_support_transaction(t,x,y,Y,u,ec,dae,settings,candidate,direction)
+    sg_off_support_transaction(t,x,y,Y,u,ec,dae,settings,candidate,direction, ...
+    case_data,sched,load_mult,line_open,topology)
 %SG_OFF_SUPPORT_TRANSACTION  Atomic live GFM support augmentation/release.
 %   Candidate identity and steady-state admissibility come only from the
 %   project-built SG_OFF table.  The committed candidate's own certified
 %   equilibrium input is installed with it, because the table certifies the PAIR
 %   (configuration, eq_u_eq); transfer callbacks plus a live-Y full-KCL solve
 %   are mandatory before mode/reference metadata is published.
+%
+%   AGSI-2026-08-14-02 (incumbent destination-state, owner-ratified C5): the
+%   incumbent EECON49 GFMs' outer voltage-loop PI coordinates are mapped to the
+%   destination equilibrium solved on the LIVE network (current load factor and
+%   chronology line-open state), not to the base-load authenticated table row.
+%   The table row remains the certified INPUT contract (RECLOSE-2026-08-13-01).
+%   A support commit during a bolted fault (topology 'fault') is refused
+%   fail-closed: no destination equilibrium exists on the faulted network.
+if nargin < 15
+    case_data=[]; sched=[]; load_mult=1.0; line_open=false; topology='pre';
+end
 ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
 handler_log=struct('details',''); reason=''; right_norm=inf;
 if sg_online_state(dae,ec)
@@ -2404,11 +2488,14 @@ for k=1:numel(changing)
     ec_right.hybrid_state.device_modes.(key)=target_modes{idx};
 end
 try
-    x_right=apply_device_transfers(x,y,u,ec,ec_right,dae);
+    x_plain=apply_device_transfers(x,y,u,ec,ec_right,dae);
 catch me
     reason=sprintf('transfer map failed: %s: %s',me.identifier,me.message);
     return;
 end
+% Publish the committed reference/selection metadata on ec_right BEFORE any
+% right-limit or trial, because it is state-independent and both candidate
+% right states must be evaluated against the same committed context.
 hs=ec_right.hybrid_state;
 if ~isfield(hs,'reference_island_ids') || numel(hs.reference_island_ids)~=1
     reason='SG-off support transaction requires one authenticated live island ID.';
@@ -2430,14 +2517,263 @@ hs.committed_config_fingerprint=sprintf( ...
     'sg_off_agsi_%s|selected=%s|ref=%d|version=%d', ...
     direction,mat2str(selected),ref,version);
 ec_right.hybrid_state=hs;
-[ok,y_right,reason,right_norm]=right_limit( ...
-    x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+
+condition_audit=struct('applied',false,'device_indices',[],'device_ids',{{}}, ...
+    'max_current_jump',0);
+cert_audit=struct();
+commit_variant='unconditioned';
+
+if ~settings.support_transition_certificate_enabled
+    % ---- Default path: byte-identical to the pre-AGSI-2026-08-14 behaviour.
+    % No incumbent conditioning and no trial. The A/B/C measurement at the
+    % t=22.05 commit proved that conditioning is NOT universally beneficial
+    % (it turned a 19.7 deg stable arrival into a 376 deg slip), so the
+    % conditioning is never applied without the trial that can judge it.
+    x_right=x_plain;
+    [ok,y_right,reason,right_norm]=right_limit( ...
+        x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+else
+    % ---- Certificate-gated, LEAST-INTERVENTION-FIRST (owner decision
+    % 2026-08-15).  The forward trial is the decision oracle: it is the same
+    % production coupled-trapezoidal kernel on the same DAE, and it was
+    % validated by reproducing the independently known production outcome of
+    % the t=22.05 commit (arm A: 19.7 deg, omega -> 1.00017, matching the
+    % baseline run).  No fitted threshold decides whether to condition;
+    % the governing equations do.
+    %
+    % 1. Try the state as the ordinary transfer maps leave it.  If the island
+    %    rides that arrival, COMMIT IT UNTOUCHED -- never perturb a state that
+    %    is already inside the destination basin.
+    % 2. Only if the untouched arrival fails, try the incumbent-conditioned
+    %    variant (stale outer-loop wind-up is the case conditioning fixes:
+    %    4358 -> 8.6 deg at t=53.4025).
+    % 3. If neither rides, refuse fail-closed: no right sample is published,
+    %    the caller keeps the accepted left state and the lockout/dwell timers
+    %    force fresh evidence before a retry.
+    [ok_a,y_a,reason_a,norm_a]=right_limit( ...
+        x_plain,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+    cert_a_ok=false; cert_a_reason='right-limit KCL refused the plain transfer';
+    if ok_a
+        [cert_a_ok,cert_a_reason,cert_a_audit]=stability.certify_support_transition( ...
+            t,x_plain,y_a,u_right,ec_right,Y,dae,settings,candidate);
+    end
+    if cert_a_ok
+        x_right=x_plain; y_right=y_a; right_norm=norm_a; ok=true;
+        commit_variant='unconditioned'; cert_audit=cert_a_audit; reason='';
+    else
+        [x_cond,cond_ok,cond_reason,condition_audit_try]= ...
+            conditioned_variant(t,x_plain,y,u_right,ec,ec_right,dae, ...
+            current_modes,target_modes,candidate,case_data,sched, ...
+            load_mult,line_open,topology,selected,ref);
+        if ~cond_ok
+            ok=false; right_norm=norm_a;
+            reason=sprintf(['transition certificate refused the untouched ' ...
+                'arrival (%s) and no conditioned variant is available (%s)'], ...
+                cert_a_reason,cond_reason);
+        else
+            [ok_b,y_b,reason_b,norm_b]=right_limit( ...
+                x_cond,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+            cert_b_ok=false; cert_b_reason=reason_b;
+            if ok_b
+                [cert_b_ok,cert_b_reason,cert_b_audit]= ...
+                    stability.certify_support_transition( ...
+                    t,x_cond,y_b,u_right,ec_right,Y,dae,settings,candidate);
+            end
+            if cert_b_ok
+                x_right=x_cond; y_right=y_b; right_norm=norm_b; ok=true;
+                commit_variant='conditioned';
+                condition_audit=condition_audit_try; cert_audit=cert_b_audit;
+                reason='';
+            else
+                ok=false; right_norm=norm_a;
+                reason=sprintf(['transition certificate refused both variants: ' ...
+                    'untouched (%s); conditioned (%s)'],cert_a_reason,cert_b_reason);
+            end
+        end
+    end
+end
 if ok
     handler_log.details=sprintf( ...
         ['SG-off AGSI %s committed at t=%.3f; selected=%s, reference=%d, ' ...
-         '%d device(s) transitioned.'], ...
-        direction,t,mat2str(selected),ref,numel(changing));
+         '%d device(s) transitioned; variant=%s (%d incumbent EECON49 GFM(s) ' ...
+         'conditioned, max current jump %.3g).'], ...
+        direction,t,mat2str(selected),ref,numel(changing),commit_variant, ...
+        numel(condition_audit.device_indices),condition_audit.max_current_jump);
+    if settings.support_transition_certificate_enabled && ...
+            isfield(cert_audit,'horizon')
+        if isfield(cert_audit,'exit_reason') && ...
+                strcmp(char(string(cert_audit.exit_reason)),'fewerThanTwoFormers')
+            % Trivial accept: with fewer than two formers there is no pairwise
+            % synchronism relation to protect, so no horizon is derived and no
+            % trial is run. Report that reason instead of printing NaN for a
+            % quantity that was never computed.
+            handler_log.details=sprintf( ...
+                '%s Certificate trial: not required (%d former(s); no pairwise synchronism relation).', ...
+                handler_log.details,numel(cert_audit.gfm_device_ids));
+        else
+            handler_log.details=sprintf( ...
+                '%s Certificate trial: horizon=%.3f s, %d steps, peak excursion=%.3f deg, peak spread=%.4f Hz.', ...
+                handler_log.details,cert_audit.horizon,cert_audit.steps_run, ...
+                cert_audit.peak_excursion_deg,cert_audit.peak_speed_spread_Hz);
+        end
+    end
 end
+end
+
+function [x_cond,ok,reason,audit]=conditioned_variant(t,x_plain,y,u_right, ...
+    ec,ec_right,dae,current_modes,target_modes,candidate,case_data,sched, ...
+    load_mult,line_open,topology,selected,ref)
+%CONDITIONED_VARIANT  Build the incumbent-conditioned candidate right state.
+%   A device that remains GFM is skipped by the ordinary transfer callback, yet
+%   the transaction installs a different authenticated destination operating
+%   point, so its outer-loop PI can carry wind-up from the previous
+%   configuration. This builds the variant in which exactly the incumbent
+%   EECON49 gfm_xi_Vd/gfm_xi_Vq are mapped to the destination equilibrium.
+%
+%   Target selection (AGSI-2026-08-14-02): on the UNCHANGED network the
+%   authenticated table row eq_x0 IS the destination equilibrium and is used
+%   verbatim (fingerprint-covered). Once the scheduled load step or line trip
+%   has moved the network no authenticated row exists for that operating point,
+%   so the destination equilibrium is solved on the LIVE network.
+%
+%   OK=false means only that this VARIANT is unavailable (no incumbent, no
+%   solvable destination equilibrium, faulted network, or the ownership/current
+%   contract refused the map). The caller then falls back to the untouched
+%   arrival; it must NOT treat an unavailable variant as a transaction refusal,
+%   because e.g. the two-GFM set has no equilibrium at +20 % load while the
+%   untouched arrival may still be perfectly admissible.
+x_cond=x_plain; ok=false; reason='';
+audit=struct('applied',false,'device_indices',[],'device_ids',{{}}, ...
+    'max_current_jump',0);
+
+incumbent=false(1,numel(dae.devices));
+for k=1:numel(dae.devices)
+    dev=dae.devices(k);
+    incumbent(k)=isfield(dev,'device_type') && ...
+        strcmpi(char(dev.device_type),'ibr_eecon49_dual') && ...
+        strcmpi(char(current_modes{k}),'gfm') && ...
+        strcmpi(char(target_modes{k}),'gfm');
+end
+if ~any(incumbent)
+    reason='no incumbent EECON49 GFM to condition';
+    return;
+end
+if strcmp(topology,'fault')
+    reason='no destination equilibrium exists while the bolted fault is committed';
+    return;
+end
+conditioning_candidate=candidate;
+network_moved=(isfinite(load_mult) && abs(load_mult-1)>1e-12) || line_open;
+if network_moved
+    [live_x0,live_reason]=live_destination_candidate( ...
+        case_data,sched,load_mult,line_open,dae,target_modes,selected,ref);
+    if isempty(live_x0)
+        reason=sprintf('live destination equilibrium unavailable: %s',live_reason);
+        return;
+    end
+    % The helper consumes only the xi coordinates of eq_x0. Every other
+    % candidate field (eq_u_eq, fingerprint, selection tuple) is untouched, so
+    % the certified INPUT contract stays exactly the authenticated table row.
+    conditioning_candidate.eq_x0=live_x0;
+end
+try
+    [x_cond,audit]=stability.condition_eecon49_incumbent_gfm_state( ...
+        t,x_plain,conditioning_candidate,dae,current_modes,target_modes, ...
+        y,u_right,ec_right);
+catch me
+    x_cond=x_plain;
+    reason=sprintf('%s: %s',me.identifier,me.message);
+    return;
+end
+ok=true;
+end
+
+function [live_x0,reason]=live_destination_candidate( ...
+    case_data,sched,load_mult,line_open,dae,target_modes,selected,ref)
+%LIVE_DESTINATION_CANDIDATE  Solve the committed set's equilibrium on the LIVE
+%   network (current load factor + chronology line-open state) and return its
+%   x0 as the incumbent-conditioning target (AGSI-2026-08-14-02). The base-load
+%   authenticated table row cannot serve as the xi target once the scheduled
+%   load step has moved the operating point. This mirrors the
+%   ibr_candidate_evaluate equilibrium construction (fresh hybrid_state, atomic
+%   selection tuple, mixed_equilibrium_solve) on the live case. An empty return
+%   means the conditioned VARIANT is unavailable, not that the transaction must
+%   be refused. PROJECT_DERIVED: the solver, its tolerance (1e-8) and
+%   load_model (cz_p_cz_q) are the production contracts; only the network
+%   admittance (load scale + branch status) is live.
+live_x0=[]; reason='';
+if ~isstruct(case_data) || ~isfield(case_data,'mpc')
+    reason='live certificate requires case_data.mpc.'; return;
+end
+% --- Rebuild the live network case ---------------------------------------
+case_live=case_data;
+if isfinite(load_mult) && load_mult~=1.0
+    case_live.mpc.bus(:,3)=case_data.mpc.bus(:,3)*load_mult;
+    case_live.mpc.bus(:,4)=case_data.mpc.bus(:,4)*load_mult;
+end
+if line_open && isfield(sched,'line_from_bus') && isfield(sched,'line_to_bus')
+    br=case_live.mpc.branch;
+    hit=find(((br(:,1)==sched.line_from_bus & br(:,2)==sched.line_to_bus) | ...
+        (br(:,1)==sched.line_to_bus & br(:,2)==sched.line_from_bus)) & br(:,11)~=0);
+    if numel(hit)~=1
+        reason=sprintf('live certificate: chronology branch %g-%g not found.', ...
+            sched.line_from_bus,sched.line_to_bus); return;
+    end
+    br(hit,11)=0;
+    case_live.mpc.branch=br;
+end
+% --- Fresh hybrid_state for the committed destination ----------------------
+hs=stability.ts_hybrid_state_init(dae.devices);
+for k=1:numel(dae.devices)
+    key=matlab.lang.makeValidName(char(dae.devices(k).device_id), ...
+        'ReplacementStyle','underscore');
+    if ~isfield(hs.device_modes,key), continue; end
+    hs.device_modes.(key)=lower(char(target_modes{k}));
+    % SG devices stay offline (this is an SG-off support transaction).
+    is_sg=isfield(dae.devices(k),'capabilities') && ...
+        isfield(dae.devices(k).capabilities,'resource_type') && ...
+        strcmpi(char(dae.devices(k).capabilities.resource_type),'sg');
+    if is_sg
+        hs.device_online.(key)=false;
+        hs.device_modes.(key)='breaker_open';
+    else
+        if isfield(hs.device_online,key)
+            hs.device_online.(key)=true;
+        end
+    end
+end
+hs.selected_gfm_indices=selected;
+hs.n_gfm_required=numel(selected);
+hs.reference_resource_index=ref;
+hs.committed_selection=struct('selected_gfm_indices',selected, ...
+    'n_gfm_required',numel(selected),'reference_resource_index',ref);
+% --- Equilibrium on the live case -----------------------------------------
+cfg=struct('devices',dae.devices,'hybrid_state',hs, ...
+    'selected_gfm_indices',selected,'n_gfm_required',numel(selected), ...
+    'reference_resource_index',ref,'resource_ids',{{dae.devices.device_id}});
+eq_opt=struct('verbose',false,'tolerance',1e-8,'max_iter',300, ...
+    'load_model','cz_p_cz_q');
+try
+    eq=stability.mixed_equilibrium_solve(case_live,cfg,eq_opt);
+catch me
+    reason=sprintf('live equilibrium threw %s: %s',me.identifier,me.message);
+    return;
+end
+if ~eq.converged
+    % mixed_equilibrium_solve sets converged=false from gates DOWNSTREAM of the
+    % Newton loop as well (reduced-Jacobian conditioning, the physical all-row
+    % KCL gate, device/reference limit checks), so the Newton residual alone
+    % misattributes the cause. Report the structured verdict.
+    reason=sprintf('live equilibrium rejected [%s]: %s (newton residual %.3e)', ...
+        char(string(eq.failure_id)),char(string(eq.failure_reason)), ...
+        eq.residual_norm);
+    return;
+end
+if ~isfinite(eq.physical_kcl_norm) || eq.physical_kcl_norm>1e-6
+    reason=sprintf('live equilibrium KCL %.3e exceeds 1e-6.', ...
+        eq.physical_kcl_norm); return;
+end
+live_x0=eq.x0(:);
 end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
@@ -3422,6 +3758,7 @@ c=struct('enabled',false,'active',false,'online',false,'sg_index',NaN,'x_delta',
     'Psv',NaN,'Pm',NaN,'Efd',NaN,'u_end',u,'target_u',u, ...
     'handback_indices',[],'handback_start_u',u,'handback_t0',NaN, ...
     'handback_T',NaN,'handback_active',false,'handback_complete',false, ...
+    'handback_T_efd',NaN, ...
     'handback_complete_time',NaN,'handback_alpha',0, ...
     'handback_status','NOT_STARTED','Pref_start',NaN,'Pref_target',NaN, ...
     'Efd_start',NaN,'Efd_target',NaN, ...
@@ -3470,11 +3807,18 @@ c.history_Efd=c.Efd; c.history_Efd_command=c.Efd; c.history_Vopen=NaN;
 c.history_handback_alpha=NaN;
 end
 
-function c=enter_online_governor(c,u,t,T_handback)
+function c=enter_online_governor(c,u,t,T_handback,T_efd)
 % Bumpless transition to the Sauer-Pai Type-A non-reheat turbine and
 % droop-governor equations after breaker close.  Pref is the frozen
 % pre-event equilibrium mechanical input; the six EMF6 machine states are
 % unchanged by this supervisory two-state prime-mover model.
+%
+% T_EFD is the timescale over which the FIELD-VOLTAGE command alone is walked.
+% Omitting it (or passing a non-finite/non-positive value) keeps the historical
+% behaviour T_efd = T_handback, so every command shares one duration.
+if nargin < 5 || isempty(T_efd) || ~isfinite(T_efd) || T_efd <= 0
+    T_efd = T_handback;
+end
 if ~c.enabled, return; end
 if ~isfinite(T_handback) || T_handback<=0
     error('ts_simulate_ibr_hybrid:badHandbackDuration', ...
@@ -3483,6 +3827,7 @@ end
 c.active=true; c.online=true; c.Psv=u(c.u_tm); c.Pm=u(c.u_tm);
 c.Efd=u(c.u_efd); c.u_end=u;
 c.handback_start_u=u(:); c.handback_t0=t; c.handback_T=T_handback;
+c.handback_T_efd=T_efd;
 c.handback_active=true; c.handback_complete=false;
 c.handback_complete_time=NaN; c.handback_alpha=0;
 c.handback_status='C1_ACTIVE';
@@ -3519,6 +3864,15 @@ if c.online
     end
     efd_mid=c.Efd_start+am*(c.Efd_target-c.Efd_start);
     efd_end=c.Efd_start+a1*(c.Efd_target-c.Efd_start);
+    if isfield(c,'handback_T_efd') && isfinite(c.handback_T_efd) && ...
+            c.handback_T_efd>0 && c.handback_T_efd~=c.handback_T
+        % The field-voltage command has its own timescale (opt-in). Mechanical
+        % power and the IBR references keep c.handback_T above.
+        [ame,~,~]=stability.c1_smoothstep(t+0.5*h,c.handback_t0,c.handback_T_efd);
+        [a1e,~,~]=stability.c1_smoothstep(t+h,c.handback_t0,c.handback_T_efd);
+        efd_mid=c.Efd_start+ame*(c.Efd_target-c.Efd_start);
+        efd_end=c.Efd_start+a1e*(c.Efd_target-c.Efd_start);
+    end
     u_step(c.u_tm)=0.5*(c.Pm+Pm1); u_step(c.u_efd)=efd_mid;
     c.Psv=Psv1; c.Pm=Pm1; c.Efd=efd_end; c.u_end=u;
     if ~isempty(c.handback_indices)

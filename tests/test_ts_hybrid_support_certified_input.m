@@ -20,7 +20,7 @@ function tests = test_ts_hybrid_support_certified_input
 % (2) assumeNotEmpty silently turned two cases into filtered results, masking
 % any loss of coverage.  This version therefore:
 %   T1 asserts the table invariant directly (no TS run): every ready_to_commit
-%      row carries a nonempty, finite eq_u_eq of composite-input length.
+%      row carries finite full-composite eq_u_eq AND eq_x0 certificates.
 %      Substantive replacement for the vacuous self-comparison
 %      verifyEqual(cc.eq_u_eq, cc.eq_u_eq) in test_ibr_selector_scr_sssa.m.
 %   T2 asserts the pairing on the scheduled sg_trip event, which occurs by
@@ -85,13 +85,20 @@ for ctx = {'sg_off','sg_on'}
         'The %s context must authenticate at least one ready candidate.',ctx{1}));
     for k = ready(:).'
         row = c(k);
-        ok = isfield(row,'eq_u_eq') && ~isempty(row.eq_u_eq) && ...
+        input_ok = isfield(row,'eq_u_eq') && ~isempty(row.eq_u_eq) && ...
             isvector(row.eq_u_eq) && numel(row.eq_u_eq)==numel(dae.u0) && ...
             all(isfinite(row.eq_u_eq));
-        testCase.verifyTrue(ok, sprintf( ...
+        state_ok = isfield(row,'eq_x0') && ~isempty(row.eq_x0) && ...
+            isvector(row.eq_x0) && numel(row.eq_x0)==numel(dae.x0) && ...
+            all(isfinite(row.eq_x0));
+        testCase.verifyTrue(input_ok, sprintf( ...
             ['Every ready_to_commit %s row must carry a finite certified input ' ...
              'of composite length %d; row %s (n=%d) does not.'], ctx{1}, ...
             numel(dae.u0), mat2str(row.selected_gfm_indices), row.n_gfm_required));
+        testCase.verifyTrue(state_ok, sprintf( ...
+            ['Every ready_to_commit %s row must carry a finite certified state ' ...
+             'of composite length %d; row %s (n=%d) does not.'], ctx{1}, ...
+            numel(dae.x0), mat2str(row.selected_gfm_indices), row.n_gfm_required));
     end
 end
 end
@@ -136,6 +143,7 @@ function test_support_augmentation_runs_its_certificate(testCase)
 r = testCase.TestData.result;
 tbl = testCase.TestData.table;
 devices = testCase.TestData.devices;
+dae = testCase.TestData.dae;
 ev = support_events(r);
 testCase.verifyEqual(numel(ev), 1, sprintf( ...
     ['This pinned arm commits exactly one support augmentation. Event log: %s ' ...
@@ -145,8 +153,11 @@ testCase.verifyEqual(numel(ev), 1, sprintf( ...
 e = ev(1);
 sel = e.selected_gfm_indices(:).';
 cert = certified_input(tbl, sel);
+cert_state = certified_state(tbl, sel);
 testCase.verifyNotEmpty(cert, sprintf( ...
     'Committed support set %s must exist in the authenticated table.', mat2str(sel)));
+testCase.verifyNotEmpty(cert_state, sprintf( ...
+    'Committed support set %s must carry authenticated eq_x0.', mat2str(sel)));
 slots = dual_pq_slots(devices);
 testCase.verifyEqual(e.input_after(slots), cert(slots), 'AbsTol', 0, ...
     sprintf(['A committed support transaction must run the certified input of ' ...
@@ -154,9 +165,80 @@ testCase.verifyEqual(e.input_after(slots), cert(slots), 'AbsTol', 0, ...
 others = setdiff(1:numel(e.input_before), slots);
 testCase.verifyEqual(e.input_after(others), e.input_before(others), 'AbsTol', 0, ...
     'A support transaction must leave every non-dual-P/Q input entry unchanged.');
+
+% NOTE (AGSI-2026-08-14-02). An earlier revision of this test additionally
+% asserted that the incumbent EECON49 GFM's gfm_xi_Vd/gfm_xi_Vq are mapped to
+% the authenticated eq_x0 at the right sample. That assertion is REMOVED
+% because measurement falsified the contract it encoded: at the t=22.0521
+% [2 4] commit the untouched arrival rides the transition (19.7 deg, omega ->
+% 1.00017, matching the baseline production run) while the same arrival
+% conditioned to the destination equilibrium slips to 376 deg. Unconditional
+% incumbent conditioning is therefore NOT a runtime contract; conditioning is
+% now attempted only behind the opt-in transition certificate, which judges
+% each variant by forward simulation. The certified-INPUT pairing asserted
+% above (RECLOSE-2026-08-13-01) is unaffected and remains the contract here.
+% The conditioning helper's own contract is covered by
+% test_ts_hybrid_support_state_conditioning.m and the certificate's by
+% test_ts_hybrid_support_transition_certificate.m.
 end
 
 % ------------------------------------------------------------------ T4
+function test_tampered_state_evidence_fails_closed_at_trip(testCase)
+% The candidate-evidence fingerprint covers eq_x0 as well as eq_u_eq. Altering
+% the destination-state certificate without recomputing fingerprints must be
+% refused by runtime authentication before any event can commit.
+s = testCase.TestData.scenario;
+sys = testCase.TestData.sys;
+sab = mutate_state_row(testCase.TestData.table, [2 3 4 5], 'tamper');
+r = stability.run_hybrid_case(s, arm_opt(sab, sys));
+testCase.verifyFalse(r.converged, ...
+    'A table whose certified state no longer matches its fingerprint must not run.');
+ev = events_of_type(r,'sg_trip');
+testCase.verifyEqual(numel(ev),1,sprintf( ...
+    'The scheduled trip must still be attempted. Event log: %s',event_digest(r)));
+testCase.verifyFalse(logical(ev(1).applied));
+testCase.verifyTrue(contains(char(string(getf(ev(1),'failure_id',''))), ...
+    'staleFingerprint'),sprintf( ...
+    'Refusal must name the stale state-evidence fingerprint, got "%s".', ...
+    char(string(getf(ev(1),'failure_id','')))));
+testCase.verifyEqual(numel(applied_events(r)),0);
+end
+
+function test_default_path_does_not_depend_on_eq_x0(testCase)
+% AGSI-2026-08-14-02. eq_x0 (the destination-STATE certificate) is consumed
+% only by the opt-in transition-certificate path, which conditions incumbent
+% voltage-loop memory and judges the result by forward simulation. On the
+% DEFAULT path no incumbent is conditioned, so a re-authenticated table whose
+% eq_x0 was deleted must run exactly like the intact table: the destination
+% state must not be a hidden dependency of the default runtime.
+%
+% This replaces an earlier revision that asserted the support transaction must
+% REFUSE a missing eq_x0. That assertion encoded unconditional incumbent
+% conditioning, which measurement falsified: at the t=22.0521 [2 4] commit the
+% untouched arrival rides the transition (19.7 deg) while conditioning it to
+% the destination equilibrium slips to 376 deg. The certified-INPUT contract
+% (eq_u_eq) is unchanged and is still enforced fail-closed by
+% test_support_guard_fails_closed_without_certificate below.
+s = testCase.TestData.scenario;
+sys = testCase.TestData.sys;
+sab = mutate_state_row(testCase.TestData.table,[2 3 4 5],'blank');
+sab = reauthenticate(sab);
+r = stability.run_hybrid_case(s,arm_opt(sab,sys));
+testCase.verifyTrue(r.converged,getf(r,'failure_reason', ...
+    'The default path must run with no destination-state certificate.'));
+ev = events_of_type(r,'gfm_support_augment');
+testCase.verifyEqual(numel(ev),1,sprintf( ...
+    'Exactly one augmentation attempt is expected. Event log: %s',event_digest(r)));
+testCase.verifyTrue(logical(ev(1).applied), ...
+    'The default path must not consult eq_x0, so the augmentation still commits.');
+% And it must be byte-identical to the intact-table run on this arm.
+ref = testCase.TestData.result;
+testCase.verifyEqual(r.t,ref.t,'AbsTol',0, ...
+    'Deleting eq_x0 must not perturb the default-path trajectory.');
+testCase.verifyEqual(r.x_traj,ref.x_traj,'AbsTol',0);
+testCase.verifyEqual(r.u_history,ref.u_history,'AbsTol',0);
+end
+
 function test_tampered_evidence_fails_closed_at_trip(testCase)
 % Layer 1: blank eq_u_eq on the augmentation row but KEEP the stored
 % fingerprints. The candidate-evidence fingerprint covers eq_u_eq, so the
@@ -189,12 +271,7 @@ function test_support_guard_fails_closed_without_certificate(testCase)
 s = testCase.TestData.scenario;
 sys = testCase.TestData.sys;
 sab = blank_row(testCase.TestData.table, [2 3 4 5]);
-evidence = struct('sg_off_configurations', sab.sg_off.configurations, ...
-    'sg_on_configurations', sab.sg_on.configurations);
-[fp3, ifp3, efp3] = compute_selector_table_fingerprint(sab.selector_auth_inputs, evidence);
-sab.selector_input_fingerprint = ifp3;
-sab.candidate_evidence_fingerprint = efp3;
-sab.selector_table_fingerprint = fp3;
+sab = reauthenticate(sab);
 r = stability.run_hybrid_case(s, arm_opt(sab, sys));
 testCase.verifyTrue(r.converged, getf(r,'failure_reason', ...
     'The re-authenticated tamper must still run to t_end.'));
@@ -250,6 +327,40 @@ for k = 1:numel(c)
     end
 end
 tbl2.sg_off.configurations = c;
+end
+
+function tbl2 = mutate_state_row(tbl, sel_target, action)
+tbl2 = tbl;
+c = tbl2.sg_off.configurations;
+matched = 0;
+for k = 1:numel(c)
+    sel = sort(c(k).selected_gfm_indices(:)).';
+    if ~isequal(sel,sort(sel_target(:).')), continue; end
+    matched = matched + 1;
+    if strcmp(action,'blank')
+        c(k).eq_x0 = [];
+    elseif strcmp(action,'tamper')
+        if isempty(c(k).eq_x0)
+            error('test_ts_hybrid_support_certified_input:emptyState', ...
+                'Target row must carry eq_x0 before tampering.');
+        end
+        c(k).eq_x0(1) = c(k).eq_x0(1) + 1e-6;
+    else
+        error('test_ts_hybrid_support_certified_input:badAction', ...
+            'Unknown state mutation action %s.',action);
+    end
+end
+assert(matched==1,'Expected one exact SG_OFF candidate row.');
+tbl2.sg_off.configurations = c;
+end
+
+function tbl = reauthenticate(tbl)
+evidence = struct('sg_off_configurations',tbl.sg_off.configurations, ...
+    'sg_on_configurations',tbl.sg_on.configurations);
+[fp,ifp,efp] = compute_selector_table_fingerprint(tbl.selector_auth_inputs,evidence);
+tbl.selector_input_fingerprint = ifp;
+tbl.candidate_evidence_fingerprint = efp;
+tbl.selector_table_fingerprint = fp;
 end
 
 function ev = events_of_type(r, ty)
@@ -316,6 +427,45 @@ for k = 1:numel(c)
         return;
     end
 end
+end
+
+function x = certified_state(tbl, sel)
+x = [];
+if ~isfield(tbl,'sg_off') || ~isfield(tbl.sg_off,'configurations'), return; end
+c = tbl.sg_off.configurations;
+for k = 1:numel(c)
+    s2 = c(k).selected_gfm_indices(:).';
+    if numel(s2)==numel(sel) && all(sort(s2)==sort(sel))
+        if isfield(c(k),'eq_x0') && ~isempty(c(k).eq_x0)
+            x = c(k).eq_x0(:);
+        end
+        return;
+    end
+end
+end
+
+function [left,right] = transaction_samples(r,tx_id)
+left = find(r.transaction_id==tx_id & strcmp(r.sample_side,'left'));
+right = find(r.transaction_id==tx_id & strcmp(r.sample_side,'right'));
+assert(numel(left)==1 && numel(right)==1, ...
+    'An applied support transaction must own exactly one left/right sample pair.');
+end
+
+function modes = context_modes(dae,ec)
+modes = cell(1,numel(dae.devices));
+for k = 1:numel(dae.devices)
+    key = matlab.lang.makeValidName(char(dae.devices(k).device_id), ...
+        'ReplacementStyle','underscore');
+    modes{k} = char(ec.hybrid_state.device_modes.(key));
+end
+end
+
+function gi = gfm_voltage_integrator_indices(dae,k)
+names = dae.devices(k).state_names;
+ld = find(strcmp(names,'gfm_xi_Vd'));
+lq = find(strcmp(names,'gfm_xi_Vq'));
+assert(numel(ld)==1 && numel(lq)==1);
+gi = dae.device_offsets(k)+[ld lq];
 end
 
 function slots = dual_pq_slots(devices)

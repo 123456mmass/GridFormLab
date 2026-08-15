@@ -220,3 +220,11 @@ resynchronises as shown above, with the two behaviours marked opt-in in
 equilibrium result and does not by itself certify transient stability;
 operational readiness is tracked separately from numerical completion, and the
 open items are listed in the handoff rather than hidden.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The grant covers the project's own code, cases,
+tests and documentation. Vendored reference tools keep their own licenses (PSAT
+is GPL), benchmark and published case data remain subject to their publishers'
+terms, and cited textbooks and papers are not redistributed here — `docs/text/`
+tracks only the citation index.

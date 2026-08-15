@@ -13,7 +13,21 @@ follow their respective sourced dynamic equations. A source being present in a
 folder does not automatically classify every project realization as
 `SOURCE_DEFINED`; consult the folder README and the project provenance matrix.
 
-PDF files are kept locally for visual verification and are ignored by the
-repository-wide `*.pdf` rule. Same-basename extracted text and the README files
-provide the version-controlled searchable index. Original PDFs in this parent
-directory are retained for backward-compatible citations.
+## What is and is not in version control
+
+The extracted plain text of each source **is not tracked**, and neither are the
+original PDFs. Both are third-party copyrighted material and are not
+redistributed from this repository; they are kept on the local machine only, as a
+searchable index while equations are being traced. The `.gitignore` rules
+`*.pdf` and `docs/text/**/*.txt` enforce that.
+
+What remains version-controlled is this file and the two folder READMEs. They are
+the citation index: they name every source, say which device contract it belongs
+to, and record what the project did and did not take from it. Obtain the sources
+yourself from the publisher or the DOI listed in the folder README, and place the
+extracted text beside the corresponding entry using the same basename if you want
+the local searchable index back.
+
+A source being present in a folder does not automatically classify a project
+realization as `SOURCE_DEFINED`; consult the folder README and the project
+provenance matrix.

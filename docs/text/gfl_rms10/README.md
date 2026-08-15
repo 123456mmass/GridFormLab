@@ -6,10 +6,11 @@ grid-following RMS10 model. This is separate from the new no-PLL GFM source set.
 The original files remain in `docs/text/`. The PDFs here are byte-identical
 copies with descriptive names.
 
-Each PDF has a same-basename `.txt` companion generated with
-`pdftotext -layout -enc UTF-8` for repository search. The PDF remains
-authoritative whenever extracted symbols, subscripts, signs, or equation
-numbers are ambiguous.
+Each PDF has a same-basename `.txt` companion generated locally with
+`pdftotext -layout -enc UTF-8` for local search. Neither the PDFs nor the `.txt`
+companions are tracked: they are third-party copyrighted material and are not
+redistributed from this repository. The PDF remains authoritative whenever
+extracted symbols, subscripts, signs, or equation numbers are ambiguous.
 
 ## Files and intended use
 

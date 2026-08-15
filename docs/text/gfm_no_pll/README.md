@@ -8,9 +8,11 @@ This directory is a curated source set. The original files remain in
 `docs/text/` so existing citations and scripts do not break. The PDFs here are
 byte-identical copies with descriptive names.
 
-Each PDF has a same-basename `.txt` companion generated with
-`pdftotext -layout -enc UTF-8` for repository search and equation discovery.
-The PDF is authoritative. In particular, the Japanese embedded fonts in the
+Each PDF has a same-basename `.txt` companion generated locally with
+`pdftotext -layout -enc UTF-8` for local search and equation discovery. Neither
+the PDFs nor the `.txt` companions are tracked: they are third-party copyrighted
+material and are not redistributed from this repository. The PDF is
+authoritative. In particular, the Japanese embedded fonts in the
 Sakimoto paper cause imperfect text extraction, so its equations and symbols
 must be verified visually against the PDF before being entered in a contract.
 

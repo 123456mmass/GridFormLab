@@ -36,6 +36,14 @@ output/validation/artifacts/*
 *.png
 *.docx
 *.ttf
+# Extracted full text of published books and papers. These are kept locally as a
+# searchable index for equation tracing, but they are third-party copyrighted
+# material and must not be redistributed from a public repository. The folder
+# README files stay tracked and remain the citation index.
+docs/text/**/*.txt
+docs/text/*.txt
+# Stray working folder of empty placeholder files that was committed by accident.
+docs/text/กลับห้อง*/
 tmp/
 tmp_ieee_busdata/
 .claude/settings.local.json

@@ -8,7 +8,7 @@ read-only unless the user explicitly transfers file ownership.
 
 ## Repository state
 
-- Repository: `https://github.com/123456mmass/Power-flow.git`
+- Repository: `https://github.com/123456mmass/GridFormLab.git`
 - Canonical branch: `main`
 - Required baseline ancestor: `2c2cd6e4a28872efb9f09fc62d823d6208bc05c1`
 - Merge commit: `2c2cd6e` (`Merge IEEE14 IBR Phases 0-4`).

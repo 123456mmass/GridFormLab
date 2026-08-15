@@ -105,7 +105,7 @@ file-by-file change list, acceptance gates, and stop conditions.
 ## Agent B continuation commands
 
 ```bash
-git clone https://github.com/123456mmass/Power-flow.git
+git clone https://github.com/123456mmass/GridFormLab.git
 cd Power-flow
 git fetch origin
 git switch --track origin/plan/pf-ts-multimethod

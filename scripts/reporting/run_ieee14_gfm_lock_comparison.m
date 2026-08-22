@@ -1,0 +1,435 @@
+function out = run_ieee14_gfm_lock_comparison(opts)
+%RUN_IEEE14_GFM_LOCK_COMPARISON  Multi-arm IEEE 14-bus EECON49 chronology study.
+%
+%   out = run_ieee14_gfm_lock_comparison()
+%   out = run_ieee14_gfm_lock_comparison(arms=["adaptive","locked_gfl"])
+%   out = run_ieee14_gfm_lock_comparison(reuse_completed=false)
+%
+% Runs the SAME 250 s IEEE 14-bus EECON49 chronology under several converter
+% control policies, so that any difference between the arms is attributable to
+% the policy and to nothing else. Every arm shares one case, one dispatch, one
+% event schedule, one solver and one step controller; this runner ASSERTS that
+% the realized option structs differ only in the fields the arm declares.
+%
+%   adaptive     The delivered policy. The severity supervisor promotes and
+%                releases grid-forming units at run time, each transition
+%                authenticated against the precomputed selector table.
+%   pinned_gfm1  One grid-forming unit pinned for the whole run (manual
+%                override, IBR2), supervisor disabled. The island is well posed
+%                but is held up by a single voltage source, so that unit must
+%                absorb the load step and ride through the fault alone.
+%   pinned_gfm2  Two pinned units, IBR3 + IBR6. This is the most damped
+%                authenticated SG-off configuration in the selector table
+%                (omega = -0.568 against -0.328 for the best singleton and
+%                -0.483 for all four), so it is the small-signal optimum and the
+%                natural fixed-configuration rival to the adaptive policy.
+%   pinned_gfm4  All four pinned. More grid-forming capacity than the small-signal
+%                optimum, included because "more is safer" is the intuition this
+%                study is testing.
+%   locked_gfl   Every converter locked in grid-following. The SG is then the
+%                only voltage-forming source, so opening its breaker leaves an
+%                energized island with no voltage reference: the per-island
+%                admissibility check refuses the transaction BEFORE any Newton
+%                solve and the trajectory ends at the event-left sample. A
+%                refusal here is the EXPECTED and correct outcome.
+
+%
+% An arm that fails closed exactly as predicted is a PASS for this study. The
+% expectation is declared per arm and checked against the full documented
+% signature, not against "any failure".
+%
+% Each arm row carries its own scenario builder, not merely option overrides, so
+% a later all-synchronous arm can be appended without restructuring the study.
+%
+% Classification: reporting/diagnostic study over production runs. No value
+% computed here feeds PF, SSSA, TS, a selector, a controller, or an acceptance
+% decision in any production path.
+
+arguments
+    opts.arms (1,:) string = ["adaptive","pinned_gfm1","pinned_gfm2", ...
+        "pinned_gfm4","locked_gfl"]
+    opts.reuse_completed (1,1) logical = true
+    opts.t_end (1,1) double = 250
+    opts.dt (1,1) double = 0.05
+    opts.outdir (1,1) string = ""
+    opts.return_results (1,1) logical = false
+end
+
+pf_init_paths();
+outdir = char(opts.outdir);
+if isempty(outdir)
+    outdir = fullfile('output','diagnostics','ieee14_gfm_lock_compare');
+end
+if ~isfolder(outdir), mkdir(outdir); end
+
+arms = arm_table();
+keep = false(1,numel(arms));
+for k = 1:numel(opts.arms)
+    j = find(strcmp({arms.id},char(opts.arms(k))),1);
+    if isempty(j)
+        error('run_ieee14_gfm_lock_comparison:unknownArm', ...
+            'Unknown arm "%s". Known arms: %s.', ...
+            char(opts.arms(k)), strjoin({arms.id},', '));
+    end
+    keep(j) = true;
+end
+arms = arms(keep);
+
+% --- Shared inputs, built ONCE so every arm provably starts from one base ---
+[base_events, base_opt, shared] = base_request(opts.t_end, opts.dt);
+
+out = struct();
+out.schema = 'ieee14_gfm_lock_comparison/1.0';
+out.classification = 'REPORTING_DIAGNOSTIC_OVER_PRODUCTION_RUNS';
+out.outdir = outdir;
+out.t_end_requested = opts.t_end;
+out.dt = opts.dt;
+out.generated_utc = char(datetime('now','TimeZone','UTC', ...
+    'Format','yyyy-MM-dd''T''HH:mm:ssXXX'));
+out.shared = shared;
+out.arms = struct([]);
+
+for k = 1:numel(arms)
+    a = arms(k);
+    [ev,op] = realize_arm(a,base_events,base_opt);
+    assert_only_declared_differences(a,base_events,base_opt,ev,op);
+    op.ibr_events = ev;
+
+    cache = fullfile(outdir,a.artifact);
+    [r,elapsed,reused] = load_or_run(a,cache,op,opts.reuse_completed);
+
+    m = ieee14_arm_metrics(r,a,opts.t_end);
+    m.wall_time_s = elapsed;
+    m.reused_cache = reused;
+    m.artifact = cache;
+    if isempty(out.arms), out.arms = m; else, out.arms(end+1) = m; end %#ok<AGROW>
+    print_arm(m);
+    if opts.return_results, out.results.(a.id) = r; end
+end
+
+out.comparison = struct( ...
+    'note',['Cross-arm comparison lives in ' ...
+            'generate_ieee14_gfm_lock_comparison, which loads the per-arm ' ...
+            'caches pairwise. It is not computed here so this runner never ' ...
+            'holds two full trajectories in memory at once.'], ...
+    'arm_ids',{{out.arms.id}}, ...
+    'expectation_all_met',all([out.arms.expectation_met]));
+summary_file = fullfile(outdir,'summary.mat');
+summary = out; %#ok<NASGU>
+save(summary_file,'summary','-v7');
+fprintf('\nwrote %s\n',summary_file);
+if ~all([out.arms.expectation_met])
+    bad = {out.arms(~[out.arms.expectation_met]).id};
+    fprintf('EXPECTATION NOT MET: %s\n',strjoin(bad,', '));
+end
+end
+
+% ==========================================================================
+function arms = arm_table()
+%ARM_TABLE  Declared arms. Each row owns its scenario builder and its overrides.
+%   event_overrides go into opt.ibr_events; opt_overrides go top level. Both are
+%   merged onto ONE shared base, and the merge is asserted field-by-field.
+arms = struct('id',{},'label',{},'short_label',{},'scenario_fn',{}, ...
+    'event_overrides',{},'opt_overrides',{},'expectation',{}, ...
+    'expected_failure_id',{},'artifact',{},'color',{},'line_style',{}, ...
+    'classification',{});
+
+arms(1) = struct( ...
+    'id','adaptive', ...
+    'label','Adaptive GFL/GFM switching (delivered policy)', ...
+    'short_label','adaptive', ...
+    'scenario_fn',@eecon49_scenario, ...
+    'event_overrides',struct('automatic_gfm_switching',true), ...
+    'opt_overrides',struct('automatic_support_supervision',true), ...
+    'expectation','REACHES_T_END', ...
+    'expected_failure_id','', ...
+    'artifact','adaptive_250s.mat', ...
+    'color',[0.00 0.24 0.75], ...
+    'line_style','-', ...
+    'classification','PROJECT_RESULT');
+
+arms(2) = struct( ...
+    'id','pinned_gfm1', ...
+    'label','One grid-forming unit pinned (IBR2), no run-time switching', ...
+    'short_label','pinned 1 GFM', ...
+    'scenario_fn',@eecon49_scenario, ...
+    'event_overrides',struct('automatic_gfm_switching',true, ...
+        'gfm_selection_mode','manual_override', ...
+        'selected_gfm_indices',2,'reference_resource_index',2), ...
+    'opt_overrides',struct('automatic_support_supervision',false), ...
+    'expectation','TRAJECTORY_THEN_ANY', ...
+    'expected_failure_id','', ...
+    'artifact','pinned_gfm1_250s.mat', ...
+    'color',[0.85 0.33 0.10], ...
+    'line_style','-', ...
+    'classification','PROJECT_RESULT');
+
+arms(3) = struct( ...
+    'id','pinned_gfm2', ...
+    'label','Two grid-forming units pinned (IBR3+IBR6), no run-time switching', ...
+    'short_label','pinned 2 GFM', ...
+    'scenario_fn',@eecon49_scenario, ...
+    'event_overrides',struct('automatic_gfm_switching',true, ...
+        'gfm_selection_mode','manual_override', ...
+        'selected_gfm_indices',[3 4],'reference_resource_index',3), ...
+    'opt_overrides',struct('automatic_support_supervision',false), ...
+    'expectation','TRAJECTORY_THEN_ANY', ...
+    'expected_failure_id','', ...
+    'artifact','pinned_gfm2_250s.mat', ...
+    'color',[0.47 0.67 0.19], ...
+    'line_style','-', ...
+    'classification','PROJECT_RESULT');
+
+arms(4) = struct( ...
+    'id','pinned_gfm4', ...
+    'label','All four grid-forming units pinned, no run-time switching', ...
+    'short_label','pinned 4 GFM', ...
+    'scenario_fn',@eecon49_scenario, ...
+    'event_overrides',struct('automatic_gfm_switching',true, ...
+        'gfm_selection_mode','manual_override', ...
+        'selected_gfm_indices',[2 3 4 5],'reference_resource_index',2), ...
+    'opt_overrides',struct('automatic_support_supervision',false), ...
+    'expectation','TRAJECTORY_THEN_ANY', ...
+    'expected_failure_id','', ...
+    'artifact','pinned_gfm4_250s.mat', ...
+    'color',[0.49 0.18 0.56], ...
+    'line_style','-', ...
+    'classification','PROJECT_RESULT');
+
+arms(5) = struct( ...
+    'id','locked_gfl', ...
+    'label','All converters locked grid-following (no GFM promotion)', ...
+    'short_label','locked GFL', ...
+    'scenario_fn',@eecon49_scenario, ...
+    'event_overrides',struct('automatic_gfm_switching',false), ...
+    'opt_overrides',struct('automatic_support_supervision',true), ...
+    'expectation','FAILS_CLOSED', ...
+    'expected_failure_id','ts_simulate_ibr_hybrid:noVoltageFormingSource', ...
+    'artifact','locked_gfl_250s.mat', ...
+    'color',[0.20 0.20 0.20], ...
+    'line_style','--', ...
+    'classification','PROJECT_RESULT');
+end
+
+% ==========================================================================
+function scenario = eecon49_scenario()
+%EECON49_SCENARIO  The one scenario every present arm shares.
+scenario = cases.scenario_ieee14_1sg_4ibr( ...
+    struct('case_profile','eecon49_figure4'));
+end
+
+% ==========================================================================
+function [events,opt,shared] = base_request(t_end,dt)
+%BASE_REQUEST  The shared option set, copied from the delivered flagship driver
+%   scripts/examples/run_ieee14_eecon49_chronology.m, plus ONE addition:
+%   agsi_reference=true. That option is opt-in, defaults false, and is strictly
+%   post-processing (ts_simulate_ibr_hybrid.m:1339,1473) -- it publishes the
+%   reference AGSI sub-indices and cannot touch an accepted step. The delivered
+%   driver is deliberately left unmodified so it still reproduces the delivered
+%   artifact byte for byte; the option lives here instead.
+
+% Healthy pre-event power flow supplies the supervisor's voltage reference.
+sys = ibr.build_ieee14_switch_system(index_mode='agsi_pp', ...
+    case_profile='eecon49_figure4',sg_H=2.5,sg_D=1.0, ...
+    T_d_on=0.10,T_d_off=1.0);
+
+scenario = eecon49_scenario();
+
+% Pass the FULL scenario struct: the selector resolves its dispatch from
+% scenario.config.dispatch or scenario.scenario_opt.dispatch, so handing it
+% scenario.scenario_opt directly would silently certify every SG-online row at
+% zero IBR active power.
+selector_table = stability.ibr_selector_table(scenario.case_data, ...
+    scenario.resources,scenario,struct());
+
+events = struct('enabled',true,'event_profile','chronology', ...
+    'sg_trip',20,'load_step',50,'load_step_factor',0.20, ...
+    'fault_on',85,'fault_clear',85.15,'fault_bus',9,'Zf',0.01+0.01i, ...
+    'line_trip',110,'line_from_bus',6,'line_to_bus',13, ...
+    'restore_time',145,'sg_on',145,'coordinated_handback',false, ...
+    'delays_overrides',struct('timeout_s',20,'dwell_s',0.5));
+
+opt = struct( ...
+    't_end',t_end,'dt',dt,'verbose',false,'plot_results',false, ...
+    'max_step_subdivisions',12,'state_predictor','linear_kcl', ...
+    'severity_gamma_on',0.65,'severity_gamma_off',0.35, ...
+    'severity_T_d_on',0.10,'severity_T_d_off',1.00, ...
+    'healthy_pf_V',sys.pf.bus_voltage(:).', ...
+    'healthy_pf_bus_ids',sys.pf.external_bus_ids(:).', ...
+    'stepper','adaptive','reject_limit',20, ...
+    'support_transition_certificate',true, ...
+    'handback_efd_timescale','control', ...
+    'agsi_reference',true, ...
+    'selector_table',selector_table);
+
+shared = struct( ...
+    'scenario_id',scenario.scenario_id, ...
+    'case_profile','eecon49_figure4', ...
+    'selector_table_fingerprint',table_fingerprint(selector_table), ...
+    'n_sg_off_configurations',numel(selector_table.sg_off.configurations), ...
+    'sg_off_candidates',candidate_summary(selector_table), ...
+    'agsi_reference_enabled',true, ...
+    'base_driver','scripts/examples/run_ieee14_eecon49_chronology.m', ...
+    'base_driver_delta','agsi_reference=true (opt-in, post-processing only)');
+end
+
+% ==========================================================================
+function S = candidate_summary(T)
+%CANDIDATE_SUMMARY  Compact record of the SG-off admissibility enumeration.
+%   Kept because it is a result in its own right: the admissible set is not
+%   monotone in the number of grid-forming units, so the configuration table has
+%   to be computed rather than assumed. Only the fields a report needs are
+%   retained, so this stays a few kilobytes next to a 100 MB trajectory.
+c = T.sg_off.configurations;
+S = struct('selected',{},'reference',{},'count',{},'ready',{}, ...
+    'feasible',{},'omega',{},'margin',{},'reason',{});
+for k = 1:numel(c)
+    S(k) = struct( ...
+        'selected',c(k).selected_gfm_indices, ...
+        'reference',c(k).reference_resource_index, ...
+        'count',c(k).count, ...
+        'ready',logical(c(k).ready_to_commit), ...
+        'feasible',logical(c(k).feasible), ...
+        'omega',nan_or(c(k),'omega'), ...
+        'margin',nan_or(c(k),'margin'), ...
+        'reason',char(string(c(k).reason)));
+end
+end
+
+function v = nan_or(s,name)
+v = NaN;
+if isfield(s,name) && ~isempty(s.(name)) && isnumeric(s.(name)) && ...
+        isscalar(s.(name))
+    v = double(s.(name));
+end
+end
+
+% ==========================================================================
+function fp = table_fingerprint(T)
+fp = '';
+if isstruct(T) && isfield(T,'selector_table_fingerprint')
+    fp = char(string(T.selector_table_fingerprint));
+elseif isstruct(T) && isfield(T,'fingerprint')
+    fp = char(string(T.fingerprint));
+end
+end
+
+% ==========================================================================
+function [ev,op] = realize_arm(a,base_events,base_opt)
+%REALIZE_ARM  Merge this arm's declared overrides onto the shared base.
+ev = base_events;
+f = fieldnames(a.event_overrides);
+for k = 1:numel(f), ev.(f{k}) = a.event_overrides.(f{k}); end
+op = base_opt;
+f = fieldnames(a.opt_overrides);
+for k = 1:numel(f), op.(f{k}) = a.opt_overrides.(f{k}); end
+end
+
+% ==========================================================================
+function assert_only_declared_differences(a,base_events,base_opt,ev,op)
+%ASSERT_ONLY_DECLARED_DIFFERENCES  The arms must differ ONLY where declared.
+%   This is what makes "the arms are identical except for the control policy" a
+%   property of the code rather than a claim in a comment. Without it a stray
+%   edit to one arm's option set would silently invalidate every comparison.
+check_struct(base_events,ev,fieldnames(a.event_overrides),'ibr_events',a.id);
+check_struct(base_opt,op,fieldnames(a.opt_overrides),'opt',a.id);
+end
+
+function check_struct(base,realized,declared,label,arm_id)
+names = union(fieldnames(base),fieldnames(realized));
+differing = {};
+for k = 1:numel(names)
+    n = names{k};
+    hb = isfield(base,n); hr = isfield(realized,n);
+    if ~hb || ~hr
+        differing{end+1} = n; continue; %#ok<AGROW>
+    end
+    if ~isequaln(base.(n),realized.(n))
+        differing{end+1} = n; %#ok<AGROW>
+    end
+end
+extra = setdiff(differing,declared);
+if ~isempty(extra)
+    error('run_ieee14_gfm_lock_comparison:undeclaredOptionDifference', ...
+        ['Arm "%s" %s differs from the shared base in undeclared field(s): %s. ' ...
+         'Every arm must differ only in its declared overrides.'], ...
+        arm_id,label,strjoin(extra,', '));
+end
+end
+
+% ==========================================================================
+function [r,elapsed,reused] = load_or_run(a,cache,op,reuse_completed)
+%LOAD_OR_RUN  Reuse a cache only when it was produced by THIS request.
+%   A cache whose recorded option signature differs from the signature the
+%   runner would build now is rejected. This is the guard for the trap that
+%   produced the delivered artifact without the AGSI overlay: an option was
+%   added, the stale cache still looked complete, and the missing field was only
+%   discovered by probing the file.
+sig = opt_signature(op);
+reused = false;
+if reuse_completed && isfile(cache)
+    S = load(cache);
+    if isfield(S,'result') && isfield(S,'opt_signature') && ...
+            isequaln(S.opt_signature,sig)
+        r = S.result;
+        elapsed = NaN;
+        if isfield(S,'elapsed'), elapsed = S.elapsed; end
+        reused = true;
+        fprintf('[%s] reusing %s\n',a.id,cache);
+        return;
+    end
+    if isfield(S,'opt_signature')
+        fprintf('[%s] cache rejected: option signature changed since it was written\n',a.id);
+    else
+        fprintf('[%s] cache rejected: no recorded option signature\n',a.id);
+    end
+end
+
+scenario = a.scenario_fn();
+fprintf('[%s] running %s ...\n',a.id,a.label);
+t0 = tic;
+r = stability.run_hybrid_case(scenario,op);
+elapsed = toc(t0);
+arm_record = a;
+arm_record.scenario_fn = func2str(a.scenario_fn);
+S = struct('result',r,'elapsed',elapsed,'arm',arm_record,'opt_signature',sig);
+save(cache,'-struct','S','-v7.3');
+fprintf('[%s] wrote %s (%.1f s)\n',a.id,cache,elapsed);
+end
+
+% ==========================================================================
+function sig = opt_signature(op)
+%OPT_SIGNATURE  Comparable fingerprint of the realized request.
+%   The selector table is replaced by its own fingerprint so the signature stays
+%   small; everything else that changes the run is kept verbatim.
+sig = op;
+if isfield(sig,'selector_table')
+    T = sig.selector_table;
+    sig.selector_table = struct( ...
+        'fingerprint',table_fingerprint(T), ...
+        'n_sg_off',numel(T.sg_off.configurations));
+end
+end
+
+% ==========================================================================
+function print_arm(m)
+fprintf('\n--- %s ---\n',m.label);
+fprintf('  expectation      %s  -> %s\n',m.expectation, ...
+    ternary(m.expectation_met,'MET','NOT MET'));
+fprintf('  converged        %d\n',m.converged);
+fprintf('  horizon          %.6f s of %.6f s requested\n', ...
+    m.t_end_s,m.requested_t_end_s);
+if ~isempty(m.failure_id)
+    fprintf('  failure_id       %s\n',m.failure_id);
+end
+fprintf('  reclose          %s at %s s\n',m.reclose_status, ...
+    num2str(m.actual_reclose_time));
+fprintf('  GFM units        %d at end, %d max\n',m.n_gfm_at_end,m.n_gfm_max);
+fprintf('  support commits  %d applied, %d rejected\n', ...
+    m.n_support_augment_applied,m.n_support_augment_rejected);
+fprintf('  samples          %d\n',m.n_accepted_samples);
+end
+
+function s = ternary(c,a,b)
+if c, s = a; else, s = b; end
+end

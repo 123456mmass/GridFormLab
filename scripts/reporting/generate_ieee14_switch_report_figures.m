@@ -27,7 +27,10 @@ sys = ibr.build_ieee14_switch_system(index_mode="agsi_pp", ...
 case_for_tables = cases.case_ieee14bus_eecon49_switch();
 lim = pf_limit_table(case_for_tables);
 write_pf_tables(sys.pf,outdir,lim,case_for_tables.bus_role);
-T_end_contract=sys.switching_event_contract.T_end;
+% The presentation run is the user-approved 250-s diagnostic horizon. The
+% physical case/event chronology is unchanged; only the observation endpoint
+% is extended beyond the case's historical 200-s report default.
+T_end_contract=250.0;
 production_cache=fullfile('output','diagnostics','engine_release_result.mat');
 figure_cache=fullfile('output','diagnostics', ...
     sprintf('ieee14_switch_%g_exact.mat',T_end_contract));
@@ -74,7 +77,7 @@ if opts.reuse_cache && exist(production_cache,'file')
     end
 end
 if ~reuse_ok
-    [scenario,opt]=production_request(sys);
+    [scenario,opt]=production_request(sys,T_end_contract);
     r=stability.run_hybrid_case(scenario,opt);
     if ~r.converged || r.t(end)<T_end_contract
         error('generate_ieee14_switch_report_figures:productionRun', ...
@@ -105,13 +108,14 @@ end
 write_event_table(out,outdir);
 write_run_summary(out,outdir);
 tag=sprintf('%g',T_end);
+event_timeline_figure(out,outdir,'ieee14_switch_250_event_timeline.png');
 supervisor_figure(out,outdir,['ieee14_switch_' tag '_supervisor.png'],figure_title);
 electrical_figure(out,outdir,['ieee14_switch_' tag '_electrical.png'],figure_title);
 angle_figure(out,outdir,['ieee14_switch_' tag '_angles.png']);
 fprintf('IEEE14_SWITCH_REPORT_FIGURES_DONE: %s [%s]\n',outdir,out.dynamic_status);
 end
 
-function [s,opt]=production_request(sys)
+function [s,opt]=production_request(sys,T_end_contract)
 s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
 ev=struct('enabled',true,'event_profile','chronology', ...
     'sg_trip',20,'load_step',50,'load_step_factor',0.20, ...
@@ -120,12 +124,18 @@ ev=struct('enabled',true,'event_profile','chronology', ...
     'restore_time',145,'sg_on',145,'coordinated_handback',false, ...
     'automatic_gfm_switching',true, ...
     'delays_overrides',struct('timeout_s',20,'dwell_s',0.5));
-% Phase G: horizon extended 160 -> 200 s so the trajectory covers the SG
-% reclose plus the independently timed per-device releases and a settling
-% window after handback.  Taken from the case contract rather than restated
-% here, so the case file remains the single owner of the event schedule.
-opt=struct('t_end',s.case_data.switching_event_contract.T_end, ...
-    'dt',0.10,'verbose',false, ...
+% Reporting horizon only. All event times remain owned by the case/event
+% contract above and are identical to the baseline chronology.
+% Step size: the physically-correct reduced converter model (command-delay
+% states removed, v_del=v_cmd; defect TD-2026-08-12-01) no longer carries the
+% retired placeholder T_d=0.02 s lag that had incidentally low-pass-filtered
+% the commanded voltage into the stiff AC-filter current dynamics.  At the
+% bolted bus-9 fault (Zf=0.01+0.01i) the discontinuous command jump now needs
+% dt<=0.05 to resolve; a fixed-dt sweep confirms dt=0.10 stalls at fault onset
+% while dt in {0.05,0.02,0.01,0.005} all integrate to t_end.  dt=0.05 is a
+% NUMERICAL_METHOD accuracy/stability choice, not model tuning.
+opt=struct('t_end',T_end_contract, ...
+    'dt',0.05,'verbose',false, ...
     'ibr_events',ev,'plot_results',false, ...
     'max_step_subdivisions',9, ...
     'state_predictor','linear_kcl', ...
@@ -243,6 +253,8 @@ end
 o=struct(); o.tgrid=t; o.ibr_buses=r.device_bus_ids(didx);
 o.index=index; o.index_raw=raw_index; o.GRA=GRA; o.ref_code=ref_code;
 o.mode=double(strcmpi(modes,"gfm"));
+o.final_gfm_positions=find(strcmpi(modes(end,:),"gfm"));
+o.final_gfm_buses=o.ibr_buses(o.final_gfm_positions);
 o.P_ibr=r.device_P_pu(didx,:).'; o.Q_ibr=r.device_Q_pu(didx,:).';
 o.id_ibr=real(Idq); o.iq_ibr=imag(Idq); o.f_ibr=f_ibr;
 o.ang_ibr=wrap_pi(angle_ibr-busang); o.Vbus=abs(Vibr); o.Vmin=min(abs(V),[],1).';
@@ -275,6 +287,11 @@ o.max_attempt_residual=max(r.residual_per_step); o.subdivision_depth=r.subdivisi
 o.domain_rejected_trials=r.domain_rejected_trials;
 o.failure_id=r.failure_id; o.event_log=r.event_log; o.sample_side=r.sample_side(:);
 o.reclose_status=r.reclose_status; o.reselection_status=r.reselection_status;
+o.handback_status='not available'; o.handback_duration_s=NaN;
+o.handback_complete_time=NaN;
+if isfield(r,'handback_status'), o.handback_status=char(string(r.handback_status)); end
+if isfield(r,'handback_duration_s'), o.handback_duration_s=r.handback_duration_s; end
+if isfield(r,'handback_complete_time'), o.handback_complete_time=r.handback_complete_time; end
 o.last_synchronism_guard=r.last_synchronism_guard;
 o.reclose_guard=struct();
 reclose_event=find(strcmp({r.event_log.type},'sg_reclose') & [r.event_log.applied],1,'last');
@@ -300,6 +317,13 @@ fprintf(fid,'\\newcommand{\\RunReclose}{%s}\n',latex_scalar(o.actual_reclose_tim
 fprintf(fid,'\\newcommand{\\RunFirstRelease}{%s}\n',latex_scalar(o.actual_mode_reselection_time));
 fprintf(fid,'\\newcommand{\\RunRelease}{%s}\n',latex_scalar(o.final_all_gfl_time));
 fprintf(fid,'\\newcommand{\\RunFinalRelease}{%s}\n',latex_scalar(o.final_all_gfl_time));
+fprintf(fid,'\\newcommand{\\RunFinalGFMCount}{%d}\n',numel(o.final_gfm_positions));
+fprintf(fid,'\\newcommand{\\RunFinalGFMBuses}{%s}\n', ...
+    latex_vector(o.final_gfm_buses));
+fprintf(fid,'\\newcommand{\\RunHandbackDuration}{%s}\n', ...
+    latex_scalar(o.handback_duration_s));
+fprintf(fid,'\\newcommand{\\RunHandbackComplete}{%s}\n', ...
+    latex_scalar(o.handback_complete_time));
 rt=nan(1,4); rt(1:min(4,numel(o.release_times)))=o.release_times(1:min(4,numel(o.release_times)));
 names={'One','Two','Three','Four'};
 for k=1:4
@@ -313,6 +337,19 @@ end
 fprintf(fid,'\\newcommand{\\RunSyncDV}{%.6f}\n',g.dV);
 fprintf(fid,'\\newcommand{\\RunSyncDF}{%.6f}\n',g.df);
 fprintf(fid,'\\newcommand{\\RunSyncDTheta}{%.6f}\n',g.dtheta);
+if ~isfield(g,'prospective') || ~isstruct(g.prospective) || ...
+        ~isfield(g.prospective,'passes')
+    error('generate_ieee14_switch_report_figures:missingProspectiveAudit', ...
+        'Successful reclose evidence lacks the prospective SG-close audit.');
+end
+p=g.prospective;
+fprintf(fid,'\\newcommand{\\RunProsI}{%.6f}\n',p.I_abs_pu);
+fprintf(fid,'\\newcommand{\\RunProsP}{%.6f}\n',p.P_pu);
+fprintf(fid,'\\newcommand{\\RunProsQ}{%.6f}\n',p.Q_pu);
+fprintf(fid,'\\newcommand{\\RunProsS}{%.6f}\n',p.S_abs_pu);
+fprintf(fid,'\\newcommand{\\RunProsTorque}{%.6f}\n',p.torque_mismatch_pu);
+fprintf(fid,'\\newcommand{\\RunProsImax}{%.6f}\n',p.current_limit_system_pu);
+fprintf(fid,'\\newcommand{\\RunProsSmax}{%.6f}\n',p.rating_system_pu);
 clear cleaner
 end
 
@@ -325,6 +362,11 @@ end
 
 function s=latex_scalar(v)
 if isfinite(v), s=sprintf('%.3f',v); else, s='not reached'; end
+end
+
+function s=latex_vector(v)
+if isempty(v), s='none'; return; end
+s=strjoin(arrayfun(@(z)sprintf('%g',z),v,'UniformOutput',false),', ');
 end
 
 function f=angle_frequency(t,a,f0)
@@ -384,6 +426,79 @@ end
 fprintf(fid,'\\bottomrule\\end{tabularx}\n'); clear cleaner
 end
 
+function event_timeline_figure(o,outdir,filename)
+% Presentation diagram derived only from the accepted event/mode history.
+trip_t=log_event_time(o.event_log,'sg_trip');
+support_t=log_event_time(o.event_log,'gfm_support_augment');
+if ~isfinite(support_t), support_t=trip_t; end
+trip_n=mode_count_at(o,trip_t); support_n=mode_count_at(o,support_t);
+release_n=numel(o.release_times);
+final_buses=latex_vector(o.final_gfm_buses);
+labels={ ...
+    sprintf('Initial\n0 s\nSG + 4 GFL'), ...
+    sprintf('SG trip\n%s s\n%d GFM',fmt_time(trip_t),trip_n), ...
+    sprintf('J_V/J_f support\n%s s\n%d GFM',fmt_time(support_t),support_n), ...
+    sprintf('Load step\n%s s\n+20%%',fmt_time(o.step_on)), ...
+    sprintf('Bus fault\n%s--%s s\nclear accepted',fmt_time(o.fault_on),fmt_time(o.fault_clear)), ...
+    sprintf('Line trip\n%s s\n6--13 open',fmt_time(o.line_trip_time)), ...
+    sprintf('Restore/request\n%s s\nbase topology',fmt_time(o.sg_reclose_time)), ...
+    sprintf('SG reclose\n%s s\nC1 transfer',fmt_time(o.actual_reclose_time)), ...
+    sprintf('Staged release\n%d transaction(s)\nfinal %d GFM: bus %s', ...
+        release_n,numel(o.final_gfm_positions),final_buses)};
+
+xy=[.65 3.00; 2.00 3.00; 3.35 3.00; ...
+    3.35 1.85; 2.00 1.85; .65 1.85; ...
+    .65 .70; 2.00 .70; 3.35 .70];
+colors=[.10 .35 .70; .55 .20 .65; .20 .45 .80; ...
+    .55 .20 .55; .78 .12 .12; .85 .48 .05; ...
+    .10 .45 .75; .05 .55 .35; .15 .55 .20];
+f=figure('Color','w','Units','inches','Position',[1 1 6.20 4.35], ...
+    'Visible','off','DefaultAxesFontName','Times New Roman', ...
+    'DefaultAxesFontSize',11,'DefaultTextFontName','Times New Roman', ...
+    'DefaultTextFontSize',11);
+ax=axes(f,'Position',[.03 .08 .94 .82]); hold(ax,'on'); axis(ax,'off');
+xlim(ax,[0 4]); ylim(ax,[.20 3.55]); axis(ax,'manual');
+title(ax,'Automatic GFL/GFM chronology from the accepted event log', ...
+    'FontName','Times New Roman','FontSize',11,'FontWeight','bold');
+for k=1:8
+    timeline_arrow(ax,xy(k,:),xy(k+1,:));
+end
+r=.20;
+for k=1:9
+    face=.88+.12*colors(k,:);
+    rectangle(ax,'Position',[xy(k,1)-r xy(k,2)-r 2*r 2*r], ...
+        'Curvature',[1 1],'FaceColor',face,'EdgeColor',colors(k,:), ...
+        'LineWidth',1.8);
+    text(ax,xy(k,1),xy(k,2),sprintf('%d',k),'HorizontalAlignment','center', ...
+        'VerticalAlignment','middle','FontWeight','bold','Color',colors(k,:));
+    text(ax,xy(k,1),xy(k,2)-.27,labels{k},'HorizontalAlignment','center', ...
+        'VerticalAlignment','top','FontSize',11,'Interpreter','tex');
+end
+export_figure(f,outdir,filename);
+end
+
+function timeline_arrow(ax,p0,p1)
+d=p1-p0; u=d/norm(d); a=p0+.24*u; b=p1-.24*u; v=b-a;
+quiver(ax,a(1),a(2),v(1),v(2),0,'Color',[.10 .30 .70], ...
+    'LineWidth',1.3,'MaxHeadSize',.35,'AutoScale','off');
+end
+
+function t=log_event_time(log,type)
+t=NaN; q=find(strcmp({log.type},type) & [log.applied],1,'first');
+if ~isempty(q), t=log(q).t; end
+end
+
+function n=mode_count_at(o,t)
+n=NaN; if ~isfinite(t), return; end
+q=find(abs(o.tgrid-t)<1e-9 & strcmp(o.sample_side,'right'),1,'last');
+if isempty(q), q=find(o.tgrid>=t-1e-9,1); end
+if ~isempty(q), n=sum(o.mode(q,:)>0.5); end
+end
+
+function s=fmt_time(t)
+if isfinite(t), s=sprintf('%.3f',t); else, s='not reached'; end
+end
+
 function s=event_label(type)
 switch type
     case 'sg_trip', s='SG trip';
@@ -413,7 +528,7 @@ switch type
     case 'topology_restore', s='base load and line restored';
     case 'sg_on', s='earliest close request; guard monitored';
     case 'sg_reclose', s='guard passed; SG owns reference; IBR modes unchanged';
-    case 'sg_reselection', s='two-term severity dwell passed; transfer/KCL committed';
+    case 'sg_reselection', s='severity, authenticated SG-online SSSA/reserve and KCL guards passed';
     otherwise, s=strrep(type,'_','\_');
 end
 end
@@ -466,14 +581,12 @@ for j=ibr_refs
 end
 event_lines(ax,o,false);
 
-% Single combined mode panel. Distinct line styles plus a small vertical
-% offset (display-only, +-0.045 of the 0/1 mode coordinate) keep each IBR
-% visible where traces overlap; the underlying committed modes remain exact
-% 0/1 integers and need not switch at the same instant.
+% Single combined mode panel. Plot the exact 0/1 coordinates without display
+% offsets; coincident device histories intentionally overlap.
 ax=nexttile(tl,[1 2]); hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 styles={'-','--',':','-.'};
 lws=[2.0 1.6 1.9 1.6];
-offs=[0.045 0.015 -0.015 -0.045];
+offs=zeros(1,numel(buses));
 h=gobjects(1,numel(buses));
 for j=1:numel(buses)
     h(j)=stairs(ax,t,o.mode(:,j)+offs(j),styles{j},'Color',c(j,:), ...
@@ -481,7 +594,7 @@ for j=1:numel(buses)
 end
 ylim(ax,[-0.22 1.22]); yticks(ax,[0 1]); yticklabels(ax,{'GFL','GFM'});
 ylabel(ax,'device mode'); xlabel(ax,'time (s)');
-title(ax,'Committed IBR modes (display-only offsets)','FontSize',11);
+title(ax,'Committed IBR modes','FontSize',11);
 event_lines(ax,o,false);
 lg=legend(ax,h,'Orientation','horizontal','NumColumns',4,'Location','northoutside');
 set(lg,'FontName','Times New Roman','FontSize',11);
@@ -543,7 +656,7 @@ end
 names=arrayfun(@(j)sprintf('IBR%d bus %d',j,buses(j)), ...
     1:numel(buses),'UniformOutput',false);
 lg=legend([h hsg],[names {sprintf('SG bus %d',o.sg_bus)}], ...
-    'Orientation','horizontal','NumColumns',3);
+    'Orientation','horizontal','NumColumns',5);
 lg.Layout.Tile='north'; set(lg,'FontName','Times New Roman','FontSize',11);
 export_figure(f,outdir,filename);
 end
@@ -581,7 +694,7 @@ end
 function export_figure(f,outdir,filename)
 % Write the report raster at 1:1 physical size and an editable MATLAB .fig
 % companion beside it, so panels can be reopened and adjusted without rerunning
-% the 200-s transient.  Presentation only: no solver or gate reads these files.
+% the 250-s transient. Presentation only: no solver or gate reads these files.
 exportgraphics(f,fullfile(outdir,filename),'Resolution',220);
 [~,stem]=fileparts(filename);
 savefig(f,fullfile(outdir,[stem '.fig']));
@@ -591,13 +704,19 @@ end
 function h=panel_raw(ax,t,y,c,ylab,ttl)
 hold(ax,'on'); grid(ax,'on'); box(ax,'on');
 for j=1:size(y,2)
-    h(j)=plot(ax,t,y(:,j),'Color',c(j,:),'LineWidth',0.95); %#ok<AGROW>
+    % Low-alpha markers expose the density of the actual accepted samples.
+    % They are not noise, smoothing, interpolation, or a synthetic envelope.
+    scatter(ax,t,y(:,j),4,c(j,:),'filled','MarkerFaceAlpha',0.08, ...
+        'MarkerEdgeAlpha',0.08,'HandleVisibility','off');
+    h(j)=plot(ax,t,y(:,j),'Color',c(j,:),'LineWidth',0.60); %#ok<AGROW>
 end
 ylabel(ax,ylab); title(ax,ttl,'FontSize',11,'FontWeight','bold');
 end
 
 function h=sg_raw(ax,t,y)
-h=plot(ax,t,y,'k--','LineWidth',1.05);
+scatter(ax,t,y,4,[.10 .10 .10],'filled','MarkerFaceAlpha',0.07, ...
+    'MarkerEdgeAlpha',0.07,'HandleVisibility','off');
+h=plot(ax,t,y,'k--','LineWidth',0.75);
 end
 
 function h=panel(ax,t,y,c,buses,ylab,ttl)

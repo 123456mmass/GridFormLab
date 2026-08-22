@@ -127,6 +127,22 @@ for k = 1:numel(terms)
 end
 testCase.verifyEqual(numel(a.t),numel(r.t));
 testCase.verifyEqual(numel(a.device_ids),4);
+% The kernel computes a centre-of-inertia frequency in three independent places:
+% the supervisor's local fcoi, add_diagnostics's published coi_frequency_Hz, and
+% this overlay's own f_coi_Hz. All three use the same inertia-weighted rule over
+% online devices with finite H>0, so they must agree exactly. Pinning it here, on
+% a short arm, is what licenses the decision figure to plot the overlay's J_V/J_f
+% as the engine's severity rather than re-deriving it from the published COI.
+% Both series are flattened first: the overlay publishes a column and the
+% diagnostics a row, and logical indexing preserves each source's orientation, so
+% comparing them unflattened silently implicit-expands into a matrix.
+fc = a.f_coi_Hz(:);
+cp = r.coi_frequency_Hz(:);
+testCase.verifyEqual(numel(fc),numel(cp));
+both = isfinite(fc) & isfinite(cp);
+testCase.verifyTrue(any(both),'no sample has both COI values finite');
+testCase.verifyLessThanOrEqual(max(abs(fc(both)-cp(both))),1e-9, ...
+    'overlay COI must agree with the published COI');
 % No weight vector and no aggregate may appear anywhere in the payload.
 f = fieldnames(a);
 testCase.verifyFalse(any(contains(lower(f),'weight')));

@@ -20,6 +20,8 @@ if ~exist(outdir,'dir'), mkdir(outdir); end
 
 write_candidate_summary(tbl.sg_off.configurations, ...
     fullfile(outdir,'sssa_candidate_summary.tex'));
+write_sg_on_candidate_summary(tbl.sg_on.configurations, ...
+    fullfile(outdir,'sssa_sg_on_candidate_summary.tex'));
 cfgs=tbl.sg_off.configurations;
 feasible=find([cfgs.feasible]);
 for ii=1:numel(feasible)
@@ -31,7 +33,64 @@ for ii=1:numel(feasible)
     write_state_inventory(sssa,devices,c,fullfile(outdir, ...
         sprintf('sssa_states_n%d.tex',c.n_gfm_required)));
 end
+
+% SG-online handback is staged one IBR at a time. Publish the complete
+% 16-subset decision inventory, plus full modal/state tables for every
+% authenticated stable configuration. The accepted runtime event log later
+% identifies which of these configurations formed the actual path. These
+% files are reporting evidence only.
+on_cfgs=tbl.sg_on.configurations;
+ready_on=find([on_cfgs.ready_to_commit]);
+for ii=1:numel(ready_on)
+    c=on_cfgs(ready_on(ii)); sssa=rebuild_sssa(c,devices,s.case_data);
+    suffix=tuple_suffix(c.selected_gfm_indices);
+    write_mode_table(modal_rows(sssa,devices),c,sssa, ...
+        fullfile(outdir,['sssa_sg_on_modes_' suffix '.tex']));
+    write_state_inventory(sssa,devices,c, ...
+        fullfile(outdir,['sssa_sg_on_states_' suffix '.tex']));
+end
 fprintf('GFL_GFM_SSSA_TABLES_DONE: %s\n',outdir);
+end
+
+function write_sg_on_candidate_summary(cfgs,filename)
+fid=fopen(filename,'w'); guard=onCleanup(@()fclose(fid));
+fprintf(fid,'%% Complete authenticated SG-online 16-subset table.\n');
+fprintf(fid,'\\begingroup\\footnotesize\\setlength{\\tabcolsep}{2pt}\n');
+fprintf(fid,'\\begin{longtable}{@{}r p{0.12\\textwidth} r r r r c p{0.21\\textwidth}@{}}\n');
+fprintf(fid,['\\toprule\nNo. & GFM resources & $n_{GFM}$ & Ref. & ' ...
+    '$\\Omega_{worst}$ (s$^{-1}$) & Margin & Ready & Classification \\\\ \\midrule\n']);
+fprintf(fid,['\\endfirsthead\n\\toprule\nNo. & GFM resources & $n_{GFM}$ & Ref. & ' ...
+    '$\\Omega_{worst}$ (s$^{-1}$) & Margin & Ready & Classification \\\\ \\midrule\n\\endhead\n']);
+for k=1:numel(cfgs)
+    c=cfgs(k);
+    fprintf(fid,'%d & %s & %d & %s & %s & %s & %s & %s \\\\ \n', ...
+        k,latex_text(mat2str(c.selected_gfm_indices)),c.n_gfm_required, ...
+        latex_text(mat2str(c.reference_resource_index)),latex_number(c.omega), ...
+        latex_number(c.margin),yesno(c.ready_to_commit), ...
+        latex_text(sg_on_reason(c)));
+end
+fprintf(fid,'\\bottomrule\n\\end{longtable}\\endgroup\n'); clear guard
+end
+
+function s=sg_on_reason(c)
+if c.ready_to_commit
+    if isempty(c.fd_omegas)
+        s='stable; robustness evidence unavailable';
+    else
+        s=sprintf('robust stable, FD Omega=%s',mat2str(c.fd_omegas,5));
+    end
+elseif c.sssa_evaluated && ~isempty(c.physical_eigenvalues)
+    s='unstable or insufficient robust margin';
+elseif c.equilibrium_evaluated
+    s='SSSA unavailable';
+else
+    s='equilibrium unavailable';
+end
+end
+
+function s=tuple_suffix(v)
+if isempty(v), s='all_gfl'; return; end
+s=['gfm_' strjoin(arrayfun(@num2str,v,'UniformOutput',false),'_')];
 end
 
 function sssa=rebuild_sssa(c,devices,case_data)
@@ -80,15 +139,11 @@ for q=1:numel(idx)
     i=idx(q); z=lam(i);
     pf=participation(:,i);
     [weights,pord]=sort(pf,'descend');
-    top=pord(1:min(3,numel(pord)));
-    labels=cell(1,numel(top));
-    for j=1:numel(top)
-        labels{j}=sprintf('%s (%.3f)',state_label_tex(coord(top(j)),devices),weights(j));
-    end
+    top=pord(1);
     rows(q).lambda=z;
     rows(q).frequency=abs(imag(z))/(2*pi);
     if abs(z)>eps, rows(q).damping=-real(z)/abs(z); else, rows(q).damping=NaN; end
-    rows(q).dominant=strjoin(labels,'; ');
+    rows(q).dominant=state_label_tex(coord(top),devices);
     rows(q).dominant_weight=weights(1);
 end
 end
@@ -144,14 +199,13 @@ fprintf(fid,'%% Physical decision spectrum; conjugate pairs printed once.\n');
 fprintf(fid,'%% nGFM=%d selected=%s reference=%d full=%d physical=%d method=%s\n', ...
     c.n_gfm_required,mat2str(c.selected_gfm_indices),c.reference_resource_index, ...
     numel(c.eigenvalues),numel(c.physical_eigenvalues),sssa.physical_reduction_method);
-fprintf(fid,'\\begingroup\\small\\setlength{\\tabcolsep}{3pt}\n');
-fprintf(fid,'\\begin{longtable}{@{}r p{0.25\\textwidth} r r p{0.35\\textwidth}@{}}\n');
-fprintf(fid,'\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & $\\zeta$ & Dominant participation: device:state (normalised) \\\\ \\midrule\n');
-fprintf(fid,'\\endfirsthead\n\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & $\\zeta$ & Dominant participation: device:state (normalised) \\\\ \\midrule\n\\endhead\n');
+fprintf(fid,'\\begingroup\\small\\setlength{\\tabcolsep}{5pt}\n');
+fprintf(fid,'\\begin{longtable}{@{}r p{0.30\\textwidth} r p{0.36\\textwidth}@{}}\n');
+fprintf(fid,'\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\\\ \\midrule\n');
+fprintf(fid,'\\endfirsthead\n\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\\\ \\midrule\n\\endhead\n');
 for k=1:numel(rows)
-    fprintf(fid,'%d & %s & %s & %s & %s \\\\ \n',k, ...
-        latex_complex(rows(k).lambda),latex_number(rows(k).frequency), ...
-        latex_number(rows(k).damping),rows(k).dominant);
+    fprintf(fid,'%d & %s & %s & %s \\\\ \n',k, ...
+        latex_complex(rows(k).lambda),latex_number(rows(k).frequency),rows(k).dominant);
 end
 fprintf(fid,'\\bottomrule\n\\end{longtable}\\endgroup\n'); clear guard
 end
@@ -241,8 +295,6 @@ case 'gfl_xi_P',        s='$\xi_{P}^{GFL}$';
 case 'gfl_xi_Q',        s='$\xi_{Q}^{GFL}$';
 case 'gfl_xi_Id',       s='$\xi_{Id}^{GFL}$';
 case 'gfl_xi_Iq',       s='$\xi_{Iq}^{GFL}$';
-case 'gfl_Vd_del',      s='$V_{d,del}^{GFL}$';
-case 'gfl_Vq_del',      s='$V_{q,del}^{GFL}$';
 case 'gfm_delta_VSG',   s='$\delta_{VSG}^{GFM}$';
 case 'gfm_omega_VSG',   s='$\omega_{VSG}^{GFM}$';
 case 'gfm_E',           s='$E^{GFM}$';
@@ -250,8 +302,7 @@ case 'gfm_xi_Vd',       s='$\xi_{Vd}^{GFM}$';
 case 'gfm_xi_Vq',       s='$\xi_{Vq}^{GFM}$';
 case 'gfm_xi_Id',       s='$\xi_{Id}^{GFM}$';
 case 'gfm_xi_Iq',       s='$\xi_{Iq}^{GFM}$';
-case 'gfm_Vd_del',      s='$V_{d,del}^{GFM}$';
-case 'gfm_Vq_del',      s='$V_{q,del}^{GFM}$';
+case 'gfm_omega_f',     s='$\omega_{f}^{GFM}$';
 otherwise,              s=latex_text(name);
 end
 end

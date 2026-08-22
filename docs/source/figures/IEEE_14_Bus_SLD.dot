@@ -1,0 +1,207 @@
+// Single-Line Diagram ของระบบ IEEE 14-Bus
+// Topology: +cases/case_ieee14bus.m และ +cases/case_matpower6_case14.m
+// สัญลักษณ์หม้อแปลงบน 7-8 เป็นข้อกำหนดด้านการนำเสนอ ไม่ได้หมายถึง off-nominal tap
+strict digraph IEEE_14_Bus_SLD {
+    graph [
+        rankdir=TB,
+        splines=ortho,
+        nodesep=0.8,
+        ranksep=1.0,
+        newrank=true,
+        outputorder=edgesfirst,
+        bgcolor="white",
+        pad=0.25,
+        margin=0,
+        fontname="Times-Roman",
+        fontsize=12
+    ];
+
+    node [
+        fontname="Times-Roman",
+        fontsize=12,
+        color="black",
+        penwidth=1.2
+    ];
+
+    edge [
+        fontname="Times-Roman",
+        fontsize=12,
+        color="black",
+        penwidth=1.2,
+        dir=none
+    ];
+
+    // Busbars
+    node [
+        shape=rect,
+        style=filled,
+        fillcolor="black",
+        fontcolor="white",
+        fixedsize=true,
+        width=0.82,
+        height=0.22,
+        margin="0.04,0.02"
+    ];
+
+    b1  [id="bus_1",  label="Bus 1",  group="left"];
+    b2  [id="bus_2",  label="Bus 2",  group="west"];
+    b3  [id="bus_3",  label="Bus 3",  group="east"];
+    b4  [id="bus_4",  label="Bus 4",  group="east"];
+    b5  [id="bus_5",  label="Bus 5",  group="west"];
+    b6  [id="bus_6",  label="Bus 6",  group="west"];
+    b7  [id="bus_7",  label="Bus 7",  group="far_east"];
+    b8  [id="bus_8",  label="Bus 8",  group="outer_east"];
+    b9  [id="bus_9",  label="Bus 9",  group="east"];
+    b10 [id="bus_10", label="Bus 10", group="east"];
+    b11 [id="bus_11", label="Bus 11", group="center"];
+    b12 [id="bus_12", label="Bus 12", group="west"];
+    b13 [id="bus_13", label="Bus 13", group="west"];
+    b14 [id="bus_14", label="Bus 14", group="east"];
+
+    // Generators: Bus 1 และ 6 อยู่ด้านซ้าย, Bus 8 อยู่ด้านขวา, Bus 2 และ 3 อยู่ด้านล่าง
+    node [
+        shape=circle,
+        style=filled,
+        fillcolor="white",
+        fontcolor="black",
+        fixedsize=true,
+        width=0.50,
+        height=0.50,
+        margin=0,
+        label="~"
+    ];
+
+    g1 [id="generator_1", group="outer_west"];
+    g2 [id="generator_2", group="west"];
+    g3 [id="generator_3", group="east"];
+    g6 [id="generator_6", group="outer_west"];
+    g8 [id="generator_8", group="outer_east_2"];
+
+    // Transformer symbols; แต่ละ logical branch แบ่งเป็นสองเส้นผ่าน doublecircle หนึ่งจุด
+    node [
+        shape=doublecircle,
+        style=filled,
+        fillcolor="white",
+        fontcolor="black",
+        fixedsize=true,
+        width=0.30,
+        height=0.30,
+        margin=0,
+        label=""
+    ];
+
+    t47 [id="transformer_4_7", group="far_east"];
+    t49 [id="transformer_4_9", group="east"];
+    t56 [id="transformer_5_6", group="west"];
+    t78 [id="transformer_7_8", group="far_east_2"];
+
+    // ปลายลูกศรโหลดเป็น invisible anchors เพื่อให้ SVG มีเฉพาะเส้นและหัวลูกศร
+    node [
+        shape=point,
+        style=invis,
+        fixedsize=true,
+        width=0.03,
+        height=0.03,
+        label=""
+    ];
+
+    l2  [group="load_west"];
+    l3  [group="load_east"];
+    l4  [group="load_east"];
+    l5  [group="load_west"];
+    l6  [group="load_west"];
+    l9  [group="load_east"];
+    l10 [group="load_east"];
+    l11 [group="center"];
+    l12 [group="load_west"];
+    l13 [group="west"];
+    l14 [group="east"];
+
+    // Invisible rank spine กำหนดลำดับชั้นเท่านั้น ไม่ผูกตำแหน่งแนวนอนของอุปกรณ์
+    node [shape=point, style=invis, width=0.01, height=0.01, label="", group="rank_spine"];
+    q0; q1; q2; q3; q4; q5; q6; q7; q9; q10;
+
+    { rank=same; q0;  l13; l14; }
+    { rank=same; q1;  b13; b14; }
+    { rank=same; q2;  b12; b11; b10; }
+    { rank=same; q3;  l12; l11; l10; }
+    { rank=same; q4;  g6; b6; b9; l9; }
+    { rank=same; q5;  l6; t56; t49; b7; t78; b8; g8; }
+    { rank=same; q6;  t47; }
+    { rank=same; q7;  l5; b5; g1; b1; b4; l4; }
+    { rank=same; q9;  l2; b2; b3; l3; }
+    { rank=same; q10; g2; g3; }
+
+    edge [style=invis, weight=100, constraint=true];
+    q0 -> q1 -> q2 -> q3 -> q4 -> q5 -> q6 -> q7 -> q9 -> q10;
+
+    // ลำดับซ้ายไปขวาภายใน rank เฉพาะคู่ที่ไม่มีเส้นมองเห็นทิศเดียวกัน
+    // (strict digraph จะ merge edge ทิศทางเดียวกันซ้ำ ทำให้เส้นโหลดหายได้)
+    l13 -> l14;
+    b13 -> b14;
+    b12 -> b11;
+    l12 -> l11;
+    l11 -> l10;
+    g6 -> b6;
+    b6 -> b9;
+    l6 -> t56;
+    t56 -> t49;
+    t49 -> b7;
+    l5 -> b5;
+    g1 -> b1;
+    l2 -> b2;
+    g2 -> g3;
+
+    // Electrical connections
+    edge [style=solid, weight=8, constraint=true, dir=none, color="black", penwidth=1.2];
+
+    // Generator connections
+    b1 -> g1 [id="generator_connection_1", constraint=false, weight=40];
+    b2 -> g2 [id="generator_connection_2", weight=40];
+    b3 -> g3 [id="generator_connection_3", weight=40];
+    b6 -> g6 [id="generator_connection_6", constraint=false, weight=40];
+    b8 -> g8 [id="generator_connection_8", constraint=false, weight=40];
+
+    // Ordinary transmission branches: 16 logical branches
+    b1  -> b2  [id="branch_1_2"];
+    b1  -> b5  [id="branch_1_5", constraint=false, weight=30];
+    b2  -> b3  [id="branch_2_3", constraint=false, weight=30];
+    b5  -> b2  [id="branch_2_5"];
+    b4  -> b2  [id="branch_2_4"];
+    b4  -> b3  [id="branch_3_4"];
+    b5  -> b4  [id="branch_4_5", constraint=false, weight=30];
+    b11 -> b6  [id="branch_6_11"];
+    b12 -> b6  [id="branch_6_12"];
+    b13 -> b6  [id="branch_6_13"];
+    b9  -> b7  [id="branch_7_9"];
+    b10 -> b9  [id="branch_9_10"];
+    b14 -> b9  [id="branch_9_14"];
+    b11 -> b10 [id="branch_10_11", constraint=false, weight=30];
+    b13 -> b12 [id="branch_12_13"];
+    b14 -> b13 [id="branch_13_14", constraint=false, weight=30];
+
+    // Transformer branches: 4 logical branches, 8 rendered segments
+    b7  -> t47 [id="branch_4_7_b", weight=30];
+    t47 -> b4  [id="branch_4_7_a", weight=45];
+    b9  -> t49 [id="branch_4_9_b", weight=30];
+    t49 -> b4  [id="branch_4_9_a", weight=30];
+    b6  -> t56 [id="branch_5_6_b", weight=30];
+    t56 -> b5  [id="branch_5_6_a", weight=30];
+    b7  -> t78 [id="branch_7_8_a", constraint=false, weight=40];
+    t78 -> b8  [id="branch_7_8_b", constraint=false, weight=40];
+
+    // Load arrows: 11 buses ที่มี nonzero demand ใน case
+    // style=solid ป้องกัน strict-digraph merge ทับ style=invis จาก ordering edge
+    edge [style=solid, dir=forward, arrowhead=normal, arrowsize=0.75, constraint=false, weight=20, penwidth=1.2];
+    b2  -> l2  [id="load_2"];
+    b3  -> l3  [id="load_3"];
+    b4  -> l4  [id="load_4"];
+    b5  -> l5  [id="load_5"];
+    b6  -> l6  [id="load_6"];
+    b9  -> l9  [id="load_9"];
+    b10 -> l10 [id="load_10", constraint=true];
+    b11 -> l11 [id="load_11", constraint=true];
+    b12 -> l12 [id="load_12", constraint=true];
+    l13 -> b13 [id="load_13", dir=back, constraint=true];
+    l14 -> b14 [id="load_14", dir=back, constraint=true];
+}

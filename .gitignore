@@ -74,3 +74,12 @@ docs/source/fonts/
 
 # Generated MATLAB data artifacts (reproducible from report generators)
 *.mat
+
+# Scratch probes written by agents/sessions. `*_tmp.m` is already ignored above;
+# the Python variants are the same class of throwaway diagnostic.
+*_tmp.py
+
+# Third-party source material. Deliberately untracked by 55f6d03 ("Untrack
+# third-party source material"); validation-only and unreachable from
+# pf_init_paths per AGENTS.md.
+scripts/psat-2.1.11-mat/

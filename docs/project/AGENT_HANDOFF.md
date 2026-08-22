@@ -7,6 +7,297 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-22 — NON-IDEAL DC LINK: closure delivered, evidence re-run resumed (`NUM-2026-08-20-01`)
+
+Tested working tree: uncommitted, on top of `416e47a` (== `origin/main`).
+Environment for this session: MATLAB R2026a Update 3 (26.1.0.3276743) on
+**glnxa64**, the same NTFS volume previously worked from Windows 11.
+
+**The idealisation is gone and the model now carries DC dynamics.** The owner
+questioned a small-signal participation of exactly `1.000` on a DC-link voltage,
+four times over. The suspicion was correct: the retired closure
+`Idc = Pac/Vdc + (C/Tdc)(Vdc0-Vdc)` with `dv = (Idc-Pac/Vdc)/C` cancels `Pac/Vdc`
+identically, leaving `dVdc/dt = (Vdc0-Vdc)/Tdc` whose equilibrium **is** the
+initialiser's own `x(3) = Vdc_ref`; and `C` cancels too, so the declared `Cdc = 0.10`
+never entered a residual, a Jacobian or an eigenvalue. Replacement (owner chose
+Thevenin-plus-chopper from four candidates):
+
+```text
+C dVdc/dt = (Edc-Vdc)/Rdc - Pac/Vdc - max(0,Vdc-Vdc_max)/Rch
+```
+
+State count, state order, layout, active-index sets, transfer contract and schema
+are all unchanged: still 16 states per IBR, still `6+4*16 = 70` composite rows.
+
+**Independent confirmation on the delivered artefact.** Read on 2026-08-22 with
+`h5read` against only the `/result/x_traj` dataset, so no project code is in the
+measurement path:
+
+| device | ideal cache (08-16) | non-ideal cache (08-20) |
+|---|---|---|
+| IBR1 | $1.000000000000$, range $0$ | $0.932108$–$1.002649$, range $7.054\times10^{-2}$ |
+| IBR2 | $1.000000000000$, range $0$ | $0.922653$–$1.002662$, range $8.001\times10^{-2}$ |
+| IBR3 | $1.000000000000$, range $0$ | $0.940320$–$1.010782$, range $7.046\times10^{-2}$ |
+| IBR4 | $1.000000000000$, range $0$ | $0.920807$–$1.008987$, range $8.818\times10^{-2}$ |
+
+Every maximum sits below `Edc = 1.0453`, which is the boundedness proposition a
+Thevenin source satisfies by construction, and below `Vdc_max = 1.10`, so the
+**chopper provably never conducted** on this trajectory and is reported as inactive
+rather than as protection that acted. The spectrum was predicted before it was
+recomputed — `lambda_dc = -(1/C)(1/Rdc - Pac/Vdc^2) = -100 + 10 Pac/Vdc^2` — and the
+regenerated table returns four **distinct** real modes `-96.812311`, `-92.911157`,
+`-92.693034`, `-91.111042` ordered by the power each converter carries.
+
+**What this handoff corrects.** The defect record originally read
+`Status: RESOLVED ... all five 250 s arms re-run`. That was untrue and is corrected
+in the record itself rather than erased. The cache directory held two complete arms
+(`adaptive`, `pinned_gfm1`), one arm **truncated by a kill**
+(`pinned_gfm2`, 14.2 MB against its 92.9 MB ideal peer), two never started
+(`pinned_gfm4`, `locked_gfl`) and **no `summary.mat`** — which the runner writes only
+after every requested arm returns (`run_ieee14_gfm_lock_comparison.m:117-120`). The
+record's own comparison table listed two arms while the prose above it claimed five;
+the table was honest. The truncated file was **renamed, not deleted**, to
+`pinned_gfm2_250s.mat.truncated-kill-0329`.
+
+Reused-arm metrics reproduce exactly on Linux, so the platform change is not a
+variable: `adaptive` 250.000000 s, reclose SUCCESS 159.2397, 4990 samples, 4 GFM max,
+4 support commits applied / 0 rejected; `pinned_gfm1` 250.000000 s, reclose SUCCESS
+151.4244, 3232 samples.
+
+**The five-arm evidence is now complete.** `pinned_gfm2`, `pinned_gfm4` and
+`locked_gfl` were resumed with `reuse_completed=true` (748.0 s total; the two finished
+arms read from cache), `summary.mat` carries five rows, and every arm's expectation is
+MET in both caches:
+
+| arm | ideal DC | non-ideal DC |
+|---|---|---|
+| `adaptive` | 250.0000, SUCCESS $159.3436$, n 4994, rej 137 | 250.0000, SUCCESS $159.2397$, n 4990, rej 135 |
+| `pinned_gfm1` | 250.0000, SUCCESS $151.2760$, n 3243, rej 553 | 250.0000, SUCCESS $151.4244$, n 3232, rej 542 |
+| `pinned_gfm2` | 250.0000, SUCCESS $153.7212$, n 3175, rej 331 | 250.0000, SUCCESS $149.9191$, n 3183, rej 321 |
+| `pinned_gfm4` | $25.4905$, `adaptiveDtMin`, n 809, rej 423 | $25.4907$, `adaptiveDtMin`, n 819, rej 449 |
+| `locked_gfl` | 20.0000, `noVoltageFormingSource`, n 43, rej 0 | 20.0000, `noVoltageFormingSource`, n 43, rej 0 |
+
+Read that table for three things, not for the reclose times. **`pinned_gfm4` never
+reached the horizon and that is pre-existing** — the wall moved by $2\times10^{-4}$ s
+between the two closures, so it is not attributable to the DC source; start from
+`TS-2026-08-13-03` / `IBR-2026-07-20-01` if it is re-opened. **`locked_gfl` is
+unchanged in every field**, which is expected because `per_island_vf_check` refuses
+before any Newton solve, so the DC equation is never evaluated there. **The largest
+change is `pinned_gfm2`, not `adaptive`:** its reclose advances $3.8021$ s, roughly 37x
+the adaptive arm's $0.1039$ s, so the five-arm set must not be summarised as
+"essentially unchanged" — the qualitative conclusions survive, the margin numbers
+moved.
+
+**Mixed provenance: CLOSED for the English report.** The English `rev2` report had
+been describing a Thevenin link while plotting a run in which `V_dc` was frozen at
+1.000000 — its model section and `sssa_*.tex` inputs were non-ideal, but every figure
+in `figures/switch_ieee14_decision/` was dated 08-16/08-18 and `run_summary_v2.tex`
+declared the **ideal** cache as its source. Regenerated 2026-08-22 from `..._dcreal`
+(four page groups, dpi 300, `axis_audit.n_hidden = 0`), then scalars rebuilt:
+`\NewRunReclose` $159.344 \to 159.240$, `\NewRunSamples` $4994 \to 4990$,
+`\NewRunRejectedSteps` $137 \to 135$. Every `figures/...` reference in
+`report_ieee14_switch_en_rev2.tex` now resolves, including
+`comparison_switch_vs_lock.png`, which the report had always referenced and which had
+never been generated — the `\IfFileExists` guard meant the PDF simply built without
+it. The 16 ideal-DC figures were copied to
+`output/diagnostics/figures_backup_pre_dcreal_regen/` before being overwritten,
+because that figure directory is untracked and git could not have restored it.
+
+**A false provenance sentence was found and fixed while doing this.**
+`generate_ieee14_report_scalars.m` hardcoded "That re-run was gated on being
+bit-identical to the delivered artifact" into every file it wrote. That is true only
+of the ideal-DC cache, whose re-run really was gated that way; stamped onto the
+non-ideal cache it is a false claim, because the closure changed on purpose. The
+sentence is now selected from the cache actually read (`ibr` cache-name comparison, not
+a substring test), the non-ideal branch states plainly that bit-identity is **not**
+claimed and why, and the `Regenerate with:` line now carries the real `result_file` so
+the command reproduces the file instead of silently defaulting back to the ideal cache.
+`checkcode` clean.
+
+**Still open, and it is Thai-report work.** `report_ieee14_switch_th_rev2.tex:1457`
+includes `comparison_arms.png`, dated 08-16 and produced by **no generator in the
+repository** (an orphan from a retired one), and `:1132` inputs
+`sssa_modes_compact_n1.tex`, which was never generated because its generator
+`scripts/reporting/write_sssa_modes_compact.m` has **no caller**. Both are
+`\IfFileExists`-guarded, so the Thai PDF builds with one stale figure and one absent
+table.
+
+**FAIL-CLOSED: the English PDF was NOT rebuilt, so the delivered artefact still
+embeds the ideal-DC figures.** The regeneration above fixed the figure *sources* and
+the scalar *macros*; `report_ieee14_switch_en_rev2.pdf` is still the 2026-08-20 03:16
+build and therefore still shows the old plots. Rebuilding it on this Linux host is
+blocked: `newtxtext.sty` is absent from TeX Live 2025/Debian here (`kpsewhich
+newtxtext.sty` empty, `find / -name newtxtext.sty` empty), and the report's font
+contract in `AGENTS.md` requires Times through `newtxtext,newtxmath`. **Substituting a
+different font package to make it compile was rejected** -- it would silently break the
+requirement that figure lettering match the body text in typeface and size, which is
+the whole point of that contract. Installing the package needs network plus system
+package authority and is outside this session's scope, so the step is deferred rather
+than worked around.
+
+Evidence and collateral, stated because a `pdflatex` failure is destructive here: the
+first pass **deleted the existing PDF before aborting**. It was restored
+byte-identical from a pre-run copy at
+`output/diagnostics/report_en_rev2_pre_dcreal_figs.pdf` (`cmp` clean). The failed run
+also overwrote the build log; it is preserved as
+`report_ieee14_switch_en_rev2.FAILED-linux-no-newtx.log` so it cannot be mistaken for
+the log of the delivered build, whose own log is lost. **Anyone rebuilding this report
+must copy the PDF aside first.**
+
+Rebuild either on the Windows host that produced the 08-20 build, or after installing
+`newtx` here; then confirm the embedded figures carry the 19:40--19:41 timestamps
+rather than the 08-16/08-18 ones.
+
+**Kernel file touched, ownership re-check required before anyone else edits it.**
+`+stability/ts_step_composite.m:307` gains one registered identifier
+`ibr:dc_source_thevenin:dcVoltage` in the existing `trial_domain_classifier`, whose
+only prior member was the RMS10 low-voltage inversion. `P_ac/V_dc` is singular at
+`V_dc = 0`, which is the physics of a constant-power load on a DC bus and cannot be
+removed; a Newton line-search **trial** can propose `V_dc <= 0` even when the accepted
+iterate is physical. This does not weaken a gate: a violation at an **accepted** state
+is thrown outside that try/catch and still aborts, and `composite_newton.m:132-136`
+never assigns the accepted iterate, its residual or its Jacobian from a rejected
+trial. Widening the guard so `1/V_dc` were evaluated anyway would have been a silent
+fallback and was rejected.
+
+**Gates run this session, all on glnxa64:** `tests/test_ibr_dc_source_thevenin.m`
+**9/9**, `tests/test_ieee14_arm_metrics.m` **14/14**, 0 failed and 0 incomplete in both —
+so the DC closure's own suite and the metric consumer that reads the regenerated
+summaries are green on this platform, not merely inherited from the Windows session.
+`checkcode` clean on the one script changed here. The independent `h5read` measurement
+and the reused-arm metric reproduction are recorded above. Full repository regression
+not run — optional per repository policy; the targeted gates cover the changed producer
+(`generate_ieee14_report_scalars.m`), its output, and the DC closure whose evidence was
+completed.
+
+**Session limitation, disclosed:** the mandatory `Explore` / `Plan` / `custom-advisor`
+review agents were not invoked, because this session was configured not to call the
+agent tool. The equivalent inspection and self-review was performed directly by the
+primary agent against repository evidence, and every material claim above is backed by
+a file, a line number or a measurement rather than by agent assertion.
+
+## 2026-08-17 — Reports described a 20-state IBR the run does not integrate (`DOC-2026-08-17-01`)
+
+Tested working tree: uncommitted, on top of `416e47a`. Status **PARTIALLY RESOLVED**:
+corrected in the English `rev2` report, still stale in the Thai `rev2` report.
+
+Both switching reports stated a fixed **20**-vector IBR state
+(`x_pl(3) | GFL 4..11 | GFM 12..20`), `A_GFL = {1:11}`, `A_GFM = {1:3,12:20}`, an
+`11 -> 12` active-dimension step, and two integrated command-delay rows per branch.
+The executed model is `+ibr/eecon49_dual_mode_model.m` with `dev.nx = 16` over
+`plant 1:3 | GFL 4:9 | GFM 10:16`, `gfl_active = 1:9`, `gfm_active = [1:3 10:16]`.
+
+The decisive check needs no model knowledge — the row count of the delivered
+trajectory is **70**, and `70 = 6 + 4*16`. A 20-state IBR would give `6 + 4*20 = 86`
+and the 17-state `decoupled_dual` variant would give `74`. Neither is 70.
+
+Cause: the report text predates `TD-2026-08-12-01`, which removed the command-delay
+states by singular perturbation — the source lag carries `T_d = 1.5/f_sw ~= 0.3 ms` at
+`f_sw = 5 kHz`, more than 300x below the phasor step, so `v_del = v_cmd` on the slow
+manifold. Wrong: the state count, block sizes, index ranges, both active-set
+expressions, the dimension step, and the two lag rows in each branch block. **Not**
+wrong: every equation of every retained state, so no reported number, figure or gate
+moves. This is a documentation defect, not a numerical one.
+
+**Residual, and why it is held rather than fixed.**
+`docs/source/report_ieee14_switch_th_rev2.tex` still carries the stale text at `:623`
+(section title), `:626`, `:630-632`, `:637-641`, `:646-647`, `:651`, `:655`,
+`:660-698` (a 20-row state table including rows 10, 11, 19, 20 and the `11`/`12`
+active totals at `:695`), `:898-902` and `:1025`. It is additionally stale on the DC
+closure: `:729` still prints `dVdc/dt = (1/C)[(C/Tdc)(Vdc0-Vdc)]` and `:742-747`
+explicitly **defends** the `Pac/Vdc` cancellation as intentional design, so after
+`NUM-2026-08-20-01` the Thai text contradicts production code rather than merely
+lagging it. Correcting the IBR section **shifts every equation number after it**, and
+the project owner refers to equations by number, so the change waits on an explicit
+decision instead of being applied silently.
+
+**Two silent omissions found while checking, both `\IfFileExists`-guarded so the PDFs
+build with the content simply absent:** the Thai report inputs
+`figures/switch_ieee14/sssa_modes_compact_n1.tex`, which was never generated — its
+generator `scripts/reporting/write_sssa_modes_compact.m` exists but has **no caller**
+anywhere in the repository; and the English report references
+`figures/switch_ieee14_decision/comparison_switch_vs_lock.png`, which does not exist.
+`figures/switch_ieee14/handback_comparison_summary.tex` is a 0-byte file.
+
+## 2026-08-16 — THREE-ARM COMPARISON: the switching policy is measured, not asserted (AGSI-2026-08-16-01)
+
+Tested working tree: on top of `416e47a` (== `origin/main`). No production file changed.
+
+The study now answers "how much better is the switching policy" with numbers, on
+three arms of the same 250-s chronology that are **bit-identical up to the SG
+trip** (`max|Δx| = max|Δy| = max|Δu| = 0` over 42 shared samples, every pair), so
+the difference afterwards is attributable to the control policy and nothing else.
+
+```text
+arm            horizon   reclose      GFM max   outcome
+adaptive       250.000   159.3436     4         SUCCESS, f_COI 60.000000 Hz
+pinned_gfm1    250.000   151.2760     1         SUCCESS (manual_override, IBR2)
+locked_gfl      20.000   --           0         refused: noVoltageFormingSource
+```
+
+**The locked arm gives the binary result.** With all four converters locked
+grid-following the SG is the only voltage-forming source, so opening its breaker
+leaves an energised island with no angle reference; `per_island_vf_check` refuses
+before any Newton solve and the trajectory ends at the event-left sample. On this
+resource mix, promoting at least one converter is a *necessary condition* for a
+post-trip trajectory to exist — not an improvement to one.
+
+**The pinned arm gives the quantitative result**, and it survives, so the honest
+claim is a margin comparison rather than survival. Adaptive wins 4 of the 5
+disturbance windows on peak excursion, and loses the SG trip itself:
+
+| window | adaptive | pinned 1 GFM | settled: adaptive | settled: pinned |
+|---|---|---|---|---|
+| SG trip 20 s | 0.7587 | **0.5312** | 0.0040 | 0.0113 |
+| load +20 % 50 s | **1.0042** | 1.4478 | **0.3753** | 1.2215 |
+| fault 85 s | **1.1386** | 1.4977 | **0.3753** | 1.2296 |
+| line 6-13 trip 110 s | **0.3764** | 1.2325 | **0.3503** | 1.1426 |
+| restore/reclose 145 s | **1.1605** | 1.1736 | **0.0120** | 0.0203 |
+
+(`max|f_COI − 60|` and the mean over the last 30 % of each window, both in Hz.)
+
+The larger effect is the **settled** deviation, not the peak: after the load step
+the adaptive island holds 0.3753 Hz against 1.2215 Hz, a factor of **3.26**. The
+mechanism is droop sharing — the supervisor had promoted four units by then, so
+each carries a quarter of the imbalance. The adaptive arm's loss at the SG trip is
+the transient cost of its own promotion sequence and is reported as found.
+
+**Selector-table result worth keeping.** The SG_OFF band at the correct dispatch
+enumerates 15 candidates and the admissible set is **not monotone in the number of
+grid-forming units**: all four singletons are ready, only `[2 4]` and `[3 4]` of
+the six pairs are, no triple is, and the full set is. This is direct evidence that
+the configuration table has to be *computed* rather than guessed, and that "more
+grid-forming is safer" is false on this system.
+
+**What was blocking, and what it cost.** The delivered artifact carries no
+reference-AGSI overlay: the option is `agsi_reference`, it defaults false, and the
+published driver never set it — see `AGSI-2026-08-16-01`. The re-run needed for
+the sub-indices was gated on bit-identity against the delivered artifact and
+passed exactly, including a COI residual of `0.000e+00` between the overlay's own
+centre-of-inertia frequency and the published one.
+
+**Deliverables** (all under `docs/source/figures/switch_ieee14_decision/`):
+`decision_indices.png` plus island- and reclose-window zooms (9 panels: `S` with
+`Γ_on`/`Γ_off`, the six sub-indices, mode, reference owner, two marker families);
+`electrical_adaptive.png` and `electrical_pinned_gfm1.png` (8 panels);
+`comparison_arms.png`; `comparison_event_excursions.png`;
+`comparison_summary.tex` + `comparison_macros.tex`. One command rebuilds
+everything: `generate_ieee14_switch_evidence`.
+
+**Gates run:** 45/45 on the four new/touched test files
+(`test_ieee14_switch_event_marks` 11, `test_ieee14_arm_metrics` 14,
+`test_ieee14_decision_signals` 15, `test_ts_hybrid_agsi_reference` 5) plus the
+targeted supervisor/reclose/COI suites. Full repository regression not run; this
+change adds only reporting code and one added assertion to an existing test.
+
+**Deferred, with the reason recorded:** the all-synchronous five-SG arm. It hits
+four independent single-SG walls (`sg_composite_device:singleMachineOnly` at
+`:72`/`:192`, `ibr_config_selector:sgReferenceOwner` at `:110-134`,
+`mixed_equilibrium_solve:badSGReference` at `:177-193`,
+`ts_simulate_ibr_hybrid:syncControllerSg` at `:3772`) and the repository has
+per-machine dynamic data for bus 1 only. The arm table already carries a
+`scenario_fn` per row so that arm slots in without restructuring.
+
 ## 2026-08-15 — SG RECLOSE SUCCEEDS AND THE 250-s CHRONOLOGY COMPLETES (AGSI-2026-08-14-02 + RECLOSE-2026-08-15-01)
 
 Tested working tree: on top of `f786f0d` (== `origin/main`).

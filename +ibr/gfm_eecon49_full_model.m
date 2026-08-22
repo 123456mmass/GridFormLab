@@ -45,21 +45,25 @@ dc=struct();
 if isfield(params,'dc_source') && isstruct(params.dc_source), dc=params.dc_source; end
 Lf=getv(g,'Lf',0.15); Rf=getv(g,'Rf',0.015); Cdc=getv(g,'Cdc',0.10);
 Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2);
-Tdc=getv(dc,'Tdc',0.10);
 M=getv(g,'M',0.08); Dv=getv(g,'Dv',20.0); tauE=getv(g,'tauE',0.05);
 kQ=getv(g,'kQ',0.25); kE=getv(g,'kE',8.0);
 kpV=getv(g,'kpV',1.20); kiV=getv(g,'kiV',4.50);
 kpI=getv(g,'kpI',0.30); kiI=getv(g,'kiI',4.00);
 wb=2*pi*fbase; kappa=Sbase/Mbase;
 dq_power_scale=1;
-validateattributes([Lf Rf Cdc Vdc_ref Imax Tdc M Dv tauE kQ kE kpV kiV kpI kiI wb kappa],{'double'},{'finite'});
-if any([Lf Cdc Vdc_ref Imax Tdc M tauE kpV kiV]<=0) || any([Rf Dv kQ kE kpI kiI]<0)
+validateattributes([Lf Rf Cdc Vdc_ref Imax M Dv tauE kQ kE kpV kiV kpI kiI wb kappa],{'double'},{'finite'});
+if any([Lf Cdc Vdc_ref Imax M tauE kpV kiV]<=0) || any([Rf Dv kQ kE kpI kiI]<0)
     error('ibr:gfm_eecon49:params','invalid GFM parameter sign or magnitude.');
 end
 
+% Non-ideal DC source, identical helper and identical arguments as the GFL
+% branch, so Edc agrees between the two and the runtime transfer preserves
+% dVdc/dt as well as V_dc itself. Derivation in ibr.dc_source_thevenin_params.
+dcp=ibr.dc_source_thevenin_params(dc,Vdc_ref,Cdc,Rf,kappa,P_ref,Q_ref,V0);
+
 x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiV);
 u0=[P_ref;Q_ref;E_ref];
-f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,Tdc, ...
+f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,dcp, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
 current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
@@ -80,13 +84,13 @@ dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, .
         'E_index',6,'theta_index',4,'omega_index',5, ...
     'params',struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',wb,'E_ref',E_ref, ...
             'Lf',Lf,'Rf',Rf,'Cdc',Cdc, ...
-            'Vdc_ref',Vdc_ref,'Imax',Imax,'Tdc',Tdc,'M',M,'Dv',Dv,'tauE',tauE, ...
+            'Vdc_ref',Vdc_ref,'Imax',Imax,'dc_source',dcp,'M',M,'Dv',Dv,'tauE',tauE, ...
             'kQ',kQ,'kE',kE,'kpV',kpV,'kiV',kiV,'kpI',kpI,'kiI',kiI, ...
             'kappa',kappa,'dq_power_scale',dq_power_scale), ...
         'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES'));
 end
 
-function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,Tdc,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
+function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
 V=busv(y,bp); id=x(1); iq=x(2);
 vdc=x(3); th=x(4); om=x(5); E=x(6);
 xiVd=x(7); xiVq=x(8); xiId=x(9); xiIq=x(10);
@@ -111,15 +115,16 @@ ri_d=idref_raw-idref; ri_q=iqref_raw-iqref;
 ed=idref-id; eq=iqref-iq;
 vcd=vd+R*id-om*L*iq+kpI*ed+kiI*xiId;
 vcq=vq+R*iq+om*L*id+kpI*eq+kiI*xiIq;
-% PROJECT_DERIVED DC-source closure; the same physical port and declared Tdc
-% are shared across GFL/GFM. See the GFL branch for the derivation.
+% PROJECT_DERIVED DC-source closure; the same physical port and the same
+% Thevenin source parameters are shared across GFL/GFM. Derivation in
+% ibr.dc_source_thevenin_params.
 Pac=vcd*id+vcq*iq;
 % Command-delay states reduced (T_d << dt, slow manifold v_del = v_cmd): the
 % inner-loop commanded voltage vcd/vcq drives the AC current dynamics directly.
 dx=zeros(10,1);
 dx(1)=(vcd-vd-R*id+om*L*iq)/(L/wb);
 dx(2)=(vcq-vq-R*iq-om*L*id)/(L/wb);
-dx(3)=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,Pac); dx(4)=dth; dx(5)=dw; dx(6)=dE;
+dx(3)=ibr.dc_source_thevenin_rhs(vdc,Pac,dcp); dx(4)=dth; dx(5)=dw; dx(6)=dE;
 % Anti-windup belongs to the voltage-loop integrators because their output
 % is the current-reference vector clipped by Imax. The inner current PI has
 % no separate voltage-command clamp in this model and therefore integrates
@@ -161,11 +166,4 @@ function v=getv(s,n,d), if isfield(s,n)&&~isempty(s.(n)), v=s.(n); else, v=d; en
 function [a,b,sat]=limit_i(a,b,m), r=hypot(a,b); sat=r>m; if sat, a=a*m/r; b=b*m/r; end, end
 function d=conditional_hold(e,direction_gain,limiter_residual,limited)
 if limited && direction_gain*e*limiter_residual>0, d=0; else, d=e; end
-end
-function dv=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,Pac) %#ok<INUSD>
-if ~isfinite(vdc) || vdc<=1e-6
-    error('ibr:gfm_eecon49:dcVoltage','V_dc must remain finite and positive.');
-end
-Idc=Pac/vdc+(C/Tdc)*(Vdc0-vdc);
-dv=(Idc-Pac/vdc)/C;
 end

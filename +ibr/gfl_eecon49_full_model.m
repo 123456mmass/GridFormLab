@@ -38,21 +38,27 @@ g=struct(); if isfield(params,'gfl_eecon49') && isstruct(params.gfl_eecon49), g=
 dc=struct(); if isfield(params,'dc_source') && isstruct(params.dc_source), dc=params.dc_source; end
 Lf=getv(g,'Lf',0.15); Rf=getv(g,'Rf',0.015); Cdc=getv(g,'Cdc',0.10);
 Vdc_ref=getv(g,'Vdc_ref',1.0); Imax=getv(g,'Imax',1.2);
-Tdc=getv(dc,'Tdc',0.10);
 kpPLL=getv(g,'kpPLL',1.20); kiPLL=getv(g,'kiPLL',5.00);
 kpP=getv(g,'kpP',0.80); kiP=getv(g,'kiP',2.50); kpQ=getv(g,'kpQ',0.80); kiQ=getv(g,'kiQ',2.50);
 kpI=getv(g,'kpI',0.30); kiI=getv(g,'kiI',4.00);
 omega_b=2*pi*fbase; kappa=Sbase/Mbase;
 dq_power_scale=1;
-validateattributes([Lf Rf Cdc Vdc_ref Tdc kpPLL kiPLL kpP kiP kpQ kiQ kpI kiI omega_b kappa],{'double'},{'finite'});
-if Lf<=0 || Cdc<=0 || Tdc<=0 || Vdc_ref<=0 || Imax<=0, error('ibr:gfl_eecon49:params','invalid positive parameter.'); end
+validateattributes([Lf Rf Cdc Vdc_ref kpPLL kiPLL kpP kiP kpQ kiQ kpI kiI omega_b kappa],{'double'},{'finite'});
+if Lf<=0 || Cdc<=0 || Vdc_ref<=0 || Imax<=0, error('ibr:gfl_eecon49:params','invalid positive parameter.'); end
+
+% Non-ideal DC source. The closure, the forced value of Edc, the derivation of
+% Rdc from the declared regulation, the boundedness proof and the reported
+% stiffness all live in ibr.dc_source_thevenin_params. Both controller branches
+% call the same helper with the same arguments, so Edc is identical in GFL and
+% GFM and a runtime transfer introduces no step in dVdc/dt.
+dcp=ibr.dc_source_thevenin_params(dc,Vdc_ref,Cdc,Rf,kappa,P_ref,Q_ref,V0);
 
 Vmag=abs(V0); th0=angle(V0);
 id0=kappa*P_ref/Vmag;
 iq0=-kappa*Q_ref/Vmag;
 x0=[id0;iq0;Vdc_ref;th0;0;id0/kiP;-iq0/kiQ;0;0;0];
 u0=[P_ref;Q_ref];
-f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,omega_b,Lf,Rf,Cdc,Vdc_ref,Imax,Tdc, ...
+f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,omega_b,Lf,Rf,Cdc,Vdc_ref,Imax,dcp, ...
     kpPLL,kiPLL,kpP,kiP,kpQ,kiQ,kpI,kiI);
 current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
@@ -66,13 +72,13 @@ dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, .
     'active_state_indices',@(ec) 1:9,'provenance',struct('model','EECON49_GFL_FULL_STATE_MAPPED', ...
     'source','EECON49-P4 eq.(6)-(19) and parameter table; command-delay eq.(20)-(21) reduced (T_d<<dt)','source_classification','SOURCE_MAPPED', ...
     'params',struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',omega_b, ...
-        'Lf',Lf,'Rf',Rf,'Cdc',Cdc,'Vdc_ref',Vdc_ref,'Imax',Imax,'Tdc',Tdc, ...
+        'Lf',Lf,'Rf',Rf,'Cdc',Cdc,'Vdc_ref',Vdc_ref,'Imax',Imax,'dc_source',dcp, ...
         'kpPLL',kpPLL,'kiPLL',kiPLL,'kpP',kpP,'kiP',kiP,'kpQ',kpQ,'kiQ',kiQ,'kpI',kpI,'kiI',kiI, ...
         'kappa',kappa,'dq_power_scale',dq_power_scale), ...
     'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES'));
 end
 
-function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,Tdc,kppl,kipl,kpp,kip,kpq,kiq,kpi,kii)
+function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp,kppl,kipl,kpp,kip,kpq,kiq,kpi,kii)
 V=busv(y,bp); id=x(1); iq=x(2);
 vdc=x(3); th=x(4); xiPLL=x(5); xiP=x(6); xiQ=x(7); xiId=x(8); xiIq=x(9);
 Vdq=V*exp(-1i*th); vd=real(Vdq); vq=imag(Vdq); I=complex(id,iq)*exp(1i*th)/k; S=V*conj(I); Pinv=k*real(S); Qinv=k*imag(S);
@@ -82,10 +88,12 @@ dw=kppl*vq+kipl*xiPLL; w=1+dw/wb; eP=k*u(1)-Pinv; eQ=k*u(2)-Qinv;
     ri_d=idref_raw-idref; ri_q=iqref_raw-iqref;
 ed=idref-id; eq=iqref-iq; vcd=vd+R*id-w*L*iq+kpi*ed+kii*xiId; vcq=vq+R*iq+w*L*id+kpi*eq+kii*xiIq;
 % PROJECT_DERIVED DC-source closure. The source specifies the energy balance
-% but no I_dc law. A controlled current source supplies the instantaneous
-% converter power and restores V_dc with declared Tdc.
+% but no I_dc law. The project supplies a non-ideal source: an EMF behind its
+% internal resistance, with an overvoltage chopper. P_ac is the converter-side
+% power, i.e. the bus power plus the filter loss, which is what the DC bus
+% actually has to supply.
 P_ac=vcd*id+vcq*iq;
-dvdc=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,P_ac);
+dvdc=ibr.dc_source_thevenin_rhs(vdc,P_ac,dcp);
 % Command-delay states reduced (T_d << dt, slow manifold v_del = v_cmd): the
 % inner-loop commanded voltage vcd/vcq drives the AC current dynamics directly.
 dx=zeros(10,1); dx(1)=(vcd-vd-R*id+w*L*iq)/(L/wb); dx(2)=(vcq-vq-R*iq-w*L*id)/(L/wb);
@@ -122,14 +130,4 @@ function v=getv(s,n,d), if isfield(s,n)&&~isempty(s.(n)), v=s.(n); else, v=d; en
 function [a,b,sat]=limit_i(a,b,m), r=hypot(a,b); sat=r>m; if sat, a=a*m/r; b=b*m/r; end, end
 function d=conditional_hold(e,direction_gain,limiter_residual,limited)
 if limited && direction_gain*e*limiter_residual>0, d=0; else, d=e; end
-end
-function dv=dc_link_rhs(vdc,Vdc0,V,u,k,R,C,Tdc,Pac) %#ok<INUSD>
-if ~isfinite(vdc) || vdc<=1e-6
-    error('ibr:gfl_eecon49:dcVoltage','V_dc must remain finite and positive.');
-end
-% Exact instantaneous power feed-forward prevents the unpublished DC source
-% from changing the sourced AC controller equilibrium. The second term is a
-% declared first-order voltage-restoration current.
-Idc=Pac/vdc+(C/Tdc)*(Vdc0-vdc);
-dv=(Idc-Pac/vdc)/C;
 end

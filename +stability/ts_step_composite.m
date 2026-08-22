@@ -306,11 +306,31 @@ end
 % =========================================================================
 function tf = trial_domain_classifier(me)
 %TRIAL_DOMAIN_CLASSIFIER  Exact-ID predicate for line-search trial throws.
-%   Returns true ONLY for the confirmed RMS10 runtime low-voltage domain
-%   violation. Every other exception (including the constructor/equilibrium
+%   Returns true ONLY for a confirmed MODEL DOMAIN BOUNDARY that a line-search
+%   trial can cross while the accepted iterate stays physical. Every other
+%   exception (including the constructor/equilibrium
 %   voltageOutsideValidityDomain ID and all hard errors) returns false so
 %   composite_newton rethrows it unchanged.
-tf = strcmp(me.identifier, 'ibr:gfl_rms10_model:lowVoltagePowerInversion');
+%
+%   The registered boundaries, and why each one belongs here:
+%     ibr:gfl_rms10_model:lowVoltagePowerInversion
+%       The RMS10 GFL constitutive law inverts below its runtime minimum
+%       terminal voltage.
+%     ibr:dc_source_thevenin:dcVoltage
+%       The DC bus carries a constant-power load, so the link equation has the
+%       term P_ac/V_dc, which is singular at V_dc = 0. A trial iterate with
+%       V_dc <= 0 is outside the model domain, not a solution the step may
+%       accept. Shortening the trial is the correct response; widening the
+%       guard so 1/V_dc is evaluated anyway would be a silent fallback.
+%
+%   This predicate does NOT weaken any gate. A violation at an ACCEPTED state
+%   is thrown outside this try/catch and still aborts the step, and
+%   composite_newton never assigns the accepted iterate, its residual or its
+%   Jacobian from a rejected trial (composite_newton.m:132-136).
+DOMAIN_BOUNDARY_IDS = { ...
+    'ibr:gfl_rms10_model:lowVoltagePowerInversion', ...
+    'ibr:dc_source_thevenin:dcVoltage'};
+tf = any(strcmp(me.identifier, DOMAIN_BOUNDARY_IDS));
 end
 
 % =========================================================================

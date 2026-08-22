@@ -21,9 +21,14 @@ function dev = eecon49_dual_mode_model(device_id,bus_id,bus_position, ...
 % below the phasor step dt = 0.10 s, so v_del = v_cmd algebraically and the
 % AC current dynamics use the commanded voltage directly (defect
 % TD-2026-08-12-01). The source publishes the DC energy balance but not its
-% I_dc law, so the shared V_dc state is closed by a project-derived current-
-% source regulator: exact instantaneous converter-power feed-forward plus
-% proportional voltage restoration with declared Tdc.
+% I_dc law, so the shared V_dc state is closed by a project-derived NON-IDEAL
+% DC source: an EMF behind its internal resistance with an overvoltage chopper,
+% Idc = (Edc - Vdc)/Rdc, derived in ibr.dc_source_thevenin_params and evaluated
+% by ibr.dc_source_thevenin_rhs. Both controller branches call the same helper
+% with the same arguments, so Edc agrees between them and a runtime transfer
+% preserves dVdc/dt as well as V_dc. This replaces an earlier closure whose
+% exact power feed-forward made V_dc identically constant (measured range 0 over
+% 250 s) and made the case capacitance Cdc cancel out of every residual.
 %
 % Fixed input ABI:
 %   u = [P_ref; Q_ref; E_ref].

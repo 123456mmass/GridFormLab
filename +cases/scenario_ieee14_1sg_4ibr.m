@@ -304,7 +304,15 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
         'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
         'kpI',0.3,'kiI',4.0);
     end
-    r.dynamic_params.dc_source=struct('Tdc',0.10);
+    % Non-ideal DC source shared by the EECON49 GFL and GFM branches.
+    % eps_dc is the declared DC-source regulation at rated converter power;
+    % Rdc, Edc, Rch and the DC eigenvalue are derived from it in
+    % ibr.dc_source_thevenin_params, which also records why eps_dc=0.10 and
+    % proves that the chopper stays inactive while Edc <= Vdc_max.
+    % Tdc is retained only for ibr.gfm_decoupled_full_model, which is off the
+    % EECON49 path and keeps its own earlier closure.
+    r.dynamic_params.dc_source=struct('Tdc',0.10, ...
+        'eps_dc',0.10,'Pr',1.0,'Vdc_max',1.10,'delta_ch',0.02,'Pmax',1.06*1.2);
 elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
 end

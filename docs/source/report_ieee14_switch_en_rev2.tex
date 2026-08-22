@@ -7,7 +7,7 @@
 %
 %  This revision supersedes report_ieee14_switch_en_new.tex. What changed:
 %    - results moved from the preserved 200-s run to the 250-s adaptive arm
-%      (output/diagnostics/ieee14_gfm_lock_compare/adaptive_250s.mat);
+%      (output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat);
 %    - the AGSI decision page and its two zoom pages were added;
 %    - the disturbance-chronology diagram was moved above the result figures;
 %    - the IBR state count was CORRECTED from 20 to the 16 states the run
@@ -301,9 +301,10 @@ in any field that the arm did not declare.
 The transient figures (Sections~\ref{sec:agsi-fig} and~\ref{sec:transient}) are
 rendered from the accepted trajectory
 \texttt{output/\allowbreak diagnostics/\allowbreak ieee14\_\allowbreak
-gfm\_\allowbreak lock\_\allowbreak compare/\allowbreak adaptive\_\allowbreak
-250s.mat}. Every plotted sample is a raw accepted value. Nothing is smoothed,
-filtered, decimated, clipped, offset, interpolated or augmented with synthetic
+gfm\_\allowbreak lock\_\allowbreak compare\_\allowbreak dcreal/\allowbreak
+adaptive\_\allowbreak 250s.mat}. Every plotted sample is a raw accepted
+value. Nothing is smoothed, filtered, decimated, clipped, offset, interpolated
+or augmented with synthetic
 noise. Where a display window is applied it is a horizontal range only --- no
 in-window sample is altered or dropped, and an arm whose trajectory ends early is
 drawn only as far as it ran.
@@ -404,7 +405,10 @@ $E$ & voltage-loop reference state of the $Q$--$V$ loop (GFM) \\
 $\xi_{Vd}$, $\xi_{Vq}$ & voltage-loop integrators (GFM) \\
 $\xi_{Id}$, $\xi_{Iq}$ & inner current-loop integrators (both modes) \\
 $v_{cd}$, $v_{cq}$ & inner-loop commanded voltages \\
-$R_f$, $L_f$, $C_{dc}$, $T_{dc}$ & filter resistance and inductance; DC capacitance; DC restoration time \\
+$R_f$, $L_f$, $C_{dc}$ & filter resistance and inductance; DC-link capacitance \\
+$E_{dc}$, $R_{dc}$ & DC-source EMF and internal resistance (Section~\ref{sec:dcsource}) \\
+$R_{ch}$, $V_{dc}^{\max}$ & overvoltage-chopper resistance and conduction threshold \\
+$\varepsilon$, $P_r$ & DC-source regulation at rated converter power, and that power \\
 $M$, $D_v$, $\tau_E$, $k_Q$, $k_E$ & virtual inertia, damping, amplitude time constant and $Q$--$V$ gains \\
 $I_{\max}$, $\Pi_I$ & current magnitude limit and the circular limiter \\
 $\mathcal{H}$ & conditional anti-windup integrator \\
@@ -821,12 +825,17 @@ Rows (1)--(2) are Kirchhoff's voltage law across the series $R_f,L_f$ filter in
 the rotating frame; the cross terms $\pm\omega L$ are the frame-rotation EMF, and
 the rotation rate $\omega$ is supplied by whichever controller is active (the PLL
 in GFL, the VSG swing in GFM) --- this is the only place the plant equations feel
-the mode. Row (3) is the \textsf{PROJECT\_DERIVED} DC-source closure: the coded
-current is $I_{dc}=P_{ac}/V_{dc}+(C/T_{dc})(V_{dc}^{0}-V_{dc})$ and
-$\dot V_{dc}=(I_{dc}-P_{ac}/V_{dc})/C$, in which the power feed-forward
-$P_{ac}/V_{dc}$ cancels exactly, leaving the first-order voltage restoration
-shown. This cancellation is deliberate: the unpublished DC source cannot move the
-sourced AC equilibrium. At steady state row (3) gives $V_{dc}=V_{dc}^{0}$.
+the mode. Row (3) is the \textsf{PROJECT\_DERIVED} DC-source closure derived in
+Section~\ref{sec:dcsource}: the source publishes the energy balance
+$C\dot V_{dc}=I_{dc}-P_{ac}/V_{dc}$ but not the law for $I_{dc}$, and the coded
+current is the Th\'evenin law~\eqref{eq:dcsrc}, $I_{dc}=(E_{dc}-V_{dc})/R_{dc}$,
+less the chopper draw~\eqref{eq:dcchop}. Nothing in row (3) cancels: $P_{ac}$
+drives the coordinate and $C_{dc}$ scales it, so both enter the residual and the
+Jacobian. Setting $\dot V_{dc}=0$ with the chopper off gives
+$V_{dc}^{2}-E_{dc}V_{dc}+R_{dc}P_{ac}=0$, whose upper root is $V_{dc}=V_{dc}^{0}$
+at the dispatched loading $P_{ac}=P_{ac}^{0}$ --- that is what fixes $E_{dc}$
+in~\eqref{eq:dcedc} --- and moves with $P_{ac}$ at every other loading. The
+measured excursions are reported at the end of Section~\ref{sec:dcsource}.
 
 \subsection{Non-ideal DC source}\label{sec:dcsource}
 The source publishes the DC-link energy balance
@@ -930,7 +939,8 @@ rather than hidden by an idealisation.
 present one carried a closure with an exact instantaneous power feed-forward,
 $I_{dc}=P_{ac}/V_{dc}+(C/T_{dc})(V_{dc}^{0}-V_{dc})$, which cancels the AC
 loading identically and collapses the link to
-$\dot V_{dc}=(V_{dc}^{0}-V_{dc})/T_{dc}$. Two measured consequences identify it
+$\dot V_{dc}=(V_{dc}^{0}-V_{dc})/T_{dc}$, with $T_{dc}$ a declared restoration time
+constant no longer used on this path. Two measured consequences identify it
 as an ideal DC source. Its own initial condition $V_{dc}(0)=V_{dc}^{0}$ is the
 equilibrium of that scalar equation, so $V_{dc}$ stayed at $1.000000000000\pu$
 for every accepted sample of every converter over the whole $250\second$ run,
@@ -1392,7 +1402,7 @@ for the whole run), and the entire controller block that a given IBR is
 \emph{not} currently using (frozen for as long as that mode is inactive). The map
 $\Pi$ that selects $\mathcal{A}$ is the same runtime authority
 (\texttt{ts\_dynamic\_state\_indices}) at every one of its call sites, so the
-figure of $n_x(t)$ below cannot disagree with what the integrator actually
+reported dimension $n_x(t)$ cannot disagree with what the integrator actually
 solved.
 
 \subsection{The switch: from integration to assignment}\label{sec:ts-switch}

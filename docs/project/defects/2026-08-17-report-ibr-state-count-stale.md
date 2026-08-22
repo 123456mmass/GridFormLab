@@ -1,7 +1,10 @@
 # DOC-2026-08-17-01 — the switching reports described a 20-state IBR that the run does not integrate
 
-Status: **PARTIALLY RESOLVED** (2026-08-17) — corrected in the English `rev2`
-report; the Thai `rev2` report still carries the stale description.
+Status: **RESOLVED** (2026-08-22). Corrected in the English `rev2` report on
+2026-08-17 and in the Thai `rev2` report on 2026-08-22, which also rebuilt its
+PDF (32 pages, `xelatex`, two passes, no undefined references). The equation
+renumbering that held the Thai fix back is now applied and mapped below.
+History of the partial state is kept in this record rather than erased.
 
 Branch: `main`. Tested tree: uncommitted work on top of `416e47a`.
 Environment: MATLAB R2026a, Windows 11.
@@ -79,15 +82,55 @@ Limitations bullet discloses the correction against the earlier revisions. The
 arithmetic check `6 + 4*16 = 70` is printed in the body so a reader can falsify
 the claim against the stored trajectory.
 
-## Residual work
+## Fix, Thai report (2026-08-22)
 
-`docs/source/report_ieee14_switch_th_rev2.tex` still carries the stale text at
-`:623` (section title), `:626`, `:630-632`, `:637-641`, `:646-647`, `:651`,
-`:655`, `:660-698` (a 20-row state table, incl. rows 10, 11, 19, 20 and the
-`11`/`12` active totals at `:695`), `:898-902` and `:1025`. Correcting it also
-**shifts every equation number after the IBR section**, which matters because
-the project owner refers to equations by number; the change is therefore held
-pending an explicit decision rather than applied silently.
+`docs/source/report_ieee14_switch_th_rev2.tex` now states the same 16-state
+layout as the English report. Corrected in place: section title, the
+`\in\mathbb{R}^{16}` state vector with blocks `(3) | (6) 4..9 | (7) 10..16`, the
+two controller lists with the delay states dropped, `A_GFL={1:9}` and
+`A_GFM={1:3,10:16}` with the `9`/`10` active totals, the state table reduced to
+16 rows with GFM renumbered `10..16`, the GFL block reduced to rows `(4)-(9)`,
+the GFM block to `(10)-(16)`, both per-state proofs renumbered with the delay
+sentences removed, the composite active-set itemize, and the `n_x` counting
+identity (`9`/`10` per IBR, `5+4*9=41` and `5+4*10=45`). A new subsection
+`sec:ibr-reduction` derives the reduction and cites `TD-2026-08-12-01`, and
+states plainly that earlier revisions printed the pre-reduction layout.
+
+**Independent oracle for the active dimensions.** Rather than assert `9`/`10`
+from the source, the numbers were read back out of the delivered artefact.
+`generate_switch_new_report_figures` re-run against
+`output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat`
+(`t_max=250`) reports `nx_before_trip = 41` and per-device
+`[5 9 9 9 9] -> [5 10 9 9 9]` across the first promotion, i.e. `41 = 5 + 4*9`
+and a `9 -> 10` step on the promoted converter. That is the same quantity the
+integrator solved, published by the same `ts_dynamic_state_indices` authority.
+
+## Equation renumbering, applied and mapped
+
+Deleting the four command-delay rows removes four numbered `align` rows, so the
+Thai report goes from 52 to 48 numbered equations. This was the blocker: the
+owner cites equations by printed number. The complete map, produced by
+enumerating numbered equations in both trees rather than by hand:
+
+| before | after | what |
+|---|---|---|
+| (1)-(32) | unchanged | through the GFL inner-current rows |
+| (33),(34) | **deleted** | GFL command-delay rows |
+| (35)-(41) | (33)-(39) | the seven GFM branch rows, shift -2 |
+| (42),(43) | **deleted** | GFM command-delay rows |
+| (44)-(52) | (40)-(48) | shift -4 |
+
+By label: `eq:transfer` 44->40, `eq:contgate` 45->41, `eq:stackf` 46->42,
+`eq:dae` 47->43, `eq:trap` 48->44, `eq:resid` 49->45, `eq:frozen` 50->46,
+`eq:assign` 51->47, `eq:nxcount` 52->48. Every label from `eq:kcl` through
+`eq:ibractive` keeps its number, and **no equation was added**: each new
+derivation in the revision is written as inline math specifically so nothing
+below it moves a second time. The same map is recorded in the report's own
+header comment so it travels with the file.
+
+Verification: the rebuilt PDF's highest printed equation number is `48`; the GFL
+block ends at `(9)` and the GFM block runs `(10)`-`(16)`; the state table prints
+16 rows with active totals `9` and `10`.
 
 ## Falsified en route
 

@@ -308,17 +308,29 @@ One destructive behaviour is worth recording for whoever rebuilds it: the failed
 byte-identical from `output/diagnostics/report_en_rev2_pre_dcreal_figs.pdf`. Copy the
 PDF aside before invoking LaTeX on this report.
 
-**Still open, and it belongs to the Thai report.**
-`report_ieee14_switch_th_rev2.tex:1457` includes
-`figures/switch_ieee14_decision/comparison_arms.png`, which is dated 08-16 (ideal DC)
-and which **no generator in the repository produces** — `rg comparison_arms
-scripts/reporting` returns nothing, so it is an orphan from a retired generator. The
-Thai report also still inputs `figures/switch_ieee14/sssa_modes_compact_n1.tex`,
-which was never generated at all; its generator
-`scripts/reporting/write_sssa_modes_compact.m` exists but has **no caller**. Both are
-`\IfFileExists`-guarded, so the Thai PDF builds with one stale figure and one absent
-table. These are held with the rest of the Thai-report work under
-`DOC-2026-08-17-01`, which waits on the owner's decision about equation renumbering.
+**Closed 2026-08-22: the Thai report.** `report_ieee14_switch_th_rev2.tex` printed
+the RETIRED closure in its DC row and its prose explicitly DEFENDED the `P_ac/V_dc`
+cancellation ("การหักล้างนี้เป็นเจตนาของการออกแบบ ... ที่สภาวะคงตัวแถว (3) ให้
+$V_{dc}=V_{dc}^{0}$ พอดี"), and its small-signal prose attributed the four real roots
+near `-10 s^-1` to the DC-bus family — that value being `-1/T_dc` of this very
+closure. All three are corrected, together with the 16-state layout, and the Thai PDF
+is rebuilt (`xelatex` twice, exit 0, no undefined references, 32 pages).
+
+Two orphaned inputs are resolved rather than left guarded. The 08-16 ideal-DC
+`comparison_arms.png`, which no generator in the repository produces, is replaced by
+`comparison_full.png` + `comparison_windows.png` — the pair the English report already
+uses, and whose own caption identifies the single-page version as the thing it
+superseded. The never-generated `sssa_modes_compact_n1.tex` is replaced by the
+generated `sssa_modes_n1.tex` itself; its generator `write_sssa_modes_compact.m`
+projects a FIVE-column source and the current generated table has four columns (no
+`zeta`), so it errors `noRows` and was deliberately not repaired.
+
+**The prose defect existed in the English report too**, which the 08-20 record did
+not notice: the row-(3) "Proof of each row" paragraph still narrated
+`I_dc = P_ac/V_dc + (C/T_dc)(V_dc^0-V_dc)` and asserted the cancellation was
+deliberate, four lines below an align row printing the Thevenin closure. Both reports
+also declared the IDEAL cache as their figure source after the figures had been
+regenerated from `..._dcreal`. Recorded as `DOC-2026-08-22-02`.
 
 ## Related
 
@@ -326,3 +338,5 @@ table. These are held with the rest of the Thai-report work under
 - `TD-2026-08-12-01` (the 20 -> 16 state reduction of the same device)
 - Report section "Non-ideal DC source" in
   `docs/source/report_ieee14_switch_en_rev2.tex`
+- `DOC-2026-08-22-02` (the report prose that still described this retired closure)
+- `DOC-2026-08-17-01` (the Thai 16-state correction delivered in the same pass)

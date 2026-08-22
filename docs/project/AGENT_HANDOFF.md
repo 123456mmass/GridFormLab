@@ -7,6 +7,116 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-22 (later) — BOTH SWITCHING REPORTS BROUGHT IN LINE WITH THE CODE
+
+Tested working tree: uncommitted, on top of `76f6ea4`.
+Environment: MATLAB R2026a Update 3 (glnxa64); TeX Live with `xelatex`
+(`newtxtext.sty` **absent**, which still blocks the English PDF).
+
+Two report-truth defects were closed in this pass. Read them in this order:
+`DOC-2026-08-22-02` (the DC-link prose) and `DOC-2026-08-17-01` (the 16-state
+correction and the equation-renumbering map).
+
+**The English report contradicted itself inside one subsection.** `NUM-2026-08-20-01`
+updated the displayed DC-link row but not the paragraph that proves it. The align
+row printed the Thevenin-plus-chopper closure while the "Proof of each row"
+paragraph four lines below still said the coded current was
+`I_dc = P_ac/V_dc + (C/T_dc)(V_dc^0-V_dc)`, that the feed-forward "cancels
+exactly", that "this cancellation is deliberate", and that "at steady state row
+(3) gives `V_dc = V_dc^0`". Those are exactly the three claims that defect was
+opened to remove. My own earlier statement in this session that the English
+report was correct on the model was therefore wrong, and is retracted in the
+record. Also corrected there: the glossary listed `T_dc` as a live parameter; the
+figure-source paragraph and the file header declared the **ideal** cache after
+every figure had been regenerated from `..._dcreal` (the generated
+`run_summary_v2.tex` already declared `_dcreal`, so one page asserted two
+provenances); and the text promised "the figure of `n_x(t)` below" which the
+report does not contain.
+
+**The Thai report is now fully corrected and its PDF is rebuilt.** It carried the
+whole earlier generation: a 20-state IBR, the retired ideal DC row, prose that
+explicitly *defended* the `P_ac/V_dc` cancellation, small-signal prose calling the
+four real roots near `-10 s^-1` the DC family (that value is `-1/T_dc` of the
+retired closure, while the table it introduces prints `-96.812311` ...
+`-91.111042`), a `200 s` provenance declaration that had become false once 11 of
+its 15 figure inputs were regenerated from the 250 s `_dcreal` arm, an `\input` of
+a compact modal table that has **never existed**, and an include of the
+generator-less `comparison_arms.png`. Both orphans sat inside `\IfFileExists`
+guards, so the missing table was **silently omitted** rather than failing the
+build — worth remembering before trusting that a report compiled cleanly.
+
+**The equation-renumbering blocker is resolved, not bypassed.** That is what had
+held the Thai fix since 08-17, because the owner cites equations by printed
+number. Deleting the four command-delay rows removes four numbered `align` rows,
+so the count goes 52 -> 48. The full map, produced by enumerating numbered
+equations in both trees rather than by hand:
+
+```text
+(1)-(32)   unchanged        through the GFL inner-current rows
+(33),(34)  DELETED          GFL command-delay rows
+(35)-(41)  -> (33)-(39)     the seven GFM branch rows, shift -2
+(42),(43)  DELETED          GFM command-delay rows
+(44)-(52)  -> (40)-(48)     shift -4
+   eq:transfer 44->40  eq:contgate 45->41  eq:stackf  46->42
+   eq:dae      47->43  eq:trap     48->44  eq:resid   49->45
+   eq:frozen   50->46  eq:assign   51->47  eq:nxcount 52->48
+```
+
+**No equation was added.** Every new derivation in this revision — the forced
+`E_dc`, the equilibrium quadratic, the boundedness argument, the predicted
+`lambda_dc` — is written as inline math specifically so that nothing below it
+moves a second time. The same map is in the Thai report's header comment so it
+travels with the file. The English report's 40 `eq:` labels are in the identical
+order they were at the start of the session, so nothing renumbered there at all.
+
+**The active dimensions were verified against the artefact, not asserted.**
+`generate_switch_new_report_figures` was re-run against
+`output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat` with
+`t_max=250` and reports `nx_before_trip = 41` with per-device
+`[5 9 9 9 9] -> [5 10 9 9 9]` across the first promotion. That is `41 = 5 + 4*9`
+and a `9 -> 10` step, published by the same `ts_dynamic_state_indices` authority
+the integrator uses. The `n_x` figure the Thai report shows is that re-run.
+
+One adapter was needed and is worth knowing: the 250 s arm caches store the
+trajectory as `result`, while `generate_switch_new_report_figures` loads `r` (its
+default input `engine_release_200s_preserved.mat` stores `r`). A temporary script
+renamed the struct — nothing numerical changed — which is the same fallback the
+current decision-figure generators already implement
+(`generate_ieee14_decision_figure.m:230-236`). If that generator is touched again,
+give it the same `isfield` fallback rather than repeating the adapter.
+
+`mode_switch_PQ.png` and `mode_switch_electrical.png` under
+`docs/source/figures/switch_ieee14_new/` were **deliberately restored** to their
+08-11 bytes after that run overwrote them. They belong to the superseded
+non-`rev2` reports; refreshing them from a different cache and horizon would have
+silently changed those reports instead. Only `state_switch_dimension.png`, the one
+file a `rev2` report includes, was kept.
+
+**Gates run.** `xelatex` twice on the Thai report: exit 0, no undefined
+references, 32 pages. `pdftotext` on the result confirms `E_dc - V_dc` in the DC
+row, the measured DC eigenvalue family in the modal table, `5+4x9=41` and
+`5+4x10=45`, the state table's `9`/`10` totals, GFM rows printed `(10)`-`(16)`,
+and a highest printed equation number of `48`. Static checks on the English
+report: 38 `equation` + 5 `align` environments, 40 `eq:` labels in unchanged
+order, braces balanced, `$` count even. The full MATLAB regression was **not**
+run and was not required: no production `.m` file changed in this pass — the only
+MATLAB executed was report-figure generation from an existing cache.
+
+**Still open, and it is the same one item.** The English PDF is the 08-20 build,
+so none of the English source corrections above are visible in the delivered PDF
+yet. `newtxtext.sty` is absent from TeX Live on this host, the `AGENTS.md` font
+contract forbids substituting a package to force a compile, and a failed
+`pdflatex` pass **deletes** the existing PDF. Rebuild on the Windows host that
+produced the 08-20 build, or install `newtx` first, and copy the PDF aside before
+invoking LaTeX. The Thai PDF is current.
+
+**Agent-review disclosure.** This session's configuration states that the Agent
+tool must not be used unless the user requests it, so the `Explore` -> `Plan` ->
+`custom-advisor` workflow in `CLAUDE.md` was performed as an explicit
+self-review pass instead. No agent was consulted. Every material claim above is
+backed by a command whose output is quoted in the defect records.
+
+
 ## 2026-08-22 — NON-IDEAL DC LINK: closure delivered, evidence re-run resumed (`NUM-2026-08-20-01`)
 
 Tested working tree: uncommitted, on top of `416e47a` (== `origin/main`).

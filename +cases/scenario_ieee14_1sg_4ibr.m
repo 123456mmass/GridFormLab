@@ -311,8 +311,16 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     % proves that the chopper stays inactive while Edc <= Vdc_max.
     % Tdc is retained only for ibr.gfm_decoupled_full_model, which is off the
     % EECON49 path and keeps its own earlier closure.
+    % tau_s is the L/R time constant of the DC source circuit and is DERIVED,
+    % not guessed: the maximally-flat criterion zeta = 1/sqrt(2) on the L-C pair
+    % returns 5.00 ms on this device, and the realised zeta is 0.707 at
+    % Pac0 = 0.45 pu and 0.708 at 0.90 pu, so one component value serves the
+    % whole dispatch range. The closed form and both bounds on tau_s are in
+    % ibr.dc_source_thevenin_params. Setting tau_s = [] would take the derived
+    % value; it is written out here so the number is visible in the case.
     r.dynamic_params.dc_source=struct('Tdc',0.10, ...
-        'eps_dc',0.10,'Pr',1.0,'Vdc_max',1.10,'delta_ch',0.02,'Pmax',1.06*1.2);
+        'eps_dc',0.10,'Pr',1.0,'Vdc_max',1.10,'delta_ch',0.02,'Pmax',1.06*1.2, ...
+        'source_state',true,'tau_s',0.005,'zeta_target',1/sqrt(2));
 elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
 end

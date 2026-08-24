@@ -56,20 +56,27 @@ dcp=ibr.dc_source_thevenin_params(dc,Vdc_ref,Cdc,Rf,kappa,P_ref,Q_ref,V0);
 Vmag=abs(V0); th0=angle(V0);
 id0=kappa*P_ref/Vmag;
 iq0=-kappa*Q_ref/Vmag;
+% Index 11 is the DC-source current state, present only when the case asks for it
+% (dc_source.source_state). It is APPENDED so that every previously published
+% index (1..10) keeps its meaning; the layout is versioned by extension, not
+% renumbered, and models that keep the tau_s -> 0 limit see the unchanged
+% 10-state device.
+nx_dev=10; if dcp.source_state, nx_dev=11; end
 x0=[id0;iq0;Vdc_ref;th0;0;id0/kiP;-iq0/kiQ;0;0;0];
+if dcp.source_state, x0(11)=dcp.Idc0; end
 u0=[P_ref;Q_ref];
 f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,omega_b,Lf,Rf,Cdc,Vdc_ref,Imax,dcp, ...
     kpPLL,kiPLL,kpP,kiP,kpQ,kiQ,kpI,kiI);
 current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
 recon=@(t,x,y,u,ec) reconstruct(x,y,u,bus_position,kappa,omega_b,Lf,Rf,Cdc,Vdc_ref,Imax,kpPLL,kiPLL,kpP,kiP,kpQ,kiQ,kpI,kiI);
-eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiP,kiQ);
+eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiP,kiQ,dcp);
 dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, ...
     'bus_position',bus_position,'bus_ids',bus_ids(:).','device_type','ibr_gfl_eecon49_full', ...
-    'mode','gfl','nx',10,'nu',2,'state_names',{{'i_d','i_q','V_dc','theta_PLL','xi_PLL','xi_P','xi_Q','xi_Id','xi_Iq','z_pad'}}, ...
+    'mode','gfl','nx',nx_dev,'nu',2,'state_names',{state_names_for(nx_dev)}, ...
     'input_names',{{'P_ref','Q_ref'}},'x0',x0,'u0',u0,'f',f,'current_injection',current, ...
     'electrical_power',power,'reconstruct',recon,'equilibrium_initialize',eq, ...
-    'active_state_indices',@(ec) 1:9,'provenance',struct('model','EECON49_GFL_FULL_STATE_MAPPED', ...
+    'active_state_indices',@(ec) active_for(nx_dev),'provenance',struct('model','EECON49_GFL_FULL_STATE_MAPPED', ...
     'source','EECON49-P4 eq.(6)-(19) and parameter table; command-delay eq.(20)-(21) reduced (T_d<<dt)','source_classification','SOURCE_MAPPED', ...
     'params',struct('Sbase',Sbase,'Mbase',Mbase,'fbase',fbase,'omega_b',omega_b, ...
         'Lf',Lf,'Rf',Rf,'Cdc',Cdc,'Vdc_ref',Vdc_ref,'Imax',Imax,'dc_source',dcp, ...
@@ -93,11 +100,15 @@ ed=idref-id; eq=iqref-iq; vcd=vd+R*id-w*L*iq+kpi*ed+kii*xiId; vcq=vq+R*iq+w*L*id
 % power, i.e. the bus power plus the filter loss, which is what the DC bus
 % actually has to supply.
 P_ac=vcd*id+vcq*iq;
-dvdc=ibr.dc_source_thevenin_rhs(vdc,P_ac,dcp);
+% With no source state, I_dc is the static Thevenin current, which is exactly the
+% tau_s -> 0 limit of the two-row circuit.
+if dcp.source_state, idc=x(11); else, idc=(dcp.Edc-vdc)/dcp.Rdc; end
+dc_rows=ibr.dc_source_thevenin_rhs(vdc,idc,P_ac,dcp);
 % Command-delay states reduced (T_d << dt, slow manifold v_del = v_cmd): the
 % inner-loop commanded voltage vcd/vcq drives the AC current dynamics directly.
-dx=zeros(10,1); dx(1)=(vcd-vd-R*id+w*L*iq)/(L/wb); dx(2)=(vcq-vq-R*iq-w*L*id)/(L/wb);
-    dx(3)=dvdc; dx(4)=dw; dx(5)=vq;
+dx=zeros(numel(x),1); dx(1)=(vcd-vd-R*id+w*L*iq)/(L/wb); dx(2)=(vcq-vq-R*iq-w*L*id)/(L/wb);
+    dx(3)=dc_rows(1); dx(4)=dw; dx(5)=vq;
+    if dcp.source_state, dx(11)=dc_rows(2); end
     % The P/Q integrators generate the current reference clipped by Imax;
     % their limiter residual therefore owns conditional anti-windup.  The
     % q-axis direction gain is -kiq because iqref_raw uses the project Q sign.
@@ -116,10 +127,20 @@ out=struct('i_d',id,'i_q',iq,'Vdc',x(3),'delta_PLL',th,'xi_PLL',x(5),'xi_P',x(6)
     'Vbus',abs(V),'Vbus_phasor',V,'P_ref_inv',k*u(1),'Q_ref_inv',k*u(2),'Imax',Imax,'current_limited',abs(complex(id,iq))>=Imax-1e-9,'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES');
 end
 
-function x=equilibrium(V,P,Q,k,Vdc,L,R,kiP,kiQ) %#ok<INUSD>
+function x=equilibrium(V,P,Q,k,Vdc,L,R,kiP,kiQ,dcp) %#ok<INUSD>
 if abs(V)<=0, error('ibr:gfl_eecon49:eq','low voltage.'); end
 th=angle(V); id=k*P/abs(V); iq=-k*Q/abs(V);
 x=[id;iq;Vdc;th;0;id/kiP;-iq/kiQ;0;0;0];
+if dcp.source_state, x(11)=dcp.Idc0; end
+end
+
+function n=state_names_for(nx)
+n={'i_d','i_q','V_dc','theta_PLL','xi_PLL','xi_P','xi_Q','xi_Id','xi_Iq','z_pad'};
+if nx>=11, n{11}='I_dc'; end
+end
+
+function a=active_for(nx)
+a=1:9; if nx>=11, a=[1:9 11]; end
 end
 
 function I=current_out(x,y,bp,k,Imax) %#ok<INUSD>

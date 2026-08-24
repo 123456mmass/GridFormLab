@@ -53,7 +53,7 @@ arguments
     opts.figure_dir (1,1) string = fullfile('docs','source','figures', ...
         'switch_ieee14_decision')
     opts.arms (1,:) string = ["adaptive","pinned_gfm1","pinned_gfm2", ...
-        "pinned_gfm4","locked_gfl"]
+        "pinned_gfm4","locked_gfl","no_adaptation"]
     opts.width_in (1,1) double = 6.20
     opts.font_size (1,1) double = 11
     opts.dpi (1,1) double = 300
@@ -125,8 +125,25 @@ aud1b = draw_arm_windows(A,M,DW,fig1b,opts);
 SL = switch_vs_lock_subset(A);
 fig1c = fullfile(F,'comparison_switch_vs_lock.png');
 aud1c = draw_switch_vs_lock(SL.arms,M,SL.window,fig1c,opts);
+% The owner-selected A-versus-control page: the adaptive policy against the
+% no-adaptation arm over the WHOLE horizon, so the persistent frequency
+% depression of the control is visible next to the switching policy's recovery.
+% Same drawer as the page above; only the subset and the window differ, and both
+% are derived in adaptive_vs_no_adaptation rather than chosen here.
+SL2 = adaptive_vs_no_adaptation(A);
+fig1d = fullfile(F,'comparison_adaptive_vs_no_adaptation.png');
+aud1d = draw_switch_vs_lock(SL2.arms,M,SL2.window,fig1d,opts);
+if ~isempty(aud1d.rows)
+    out.switch_vs_no_adaptation = struct('figure',fig1d,'window',SL2.window, ...
+        'arms',{{SL2.ids}},'audit',aud1d);
+end
 % An axis window is a presentation choice; hiding a sample behind one is not.
-n_hidden = aud1.n_outside + aud1b.n_outside + aud1c.n_outside;
+if isfield(out,'switch_vs_no_adaptation')
+    n_hidden = aud1.n_outside + aud1b.n_outside + aud1c.n_outside ...
+        + aud1d.n_outside;
+else
+    n_hidden = aud1.n_outside + aud1b.n_outside + aud1c.n_outside;
+end
 if n_hidden > 0
     error('generate_ieee14_gfm_lock_comparison:hiddenSamples', ...
         ['%d sample(s) inside a plotted time window fall outside the chosen ' ...
@@ -164,6 +181,11 @@ out.axis_audit = struct('full',aud1,'windows',aud1b, ...
     'switch_vs_lock',aud1c,'n_hidden',n_hidden);
 out.switch_vs_lock = struct('figure',fig1c,'window',SL.window, ...
     'arm_ids',{SL.ids},'n_arms',numel(SL.arms));
+% The A-versus-control page, published with the same shape as the page above.
+if exist('fig1d','var')
+    out.switch_vs_no_adaptation = struct('figure',fig1d,'window',SL2.window, ...
+        'arm_ids',{SL2.ids},'n_arms',numel(SL2.arms));
+end
 end
 
 % ==========================================================================
@@ -1192,4 +1214,31 @@ for k = 1:numel(idx)
     parts{k} = sprintf('%d',buses(idx(k)));
 end
 s = ['bus ' strjoin(parts,'+')];
+end
+
+% ==========================================================================
+function SL = adaptive_vs_no_adaptation(A)
+%ADAPTIVE_VS_NO_ADAPTATION  The owner-selected comparison: A versus B-prime.
+%   The switching arm against the no-adaptation CONTROL. The control is the arm
+%   whose mode map is committed ONCE at the machine trip and never revisited --
+%   `no_adaptation`, which sets `post_reclose_mode_reselection=false` so the
+%   post-reclose handback cannot silently convert it into a second switching
+%   policy over the back half of the horizon. It runs to the full horizon, so it
+%   differs from the switching arm in degree everywhere rather than in kind once.
+%
+%   The window spans from one pre-disturbance margin before the synchronous-
+%   machine trip -- the instant from which the two arms can differ at all, since
+%   they are bit-identical before it -- to the requested horizon end plus a
+%   margin, so BOTH the frequency depression that persists through the islanded
+%   segment and the recovery after the handback are inside the axis. Nothing here
+%   is a chosen constant; both endpoints are derived from the schedules and the
+%   cached horizons, as in switch_vs_lock_subset above.
+MARGIN = 5;
+SL = struct();
+keep = strcmp({A.id},'adaptive') | strcmp({A.id},'no_adaptation');
+SL.arms = A(keep);
+SL.ids = {A(keep).id};
+t_trip = A(1).r.sched.sg_trip;
+t_req  = A(1).r.sched.t_end;
+SL.window = [max(0,t_trip-MARGIN), t_req+MARGIN];
 end

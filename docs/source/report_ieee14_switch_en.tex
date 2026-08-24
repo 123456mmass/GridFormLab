@@ -21,10 +21,41 @@
   \newcommand{\RunDomainRejects}{not generated}
   \newcommand{\RunResidual}{not generated}
   \newcommand{\RunReclose}{not reached}
-  \newcommand{\RunRelease}{not reached}}
+  \newcommand{\RunRelease}{not reached}
+  \newcommand{\RunFinalRelease}{not reached}
+  \newcommand{\RunFinalGFMCount}{not generated}
+  \newcommand{\RunFinalGFMBuses}{not generated}
+  \newcommand{\RunHandbackDuration}{not generated}
+  \newcommand{\RunHandbackComplete}{not reached}
+  \newcommand{\RunProsI}{not generated}
+  \newcommand{\RunProsP}{not generated}
+  \newcommand{\RunProsQ}{not generated}
+  \newcommand{\RunProsS}{not generated}
+  \newcommand{\RunProsTorque}{not generated}
+  \newcommand{\RunProsImax}{not generated}
+  \newcommand{\RunProsSmax}{not generated}
+  \newcommand{\RunSyncDV}{not generated}
+  \newcommand{\RunSyncDF}{not generated}
+  \newcommand{\RunSyncDTheta}{not generated}
+  \newcommand{\RunReleaseOne}{not reached}
+  \newcommand{\RunReleaseTwo}{not reached}
+  \newcommand{\RunReleaseThree}{not reached}
+  \newcommand{\RunReleaseFour}{not reached}}
+
+\IfFileExists{figures/switch_ieee14/handback_comparison_macros.tex}{%
+  \input{figures/switch_ieee14/handback_comparison_macros.tex}}{%
+  \newcommand{\CmpBaselineEnd}{not generated}
+  \newcommand{\CmpImprovedEnd}{not generated}
+  \newcommand{\CmpBaselineReclose}{not reached}
+  \newcommand{\CmpImprovedReclose}{not reached}
+  \newcommand{\CmpBaselineDU}{not generated}
+  \newcommand{\CmpImprovedDU}{not generated}
+  \newcommand{\CmpImprovedSettleOne}{not generated}
+  \newcommand{\CmpImprovedSettleTen}{not generated}
+  \newcommand{\CmpGateStatus}{not generated}}
 
 \title{\textbf{IEEE 14-Bus GFL$\leftrightarrow$GFM Switching}\\
-\large Corrected full-state equations, automatic formation, and the requested 200-s chronology}
+\large Corrected full-state equations, automatic formation, and the 250-s chronology}
 \author{}
 \date{10 August 2026}
 
@@ -37,15 +68,16 @@ generator (SG) and four switchable inverter-based resources (IBRs). The correcti
 physical controller ownership: grid-following (GFL) mode contains a phase-locked loop (PLL), while
 grid-forming (GFM) mode forms its angle through a virtual swing equation and contains no PLL.
 Both modes share the AC-filter current and dc-link states. The requested chronology uses
-$\Delta t=0.1$~s and events at 20, 50, 85, 85.15, 110, and 145~s, with a requested endpoint of
-200~s. The latest generated accepted trajectory ends at \RunEnd~s. Its observed network-voltage
+$\Delta t=0.1$~s and events at 20, 50, 85, 85.15, 110, and 145~s, with a diagnostic endpoint of
+250~s. The latest generated accepted trajectory ends at \RunEnd~s. Its observed network-voltage
 range is \RunVMin--\RunVMax~pu and its aggregate-frequency range is
 \RunFMin--\RunFMax~Hz. These extrema are reported as results, not used as tuned acceptance bands.
 The maximum accepted residual is \RunResidual, the deepest step subdivision is
 \RunSubdivision, and the number of rejected domain trials is \RunDomainRejects. The SG reclosed
-at \RunReclose~s and the four independent handback transactions reached all-GFL at
-\RunFinalRelease~s. Numerical completion is established; the large reported excursions explicitly
-preclude an operational-readiness claim.
+at \RunReclose~s. Staged release retained \RunFinalGFMCount{} authenticated GFM resource(s), at
+bus(es) \RunFinalGFMBuses, because an SG-online all-GFL equilibrium is small-signal unstable.
+Numerical completion and operational readiness are reported separately; raw excursions are never
+hidden or used to tune a gate.
 \end{abstract}
 
 \section{Scope, evidence classes, and non-goals}
@@ -73,16 +105,67 @@ to retune the equations.
 
 \section{Corrected fixed state and input contracts}
 
-Every IBR stores one 20-state vector of constant dimension:
+Every IBR stores one 20-state vector of constant dimension. For presentation, a fixed permutation
+groups the GFM/plant block before the GFL-control block:
 \begin{align}
-x={}&[i_d,i_q,V_{dc},
-\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{Id}^{gfl},\xi_{Iq}^{gfl},V_{d,del}^{gfl},V_{q,del}^{gfl},\nonumber\\
-&\theta,\omega,E,\xi_{Vd},\xi_{Vq},\xi_{Id}^{gfm},\xi_{Iq}^{gfm},V_{d,del}^{gfm},V_{q,del}^{gfm}]^T .
+x_{IBR}&=\begin{bmatrix}x_{GFM}\\ x_{GFL}\end{bmatrix}
+=\Pi\,x_{runtime},
+\label{eq:xibr}\\[4pt]
+x_{GFM}&=\begin{bmatrix}i_d,\,i_q,\,V_{dc},\,\theta,\,\omega,\,E,\,
+\xi_{Vd},\,\xi_{Vq},\,\xi_{Id}^{gfm},\,\xi_{Iq}^{gfm},\,
+V_{d,del}^{gfm},\,V_{q,del}^{gfm}\end{bmatrix}^{\!T},
+\label{eq:xgfm}\\[4pt]
+x_{GFL}&=\begin{bmatrix}\delta_{PLL},\,\xi_{PLL},\,\xi_P,\,\xi_Q,\,
+\xi_{Id}^{gfl},\,\xi_{Iq}^{gfl},\,V_{d,del}^{gfl},\,V_{q,del}^{gfl}\end{bmatrix}^{\!T}.
+\label{eq:xgfl}
 \end{align}
-The common plant is $x_{1:3}$. GFL activates $x_{1:11}$ and freezes $x_{12:20}$ exactly.
-GFM activates $x_{1:3}$ and $x_{12:20}$ and freezes $x_{4:11}$ exactly. Hence GFL has 11 active
-states including its PLL, while GFM has 12 active states including its VSG angle, frequency, and
-voltage-amplitude states but no PLL. The fixed external input vector is
+Here $\Pi$ is a reporting-only permutation: production keeps its existing ABI and no state is
+reordered in code. The first three entries of $x_{GFM}$ are the common physical plant and remain
+active in either mode. GFL activates those three plus the eight-state $x_{GFL}$ controller and
+freezes the nine GFM-only states. GFM activates all 12 entries of $x_{GFM}$ and freezes
+$x_{GFL}$ exactly. Hence GFL has 11 active states including its PLL, while GFM has 12 active
+states including its VSG angle, frequency, and voltage amplitude but no PLL.
+
+\begin{center}
+\small
+\captionof{table}{IBR state inventory: 20-state vector $x_{\mathrm{IBR}}=[x_{\mathrm{GFM}}^{T}\;x_{\mathrm{GFL}}^{T}]^{T}$. Common plant (rows~1--3) stays active in both modes. GFM-only states (rows~4--12) freeze in GFL mode. GFL-only states (rows~13--20) freeze in GFM mode.}
+\label{tab:ibr-states-en}
+\begin{tabular}{@{}c l l c c@{}}
+\toprule
+\# & State & Meaning & GFL & GFM \\
+\midrule
+\multicolumn{5}{l}{\textit{Common plant (active in both modes)}}\\
+1 & $i_d$ & d-axis filter current & $\bullet$ & $\bullet$ \\
+2 & $i_q$ & q-axis filter current & $\bullet$ & $\bullet$ \\
+3 & $V_{dc}$ & dc-link voltage & $\bullet$ & $\bullet$ \\
+\midrule
+\multicolumn{5}{l}{\textit{GFM-only (freeze in GFM$\to$GFL)}}\\
+4 & $\theta$ & VSG angle & $\circ$ & $\bullet$ \\
+5 & $\omega$ & VSG frequency deviation & $\circ$ & $\bullet$ \\
+6 & $E$ & external voltage reference & $\circ$ & $\bullet$ \\
+7 & $\xi_{Vd}$ & d-axis voltage-loop integrator & $\circ$ & $\bullet$ \\
+8 & $\xi_{Vq}$ & q-axis voltage-loop integrator & $\circ$ & $\bullet$ \\
+9 & $\xi_{Id}^{\mathrm{gfm}}$ & d-axis inner current integrator & $\circ$ & $\bullet$ \\
+10 & $\xi_{Iq}^{\mathrm{gfm}}$ & q-axis inner current integrator & $\circ$ & $\bullet$ \\
+11 & $V_{d,del}^{\mathrm{gfm}}$ & d-axis command delay & $\circ$ & $\bullet$ \\
+12 & $V_{q,del}^{\mathrm{gfm}}$ & q-axis command delay & $\circ$ & $\bullet$ \\
+\midrule
+\multicolumn{5}{l}{\textit{GFL-only (freeze in GFL$\to$GFM)}}\\
+13 & $\delta_{PLL}$ & PLL angle & $\bullet$ & $\circ$ \\
+14 & $\xi_{PLL}$ & PLL integrator & $\bullet$ & $\circ$ \\
+15 & $\xi_{P}$ & active-power outer integrator & $\bullet$ & $\circ$ \\
+16 & $\xi_{Q}$ & reactive-power outer integrator & $\bullet$ & $\circ$ \\
+17 & $\xi_{Id}^{\mathrm{gfl}}$ & d-axis inner current integrator & $\bullet$ & $\circ$ \\
+18 & $\xi_{Iq}^{\mathrm{gfl}}$ & q-axis inner current integrator & $\bullet$ & $\circ$ \\
+19 & $V_{d,del}^{\mathrm{gfl}}$ & d-axis command delay & $\bullet$ & $\circ$ \\
+20 & $V_{q,del}^{\mathrm{gfl}}$ & q-axis command delay & $\bullet$ & $\circ$ \\
+\midrule
+\multicolumn{3}{l}{\textit{Total active states}} & \textit{11} & \textit{12} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The input is
 \begin{equation}
 u=[P_{ref},Q_{ref},E_{ref}]^T .
 \end{equation}
@@ -138,6 +221,10 @@ equilibrium. Nonpositive or nonfinite $V_{dc}$ fails closed.
 
 \section{GFL equations: PLL present}
 
+In the 20-state vector \eqref{eq:xibr}, GFL mode activates the three common-plant states
+$i_d,i_q,V_{dc}$ from $x_{GFM}$ together with the eight-state controller $x_{GFL}$ from
+\eqref{eq:xgfl}, giving 11 active states, while it freezes the nine GFL-incompatible states
+($\theta,\omega,E,\xi_{Vd},\xi_{Vq},\xi_{Id}^{gfm},\xi_{Iq}^{gfm},V_{d,del}^{gfm},V_{q,del}^{gfm}$).
 The GFL frame is owned by its PLL:
 \begin{align}
 v_d+\mathrm{j}v_q&=Ve^{-\mathrm{j}\delta_{PLL}},\\
@@ -169,7 +256,9 @@ $\dot\xi_{Id}=e_d$ and $\dot\xi_{Iq}=e_q$ without the outer-loop hold condition.
 
 \section{GFM equations: VSG angle, no PLL}
 
-GFM owns an absolute virtual-machine angle and frequency:
+In the 20-state vector \eqref{eq:xibr}, GFM mode activates all 12 states of $x_{GFM}$ from
+Equation \eqref{eq:xgfm} and freezes the eight-state GFL controller $x_{GFL}$ from
+Equation \eqref{eq:xgfl}. GFM owns an absolute virtual-machine angle and frequency:
 \begin{align}
 \dot\theta&=\omega_b(\omega-1),\\
 M\dot\omega&=\kappa P_{ref}-P_{inv}-D_v(\omega-1),\\
@@ -180,7 +269,7 @@ Equation~\eqref{eq:gfm-e} is the decisive correction. Replacing $E_{ref}$ by mea
 would remove the intended external voltage-restoration term at equilibrium and changes the
 small-signal physics. The voltage reference is
 \begin{equation}
-v_d^*=E,\qquad v_q^*=0,qquad
+v_d^*=E,\qquad v_q^*=0,\qquad
 i_d^*=k_{pV}(v_d^*-v_d)+k_{iV}\xi_{Vd},\qquad
 i_q^*=k_{pV}(v_q^*-v_q)+k_{iV}\xi_{Vq}.
 \end{equation}
@@ -220,28 +309,17 @@ The frozen ranking is: feasible first, fewer event-left mode changes, fewer GFMs
 margin, deterministic resource-ID tie-break. Thus the current policy means
 \emph{minimum small-signal-feasible formation}, not maximum transient robustness.
 
-For the corrected case, 15 candidates were evaluated. Composite resource indices are
-$1=$SG1, $2=$IBR2, $3=$IBR3, $4=$IBR6, and $5=$IBR8. Two candidates passed:
-\begin{center}
-\begin{tabular}{@{}lrrrr@{}}\toprule
-Selected resources & $n_{GFM}$ & Reference & $\Omega$ (s$^{-1}$) & KCL norm \\ \midrule
-$[5]$ & 1 & 5 & $-0.175750$ & $5.311\times10^{-13}$ \\
-$[2,3,4,5]$ & 4 & 2 & $-2.344851$ & $4.025\times10^{-12}$ \\
-\bottomrule\end{tabular}
-\end{center}
-The four-GFM point has the stronger local damping margin and more distributed voltage-forming
-support. The one-GFM point changes fewer devices and permits a bumpless active-power handover in
-which the remaining GFLs absorb the lost-SG deficit. Neither SSSA result alone proves survival of
-the complete large disturbance; the 200-s chronology is the falsification test.
+For the corrected case, local SSSA admits both a one-GFM point and the four-GFM point. The TDS
+answers the operationally relevant question: after SG trip the one-GFM formation did not provide
+enough large-disturbance support, so live $J_V/J_f$ severity automatically raised the system to
+four GFMs. The report therefore presents the four-GFM spectrum below. The one-GFM and all
+candidate details remain audit artifacts, not presentation tables. This distinction is important:
+local small-signal feasibility is necessary evidence but is not proof of fault/load-step survival.
 
 \subsection{Complete selector and SSSA mode inventory}
 
-The following table reports all 15 SG-off candidates. ``Eq.'' means that the full nonlinear
-all-KCL equilibrium stage was attempted; ``SSSA'' means that the candidate reached the full-state
-linearisation. A failed candidate is retained as falsification evidence and is not promoted to a
-readiness result.
-
-\input{figures/switch_ieee14/sssa_candidate_summary.tex}
+All 15 SG-off candidates remain generated and retained for audit. Failed candidates are never
+discarded or promoted to readiness, but the long candidate table is omitted from the report.
 
 For a physical decision matrix $A_p$, right eigenvectors $R$ and the paired left-eigenvector rows
 $L$ satisfy
@@ -249,25 +327,16 @@ $L$ satisfy
 A_pR=R\Lambda,\qquad L=R\backslash I,\qquad
 \pi_{ki}=\frac{|R_{ki}L_{ik}|}{\sum_j|R_{ji}L_{ij}|}.
 \end{equation}
-The participation values below are reporting diagnostics; they never feed candidate ranking.
+Participation is a reporting diagnostic and never feeds candidate ranking.
 Each complex-conjugate pair is printed once, with modal frequency
 $f_i=|\Im\lambda_i|/(2\pi)$ and damping ratio
-$\zeta_i=-\Re\lambda_i/|\lambda_i|$. The owner is shown explicitly as
-device:mathematical-state-symbol. For repeated roots, especially the four exact $-10$~s$^{-1}$ dc-link
+$\zeta_i=-\Re\lambda_i/|\lambda_i|$. For readability, each row shows only the mode number,
+eigenvalue, frequency, and the single largest-participation device:state. For repeated roots,
+especially the four exact $-10$~s$^{-1}$ dc-link
 roots, individual eigenvectors may rotate inside the repeated eigenspace; they should be
 interpreted as one dc-link family rather than four uniquely attributable modes.
 
-\subsubsection*{Automatic winner: one GFM}
-
-The active inventory is one 12-state GFM at resource 5 plus three 11-state GFLs, giving 45 full
-active states. Quotienting the common VSG angle gives 44 physical decision modes. The table has 28
-rows because conjugate pairs are shown once. The limiting pair is
-$-0.175750\pm\mathrm{j}2.159250$~s$^{-1}$ ($0.343655$~Hz), dominated by the three remaining
-GFL PLL-angle states.
-
-\input{figures/switch_ieee14/sssa_modes_n1.tex}
-
-\subsubsection*{Alternative feasible point: four GFMs}
+\subsubsection*{Disturbance-support point: four GFMs}
 
 Four 12-state GFMs give 48 full active states and 47 physical decision modes after the same one-angle
 quotient. The table has 30 rows with conjugate pairs printed once. No PLL state exists in this
@@ -277,23 +346,33 @@ integrators, while the principal VSG angle/frequency families appear at approxim
 
 \input{figures/switch_ieee14/sssa_modes_n4.tex}
 
-The exact physical coordinate inventories, including device and controller owner for every
-coordinate, are retained as generated audit tables:
-\begin{itemize}
-\item one-GFM inventory: \path{figures/switch_ieee14/sssa_states_n1.tex};
-\item four-GFM inventory: \path{figures/switch_ieee14/sssa_states_n4.tex}.
-\end{itemize}
+\subsection{SG-online 16-subset decision table}
+
+After SG1 is online, it owns the island's numerical angle gauge, but the four IBRs may still
+provide physical GFM support. All $2^4=16$ IBR mode subsets are retained in the evidence table;
+failed or unstable rows are not deleted. The decision eigenproblem first removes exactly one
+rigid network-angle coordinate, then calls \texttt{eig}; its finite-difference robustness check
+uses $0.5$, $1$, and $2$ times the frozen Jacobian perturbation. The least-damped result across
+those three calculations is $\Omega_{worst}$. A release is possible only when the exact one-IBR
+target row is authenticated and robustly stable.
+
+The full 16-row SG-online classification remains an audit artifact rather than a report table.
+It explains why ``one GFM or four GFMs'' is not a manual binary choice. Four GFMs give
+distributed voltage-forming participation during the disturbance. Once SG1 is back and the live
+severity has recovered, the supervisor releases only one GFM at a time. It stops at the smallest
+stable subset supported by the table; it does not force all-GFL merely because SG1 is online.
 
 \section{Hybrid event and integration contract}
 
 At a mode transaction, the device reset map preserves the terminal port
 $(V,I,P,Q)$ and $V_{dc}$, initializes only the target controller states, then solves the exact
 right-limit full-KCL algebraic system. A failure rolls the whole transaction back. Reference
-ownership is supervisory and physical; it never replaces or removes a KCL row.
+ownership is a numerical/supervisory gauge label, not a physical power injection; changing that
+label never replaces, removes, or changes a KCL row.
 
 Normal continuous steps use coupled implicit trapezoidal integration:
 \begin{equation}
-x_{k+1}-x_k-\frac{h}{2}\left[f(x_k,y_k)+f(x_{k+1},y_{k+1})\right]=0,qquad
+x_{k+1}-x_k-\frac{h}{2}\left[f(x_k,y_k)+f(x_{k+1},y_{k+1})\right]=0,\qquad
 g(x_{k+1},y_{k+1})=0.
 \end{equation}
 After a discontinuity, only the first interval is restarted with two backward-Euler half steps,
@@ -341,9 +420,9 @@ The project-derived mechanical command is
 \begin{align}
 P_c&=\operatorname{sat}_{[0,P_{max}]}
 \left(D\omega_g+K_\omega e_\omega+K_\theta e_\theta\right),\\
-K_\omega&=4H\zeta\omega_n-D,qquad
+K_\omega&=4H\zeta\omega_n-D,\qquad
 K_\theta=\frac{2H\omega_n^2}{\omega_0},\\
-T_{sv}\dot P_{sv}&=-P_{sv}+P_c,qquad
+T_{sv}\dot P_{sv}&=-P_{sv}+P_c,\qquad
 T_{ch}\dot P_m=-P_m+P_{sv},
 \end{align}
 with $\omega_n=0.8$~rad/s, $\zeta=1$, $T_{sv}=0.2$~s, and $T_{ch}=0.4$~s. The voltage matcher
@@ -353,27 +432,81 @@ breaker closed at \RunReclose~s with
 $\Delta V=\RunSyncDV$~pu, $\Delta f=\RunSyncDF$~pu, and
 $\Delta\theta=\RunSyncDTheta^\circ$.
 
+Synchronism alone does not guarantee a mild electrical close. Before committing the breaker, the
+runtime also evaluates the prospective closed-breaker SG stator current, $P$, $Q$, electrical
+power, torque mismatch, controller derivatives, and declared current/apparent-power ratings from
+the accepted breaker-left state. Missing or nonfinite evidence, or a rating violation, fails
+closed. No SG flux state, physical IBR current state, or network voltage is reset to manufacture a
+small jump. At the accepted close the prospective audit reported
+$|I|=\RunProsI$~pu against \RunProsImax~pu, $(P,Q)=(\RunProsP,\RunProsQ)$~pu,
+$|S|=\RunProsS$~pu against \RunProsSmax~pu, and torque mismatch
+\RunProsTorque~pu.
+
+The previous implementation applied the entire pre-event command vector at the breaker instant.
+That was a software defect: it combined a physical breaker action with an unrelated controller
+command step. The corrected transaction keeps $u(t_c^+)=u(t_c^-)$ and transfers the SG
+governor/exciter targets and IBR $P/Q$ targets after closing with
+\begin{align}
+s(\tau)&=3\tau^2-2\tau^3,\qquad
+\tau=\operatorname{sat}_{[0,1]}\!\left(\frac{t-t_c}{T_{hb}}\right),\\
+u(t)&=u^-+s(\tau)(u^{target}-u^-),\\
+T_{hb}&=\max\!\left[T_{minimum,hold},
+\frac{\ln(1/\rho)}{-\Omega_{worst}},
+-\ln(\rho)\max(T_{sv},T_{ch},T_A)\right],\quad \rho=0.05.
+\end{align}
+The cubic has zero slope at both endpoints. If the authenticated physical pole is missing or
+nonnegative, support is retained and the transfer fails closed. In the accepted run the derived
+transfer lasts \RunHandbackDuration~s and completes at \RunHandbackComplete~s.
+
 The post-reclose handback is not an all-device hard-coded command. SG must first pass the
-synchronism dwell. Thereafter each remaining GFM independently requires
-$S_i<\Gamma_{off}$ for $T_{d,off}$, followed by its own transfer and KCL transaction. The generated
-run records releases at \RunReleaseOne, \RunReleaseTwo, \RunReleaseThree, and
-\RunReleaseFour~s; all four IBRs are GFL from \RunFinalRelease~s onward.
+synchronism and prospective-close guards, after which the C1 participation transfer must finish.
+Thereafter each remaining GFM independently requires $S_i<\Gamma_{off}$ for $T_{d,off}$ and an
+authenticated robust SG-online one-step target, followed by its own transfer and KCL transaction.
+The generated run records candidate releases at \RunReleaseOne, \RunReleaseTwo,
+\RunReleaseThree, and \RunReleaseFour~s. The terminal state retains \RunFinalGFMCount{} GFM
+resource(s) at bus(es) \RunFinalGFMBuses; an unavailable fourth release is a deliberate
+fail-closed outcome, not a hard-coded mode schedule.
 
 \section{Generated event and trajectory evidence}
 
-\IfFileExists{figures/switch_ieee14/table_event_timeline.tex}{%
-\input{figures/switch_ieee14/table_event_timeline.tex}}{The event table is generated after the production run.}
-
-\IfFileExists{figures/switch_ieee14/ieee14_switch_200_supervisor.png}{%
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_event_timeline.png}{%
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
+\includegraphics[width=6.20in]{figures/switch_ieee14/ieee14_switch_250_event_timeline.png}
+\caption{Automatic event and GFL/GFM sequence generated from the accepted event log.}
+\end{figure}}{}
+
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_supervisor.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_250_supervisor.png}
 \caption{Raw accepted severity, reference ownership, and committed GFL/GFM modes.}
 \end{figure}}{}
 
-\IfFileExists{figures/switch_ieee14/ieee14_switch_200_electrical.png}{%
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_electrical.png}{%
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_electrical.png}
-\caption{Raw electrical trajectory from the accepted production result; no smoothing, clipping, filtering, or synthetic overlay is applied.}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_250_electrical.png}
+\caption{Latest 250-s electrical response.}
+\end{figure}}{}
+
+\subsection{Frozen before/after comparison}
+
+The preserved baseline attempted 400~s but failed closed at \CmpBaselineEnd~s; the corrected run
+is assessed only over complete common post-reclose windows and is never extended synthetically.
+At breaker close the input-vector jump changed from \CmpBaselineDU{} to \CmpImprovedDU. The
+predeclared aggregate comparison gate reports \CmpGateStatus. The table uses raw accepted samples
+and reports signed ``improved minus baseline'' changes; negative is smaller. Settling is an
+\texttt{ASSUMED\_DIAGNOSTIC} statement relative to the restored initial bus-voltage profile and
+60~Hz, requiring every bus to stay within 0.01~pu and COI frequency within 0.1~Hz through the end
+of the accepted record. The 1-s and 10-s results are \CmpImprovedSettleOne{} and
+\CmpImprovedSettleTen{} seconds after reclose, respectively.
+
+\begin{center}
+\input{figures/switch_ieee14/handback_comparison_summary.tex}
+\end{center}
+
+\IfFileExists{figures/switch_ieee14/handback_before_after.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=6.20in]{figures/switch_ieee14/handback_before_after.png}
+\caption{Raw baseline and corrected responses aligned to their respective SG reclose instants.}
 \end{figure}}{}
 
 The observed voltage and frequency extrema are deliberately not acceptance thresholds. A finite
@@ -385,10 +518,14 @@ the excursion remains a model/controller limitation for subsequent development.
 Independent targeted verification covers: fixed state ownership; GFL PLL sensitivity; GFM
 no-PLL angle ownership; the exact $E_{ref}$ coefficient in~\eqref{eq:gfm-e}; dc restoration;
 terminal-port continuity; per-unit power covariance; source-model SCR applicability; full-KCL
-equilibrium; physical SSSA; default trapezoidal equivalence; backward-Euler closed-form behavior;
-event rollback; SG reclose; and index-driven handback. The focused regression result is 71/71
-passed. The full repository suite was intentionally omitted under the repository risk policy;
-the targeted set covers the changed producer, consumers, and event failure paths.
+equilibrium; physical SSSA and its SG-online angle quotient; finite-difference robustness;
+default trapezoidal equivalence; backward-Euler closed-form behavior; prospective closing;
+event rollback; C1 participation transfer; SG reclose; and authenticated one-at-a-time handback.
+In the broad 16-file gate, 162/163 tests initially passed. The sole failure exposed a legacy
+caller that omitted an owner even though exactly one SG was online; the compatibility path now
+infers only that unique owner, and the affected 10/10 tests pass. The full repository suite was
+intentionally omitted under the repository risk policy; the targeted set covers the changed
+producer, consumers, independent oracles, and event failure paths.
 
 Reproduction commands are:
 \begin{verbatim}
@@ -398,6 +535,8 @@ matlab -batch "addpath('scripts/diagnostics'); ...
   run_ieee14_gfl_gfm_state_release"
 matlab -batch "addpath('scripts/reporting'); ...
   generate_ieee14_switch_report_figures(reuse_cache=true)"
+matlab -batch "addpath('scripts/reporting'); ...
+  generate_ieee14_handback_comparison"
 \end{verbatim}
 The first command rebuilds the authenticated selector and all SSSA tables. The second command
 writes continuous progress and the complete transient result to:
@@ -406,7 +545,8 @@ writes continuous progress and the complete transient result to:
 \item \path{output/diagnostics/engine_release_result.log}
 \item \path{output/diagnostics/engine_release_result.mat}
 \end{itemize}
-The third command regenerates the figures, event table, and numerical macros used by this report.
+The third command regenerates the trajectory figures, event table, and numerical macros. The
+fourth produces the raw before/after metrics and overlay without feeding either production run.
 
 \section{Limitations}
 

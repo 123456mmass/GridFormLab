@@ -1,41 +1,43 @@
 % Physical decision spectrum; conjugate pairs printed once.
-% nGFM=2 selected=[3 4] reference=3 full=38 physical=37 method=common_gfm_vsg_angle_quotient
-\begingroup\small\setlength{\tabcolsep}{5pt}
-\begin{longtable}{@{}r p{0.30\textwidth} r p{0.36\textwidth}@{}}
+% nGFM=2 selected=[3 4] reference=3 full=42 physical=41 method=common_gfm_vsg_angle_quotient
+\begingroup\footnotesize\setlength{\tabcolsep}{3pt}
+\begin{longtable}{@{}r r r r r p{0.34\textwidth}@{}}
 \toprule
-No. & Eigenvalue $\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\ \midrule
+No. & $\Re\lambda$ (s$^{-1}$) & $\Im\lambda$ (s$^{-1}$) & $f$ (Hz) & $\zeta$ & Dominant participation: device:state (normalised) \\ \midrule
 \endfirsthead
 \toprule
-No. & Eigenvalue $\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\ \midrule
+No. & $\Re\lambda$ (s$^{-1}$) & $\Im\lambda$ (s$^{-1}$) & $f$ (Hz) & $\zeta$ & Dominant participation: device:state (normalised) \\ \midrule
 \endhead
-1 & $-2181.850589$ & $0$ & IBR8:$i_d$ \\ 
-2 & $-1451.320656$ & $0$ & IBR2:$i_q$ \\ 
-3 & $-1242.670321$ & $0$ & IBR2:$i_d$ \\ 
-4 & $-1179.994267+\mathrm{j}475.520449$ & $75.681430$ & IBR6:$i_q$ \\ 
-5 & $-1020.258840$ & $0$ & IBR3:$i_d$ \\ 
-6 & $-775.130397+\mathrm{j}117.955227$ & $18.773157$ & IBR3:$i_q$ \\ 
-7 & $-249.771753$ & $0$ & IBR3:$\omega_{VSG}^{GFM}$ \\ 
-8 & $-244.169591$ & $0$ & IBR6:$\omega_{VSG}^{GFM}$ \\ 
-9 & $-159.993920$ & $0$ & IBR6:$E^{GFM}$ \\ 
-10 & $-157.314186$ & $0$ & IBR3:$E^{GFM}$ \\ 
-11 & $-97.100828$ & $0$ & IBR3:$V_{dc}$ \\ 
-12 & $-95.519678$ & $0$ & IBR6:$V_{dc}$ \\ 
-13 & $-90.698287$ & $0$ & IBR8:$V_{dc}$ \\ 
-14 & $-90.255467$ & $0$ & IBR2:$V_{dc}$ \\ 
-15 & $-13.776509$ & $0$ & IBR6:$\xi_{Id}^{GFM}$ \\ 
-16 & $-13.507449+\mathrm{j}0.041316$ & $6.5757\times10^{-3}$ & IBR2:$\xi_{Iq}^{GFL}$ \\ 
-17 & $-13.498211+\mathrm{j}1.7670\times10^{-3}$ & $2.8123\times10^{-4}$ & IBR8:$\xi_{Iq}^{GFL}$ \\ 
-18 & $-13.480537$ & $0$ & IBR2:$\xi_{Id}^{GFL}$ \\ 
-19 & $-13.468652$ & $0$ & IBR8:$\xi_{Id}^{GFL}$ \\ 
-20 & $-13.416642$ & $0$ & IBR6:$\xi_{Id}^{GFM}$ \\ 
-21 & $-4.073659$ & $0$ & IBR6:$\delta_{VSG}^{GFM}$ \\ 
-22 & $-2.666488$ & $0$ & IBR3:$\xi_{Vq}^{GFM}$ \\ 
-23 & $-2.045536+\mathrm{j}3.587017$ & $0.570892$ & IBR6:$\delta_{VSG}^{GFM}$ \\ 
-24 & $-2.005019$ & $0$ & IBR8:$\xi_{P}^{GFL}$ \\ 
-25 & $-1.460615$ & $0$ & IBR2:$\xi_{P}^{GFL}$ \\ 
-26 & $-1.324216$ & $0$ & IBR2:$\xi_{Q}^{GFL}$ \\ 
-27 & $-0.773253+\mathrm{j}2.283530$ & $0.363435$ & IBR2:$\delta_{PLL}^{GFL}$ \\ 
-28 & $-0.710156+\mathrm{j}0.571039$ & $0.090884$ & IBR8:$\xi_{Q}^{GFL}$ \\ 
-29 & $-0.568138+\mathrm{j}2.145104$ & $0.341404$ & IBR8:$\xi_{PLL}^{GFL}$ \\ 
+1 & $-2181.850588$ & $0$ & $0$ & $1$ & IBR8:$i_d$ (0.329); IBR2:$i_d$ (0.305); IBR6:$i_d$ (0.172) \\ 
+2 & $-1451.320656$ & $0$ & $0$ & $1$ & IBR2:$i_q$ (0.264); IBR8:$i_q$ (0.243); IBR2:$i_d$ (0.243) \\ 
+3 & $-1242.670321$ & $0$ & $0$ & $1$ & IBR2:$i_d$ (0.303); IBR8:$i_q$ (0.232); IBR8:$i_d$ (0.217) \\ 
+4$^{\dagger}$ & $-1179.994267$ & $\pm475.520449$ & $75.681430$ & $0.927519$ & IBR6:$i_q$ (0.261); IBR2:$i_q$ (0.246); IBR3:$i_q$ (0.225) \\ 
+5$^{\dagger}$ & $-1020.258840$ & $0$ & $0$ & $1$ & IBR3:$i_d$ (0.286); IBR6:$i_d$ (0.274); IBR8:$i_d$ (0.219) \\ 
+6$^{\dagger}$ & $-775.130397$ & $\pm117.955227$ & $18.773157$ & $0.988619$ & IBR3:$i_q$ (0.260); IBR3:$i_d$ (0.244); IBR6:$i_d$ (0.235) \\ 
+7 & $-249.771753$ & $0$ & $0$ & $1$ & IBR3:$\omega_{VSG}^{GFM}$ (0.691); IBR6:$\omega_{VSG}^{GFM}$ (0.302); IBR3:$E^{GFM}$ (0.004) \\ 
+8 & $-244.169591$ & $0$ & $0$ & $1$ & IBR6:$\omega_{VSG}^{GFM}$ (0.649); IBR3:$\omega_{VSG}^{GFM}$ (0.274); IBR6:$E^{GFM}$ (0.024) \\ 
+9 & $-159.993920$ & $0$ & $0$ & $1$ & IBR6:$E^{GFM}$ (0.576); IBR3:$E^{GFM}$ (0.411); IBR6:$\omega_{VSG}^{GFM}$ (0.007) \\ 
+10 & $-157.314186$ & $0$ & $0$ & $1$ & IBR3:$E^{GFM}$ (0.534); IBR6:$E^{GFM}$ (0.377); IBR6:$\delta_{VSG}^{GFM}$ (0.030) \\ 
+11$^{\dagger}$ & $-98.550414$ & $\pm98.529090$ & $15.681392$ & $0.707183$ & IBR3:$I_{dc}$ (0.500); IBR3:$V_{dc}$ (0.500); IBR3:$E^{GFM}$ (0.000) \\ 
+12$^{\dagger}$ & $-97.759839$ & $\pm97.708492$ & $15.550790$ & $0.707293$ & IBR6:$I_{dc}$ (0.500); IBR6:$V_{dc}$ (0.500); IBR6:$E^{GFM}$ (0.000) \\ 
+13$^{\dagger}$ & $-95.349144$ & $\pm95.122018$ & $15.139139$ & $0.707949$ & IBR8:$V_{dc}$ (0.500); IBR8:$I_{dc}$ (0.500); IBR6:$E^{GFM}$ (0.000) \\ 
+14$^{\dagger}$ & $-95.127734$ & $\pm94.877857$ & $15.100280$ & $0.708036$ & IBR2:$V_{dc}$ (0.500); IBR2:$I_{dc}$ (0.500); IBR2:$\xi_{Id}^{GFL}$ (0.000) \\ 
+15 & $-13.776509$ & $0$ & $0$ & $1$ & IBR6:$\xi_{Id}^{GFM}$ (0.314); IBR3:$\xi_{Id}^{GFM}$ (0.240); IBR3:$\xi_{Iq}^{GFM}$ (0.226) \\ 
+16$^{\dagger}$ & $-13.507449$ & $\pm0.041316$ & $6.5757\times10^{-3}$ & $0.999995$ & IBR2:$\xi_{Iq}^{GFL}$ (0.228); IBR8:$\xi_{Iq}^{GFL}$ (0.222); IBR3:$\xi_{Iq}^{GFM}$ (0.153) \\ 
+17$^{\dagger}$ & $-13.498211$ & $\pm1.7670\times10^{-3}$ & $2.8123\times10^{-4}$ & $1.000000$ & IBR8:$\xi_{Iq}^{GFL}$ (0.237); IBR3:$\xi_{Iq}^{GFM}$ (0.230); IBR8:$\xi_{Id}^{GFL}$ (0.202) \\ 
+18 & $-13.480537$ & $0$ & $0$ & $1$ & IBR2:$\xi_{Id}^{GFL}$ (0.388); IBR6:$\xi_{Iq}^{GFM}$ (0.320); IBR6:$\xi_{Id}^{GFM}$ (0.159) \\ 
+19 & $-13.468652$ & $0$ & $0$ & $1$ & IBR8:$\xi_{Id}^{GFL}$ (0.393); IBR8:$\xi_{Iq}^{GFL}$ (0.291); IBR6:$\xi_{Iq}^{GFM}$ (0.142) \\ 
+20 & $-13.416642$ & $0$ & $0$ & $1$ & IBR6:$\xi_{Id}^{GFM}$ (0.275); IBR2:$\xi_{Id}^{GFL}$ (0.217); IBR8:$\xi_{Id}^{GFL}$ (0.212) \\ 
+21 & $-4.073659$ & $0$ & $0$ & $1$ & IBR6:$\delta_{VSG}^{GFM}$ (0.505); IBR6:$\xi_{Vq}^{GFM}$ (0.316); IBR3:$\xi_{Vq}^{GFM}$ (0.049) \\ 
+22 & $-2.666488$ & $0$ & $0$ & $1$ & IBR3:$\xi_{Vq}^{GFM}$ (0.403); IBR3:$\xi_{Vd}^{GFM}$ (0.191); IBR6:$\delta_{VSG}^{GFM}$ (0.160) \\ 
+23 & $-2.045536$ & $\pm3.587017$ & $0.570892$ & $0.495374$ & IBR6:$\delta_{VSG}^{GFM}$ (0.337); IBR6:$\xi_{Vd}^{GFM}$ (0.201); IBR3:$\xi_{Vd}^{GFM}$ (0.140) \\ 
+24 & $-2.005019$ & $0$ & $0$ & $1$ & IBR8:$\xi_{P}^{GFL}$ (0.324); IBR2:$\xi_{P}^{GFL}$ (0.126); IBR8:$\xi_{Q}^{GFL}$ (0.124) \\ 
+25 & $-1.460615$ & $0$ & $0$ & $1$ & IBR2:$\xi_{P}^{GFL}$ (0.365); IBR2:$\xi_{Q}^{GFL}$ (0.301); IBR8:$\xi_{Q}^{GFL}$ (0.189) \\ 
+26 & $-1.324216$ & $0$ & $0$ & $1$ & IBR2:$\xi_{Q}^{GFL}$ (0.363); IBR2:$\xi_{P}^{GFL}$ (0.307); IBR8:$\xi_{P}^{GFL}$ (0.179) \\ 
+27 & $-0.773253$ & $\pm2.283530$ & $0.363435$ & $0.320732$ & IBR2:$\delta_{PLL}^{GFL}$ (0.217); IBR2:$\xi_{PLL}^{GFL}$ (0.186); IBR8:$\delta_{PLL}^{GFL}$ (0.142) \\ 
+28$^{\dagger}$ & $-0.710156$ & $\pm0.571039$ & $0.090884$ & $0.779306$ & IBR8:$\xi_{Q}^{GFL}$ (0.167); IBR8:$\xi_{PLL}^{GFL}$ (0.156); IBR3:$\xi_{Vd}^{GFM}$ (0.132) \\ 
+29$^{\dagger}$ & $-0.568138$ & $\pm2.145104$ & $0.341404$ & $0.256026$ & IBR8:$\xi_{PLL}^{GFL}$ (0.302); IBR8:$\delta_{PLL}^{GFL}$ (0.283); IBR2:$\delta_{PLL}^{GFL}$ (0.205) \\ 
 \bottomrule
-\end{longtable}\endgroup
+\end{longtable}
+\noindent$^{\dagger}$\,11 of the 29 rows carry this mark. Their two leading participations differ by less than 0.02, the resolution of the printed factors, so the first entry is not a sole attribution there and the three entries should be read together.\par
+\endgroup

@@ -219,9 +219,20 @@ function testProductionProfileBuildsAndSolves(testCase)
 s=cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
 [devices,~]=stability.build_mixed_resource_devices(s.case_data,s.resources,s.scenario_opt);
 verifyEqual(testCase,{s.resources(2:5).model_id},repmat({'eecon49_dual'},1,4));
+% The production profile asks for the DC-source current state
+% (dc_source.source_state), so the superset is 17: the 16 published coordinates
+% plus I_dc appended at index 17. Indices 1..16 keep their meaning, which is why
+% the GFM controller window below is still 10:16. A device built WITHOUT the
+% option is still 16 and is covered by the fixture-based tests above.
 for k=2:5
     verifyEqual(testCase,devices(k).device_type,'ibr_eecon49_dual');
-    verifyEqual(testCase,devices(k).nx,16);
+    verifyEqual(testCase,devices(k).nx,17);
+    verifyEqual(testCase,devices(k).state_names{17},'I_dc');
+    verifyEqual(testCase,devices(k).state_names(1:16), ...
+        {'i_d','i_q','V_dc','gfl_delta_PLL','gfl_xi_PLL','gfl_xi_P','gfl_xi_Q', ...
+         'gfl_xi_Id','gfl_xi_Iq','gfm_delta_VSG','gfm_omega_VSG','gfm_E', ...
+         'gfm_xi_Vd','gfm_xi_Vq','gfm_xi_Id','gfm_xi_Iq'}, ...
+        'Appending I_dc must not renumber any published coordinate.');
     verifyEqual(testCase,s.resources(k).ratings.Mbase,100,'AbsTol',0);
     verifyFalse(testCase,any(contains(string(devices(k).state_names(10:16)),'PLL','IgnoreCase',true)));
 end

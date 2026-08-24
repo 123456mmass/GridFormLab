@@ -61,7 +61,8 @@ end
 % dVdc/dt as well as V_dc itself. Derivation in ibr.dc_source_thevenin_params.
 dcp=ibr.dc_source_thevenin_params(dc,Vdc_ref,Cdc,Rf,kappa,P_ref,Q_ref,V0);
 
-x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiV);
+nx_dev=10; if dcp.source_state, nx_dev=11; end
+x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiV,dcp);
 u0=[P_ref;Q_ref;E_ref];
 f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,dcp, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
@@ -69,14 +70,14 @@ current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
 recon=@(t,x,y,u,ec) reconstruct(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
-eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiV);
+eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiV,dcp);
 dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, ...
     'bus_position',bus_position,'bus_ids',bus_ids(:).','device_type','ibr_gfm_eecon49_full', ...
-    'mode','GFM','nx',10,'nu',3, ...
-    'state_names',{{'i_d','i_q','V_dc','theta','omega','E','xi_Vd','xi_Vq','xi_Id','xi_Iq'}}, ...
+    'mode','GFM','nx',nx_dev,'nu',3, ...
+    'state_names',{gfm_state_names_for(nx_dev)}, ...
     'input_names',{{'P_ref','Q_ref','E_ref'}},'x0',x0,'u0',u0,'f',f,'current_injection',current, ...
     'electrical_power',power,'reconstruct',recon,'equilibrium_initialize',eq, ...
-    'active_state_indices',@(ec) 1:10, ...
+    'active_state_indices',@(ec) 1:nx_dev, ...
     'provenance',struct('model','EECON49_GFM_FULL_STATE_MAPPED', ...
         'source','EECON49-P4 eqs.(6)-(8),(16)-(29), Fig.2 and parameter table; command-delay eqs.(20)-(21) reduced (T_d<<dt)', ...
         'source_classification','SOURCE_MAPPED', ...
@@ -121,10 +122,13 @@ vcq=vq+R*iq+om*L*id+kpI*eq+kiI*xiIq;
 Pac=vcd*id+vcq*iq;
 % Command-delay states reduced (T_d << dt, slow manifold v_del = v_cmd): the
 % inner-loop commanded voltage vcd/vcq drives the AC current dynamics directly.
-dx=zeros(10,1);
+dx=zeros(numel(x),1);
 dx(1)=(vcd-vd-R*id+om*L*iq)/(L/wb);
 dx(2)=(vcq-vq-R*iq-om*L*id)/(L/wb);
-dx(3)=ibr.dc_source_thevenin_rhs(vdc,Pac,dcp); dx(4)=dth; dx(5)=dw; dx(6)=dE;
+if dcp.source_state, idc=x(11); else, idc=(dcp.Edc-vdc)/dcp.Rdc; end
+dc_rows=ibr.dc_source_thevenin_rhs(vdc,idc,Pac,dcp);
+dx(3)=dc_rows(1); dx(4)=dth; dx(5)=dw; dx(6)=dE;
+if dcp.source_state, dx(11)=dc_rows(2); end
 % Anti-windup belongs to the voltage-loop integrators because their output
 % is the current-reference vector clipped by Imax. The inner current PI has
 % no separate voltage-command clamp in this model and therefore integrates
@@ -150,13 +154,21 @@ out=struct('i_d',x(1),'i_q',x(2),'Vdc',x(3),'theta',th,'delta',th,'omega',x(5),'
     'L',L,'R',R,'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES');
 end
 
-function x=equilibrium(V,P,Q,k,Vdc,L,R,kiV) %#ok<INUSD>
+function x=equilibrium(V,P,Q,k,Vdc,L,R,kiV,dcp) %#ok<INUSD>
 if ~isfinite(V) || abs(V)<=0, error('ibr:gfm_eecon49:eq','low voltage.'); end
 I_sys=conj(complex(P,Q)/V);
 I_inv=k*I_sys;
 th=angle(V); E=abs(V);
 Idq=I_inv*exp(-1i*th); id=real(Idq); iq=imag(Idq);
+% Index 11 is the DC-source current state, appended so indices 1..10 keep their
+% published meaning.
 x=[id;iq;Vdc;th;1;E;id/kiV;iq/kiV;0;0];
+if dcp.source_state, x(11)=dcp.Idc0; end
+end
+
+function n=gfm_state_names_for(nx)
+n={'i_d','i_q','V_dc','theta','omega','E','xi_Vd','xi_Vq','xi_Id','xi_Iq'};
+if nx>=11, n{11}='I_dc'; end
 end
 function I=current_out(x,y,bp,k,Imax) %#ok<INUSD>
 busv(y,bp); I=complex(x(1),x(2))*exp(1i*x(4))/k;

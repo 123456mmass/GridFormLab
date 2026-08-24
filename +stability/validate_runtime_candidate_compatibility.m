@@ -318,10 +318,18 @@ if ~strcmp(input_recomp, table.selector_input_fingerprint) || ...
 end
 
 % Step 4: EXACT unique authenticated match.
+% Index sets are compared as CANONICAL SORTED ROWS, not raw.  The stored
+% zero-GFM row holds a literal [] (0x0) while a caller derives its target with
+% setdiff on a 1xN row and obtains 1x0; isequal([],zeros(1,0)) is false in
+% MATLAB, so a raw comparison silently fails to match the all-GFL row and the
+% request is rejected as manualCandidateNotInTable. Canonicalising both sides
+% keeps this an EXACT set comparison -- same members, same cardinality -- while
+% making it independent of empty-array shape. Non-index fields stay raw.
 matches = [];
+mc_sel = canonical_index_row(mc.selected_gfm_indices);
 for i = 1:numel(cfgs)
     c = cfgs(i);
-    if isequal(c.selected_gfm_indices, mc.selected_gfm_indices) && ...
+    if isequal(canonical_index_row(c.selected_gfm_indices), mc_sel) && ...
             isequal(c.n_gfm_required, mc.n_gfm_required) && ...
             isequal(c.reference_resource_index, mc.reference_resource_index)
         matches(end+1) = i; %#ok<AGROW>
@@ -372,4 +380,23 @@ runtime_local.identity_ok = true;
 runtime_local.fingerprint_layer_status = 'authenticated';
 runtime_local.candidate_match = true;
 runtime_out = runtime_local;
+end
+
+function v = canonical_index_row(idx)
+%CANONICAL_INDEX_ROW  Canonical form of a resource-index set.
+%   Used for EXACT set comparison that is independent of empty-array shape.
+%   MATLAB distinguishes [] (0x0) from zeros(1,0), and the two reach the
+%   comparison from different producers: a table row stores a literal [] for the
+%   zero-GFM (all-GFL) configuration, while a caller derives its target with
+%   setdiff on a row vector and obtains 1x0. isequal([],zeros(1,0)) is false, so
+%   comparing raw would reject an otherwise exact match and the all-GFL row could
+%   never be authenticated. Sorting additionally makes the comparison
+%   order-independent, which matches the set semantics used elsewhere in the
+%   selector. This canonicalises SHAPE ONLY: membership and cardinality are
+%   preserved, so the comparison remains exact.
+if isempty(idx)
+    v = zeros(1,0);
+else
+    v = sort(reshape(double(idx),1,[]));
+end
 end

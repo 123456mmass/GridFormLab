@@ -103,14 +103,31 @@ anyway would have been a silent fallback and was rejected.
 ## Falsified hypotheses
 
 - *"The DC link will over-volt during the 85 s fault and needs the chopper to
-  survive."* **False**, and the primary agent said so before checking, then
-  corrected it. For `V_dc > E_dc` every term of the link equation is negative
-  whenever `P_ac >= 0`, so `dVdc/dt < 0` and `V_dc(t) <= max(V_dc(0),E_dc) = E_dc`
-  for all `t`. A Thevenin source is bounded by its own EMF; the earlier worry
-  applies to a constant-current or constant-power source, not this one. The
-  chopper is retained because a real converter has one and a different dispatch
-  would engage it, and it is provably inactive here (`E_dc = 1.0453 <=
-  Vdc_max = 1.10`). It is reported as inactive, never as protection that acted.
+  survive."* **False as stated.** For `V_dc > E_dc` every term of the link
+  equation is negative whenever `P_ac >= 0`, so `dVdc/dt < 0` and
+  `V_dc(t) <= max(V_dc(0),E_dc) = E_dc` while the converter EXPORTS. A Thevenin
+  source is bounded by its own EMF during export, and the 85 s fault drives
+  `P_ac -> 0`, not `P_ac < 0`.
+- *"The chopper is therefore provably inactive here."* **Also false, and this one
+  was written into both reports and this record before it was checked.** The bound
+  above is conditional on `P_ac >= 0` and says nothing about absorption. Measured
+  on the delivered four-GFM pinned arm
+  (`ieee14_gfm_lock_compare_dcreal/pinned_gfm4_250s.mat`): IBR1 crosses
+  `Vdc_max = 1.10` at `t = 20.4573` and stays above it for **94 accepted samples**
+  to the end of that arm, peaking at **1.103080 pu**, with converter-side
+  `P_ac in [-0.924989, -0.747468] pu` and `|i| = 1.2020..1.2050` (current-limited)
+  at every one of them. Restricted to samples of the same arm where `P_ac >= 0`
+  the peak is 1.048176 pu, below the threshold. On the three arms that reach the
+  horizon the peak over all four converters is 1.010782 / 1.022427 / 1.016655 pu
+  and the chopper never conducts. So the chopper is **not** ornamental: it acted
+  on the arm that collapses, precisely because a converter pinned at its current
+  limit while its island runs away pumps energy into its own link. Corrected in
+  `+ibr/dc_source_thevenin_params.m`, in both reports, and by a new falsification
+  test (`test_absorption_can_push_the_link_past_the_emf_and_the_chopper`) that
+  fails if the rhs is ever made unconditionally bounded. The struct field
+  `chopper_inactive_by_bound` is retained with its literal meaning -- a property
+  of the DISPATCHED point, `E_dc <= Vdc_max` -- and must not be read as a claim
+  about every trajectory.
 - *"`eps_dc` should be enlarged so the DC mode is resolvable at dt = 0.05 s."*
   **Rejected on principle.** That would choose a physical parameter from
   numerical convenience. `eps_dc = 0.10` comes from the reachability bound

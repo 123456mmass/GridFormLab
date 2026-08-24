@@ -134,17 +134,28 @@ idx=find(keep);
 idx=idx(ord);
 coord=sssa.physical_state_global_indices(:);
 rows=repmat(struct('lambda',0,'frequency',0,'damping',0, ...
-    'dominant','','dominant_weight',0),numel(idx),1);
+    'dominant','','dominant_weight',0,'runner_up_weight',0),numel(idx),1);
 for q=1:numel(idx)
     i=idx(q); z=lam(i);
     pf=participation(:,i);
     [weights,pord]=sort(pf,'descend');
-    top=pord(1);
+    % Top three, each with its NORMALISED participation factor in parentheses.
+    % The factor is the point of the column: a mode whose three leading entries
+    % are 0.131, 0.131, 0.128 is a shared family, not an IBR6 mode, and a column
+    % that printed only the first name would say the opposite.
+    top=pord(1:min(3,numel(pord)));
+    labels=cell(1,numel(top));
+    for j=1:numel(top)
+        labels{j}=sprintf('%s (%.3f)', ...
+            state_label_tex(coord(top(j)),devices),weights(j));
+    end
     rows(q).lambda=z;
     rows(q).frequency=abs(imag(z))/(2*pi);
     if abs(z)>eps, rows(q).damping=-real(z)/abs(z); else, rows(q).damping=NaN; end
-    rows(q).dominant=state_label_tex(coord(top),devices);
+    rows(q).dominant=strjoin(labels,'; ');
     rows(q).dominant_weight=weights(1);
+    if numel(weights)>1, rows(q).runner_up_weight=weights(2);
+    else, rows(q).runner_up_weight=0; end
 end
 end
 
@@ -194,20 +205,69 @@ s='SSSA: insufficient margin';
 end
 
 function write_mode_table(rows,c,sssa,filename)
+% One row per mode with the four modal quantities SEPARATED into their own
+% columns: real part, imaginary part, modal frequency and damping ratio. An
+% earlier revision printed the eigenvalue as a single composite cell, which put
+% the real and imaginary parts in one column and dropped zeta entirely -- the
+% reader could no longer read off the decay rate and the damping of a mode
+% independently. Every value comes from modal_rows; nothing is recomputed here.
 fid=fopen(filename,'w'); guard=onCleanup(@()fclose(fid));
 fprintf(fid,'%% Physical decision spectrum; conjugate pairs printed once.\n');
 fprintf(fid,'%% nGFM=%d selected=%s reference=%d full=%d physical=%d method=%s\n', ...
     c.n_gfm_required,mat2str(c.selected_gfm_indices),c.reference_resource_index, ...
     numel(c.eigenvalues),numel(c.physical_eigenvalues),sssa.physical_reduction_method);
-fprintf(fid,'\\begingroup\\small\\setlength{\\tabcolsep}{5pt}\n');
-fprintf(fid,'\\begin{longtable}{@{}r p{0.30\\textwidth} r p{0.36\\textwidth}@{}}\n');
-fprintf(fid,'\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\\\ \\midrule\n');
-fprintf(fid,'\\endfirsthead\n\\toprule\nNo. & Eigenvalue $\\lambda$ (s$^{-1}$) & $f$ (Hz) & Dominant device:state \\\\ \\midrule\n\\endhead\n');
+HDR=['No. & $\\Re\\lambda$ (s$^{-1}$) & $\\Im\\lambda$ (s$^{-1}$) & ' ...
+     '$f$ (Hz) & $\\zeta$ & ' ...
+     'Dominant participation: device:state (normalised) \\\\ \\midrule\n'];
+fprintf(fid,'\\begingroup\\footnotesize\\setlength{\\tabcolsep}{3pt}\n');
+fprintf(fid,'\\begin{longtable}{@{}r r r r r p{0.34\\textwidth}@{}}\n');
+fprintf(fid,['\\toprule\n' HDR]);
+fprintf(fid,['\\endfirsthead\n\\toprule\n' HDR '\\endhead\n']);
+% A row whose two leading participations differ by less than the resolution of
+% the printed factors does not identify one dominant state, and saying so is the
+% honest reading of that row. The threshold and the count are computed here so
+% neither can go stale in report prose if this table is regenerated.
+TIE_TOL=0.02;
+n_tie=0;
 for k=1:numel(rows)
-    fprintf(fid,'%d & %s & %s & %s \\\\ \n',k, ...
-        latex_complex(rows(k).lambda),latex_number(rows(k).frequency),rows(k).dominant);
+    z=rows(k).lambda;
+    tie=(rows(k).dominant_weight-rows(k).runner_up_weight)<TIE_TOL;
+    % Single-quoted: MATLAB does not process escapes here and %s passes the
+    % string through, so exactly ONE backslash must appear in the source.
+    if tie, n_tie=n_tie+1; mark='$^{\dagger}$'; else, mark=''; end
+    fprintf(fid,'%d%s & %s & %s & %s & %s & %s \\\\ \n',k,mark, ...
+        latex_number(real(z)),latex_signed_imag(z), ...
+        latex_number(rows(k).frequency),latex_damping(rows(k).damping), ...
+        rows(k).dominant);
 end
-fprintf(fid,'\\bottomrule\n\\end{longtable}\\endgroup\n'); clear guard
+fprintf(fid,'\\bottomrule\n\\end{longtable}\n');
+if n_tie>0
+    fprintf(fid,['\\noindent$^{\\dagger}$\\,%d of the %d rows carry this mark. ' ...
+        'Their two leading participations differ by less than %.2f, the ' ...
+        'resolution of the printed factors, so the first entry is not a sole ' ...
+        'attribution there and the three entries should be read together.\\par\n'], ...
+        n_tie,numel(rows),TIE_TOL);
+end
+fprintf(fid,'\\endgroup\n'); clear guard
+end
+
+function s=latex_signed_imag(z)
+% Conjugate pairs are printed once, so the tabulated imaginary part is the
+% positive member of the pair. A purely real mode prints 0, not a dash: zero
+% imaginary part is a measured value, not a missing one.
+if ~isfinite(z), s='--'; return; end
+v=abs(imag(z));
+if v<=1e-10, s='$0$'; return; end
+s=sprintf('$\\pm%s$',strip_math(latex_number(v)));
+end
+
+function s=latex_damping(zeta)
+% A real negative mode has zeta = 1 exactly; print it as such rather than as
+% 1.000000, and keep six figures elsewhere so a lightly damped mode is legible.
+if ~isscalar(zeta) || ~isfinite(zeta), s='--'; return; end
+if abs(zeta-1)<=1e-12, s='$1$'; return; end
+if abs(zeta)<=1e-12, s='$0$'; return; end
+s=sprintf('$%.6f$',zeta);
 end
 
 function write_state_inventory(sssa,devices,c,filename)
@@ -289,6 +349,7 @@ switch char(name)
 case 'i_d',             s='$i_d$';
 case 'i_q',             s='$i_q$';
 case 'V_dc',            s='$V_{dc}$';
+case 'I_dc',            s='$I_{dc}$';
 case 'gfl_delta_PLL',   s='$\delta_{PLL}^{GFL}$';
 case 'gfl_xi_PLL',      s='$\xi_{PLL}^{GFL}$';
 case 'gfl_xi_P',        s='$\xi_{P}^{GFL}$';

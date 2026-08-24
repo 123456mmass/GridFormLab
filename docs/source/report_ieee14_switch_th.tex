@@ -29,10 +29,41 @@
   \newcommand{\RunDomainRejects}{ยังไม่สร้าง}
   \newcommand{\RunResidual}{ยังไม่สร้าง}
   \newcommand{\RunReclose}{ยังไม่ถึง}
-  \newcommand{\RunRelease}{ยังไม่ถึง}}
+  \newcommand{\RunRelease}{ยังไม่ถึง}
+  \newcommand{\RunFinalRelease}{ยังไม่ถึง}
+  \newcommand{\RunFinalGFMCount}{ยังไม่สร้าง}
+  \newcommand{\RunFinalGFMBuses}{ยังไม่สร้าง}
+  \newcommand{\RunHandbackDuration}{ยังไม่สร้าง}
+  \newcommand{\RunHandbackComplete}{ยังไม่ถึง}
+  \newcommand{\RunProsI}{ยังไม่สร้าง}
+  \newcommand{\RunProsP}{ยังไม่สร้าง}
+  \newcommand{\RunProsQ}{ยังไม่สร้าง}
+  \newcommand{\RunProsS}{ยังไม่สร้าง}
+  \newcommand{\RunProsTorque}{ยังไม่สร้าง}
+  \newcommand{\RunProsImax}{ยังไม่สร้าง}
+  \newcommand{\RunProsSmax}{ยังไม่สร้าง}
+  \newcommand{\RunSyncDV}{ยังไม่สร้าง}
+  \newcommand{\RunSyncDF}{ยังไม่สร้าง}
+  \newcommand{\RunSyncDTheta}{ยังไม่สร้าง}
+  \newcommand{\RunReleaseOne}{ยังไม่ถึง}
+  \newcommand{\RunReleaseTwo}{ยังไม่ถึง}
+  \newcommand{\RunReleaseThree}{ยังไม่ถึง}
+  \newcommand{\RunReleaseFour}{ยังไม่ถึง}}
+
+\IfFileExists{figures/switch_ieee14/handback_comparison_macros.tex}{%
+  \input{figures/switch_ieee14/handback_comparison_macros.tex}}{%
+  \newcommand{\CmpBaselineEnd}{ยังไม่สร้าง}
+  \newcommand{\CmpImprovedEnd}{ยังไม่สร้าง}
+  \newcommand{\CmpBaselineReclose}{ยังไม่ถึง}
+  \newcommand{\CmpImprovedReclose}{ยังไม่ถึง}
+  \newcommand{\CmpBaselineDU}{ยังไม่สร้าง}
+  \newcommand{\CmpImprovedDU}{ยังไม่สร้าง}
+  \newcommand{\CmpImprovedSettleOne}{ยังไม่สร้าง}
+  \newcommand{\CmpImprovedSettleTen}{ยังไม่สร้าง}
+  \newcommand{\CmpGateStatus}{ยังไม่สร้าง}}
 
 \title{\textbf{การสลับ GFL$\leftrightarrow$GFM บนระบบ IEEE 14 บัส}\\
-\large สมการ full-state ที่แก้ไขแล้ว การเลือกจำนวน GFM อัตโนมัติ และลำดับเหตุการณ์ 200 วินาที}
+\large สมการ full-state ที่แก้ไขแล้ว การเลือกจำนวน GFM อัตโนมัติ และลำดับเหตุการณ์ 250 วินาที}
 \author{}
 \date{10 สิงหาคม 2569}
 
@@ -44,13 +75,14 @@
 inverter-based resource (IBR) แบบสลับโหมดได้สี่ตัว ประเด็นหลักคือคืนความเป็นเจ้าของตัวควบคุมให้ตรง
 ตามฟิสิกส์: GFL มี phase-locked loop (PLL) ส่วน GFM สร้างมุมด้วย virtual swing equation และไม่มี PLL
 ทั้งสองโหมดใช้ state กระแสตัวกรองและ dc link ร่วมกัน การรันที่ร้องขอใช้ $\Delta t=0.1$~s มีเหตุการณ์ที่
-20, 50, 85, 85.15, 110 และ 145~s และขอผลถึง 200~s trajectory ล่าสุดที่สร้างยอมรับได้ถึง
+20, 50, 85, 85.15, 110 และ 145~s และขยายเวลาสังเกตผลถึง 250~s trajectory ล่าสุดที่สร้างยอมรับได้ถึง
 \RunEnd~s ช่วงแรงดันทุกบัสเท่ากับ \RunVMin--\RunVMax~pu และช่วงความถี่รวมเท่ากับ
 \RunFMin--\RunFMax~Hz ค่าสูงสุด/ต่ำสุดเหล่านี้เป็นผลที่รายงาน ไม่ใช่ threshold ที่นำไปปรับแต่งแบบจำลอง
 residual สูงสุดของ accepted step คือ \RunResidual, subdivision ลึกสุด \RunSubdivision ชั้น และมี
-domain-rejected trial \RunDomainRejects ครั้ง SG reclose สำเร็จที่ \RunReclose~s และ transaction
-คืนโหมดรายอุปกรณ์ครบ all-GFL ที่ \RunFinalRelease~s ผลนี้ยืนยัน numerical completion แต่ช่วงแกว่งที่สูง
-ยังไม่อนุญาตให้อ้าง operational readiness
+domain-rejected trial \RunDomainRejects ครั้ง SG reclose สำเร็จที่ \RunReclose~s หลัง release แบบทีละตัว
+ระบบคง GFM ที่ผ่านหลักฐานไว้ \RunFinalGFMCount{} ตัว ณ บัส \RunFinalGFMBuses{} เพราะ candidate all-GFL
+เมื่อ SG online ไม่เสถียรใน small-signal spectrum ผล numerical completion และ operational readiness
+จึงถูกรายงานแยกกัน และไม่มีการซ่อน transient หรือนำผลไปจูน gate
 \end{abstract}
 
 \tableofcontents
@@ -79,15 +111,65 @@ transient ถูกเปิดเผยตรง ๆ โดยไม่ clip, s
 
 \section{สัญญา state และ input ที่แก้ไขแล้ว}
 
-IBR แต่ละตัวเก็บเวกเตอร์ 20 state ขนาดคงที่
+IBR แต่ละตัวเก็บเวกเตอร์ 20 state ขนาดคงที่ เพื่อให้อ่านง่าย รายงานใช้ permutation คงที่จัด
+GFM/plant block ไว้ก่อน GFL-control block
 \begin{align}
-x={}&[i_d,i_q,V_{dc},
-\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{Id}^{gfl},\xi_{Iq}^{gfl},V_{d,del}^{gfl},V_{q,del}^{gfl},\nonumber\\
-&\theta,\omega,E,\xi_{Vd},\xi_{Vq},\xi_{Id}^{gfm},\xi_{Iq}^{gfm},V_{d,del}^{gfm},V_{q,del}^{gfm}]^T .
+x_{IBR}&=\begin{bmatrix}x_{GFM}\\ x_{GFL}\end{bmatrix}
+=\Pi\,x_{runtime},
+\label{eq:xibr-th}\\[4pt]
+x_{GFM}&=\begin{bmatrix}i_d,\,i_q,\,V_{dc},\,\theta,\,\omega,\,E,\,
+\xi_{Vd},\,\xi_{Vq},\,\xi_{Id}^{gfm},\,\xi_{Iq}^{gfm},\,
+V_{d,del}^{gfm},\,V_{q,del}^{gfm}\end{bmatrix}^{\!T},
+\label{eq:xgfm-th}\\[4pt]
+x_{GFL}&=\begin{bmatrix}\delta_{PLL},\,\xi_{PLL},\,\xi_P,\,\xi_Q,\,
+\xi_{Id}^{gfl},\,\xi_{Iq}^{gfl},\,V_{d,del}^{gfl},\,V_{q,del}^{gfl}\end{bmatrix}^{\!T}.
+\label{eq:xgfl-th}
 \end{align}
-$x_{1:3}$ เป็น plant ร่วม โหมด GFL ทำให้ $x_{1:11}$ active และ hold $x_{12:20}$ พอดี ส่วน GFM
-ทำให้ $x_{1:3},x_{12:20}$ active และ hold $x_{4:11}$ ดังนั้น GFL มี 11 active states รวม PLL
-ขณะที่ GFM มี 12 active states รวมมุม VSG, ความถี่ และ amplitude $E$ แต่ไม่มี PLL
+$\Pi$ เป็น reporting-only permutation เท่านั้น production code ยังเก็บ state ตาม ABI เดิมและไม่ได้
+เปลี่ยน state order สามตัวแรกใน $x_{GFM}$ คือ common physical plant ซึ่ง active ทั้งสองโหมด
+โหมด GFL ใช้ common plant สามตัวร่วมกับ controller $x_{GFL}$ แปดตัว รวม 11 active states และ freeze
+GFM-only states เก้าตัว ส่วน GFM ใช้ $x_{GFM}$ ครบ 12 ตัวและ freeze $x_{GFL}$ ทั้งก้อน จึงเห็นชัดว่า
+GFL มี PLL แต่ GFM ไม่มี PLL
+
+\begin{center}
+\small
+\captionof{table}{แจกแจง state ของ IBR: เวกเตอร์ 20 state $x_{\mathrm{IBR}}=[x_{\mathrm{GFM}}^{T}\;x_{\mathrm{GFL}}^{T}]^{T}$ โดย common plant (แถว 1--3) คือ active ทั้งสองโหมด ส่วน GFM-only (แถว 4--12) จะ freeze เมื่ออยู่ในโหมด GFL และ GFL-only (แถว 13--20) จะ freeze เมื่ออยู่ในโหมด GFM}
+\label{tab:ibr-states-th}
+\begin{tabular}{@{}c l l c c@{}}
+\toprule
+\# & State & ความหมาย & GFL & GFM \\
+\midrule
+\multicolumn{5}{l}{\textit{Common plant (active ทั้งสองโหมด)}}\\
+1 & $i_d$ & กระแสตัวกรองแกน d & $\bullet$ & $\bullet$ \\
+2 & $i_q$ & กระแสตัวกรองแกน q & $\bullet$ & $\bullet$ \\
+3 & $V_{dc}$ & แรงดัน dc-link & $\bullet$ & $\bullet$ \\
+\midrule
+\multicolumn{5}{l}{\textit{GFM-only (freeze เมื่อ GFM$\to$GFL)}}\\
+4 & $\theta$ & มุม VSG & $\circ$ & $\bullet$ \\
+5 & $\omega$ & ความถี่เบี่ยงเบน VSG & $\circ$ & $\bullet$ \\
+6 & $E$ & แรงดันอ้างอิงภายนอก & $\circ$ & $\bullet$ \\
+7 & $\xi_{Vd}$ & ตัวรวมวงจรแรงดันแกน d & $\circ$ & $\bullet$ \\
+8 & $\xi_{Vq}$ & ตัวรวมวงจรแรงดันแกน q & $\circ$ & $\bullet$ \\
+9 & $\xi_{Id}^{\mathrm{gfm}}$ & ตัวรวมวงจรกระแสแกน d & $\circ$ & $\bullet$ \\
+10 & $\xi_{Iq}^{\mathrm{gfm}}$ & ตัวรวมวงจรกระแสแกน q & $\circ$ & $\bullet$ \\
+11 & $V_{d,del}^{\mathrm{gfm}}$ & แรงดันคำสั่งหน่วงแกน d & $\circ$ & $\bullet$ \\
+12 & $V_{q,del}^{\mathrm{gfm}}$ & แรงดันคำสั่งหน่วงแกน q & $\circ$ & $\bullet$ \\
+\midrule
+\multicolumn{5}{l}{\textit{GFL-only (freeze เมื่อ GFL$\to$GFM)}}\\
+13 & $\delta_{PLL}$ & มุม PLL & $\bullet$ & $\circ$ \\
+14 & $\xi_{PLL}$ & ตัวรวม PLL & $\bullet$ & $\circ$ \\
+15 & $\xi_{P}$ & ตัวรวมวงจรกำลังแอกทีฟ & $\bullet$ & $\circ$ \\
+16 & $\xi_{Q}$ & ตัวรวมวงจรกำลังรีแอกทีฟ & $\bullet$ & $\circ$ \\
+17 & $\xi_{Id}^{\mathrm{gfl}}$ & ตัวรวมวงจรกระแสแกน d & $\bullet$ & $\circ$ \\
+18 & $\xi_{Iq}^{\mathrm{gfl}}$ & ตัวรวมวงจรกระแสแกน q & $\bullet$ & $\circ$ \\
+19 & $V_{d,del}^{\mathrm{gfl}}$ & แรงดันคำสั่งหน่วงแกน d & $\bullet$ & $\circ$ \\
+20 & $V_{q,del}^{\mathrm{gfl}}$ & แรงดันคำสั่งหน่วงแกน q & $\bullet$ & $\circ$ \\
+\midrule
+\multicolumn{3}{l}{\textit{Active states รวม}} & \textit{11} & \textit{12} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
 input ภายนอกคงรูปเป็น
 \begin{equation}
 u=[P_{ref},Q_{ref},E_{ref}]^T .
@@ -135,6 +217,10 @@ $V_{dc}\le0$ หรือไม่ finite จะ fail closed
 
 \section{สมการ GFL: มี PLL}
 
+ในเวกเตอร์ 20 state ของ \eqref{eq:xibr-th} โหมด GFL จะ activate common-plant states สามตัว
+$i_d,i_q,V_{dc}$ จาก $x_{GFM}$ ร่วมกับ controller $x_{GFL}$ แปดตัวจาก \eqref{eq:xgfl-th}
+รวม 11 active states และ freeze อีกเก้าตัวที่เป็น GFM-only ($\theta,\omega,E,\xi_{Vd},\xi_{Vq},
+\xi_{Id}^{gfm},\xi_{Iq}^{gfm},V_{d,del}^{gfm},V_{q,del}^{gfm}$)
 กรอบ $dq$ ของ GFL ถูกกำหนดโดย PLL
 \begin{align}
 v_d+\mathrm{j}v_q&=Ve^{-\mathrm{j}\delta_{PLL}},\\
@@ -164,6 +250,8 @@ $\dot\xi_{Id}=e_d$ และ $\dot\xi_{Iq}=e_q$ ตามปกติ ไม่�
 
 \section{สมการ GFM: มุม VSG และไม่มี PLL}
 
+ในเวกเตอร์ 20 state ของ \eqref{eq:xibr-th} โหมด GFM จะ activate $x_{GFM}$ ทั้ง 12 ตัวตาม
+Equation~\eqref{eq:xgfm-th} และ freeze controller $x_{GFL}$ แปดตัวตาม Equation~\eqref{eq:xgfl-th}
 GFM สร้างมุมและความถี่ของตนเอง
 \begin{align}
 \dot\theta&=\omega_b(\omega-1),\\
@@ -174,7 +262,7 @@ M\dot\omega&=\kappa P_{ref}-P_{inv}-D_v(\omega-1),\\
 สมการ~\eqref{eq:gfm-e-th} คือจุดแก้หลัก การใช้ $|V|$ ที่วัดได้แทน $E_{ref}$ จะตัดพจน์คืนแรงดัน
 ภายนอกที่ equilibrium และเปลี่ยนฟิสิกส์ small-signal voltage reference ของ voltage loop คือ
 \begin{equation}
-v_d^*=E,\qquad v_q^*=0,qquad
+v_d^*=E,\qquad v_q^*=0,\qquad
 i_d^*=k_{pV}(v_d^*-v_d)+k_{iV}\xi_{Vd},\qquad
 i_q^*=k_{pV}(v_q^*-v_q)+k_{iV}\xi_{Vq}.
 \end{equation}
@@ -214,17 +302,11 @@ $\Omega\le-\gamma_{req}$ จาก physical SSSA แล้วจัดลำด�
 \emph{minimum small-signal-feasible formation} ไม่ใช่ maximum transient robustness
 
 index ของ composite resource คือ $1=$SG1, $2=$IBR2, $3=$IBR3, $4=$IBR6 และ $5=$IBR8
-ดังนั้นเลข 5 ในตารางหมายถึง IBR ที่บัส 8 ไม่ใช่ ``GFM ตัวที่ 5'' จาก 15 candidates มี 2 ชุดที่ผ่าน
-\begin{center}
-\begin{tabular}{@{}lrrrr@{}}\toprule
-resource ที่เลือก & $n_{GFM}$ & reference & $\Omega$ (s$^{-1}$) & KCL norm \\ \midrule
-$[5]$ & 1 & 5 & $-0.175750$ & $5.311\times10^{-13}$ \\
-$[2,3,4,5]$ & 4 & 2 & $-2.344851$ & $4.025\times10^{-12}$ \\
-\bottomrule\end{tabular}
-\end{center}
-ชุดสี่ GFM มี local damping margin สูงกว่าและกระจาย voltage-forming support หลายบัส แต่ชุดหนึ่ง GFM
-เปลี่ยนโหมดน้อยกว่าและทำ active-power handover แบบ bumpless ได้ตาม dispatch ปัจจุบัน SSSA เพียงอย่างเดียว
-ยังพิสูจน์ไม่ได้ว่าจะผ่าน disturbance ใหญ่ทั้งหมด จึงต้องใช้ chronology 200~s เป็น falsification test
+local SSSA ยอมรับทั้งจุดหนึ่ง GFM และสี่ GFM แต่ TDS เป็นหลักฐานที่ตอบคำถามช่วง disturbance:
+หลัง SG trip จุดหนึ่ง GFM ไม่พอรักษาระบบเมื่อเจอเหตุการณ์จริง ค่า $J_V/J_f$ แบบ live จึงสั่งเพิ่ม support
+อัตโนมัติจนเป็นสี่ GFM รายงานนี้จึงแสดง modal table ของสี่ GFM เท่านั้น ส่วนผลหนึ่ง GFM และ candidate
+ทุกชุดยังเก็บเป็น audit artifact ข้อแตกต่างนี้สำคัญเพราะ local small-signal feasibility เป็นเงื่อนไขที่จำเป็น
+แต่ไม่ใช่หลักฐานว่ารอด fault/load step ขนาดใหญ่
 
 \section{SSSA แบบละเอียด: จำนวน mode, eigenvalue, ความถี่ และเจ้าของ state}
 
@@ -250,12 +332,8 @@ full spectrum หมายถึง eigenvalue ของ active differential sta
 
 \subsection{ผล candidate ครบทุกจำนวน GFM}
 
-ตารางถัดไปเก็บ candidate ทั้ง 15 ชุด ไม่ได้แสดงเฉพาะชุดที่ผ่าน เพื่อให้เห็นว่าชุดใดหยุดที่ equilibrium,
-ชุดใดไปถึง SSSA และชุดใดมี eigenvalue ด้านขวา ``Eq.'' หมายถึงมีการพยายามแก้ full nonlinear all-KCL
-equilibrium ส่วน ``SSSA'' หมายถึงไปถึง full-state linearisation แล้ว candidate ที่ไม่ผ่านยังเป็นหลักฐาน
-falsification เท่านั้น ไม่ถูกนำไปกล่าวอ้างความพร้อม
-
-\input{figures/switch_ieee14/sssa_candidate_summary.tex}
+candidate SG-off ทั้ง 15 ชุดยังถูกสร้างและเก็บครบเพื่อ audit โดยไม่ทิ้งแถวที่ไม่ผ่าน แต่เอาตารางยาวออก
+จากหน้ารายงานเพื่อให้ประเด็นหลักอ่านง่ายขึ้น
 
 ผลสำคัญคือ $n_{GFM}=1$ ผ่านเฉพาะ resource 5; resource 2, 3 และ 4 ที่เป็น GFM เดี่ยวเกิด
 $\Omega>0$ ส่วน $n_{GFM}=2$ บางชุดแก้ equilibrium ได้แต่ SSSA ไม่ผ่าน และบางชุดชน operating limit
@@ -274,47 +352,13 @@ f_i&=\frac{|\Im\lambda_i|}{2\pi},\qquad
 \zeta_i=-\frac{\Re\lambda_i}{|\lambda_i|}.
 \end{align}
 $\pi_{ki}$ ใช้เพื่ออธิบายว่า mode หมายเลข $i$ มี state ใดเข้าร่วมเด่น ไม่ได้ป้อนกลับ selector หรือ gate
-ตารางพิมพ์ complex-conjugate pair เพียงแถวเดียว จึงมีจำนวนแถวน้อยกว่าจำนวน physical roots
-รูปแบบ IBR8:$E^{GFM}$ แปลว่า state แอมพลิจูด $E$ ของ branch GFM ในอุปกรณ์ IBR8
+ตารางพิมพ์ complex-conjugate pair เพียงแถวเดียว และลดคอลัมน์เหลือ No., eigenvalue, $f$ กับ
+dominant device:state เพียงอันดับแรก รูปแบบ IBR8:$E^{GFM}$ แปลว่า state แอมพลิจูด $E$
+ของ branch GFM ในอุปกรณ์ IBR8
 
 หาก eigenvalue ซ้ำกัน eigenvectors ภายใน eigenspace หมุนเปลี่ยน basis ได้ ตัวอย่างคือ root
 $-10$~s$^{-1}$ ของ $V_{dc}$ ทั้งสี่ตัว จึงต้องอ่านเป็น ``dc-link family สี่ราก'' ไม่ใช่ยืนยันว่า
 แถวแรกเป็นของอุปกรณ์ใดโดยเอกลักษณ์ participation ของ root ที่ไม่ซ้ำตีความได้ตรงกว่า
-
-\subsection{กรณี GFM หนึ่งตัว: 45 full states, 44 physical modes}
-
-configuration ที่ automatic เลือกคือ resource 5 (IBR8 ที่บัส 8) เป็น GFM/reference หนึ่งตัว
-active-state count ก่อน quotient คือ
-\begin{equation}
-n_x=1(12\ \text{GFM states})+3(11\ \text{GFL states})=45.
-\end{equation}
-เมื่อ quotient มุม VSG ร่วมหนึ่งพิกัดเหลือ 44 physical modes ตารางพิมพ์ 28 แถวเพราะ complex pairs
-แสดงเพียงด้าน $+\Im\lambda$
-
-\input{figures/switch_ieee14/sssa_modes_n1.tex}
-
-การอ่านตารางทีละกลุ่มเป็นดังนี้
-\begin{itemize}
-\item modes 1, 3--5 เป็น current/filter-network modes ความถี่ประมาณ 98--169~Hz และมี
-$i_d,i_q$ ของหลาย IBR เข้าร่วม
-\item mode 2 เป็น amplitude-restoration ของ GFM โดย $E^{GFM}$ ของ IBR8 ครอง participation 0.992
-จึงเป็นหลักฐานตรงว่าสมการ $E_{ref}$ อยู่ใน state dynamics จริง
-\item mode 6 เป็น virtual-frequency real mode ของ IBR8 ที่ $-17.922231$~s$^{-1}$
-\item modes 11--14 เป็น dc-link family สี่รากที่ $-10$~s$^{-1}$ ตรงกับ $T_{dc}=0.1$~s
-\item modes 7--10 และ 15--19 เป็น inner current/command-delay families ตั้งแต่ประมาณ
-0.24 ถึง 17.44~Hz
-\item modes 20--25 เป็น outer $P/Q$ และ GFM voltage-integrator modes ที่ช้ากว่า
-\item modes 26--28 เป็น PLL-dominated family ของ GFL สามตัว จุดวิกฤตคือ mode 28
-$\lambda=-0.175750\pm\mathrm{j}2.159250$~s$^{-1}$,
-$f=0.343655$~Hz, $\zeta=0.081126$ และ dominant states เป็น
-$\delta_{PLL}$ ของ IBR3, IBR2 และ IBR6 ดังนั้น limiting mode ของ configuration หนึ่ง GFM
-ไม่ได้เป็น PLL ของ GFM---GFM ไม่มี PLL---แต่เป็น collective PLL mode ของ GFL ที่เหลือ
-\end{itemize}
-
-เพื่อให้ตรวจว่าแต่ละ coordinate เป็น state ของใคร ตารางต่อไปแสดง physical coordinate ทั้ง 44 ตัว
-หลัง quotient โดยแยก owner เป็น common plant, GFL หรือ GFM
-
-\input{figures/switch_ieee14/sssa_states_n1.tex}
 
 \subsection{กรณี GFM สี่ตัว: 48 full states, 47 physical modes}
 
@@ -341,30 +385,53 @@ $\lambda=-2.344851$~s$^{-1}$ เป็น real mode ที่มี $\xi_{Vq},\x
 จึงมี small-signal margin มากกว่ากรณีหนึ่ง GFM อย่างชัดเจน
 \end{itemize}
 
-ตาราง physical coordinates ทั้ง 47 ตัวของกรณีสี่ GFM แสดงด้านล่าง ทุก state หลังสาม common-plant
-states ของแต่ละอุปกรณ์เป็น GFM-owned และไม่มีแถว PLL
+coordinate inventory แบบยาวยังสร้างไว้เป็น audit artifact แต่ไม่ใส่ในหน้ารายงาน
 
-\input{figures/switch_ieee14/sssa_states_n4.tex}
+\subsection{ตาราง SG-online ครบ 16 subsets และเหตุผลที่ไม่บังคับ all-GFL}
+
+เมื่อ SG1 ปิด breaker แล้ว SG1 เป็นเจ้าของ numerical angle gauge ของ island แต่คำว่า ``reference''
+ตรงนี้ไม่ได้หมายความว่า SG1 ต้องรับหน้าที่ voltage-forming ทางกายภาพเพียงตัวเดียว IBR หลายตัวสามารถคง
+GFM เพื่อแบ่ง voltage/frequency support ได้พร้อมกัน ระบบจึง enumerate mode vector ของ IBR สี่ตัวครบ
+$2^4=16$ subsets ตั้งแต่ all-GFL จนถึง GFM สี่ตัว โดย SG1 เป็น reference owner ของบริบท SG-online
+ทุกแถวเก็บไว้แม้ equilibrium หรือ SSSA ไม่ผ่าน
+
+ก่อนเรียก \texttt{eig} จะ quotient rigid network-angle coordinate เพียงหนึ่งพิกัด จากนั้นทำ
+finite-difference robustness ที่ $0.5$, $1$ และ $2$ เท่าของ perturbation เดิม
+$3\times10^{-6}$ และนิยาม
+\begin{equation}
+\Omega_{worst}=\max_{\epsilon\in\{1.5,3,6\}\times10^{-6}}
+\max_i\Re\lambda_i(\epsilon).
+\end{equation}
+candidate ผ่านได้เมื่อทั้งสาม perturbations ให้ classification เดียวกันและ
+$\Omega_{worst}\le-\gamma_{req}$ การใช้ค่าที่แย่ที่สุดป้องกันไม่ให้การเปลี่ยนขนาด finite difference
+เล็กน้อยพลิกคำตอบ stable/unstable โดยไม่ถูกตรวจพบ
+
+classification ครบ 16 แถวยังเก็บเป็น audit artifact แต่ไม่ใส่เป็นตารางในรายงาน ผลรวมอธิบาย policy
+จริงได้ชัดเจน: all-GFL มี $\Omega>0$ จึงห้ามปล่อย GFM ตัวสุดท้าย
+ส่วนชุดที่คง resource 5 เป็น GFM มี candidate ที่ผ่านหลายระดับ จำนวน GFM จึงไม่ถูก hard-code ว่าเป็น 1
+หรือ 4 แต่เริ่มด้วย support ที่เพียงพอระหว่าง disturbance แล้วลดทีละหนึ่งตัวตาม live $J_V,J_f$,
+reserve/current headroom และ exact authenticated SSSA row ถ้าแถวถัดไปไม่ผ่านจะคงชุดเดิม ไม่ฝืนปล่อย
+
+modal/state tables ของ SG-online subsets ยังสร้างไว้เพื่อ audit แต่ไม่ทำซ้ำในเนื้อหา เพราะตารางหลัก
+ที่นำเสนอคือกรณีสี่ GFM ระหว่าง disturbance ด้านบน
 
 \subsection{ข้อสรุป SSSA ที่ใช้ได้และใช้ไม่ได้}
 
-จาก SSSA กล่าวได้ว่าทั้ง configuration 1 และ 4 GFM เป็น local asymptotically stable รอบ equilibrium
-ที่แก้ full $P/Q$ balance แล้ว และ configuration 4 GFM มี local damping margin สูงกว่า
-แต่ยังกล่าวไม่ได้ว่า 4 GFM จะผ่าน transient ดีกว่าเสมอ เพราะ dispatch ตอน SG trip ต่างกัน:
-กรณีหนึ่ง GFM คง $P_{ref}$ ของ GFM แล้วให้ GFL ที่เหลือรับ deficit ส่วนกรณีสี่ GFM ต้องกระจาย deficit
-เข้ากับ GFM โดยตรง จึงอาจสร้าง swing acceleration ตอน event SSSA ไม่เห็น discontinuity นี้
-การตัดสิน large-signal ต้องดู TDS ที่ event/input contract เดียวกันและรายงาน current/voltage/frequency limits
-แยกจาก local eigenvalue
+SSSA บอกเพียงว่าจุดหนึ่ง GFM และสี่ GFM เสถียรเฉพาะบริเวณใกล้ equilibrium แต่ TDS ของ chronology
+ที่กำหนดพิสูจน์เพิ่มว่าหนึ่ง GFM ไม่พอรองรับ disturbance นี้ supervisor จึงเพิ่มเป็นสี่ GFM อัตโนมัติ
+ดังนั้น operating conclusion ของระบบนี้ขณะ SG offline คือใช้สี่ GFM เพื่อกระจาย support หลายบัส
+ข้อสรุปนี้ผูกกับ case, dispatch และ event contract นี้ ไม่ใช่กฎสากลว่าทุกระบบต้องใช้สี่ตัว
 
 \section{event transaction และตัวอินทิเกรต}
 
 เมื่อสลับโหมด reset map รักษา terminal port $(V,I,P,Q)$ และ $V_{dc}$, initialize เฉพาะ controller
 ของโหมดเป้าหมาย แล้วแก้ right-limit full-KCL ถ้าขั้นใดไม่ผ่าน transaction ทั้งก้อน rollback
-reference ownership เป็นบทบาทเชิง supervisory/physical และไม่แทนที่หรือลบ KCL row
+reference ownership เป็นป้าย numerical/supervisory gauge ไม่ใช่แหล่งจ่ายกำลังทางกายภาพ การเปลี่ยนป้ายนี้
+ไม่แทนที่ ไม่ลบ และไม่เปลี่ยน KCL row ใด
 
 ก้าวเวลาปกติใช้ implicit trapezoidal แบบ coupled
 \begin{equation}
-x_{k+1}-x_k-\frac{h}{2}[f(x_k,y_k)+f(x_{k+1},y_{k+1})]=0,qquad
+x_{k+1}-x_k-\frac{h}{2}[f(x_k,y_k)+f(x_{k+1},y_{k+1})]=0,\qquad
 g(x_{k+1},y_{k+1})=0.
 \end{equation}
 ก้าวแรกหลัง discontinuity ใช้ backward-Euler ครึ่งก้าวสองครั้ง
@@ -434,26 +501,114 @@ T_{ch}\dot P_m&=-P_m+P_{sv}.
 ทุกค่าผ่านกรอบเดิมก่อนทำ atomic right-limit KCL transaction แล้ว reference owner จึงย้ายกลับ SG
 โดยที่โหมด IBR ยังไม่เปลี่ยนใน transaction นี้
 
-หลัง SG reclose ไม่มีคำสั่ง hard-code ให้ IBR ทุกตัวกลับ GFL พร้อมกัน SG ต้องผ่าน synchronism dwell ก่อน
-จากนั้น GFM แต่ละตัวต้องมี $S_i<\Gamma_{off}$ ต่อเนื่องครบ $T_{d,off}$ และผ่าน transfer/KCL transaction
-ของตนเอง ผลจริง release ทีละตัวที่ \RunReleaseOne, \RunReleaseTwo, \RunReleaseThree และ
-\RunReleaseFour~s และเป็น all-GFL ตั้งแต่ \RunFinalRelease~s เป็นต้นไป
+\subsection{prospective-close audit: ผ่าน synchronism แล้วยังต้องตรวจอะไร}
+
+การที่แรงดัน ความถี่ และมุมอยู่ใน synchronism band ยังไม่รับประกันว่ากระแสตอนปิด breaker จะเล็ก
+เพราะ SG มี flux states ภายในและ stator algebraic equations ของตนเอง ก่อน commit จึงสร้างบริบท
+``สมมติว่าปิด breaker'' จาก accepted breaker-left $(x^-,y^-,u^-)$ แล้วคำนวณโดยไม่แก้ state ว่า
+\begin{equation}
+I_{SG}^{pros},\quad P_{SG}^{pros},\quad Q_{SG}^{pros},\quad P_e^{pros},\quad
+P_m-P_e^{pros},\quad P_{sv}-P_m,
+\end{equation}
+รวมถึง derivative ของ flux/exciter และ apparent power
+$|S_{SG}^{pros}|=\sqrt{(P_{SG}^{pros})^2+(Q_{SG}^{pros})^2}$ ค่าเหล่านี้ต้อง finite และไม่เกิน
+current/apparent-power rating ที่ประกาศ ถ้าหลักฐานขาดหรือเกิน limit จะไม่ปิด breaker
+
+จุดสำคัญคือ audit นี้ไม่ reset physical state เพื่อทำให้ผลดูดี: ไม่ตั้ง flux ใหม่, ไม่ clip $i_d,i_q$,
+ไม่แก้ bus voltage และไม่ bypass KCL กระแสหลังปิดไม่จำเป็นต้องเป็นศูนย์ แต่ต้องเป็นค่าที่สมการ stator
+และ rating รองรับได้ วิธีนี้แยกชัดระหว่าง ``ปิดได้ทาง synchronism'' กับ ``ปิดแล้วไม่สร้าง electrical shock
+เกินขอบเขตที่ประกาศ''
+
+ค่าที่ accepted close คือ $|I|=\RunProsI$~pu เทียบ limit \RunProsImax~pu,
+$(P,Q)=(\RunProsP,\RunProsQ)$~pu, $|S|=\RunProsS$~pu เทียบ rating \RunProsSmax~pu และ
+torque mismatch \RunProsTorque~pu ตัวเลขนี้มาจาก breaker-left state จริง ไม่ใช่ค่าที่ตั้งให้ผ่าน
+
+\subsection{บัค command step เดิมและ C1 participation handback}
+
+ผล baseline เดิมไม่ได้แกว่งแรงเพราะฟิสิกส์อย่างเดียว ที่ breaker close โค้ดเดิมกำหนด
+$u^+=u^{pre-event}$ ทั้งเวกเตอร์ ทำให้คำสั่ง mechanical/excitation ของ SG และ $P/Q$ reference ของ IBR
+กระโดดพร้อมกัน infinity norm ของ command jump เท่ากับ \CmpBaselineDU{} นี่เป็น implementation bug:
+breaker closure มีสิทธิ์เปลี่ยน topology แต่ไม่มีเหตุผลทางฟิสิกส์ให้ reset controller command ทุกตัวใน instant เดียว
+
+โค้ดที่แก้แล้วรักษา
+\begin{equation}
+u(t_c^+)=u(t_c^-)
+\end{equation}
+และค่อยเปลี่ยน SG governor/exciter target กับ IBR $P/Q$ target ด้วย cubic smoothstep
+\begin{align}
+s(\tau)&=3\tau^2-2\tau^3, &
+\tau&=\operatorname{sat}_{[0,1]}\left(\frac{t-t_c}{T_{hb}}\right),\\
+u(t)&=u^-+s(\tau)(u^{target}-u^-).
+\end{align}
+เพราะ $s(0)=0$, $s(1)=1$ และ $s'(0)=s'(1)=0$ คำสั่งจึงต่อเนื่องและไม่มี slope kick ที่หัว/ท้าย ramp
+ระยะเวลาไม่ได้ tune จากกราฟ แต่ derive ก่อนรันจาก robust SG-online pole และ controller time constants
+\begin{equation}
+T_{hb}=\max\left[
+T_{minimum,hold},\frac{\ln(1/\rho)}{-\Omega_{worst}},
+-\ln(\rho)\max(T_{sv},T_{ch},T_A)\right],\qquad \rho=0.05.
+\end{equation}
+ถ้า $\Omega_{worst}\ge0$ หรือหลักฐานไม่ครบ จะคง GFM support และ fail closed แทนการเดาระยะ ramp
+ผลรันใช้ $T_{hb}=\RunHandbackDuration$~s และจบ ramp ที่ \RunHandbackComplete~s โดย command jump
+ที่ breaker ลดเป็น \CmpImprovedDU
+
+หลัง SG reclose ไม่มีคำสั่ง hard-code ให้ IBR ทุกตัวกลับ GFL พร้อมกัน ลำดับจริงคือ
+\begin{enumerate}
+\item synchronism และ prospective-close guard ผ่าน;
+\item breaker close โดยไม่ reset physical/controller state;
+\item C1 participation ramp จบ;
+\item $S_i<\Gamma_{off}$ ต่อเนื่องครบ $T_{d,off}$;
+\item exact one-step SG-online candidate ผ่าน fingerprint, equilibrium, SSSA, reserve และ headroom;
+\item release GFM เพียงหนึ่งตัว แล้ว reset dwell/cooldown ก่อนประเมินรอบใหม่
+\end{enumerate}
+ผลจริงพิจารณา release ทีละตัวที่ \RunReleaseOne, \RunReleaseTwo, \RunReleaseThree และ
+\RunReleaseFour~s สถานะปลายทางยังคง GFM \RunFinalGFMCount{} ตัวที่บัส \RunFinalGFMBuses{}
+เพราะการปล่อยตัวสุดท้ายไป all-GFL ไม่ผ่านหลักฐาน SSSA ไม่ใช่เพราะ hard-code ให้เหลือหนึ่งตัว
 
 \section{หลักฐานจาก event log และกราฟ}
 
-\IfFileExists{figures/switch_ieee14/table_event_timeline.tex}{%
-\input{figures/switch_ieee14/table_event_timeline.tex}}{ตาราง event จะถูกสร้างหลัง production run}
-
-\IfFileExists{figures/switch_ieee14/ieee14_switch_200_supervisor.png}{%
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_event_timeline.png}{%
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_supervisor.png}
+\includegraphics[width=6.20in]{figures/switch_ieee14/ieee14_switch_250_event_timeline.png}
+\caption{ลำดับ event และ GFL/GFM อัตโนมัติที่สร้างจาก accepted event log}
+\end{figure}}{}
+
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_supervisor.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_250_supervisor.png}
 \caption{severity ที่ยอมรับได้, reference owner และ committed mode ของ IBR จากผลดิบ}
 \end{figure}}{}
 
-\IfFileExists{figures/switch_ieee14/ieee14_switch_200_electrical.png}{%
+\IfFileExists{figures/switch_ieee14/ieee14_switch_250_electrical.png}{%
 \begin{figure}[H]\centering
-\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_200_electrical.png}
-\caption{trajectory ทางไฟฟ้าจากผลดิบที่ยอมรับแล้ว โดยไม่ smooth, clip, filter หรือเติมสัญญาณสังเคราะห์}
+\includegraphics[width=5.90in]{figures/switch_ieee14/ieee14_switch_250_electrical.png}
+\caption{ผลตอบสนองทางไฟฟ้า 250 วินาทีล่าสุด}
+\end{figure}}{}
+
+\subsection{การเปรียบเทียบก่อน/หลังที่ freeze metric ไว้ล่วงหน้า}
+
+baseline ขอรันถึง 400~s แต่ solver fail closed ที่ \CmpBaselineEnd~s จึงห้ามลากเส้นหรือเติมข้อมูลต่อ
+ส่วน corrected run ขอ 250~s การเปรียบเทียบใช้เฉพาะหน้าต่าง 0--20 และ 0--60~s หลัง reclose ที่มีข้อมูล
+ครบทั้งสองผล และ align เวลาด้วย reclose ของแต่ละผล ไม่ใช้ smoothing, clipping, filtering หรือ interpolation
+
+metric แรงดันใช้ค่าสูงสุดข้ามทุกบัสของ
+$\bigl||V_i(t)|-|V_i(0)|\bigr|$; metric ความถี่ใช้ $|f_{COI}-60|$ แล้วคำนวณ peak,
+integral absolute error (IAE) และ total variation (TV) เครื่องหมาย Change ในตารางคือ
+corrected minus baseline ดังนั้นค่าติดลบหมายถึงลดลง gate รวมที่ประกาศก่อนเห็นผลมีสถานะ \CmpGateStatus
+
+\begin{center}
+\input{figures/switch_ieee14/handback_comparison_summary.tex}
+\end{center}
+
+settling ในรายงานนี้เป็น \texttt{ASSUMED\_DIAGNOSTIC} ไม่ใช่ production gate นิยามว่าแรงดันทุกบัส
+อยู่ห่าง restored initial profile ไม่เกิน 0.01~pu และ $|f_{COI}-60|\le0.1$~Hz ต่อเนื่องจนจบผล
+โดยต้องมีช่วงยืนยันอย่างน้อย 1~s หรือ 10~s ผล corrected คือ \CmpImprovedSettleOne{} และ
+\CmpImprovedSettleTen{} วินาทีหลัง reclose ตามลำดับ ถ้าไม่ถึงจะพิมพ์
+\texttt{NOT\_SETTLED\_BY\_250S} ตรง ๆ
+
+\IfFileExists{figures/switch_ieee14/handback_before_after.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=6.20in]{figures/switch_ieee14/handback_before_after.png}
+\caption{ผลดิบ baseline และ corrected ที่เลื่อนแกนเวลาให้ศูนย์ตรงกับ SG reclose ของแต่ละผล}
 \end{figure}}{}
 
 ช่วงแรงดันและความถี่ที่รายงานไม่ใช่ acceptance threshold การที่ trajectory finite และทุก all-KCL step
@@ -463,9 +618,12 @@ converge แสดงการคำนวณครบตามสัญญา �
 
 targeted tests ครอบคลุม state ownership, PLL sensitivity ของ GFL, มุม no-PLL ของ GFM,
 coefficient ของ $E_{ref}$ ในสมการ~\eqref{eq:gfm-e-th}, dc restoration, terminal-port continuity,
-per-unit power covariance, SCR applicability, full-KCL equilibrium, physical SSSA, trapezoidal เดิม,
-backward-Euler oracle, event rollback, SG reclose และ index-driven handback ผลรวมคือ 71/71 ผ่าน
-ไม่ได้รัน full repository regression เพราะ targeted set ครอบคลุม producer, consumer และ failure path ที่แก้แล้ว
+per-unit power covariance, SCR applicability, full-KCL equilibrium, physical SSSA, SG-online angle quotient,
+finite-difference robustness, trapezoidal เดิม, backward-Euler oracle, prospective close, C1 smoothstep,
+event rollback, SG reclose และ authenticated one-at-a-time handback broad gate 16 ไฟล์รอบแรกผ่าน
+162/163 รายการ failure เดียวพบว่า legacy caller ไม่ส่ง owner ทั้งที่มี SG online เพียงตัวเดียว จึงแก้ให้ infer
+ได้เฉพาะกรณี unique owner และ rerun เส้นทางที่ได้รับผลกระทบผ่าน 10/10 ไม่ได้รัน full repository regression
+เพราะ targeted set ครอบคลุม producer, consumer, independent oracle และ failure path ที่แก้แล้ว
 
 คำสั่งสร้างซ้ำคือ
 \begin{verbatim}
@@ -475,6 +633,8 @@ matlab -batch "addpath('scripts/diagnostics'); ...
   run_ieee14_gfl_gfm_state_release"
 matlab -batch "addpath('scripts/reporting'); ...
   generate_ieee14_switch_report_figures(reuse_cache=true)"
+matlab -batch "addpath('scripts/reporting'); ...
+  generate_ieee14_handback_comparison"
 \end{verbatim}
 คำสั่งแรกสร้าง authenticated selector และตาราง SSSA ใหม่ทั้งหมด คำสั่งที่สองเขียน progress
 และผล transient เต็มไปยังไฟล์ต่อไปนี้
@@ -483,7 +643,8 @@ matlab -batch "addpath('scripts/reporting'); ...
 \item \path{output/diagnostics/engine_release_result.log}
 \item \path{output/diagnostics/engine_release_result.mat}
 \end{itemize}
-คำสั่งที่สามสร้างกราฟ ตาราง event และตัวเลขในรายงานนี้จากผลดังกล่าว
+คำสั่งที่สามสร้างกราฟ ตาราง event และตัวเลขในรายงานนี้จากผลดังกล่าว คำสั่งที่สี่สร้าง before/after
+metrics และ overlay จากผลดิบโดยไม่ป้อนค่าใดกลับ production
 
 \section{ข้อจำกัด}
 

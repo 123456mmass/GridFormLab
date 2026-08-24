@@ -1,5 +1,5 @@
 %=============================================================================
-%  report_ieee14_switch_th_rev2.tex
+%  report_ieee14_switch_th_new.tex
 %  รายงานภาษาไทยฉบับอธิบายละเอียด: การสลับโหมดอ้างอิง GFL/GFM อัตโนมัติ
 %  ในระบบ IEEE-14 ที่มี SG หนึ่งเครื่องและ IBR สี่ตัว
 %
@@ -8,52 +8,16 @@
 %    base-MATLAB production code that the 250-s chronology run executes
 %    (the +stability / +ibr packages called by the chronology driver). No
 %    equation is invented for the report.
-%  - Every plotted sample is a raw accepted value of the 250-s adaptive arm
-%    (output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat).
-%    No signal is smoothed, filtered, decimated, offset, re-sampled or
-%    augmented with synthetic noise.
+%  - Every plotted sample is a raw accepted value of the preserved 200-s
+%    trajectory. No signal is smoothed, filtered, decimated, offset, re-sampled
+%    or augmented with synthetic noise.
 %  - Sourced inputs, project-derived closures, case-defined parameters and
 %    numerical-method choices are labelled where they first appear.
 %  - This Thai report is the detailed-exposition counterpart of
-%    report_ieee14_switch_en_rev2.tex. Every equation, table and figure is the
+%    report_ieee14_switch_en_new.tex. Every equation, table and figure is the
 %    same object; only the prose is expanded.
-%  CORRECTED 2026-08-22 (this revision):
-%    - the IBR state count was corrected from 20 to the 16 states the run
-%      actually integrates. The two command-delay states per branch were
-%      removed by singular perturbation (defect TD-2026-08-12-01); the new
-%      subsection sec:ibr-reduction states and justifies the reduction.
-%      Active sets became A_GFL={1:9} and A_GFM={1:3,10:16}, i.e. 9 states in
-%      GFL and 10 in GFM, verified against the delivered artefact: the n_x
-%      figure generator reports nx_before_trip=41=5+4*9 with per-device
-%      [5 9 9 9 9] -> [5 10 9 9 9] across the first promotion.
-%    - the DC-link row (3) was replaced. It printed the retired ideal closure
-%      dVdc/dt=(Vdc0-Vdc)/Tdc and its prose DEFENDED the Pac/Vdc cancellation;
-%      the executed closure is the Thevenin source plus overvoltage chopper of
-%      NUM-2026-08-20-01. The SSSA prose that called the four real roots near
-%      -10 1/s the DC family was corrected to the measured family just above
-%      -100 1/s.
-%    - figure provenance closed: the n_x figure was regenerated from the
-%      non-ideal-DC 250 s arm; the superseded single-page comparison_arms.png
-%      was replaced by comparison_full.png + comparison_windows.png (the pair
-%      the English report already uses); the never-generated compact modal
-%      table was replaced by the generated table sssa_modes_n1.tex itself.
 %
-%  EQUATION RENUMBERING CAUSED BY THIS CORRECTION (read this if you cite
-%  equations by their printed number). Deleting the four command-delay rows
-%  removes four numbered align rows, so the count goes 52 -> 48:
-%    (1)-(32)   UNCHANGED  (through the GFL inner-current rows)
-%    (33),(34)  DELETED    GFL command-delay rows
-%    (35)-(41)  -> (33)-(39)   the seven GFM branch rows, shift -2
-%    (42),(43)  DELETED    GFM command-delay rows
-%    (44)-(52)  -> (40)-(48)   shift -4; by label:
-%        eq:transfer 44->40   eq:contgate 45->41   eq:stackf  46->42
-%        eq:dae      47->43   eq:trap     48->44   eq:resid   49->45
-%        eq:frozen   50->46   eq:assign   51->47   eq:nxcount 52->48
-%  No equation was ADDED: every new derivation in this revision is written as
-%  inline math, precisely so that nothing below it moves twice.
-%
-%
-%  BUILD:  xelatex report_ieee14_switch_th_rev2.tex   (run twice for references)
+%  BUILD:  xelatex report_ieee14_switch_th_new.tex   (run twice for references)
 %=============================================================================
 \documentclass[12pt,a4paper]{article}
 
@@ -90,18 +54,13 @@
 \newcommand{\second}{\,\mathrm{s}}
 
 % Graphics search path (report lives in docs/source/).
-\graphicspath{{figures/}{figures/switch_ieee14_decision/}{figures/switch_ieee14/}{figures/switch_ieee14_new/}}
+\graphicspath{{figures/}{figures/switch_ieee14/}{figures/switch_ieee14_new/}}
 
-% Run scalars of the 250-s adaptive arm (\New*-prefixed), written by
-%   pf_init_paths; generate_ieee14_report_scalars
-% from output/diagnostics/ieee14_gfm_lock_compare/adaptive_250s.mat. The macro
-% NAMES are unchanged from the earlier 200-s file, so the body text below moved
-% onto the new run without a single edit to a number: prose and tables read the
-% macros, never a literal. Guarded so the document still builds before the figure
-% pipeline has run.
-\IfFileExists{figures/switch_ieee14_decision/run_summary_v2.tex}
-  {\input{figures/switch_ieee14_decision/run_summary_v2.tex}}
-  {\newcommand{\NewRunEnd}{250.000}\newcommand{\NewRunVMin}{--}%
+% Frozen 200-s run scalars (\New*-prefixed). Guarded so the document still
+% builds before the figure pipeline has run.
+\IfFileExists{figures/switch_ieee14_new/run_summary_new.tex}
+  {\input{figures/switch_ieee14_new/run_summary_new.tex}}
+  {\newcommand{\NewRunEnd}{200.000}\newcommand{\NewRunVMin}{--}%
    \newcommand{\NewRunVMax}{--}\newcommand{\NewRunFMin}{--}%
    \newcommand{\NewRunFMax}{--}\newcommand{\NewRunSubdivision}{--}%
    \newcommand{\NewRunDomainRejects}{--}\newcommand{\NewRunResidual}{--}%
@@ -109,29 +68,7 @@
    \newcommand{\NewRunReleaseOne}{--}\newcommand{\NewRunReleaseTwo}{--}%
    \newcommand{\NewRunReleaseThree}{--}\newcommand{\NewRunReleaseFour}{--}%
    \newcommand{\NewRunSyncDV}{--}\newcommand{\NewRunSyncDF}{--}%
-   \newcommand{\NewRunSyncDTheta}{--}\newcommand{\NewRunRecloseStatus}{--}%
-   \newcommand{\NewRunAugmentOne}{--}\newcommand{\NewRunAugmentTwo}{--}%
-   \newcommand{\NewRunAugmentThree}{--}\newcommand{\NewRunAugmentFour}{--}%
-   \newcommand{\NewRunNRelease}{--}\newcommand{\NewRunNAugment}{--}%
-   \newcommand{\NewRunGfmMax}{--}\newcommand{\NewRunSamples}{--}%
-   \newcommand{\NewRunRejectedSteps}{--}\newcommand{\NewRunTerminalF}{--}%
-   \newcommand{\NewRunTerminalVMin}{--}\newcommand{\NewRunTerminalVMax}{--}%
-   \newcommand{\NewRunStepper}{--}\newcommand{\NewRunReselection}{--}%
-   % มาโครการเลือกชุดใหม่หลังต่อกลับ (เพิ่มพร้อมการส่งคืนที่ทำงานได้):
-   % จำนวนครั้งและช่วงเวลาของ commit แรก ถ้าไฟล์ scalars ยังไม่มีให้ตกเป็น
-   % เส้นประ ไม่ใช่ค่าเก่า
-   \newcommand{\NewRunNReselection}{--}%
-   \newcommand{\NewRunReselectionOne}{--}%
-   \newcommand{\NewRunModeReselectionTime}{--}%
-   \newcommand{\NewRunHandback}{--}}
-
-% Cross-arm comparison macros, written by
-%   pf_init_paths; generate_ieee14_gfm_lock_comparison
-% Every number the comparison section prints comes from here, so the prose cannot
-% drift from the runs. Guarded the same way.
-\IfFileExists{figures/switch_ieee14_decision/comparison_macros.tex}
-  {\input{figures/switch_ieee14_decision/comparison_macros.tex}}
-  {}
+   \newcommand{\NewRunSyncDTheta}{--}}
 
 % Period colours for the disturbance-chronology diagram.
 \definecolor{pgreen}{RGB}{41,153,69}
@@ -142,9 +79,8 @@
 
 \title{\bfseries การสลับโหมดอ้างอิง GFL/GFM อัตโนมัติ\\
 ในระบบ IEEE-14 ที่มี SG หนึ่งเครื่องและ IBR สี่ตัว\\[2pt]
-\large แบบจำลอง สเปกตรัมสัญญาณขนาดเล็ก สูตรโดเมนเวลาแบบสลับโหมด\\
-และการเปรียบเทียบนโยบายควบคุมห้าแบบบนวิถีเดียวกัน\\[2pt]
-\normalsize (ฉบับภาษาไทย ผลชุด $\NewRunEnd$ วินาที อธิบายละเอียดเพื่อการนำเสนอ)}
+\large แบบจำลอง สเปกตรัมสัญญาณขนาดเล็ก และสูตรโดเมนเวลาแบบสลับโหมด\\[2pt]
+\normalsize (ฉบับภาษาไทย อธิบายละเอียดเพื่อการนำเสนอ)}
 \author{Power-flow / stability toolchain --- generated report}
 \date{}
 
@@ -167,14 +103,14 @@
 รายงานถอดเนื้อหาทั้งหมดจากโค้ดที่ใช้งานจริง ประกอบด้วย (i) ดัชนีความรุนแรงและ
 ดัชนีย่อยสองตัว $J_V,J_f$; (ii) แบบจำลอง SG อันดับหก พร้อมการอนุมานทีละอันดับและ
 ลิมิตเอกฐาน (singular limit) ที่ทำให้สเตตฟลักซ์หนึ่งตัวถูกตรึง; (iii) แบบจำลอง IBR
-สองโหมดขนาด 17 สเตต พร้อมชุดสเตตที่แอ็กทีฟจริงในแต่ละโหมด และการถ่ายโอนโหมดที่มี
+สองโหมดขนาด 20 สเตต พร้อมชุดสเตตที่แอ็กทีฟจริงในแต่ละโหมด และการถ่ายโอนโหมดที่มี
 เกตความต่อเนื่องของกระแสกำกับ; (iv) สูตรโดเมนเวลาแบบสลับโหมดด้วยกฎสี่เหลี่ยม
 คางหมูแบบอิมพลิซิต รวมถึงกลไกที่แทนการอินทิเกรตสเตตด้วยการกำหนดค่าโดยตรงเมื่อ
 เปลี่ยนโหมด; และ (v) ผลการไหลของกำลัง สเปกตรัมสัญญาณขนาดเล็ก และผลตอบสนอง
 ชั่วครู่ที่ตัวแก้ยอมรับ
 
 ทุกสมการคือสมการที่การรัน 250 วินาทีเรียกใช้จริง และทุกเส้นกราฟคือค่าดิบที่ตัวแก้
-ยอมรับจากวิถี (trajectory) 250 วินาทีเดียวกันนั้น รายงานนี้\textbf{ไม่}อ้างความ
+ยอมรับจากวิถี (trajectory) 200 วินาทีที่เก็บรักษาไว้ รายงานนี้\textbf{ไม่}อ้างความ
 พร้อมใช้งานเชิงปฏิบัติการ การที่การจำลองลู่เข้าไม่ใช่หลักฐานของการผ่านเกณฑ์
 กริดโค้ด
 \end{abstract}
@@ -228,11 +164,10 @@ run\_ieee14\_gfl\_gfm\_state\_release\quad \%\ t\_end=250, dt=0.1
 \paragraph{ที่มาของรูป และสัญญาว่าไม่มีสัญญาณสังเคราะห์}
 \begin{sloppypar}
 รูปผลชั่วครู่ในหัวข้อ~\ref{sec:transient} วาดจากวิถีที่ตัวแก้ยอมรับและถูกเก็บ
-รักษาไว้ที่ \texttt{output/\allowbreak diagnostics/\allowbreak ieee14\_\allowbreak
-gfm\_\allowbreak lock\_\allowbreak compare\_\allowbreak dcreal/\allowbreak
-adaptive\_\allowbreak 250s.mat} ซึ่งเป็นแขนสลับอัตโนมัติของการรัน 250 วินาที และเป็น
-วิถีเดียวกับที่รายงานฉบับภาษาอังกฤษใช้ ทุกจุดที่พล็อตเป็นค่าดิบที่ตัวแก้ยอมรับ
-ไม่มีการทำให้เรียบ
+รักษาไว้ที่ \texttt{output/\allowbreak diagnostics/\allowbreak engine\_\allowbreak
+release\_\allowbreak 200s\_\allowbreak preserved.mat} นี่เป็นการเลือกโดยเจตนา:
+\emph{สมการ}มาจากโค้ดฉบับ 250 วินาทีที่ใช้งานอยู่ ขณะที่\emph{เส้นกราฟ}มาจากผล
+200 วินาทีที่ยืนยันแล้ว ทุกจุดที่พล็อตเป็นค่าดิบที่ตัวแก้ยอมรับ ไม่มีการทำให้เรียบ
 (smooth) กรอง (filter) ลดจำนวนจุด (decimate) ตัดยอด (clip) เลื่อนระดับ (offset)
 แทรกค่า (interpolate) หรือเติมสัญญาณรบกวนสังเคราะห์ใด ๆ ตัวสร้างรูปบันทึกลง
 provenance ว่า \texttt{presentation\_\allowbreak noise=struct('kind',\allowbreak
@@ -246,7 +181,7 @@ provenance ว่า \texttt{presentation\_\allowbreak noise=struct('kind',\allo
 \begin{sloppypar}
 สมการ AC/ฟลักซ์ของ SG และสมการ AC/ตัวควบคุมของ IBR เป็น
 \textsf{SOURCE\_\allowbreak MAPPED} (ถอดจากแหล่งอ้างอิงที่ระบุไว้ในโค้ด) ส่วน
-เวกเตอร์สเตตรวม 16 ตัวของ IBR แผนที่ถ่ายโอน GFL$\leftrightarrow$GFM และการปิด
+เวกเตอร์สเตตรวม 20 ตัวของ IBR แผนที่ถ่ายโอน GFL$\leftrightarrow$GFM และการปิด
 สมการของแหล่งจ่าย DC เป็น \textsf{PROJECT\_\allowbreak DERIVED} (โครงการอนุมาน
 ขึ้นเองและประกาศไว้) พารามิเตอร์ของเครื่องและคอนเวอร์เตอร์ ฐานต่อหน่วย และเวลา
 เหตุการณ์เป็น \textsf{CASE\_\allowbreak DEFINED} (มาจากกรณีศึกษา) ส่วนตัวทำนาย
@@ -301,8 +236,7 @@ $\delta_{\mathrm{VSG}}$, $\omega_{\mathrm{VSG}}$ & มุมและควา�
 $E$ & สเตตแอมพลิจูดแรงดันของวงรอบ $Q$--$V$ (GFM) \\
 $\xi_{Vd}$, $\xi_{Vq}$ & ตัวอินทิเกรตวงรอบแรงดันแกน d, q (GFM) \\
 $\xi_{Id}$, $\xi_{Iq}$ & ตัวอินทิเกรตวงรอบกระแสชั้นใน (มีทั้งสองโหมด) \\
-$E_{dc}$, $R_{dc}$ & แรงเคลื่อนไฟฟ้าและความต้านทานภายในของแหล่งจ่าย DC \\
-$R_{ch}$, $V_{dc}^{\max}$ & ความต้านทานและขีดเริ่มนำกระแสของชอปเปอร์กันแรงดันเกิน \\
+$V_{d,\mathrm{del}}$, $V_{q,\mathrm{del}}$ & คำสั่งแรงดันที่ผ่านความหน่วงอันดับหนึ่ง \\
 $\Pi_I(\cdot;I_{\max})$ & ตัวจำกัดกระแสแบบวงกลม \\
 $\mathcal{H}(\cdot)$ & ตัวอินทิเกรตแบบมีเงื่อนไขกันการอิ่มตัวสะสม (anti-windup) \\
 \bottomrule
@@ -313,14 +247,48 @@ $\mathcal{H}(\cdot)$ & ตัวอินทิเกรตแบบมีเง
 %=============================================================================
 เวลาของเหตุการณ์ที่ตั้งไว้ล่วงหน้าเป็นค่าคงที่ \textsf{CASE\_DEFINED} ในโครงสร้าง
 เหตุการณ์ ส่วนเวลาที่ SG ต่อกลับ (reclose) และเวลาที่ความรุนแรงคลายลงจนปลดโหมดได้
-เป็น\emph{ผลลัพธ์}ที่อ่านจากบันทึกเหตุการณ์ที่ตัวแก้ยอมรับ ฟอลต์แบบชันต์เกิดที่
-$t=85.000$~s และถูกเคลียร์ที่ $t=85.150$~s (เป็นฟอลต์ที่บัส 9 นาน $0.150$~s
-อิมพีแดนซ์ฟอลต์ $Z_f=0.01+\mathrm{j}0.01\pu$) ค่าหน้าต่างนี้อ่านจากตัวขับโดยตรง
-และมีศักดิ์เหนือช่วงฟอลต์กว้าง ๆ ที่อาจระบุไว้ในเอกสารรุ่นก่อน
+เป็น\emph{ผลลัพธ์}ที่อ่านจากบันทึกเหตุการณ์ที่ตัวแก้ยอมรับ รูปที่~\ref{fig:periods}
+แสดงช่วงการทำงานทั้งหกและเวลาที่เปลี่ยนช่วง ฟอลต์แบบชันต์เกิดที่ $t=85.000$~s และ
+ถูกเคลียร์ที่ $t=85.150$~s (เป็นฟอลต์ที่บัส 9 นาน $0.150$~s อิมพีแดนซ์ฟอลต์
+$Z_f=0.01+\mathrm{j}0.01\pu$) ค่าหน้าต่างนี้อ่านจากตัวขับโดยตรง และมีศักดิ์เหนือ
+ช่วงฟอลต์กว้าง ๆ ที่อาจระบุไว้ในเอกสารรุ่นก่อน
 
-แผนภาพช่วงการทำงานทั้งหกและเวลาที่เปลี่ยนช่วงคือรูปที่~\ref{fig:periods} ซึ่งใน
-ฉบับนี้ถูกย้ายไปวางไว้\emph{เหนือกราฟผลลัพธ์}ในหัวข้อ~\ref{sec:transient} โดยเจตนา
-เพื่อให้เทียบไทม์ไลน์กับเส้นกราฟได้ในสายตาเดียวโดยไม่ต้องพลิกหน้ากลับ
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\normalsize,
+  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
+    align=center,text=white,font=\bfseries},
+  tlbl/.style={font=\small},
+  tlab/.style={midway,above,font=\small},
+  tlabb/.style={midway,below,font=\small},
+  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
+
+\node[per,fill=pgreen] (p1) at (0,0)     {ช่วง 1\\ ทำงาน\\ ปกติ};
+\node[per,fill=pred]   (p2) at (4.4,0)   {ช่วง 2\\ ตัด $SG_1$\\ (เสีย slack)};
+\node[per,fill=pblue]  (p3) at (8.8,0)   {ช่วง 3\\ โหลด $P,Q$\\ เพิ่ม $+20\%$};
+\node[per,fill=pred]   (p4) at (8.8,-4.4){ช่วง 4\\ ฟอลต์\\ ที่บัส 9};
+\node[per,fill=pyellow](p5) at (4.4,-4.4){ช่วง 5\\ เปิดสาย\\ 6--13};
+\node[per,fill=pblue]  (p6) at (0,-4.4)  {ช่วง 6\\ ต่อกลับ\\ $SG_1$};
+
+\draw[arr] (-3.2,0) -- node[tlab]{$t=0\second$} (p1);
+\draw[arr] (p1) -- node[tlab]{$t=20\second$} (p2);
+\draw[arr] (p2) -- node[tlab]{$t=50\second$} (p3);
+\draw[arr] (p3) -- node[font=\small,left=2mm,pos=0.5,align=right]{$t=85.000$\\--$85.150\second$} (p4);
+\draw[arr] (p4) -- node[tlabb]{$t=110\second$} (p5);
+\draw[arr] (p5) -- node[tlabb]{$t=145\second$} (p6);
+\draw[arr] (p6) -- node[tlabb,pos=0.62]{$t\to\NewRunEnd\second$} ++(-3.2,0);
+
+\node[tlbl,below=3pt of p6,align=center,text=black]
+  {ต่อกลับที่ $\NewRunReclose\second$\\ ปลดโหมดครั้งแรกที่ $\NewRunFirstRelease\second$};
+\end{tikzpicture}
+\caption{ลำดับเหตุการณ์รบกวนหกช่วง สีเขียว: ยังไม่ถูกรบกวน สีแดง: เหตุการณ์ที่
+ทำให้สูญเสียแหล่งจ่ายหรือทำให้บัสเกิดฟอลต์ สีเหลือง: การเปลี่ยนโครงสร้างเครือข่าย
+สีน้ำเงิน: การกระทำเพื่อฟื้นฟูระบบ เวลาที่ตั้งไว้ล่วงหน้า ($0$, $20$, $50$,
+$85.000$--$85.150$, $110$, $145\second$) เป็นค่าจากกรณีศึกษา ส่วนเวลาต่อกลับและ
+เวลาปลดโหมดครั้งแรกอ่านจากบันทึกเหตุการณ์ที่ตัวแก้ยอมรับ}
+\label{fig:periods}
+\end{figure}
 
 ตารางที่~\ref{tab:periods} ขยายรูปที่~\ref{fig:periods} ให้เห็นว่าแต่ละช่วงกระทบ
 อะไรกับอุปกรณ์ ประโยชน์ของการอ่านตารางนี้ก่อนดูกราฟคือ เมื่อเห็นเส้นกราฟกระโดด
@@ -464,77 +432,12 @@ $\Gamma_{\mathrm{on}}>\Gamma_{\mathrm{off}}$ ซึ่งสร้างแถ�
 แรงดันในจังหวะที่ยังไม่นิ่งจริง กลไกจึง ``รีบช่วย และลังเลที่จะเลิกช่วย''
 
 นอกเหนือจากตรรกะข้างต้น ยังมีเกตกันการสูญเสียแหล่งอ้างอิง (reference-loss guard)
-ที่ทำงานแยกและมาก่อนเสมอ: การตัด SG จะถูก\emph{ปฏิเสธ}เลยถ้าหลังเปิดเบรกเกอร์แล้ว
-เกาะไฟฟ้าที่ยังมีไฟไม่เหลืออุปกรณ์สร้างแรงดันแม้แต่ตัวเดียว เหตุผลคือเครือข่าย
+ที่ทำงานแยกและมาก่อนเสมอ: ทันทีที่ SG ซึ่งทำหน้าที่ slack หลุดออกจากระบบ IBR ที่
+ออนไลน์ทุกตัวถูกยกขึ้นเป็น GFM ก่อนที่ตรรกะเวลาหน่วงจะได้ทำงาน เหตุผลคือเครือข่าย
 ต้องไม่มีแม้แต่ขั้นเวลาเดียวที่ปราศจากแหล่งอ้างอิงแรงดัน มิฉะนั้นสมการ~\eqref{eq:kcl}
-จะไม่มีตัวกำหนดมุมอ้างอิงและระบบจะเสียเงื่อนไข gauge ทางคณิตศาสตร์ เกตนี้ทำงาน
-\emph{ก่อน}ที่นิวตันจะถูกเรียกแม้ครั้งเดียว และผลของมันวัดได้: แขนที่ล็อก IBR ทุกตัว
-ไว้ที่ GFL ถูกปฏิเสธที่ $t=20.000\second$ พอดี ซึ่งเป็นวินาทีที่ตัด SG
-
-%-----------------------------------------------------------------------------
-\subsection{หลักฐานการตัดสินใจ: ดัชนีทุกตัวบนแกนเวลาเดียวกัน}\label{sec:agsi-fig}
-%-----------------------------------------------------------------------------
-รูปที่~\ref{fig:agsi} วางดัชนีทุกตัวบนหน้าเดียวและใช้แกนเวลาเดียวกันทุกแผง เพื่อให้
-อ่านค่าได้ ณ วินาทีที่ตัวกำกับสั่งสลับจริง เส้นแนวตั้งมี\emph{สองตระกูล} ซึ่งต้องไม่
-สับสนกัน: เส้นจุดคือเหตุการณ์รบกวนที่ตั้งไว้ล่วงหน้า ($20$, $50$, $85$, $110$,
-$145\second$ และเวลาต่อกลับจริง) ส่วนเส้นจุด--ขีดคือ\emph{คำสั่งของตัวกำกับ}เอง
-(การเลื่อนขึ้นและการปลดโหมด) สองตระกูลนี้ไม่ตรงกันเลยแม้แต่จุดเดียวในการรันนี้ ซึ่ง
-เป็นเหตุผลที่กราฟที่ทำเครื่องหมายเฉพาะเหตุการณ์รบกวนจะมองไม่เห็นว่าการสลับเกิดเมื่อใด
-
-แผง (a) คือตัวแปรที่ตัดสินใจจริง พร้อมเส้น $\Gamma_{\mathrm{on}}$ และ
-$\Gamma_{\mathrm{off}}$ แผง (b), (c) คือสองพจน์ที่ประกอบเป็น $S$ ส่วนแผง (d)--(g)
-เป็นดัชนีอ้างอิงที่\textbf{ไม่เข้าเกตใด} คำนวณหลังวิถีเสร็จแล้วล้วน ๆ จึงจัดชั้นเป็น
-\textsf{ASSUMED\_DIAGNOSTIC} และห้ามใช้สนับสนุนข้ออ้างความพร้อมใช้งาน จุดที่ควรสังเกต:
-$J_f$ และ $J_R$ เป็นปริมาณของ\emph{ระบบ} (คิดจากความถี่จุดศูนย์กลางความเฉื่อย) จึงมี
-เส้นเดียว ไม่ใช่สี่เส้น และ $J_{\mathrm{lock}}$ เป็นศูนย์พอดีบนกิ่ง GFM โดยโครงสร้าง
-เพราะ GFM ไม่มี PLL ไม่ใช่เพราะวัดไม่ได้
-
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/decision_indices.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/decision_indices.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily decision\_indices.png\\[4pt]
-   \normalfont รอการสร้างรูปใหม่
-   (รัน \texttt{generate\_ieee14\_switch\_evidence}).\vspace{3em}}}}
-\caption{หลักฐานการตัดสินใจสลับโหมด ทุกแผงใช้แกนเวลาเดียวกันและเส้นเหตุการณ์ชุดเดียวกัน
-(a) ดัชนีความรุนแรง $S=\sat_{[0,1]}(0.5J_V+0.5J_f)$ พร้อมเส้นเกณฑ์
-$\Gamma_{\mathrm{on}}=0.65$ และ $\Gamma_{\mathrm{off}}=0.35$
-(b) $J_V$ (c) $J_f$ ของระบบ (d) $J_R$ ของระบบ (e) $J_P$ (f) $J_{\mathrm{lock}}$
-(g) $J_{\mathrm{SCR}}$ (h) โหมด GFL/GFM รายตัว (i) เจ้าของมุมอ้างอิง
-เส้นจุด: เหตุการณ์รบกวน เส้นจุด--ขีด: คำสั่งของตัวกำกับ
-แผง (a)--(c) เป็นตัวตัดสิน แผง (d)--(g) เป็นดัชนีอ้างอิงที่ไม่เข้าเกตใด}
-\label{fig:agsi}
-\end{figure}
-
-หน้าต่างสองช่วงที่การสลับเกิดขึ้นจริงถูกขยายไว้ในรูปที่~\ref{fig:agsizoom1}
-และรูปที่~\ref{fig:agsizoom2} ในสองรูปนี้เส้นทั้งสองตระกูลถูกกำกับชื่อครบ จึงอ่านได้
-ว่าค่าดัชนีอยู่ที่เท่าไรในวินาทีที่คำสั่งเกิด
-
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/decision_indices_zoom_island.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/decision_indices_zoom_island.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily
-   decision\_indices\_zoom\_island.png\\[4pt]\normalfont
-   รอการสร้างรูปใหม่.\vspace{3em}}}}
-\caption{ช่วงสร้างเกาะไฟฟ้า $t\in[17,58]\second$ ครอบคลุมการตัด SG การเลื่อนโหมดขึ้น
-สองครั้งแรก การปลดหนึ่งครั้ง และโหลดเพิ่มแบบขั้น แผงและเส้นเหมือนรูปที่~\ref{fig:agsi}
-ทุกประการ ต่างเพียงช่วงแกนเวลา ไม่มีจุดตัวอย่างใดถูกตัดหรือแก้ค่า}
-\label{fig:agsizoom1}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/decision_indices_zoom_reclose.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/decision_indices_zoom_reclose.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily
-   decision\_indices\_zoom\_reclose.png\\[4pt]\normalfont
-   รอการสร้างรูปใหม่.\vspace{3em}}}}
-\caption{ช่วงต่อกลับและคืนหน้าที่ $t\in[143,178]\second$ เห็นการปลดโหมด การเลื่อนขึ้น
-ชดเชยหนึ่งครั้ง การต่อกลับที่ $\NewRunReclose\second$ และการคืนความเป็นเจ้าของมุม
-อ้างอิงให้ SG แผงและเส้นเหมือนรูปที่~\ref{fig:agsi} ทุกประการ}
-\label{fig:agsizoom2}
-\end{figure}
+จะไม่มีตัวกำหนดมุมอ้างอิงและระบบจะเสียเงื่อนไข gauge ทางคณิตศาสตร์ นี่คือเหตุผลที่
+กราฟแถบโหมดในรูปที่~\ref{fig:pq} แสดงการกระโดดขึ้นพร้อมกันทั้งสี่ตัวที่ $t=20$~s
+ไม่ใช่การไล่ขึ้นทีละตัวตามค่าความรุนแรง
 
 %=============================================================================
 \section{เครื่องกำเนิดไฟฟ้าซิงโครนัส: แบบจำลองอันดับหกและการพิสูจน์}\label{sec:sg}
@@ -665,61 +568,48 @@ $T_{q0}'$ เล็ก ๆ แทน จะกลายเป็นการเ�
 ที่มุมใดก็ได้ ซึ่งไม่สอดคล้องกับกายภาพของการซิงโครไนซ์
 
 %=============================================================================
-\section{อินเวอร์เตอร์: แบบจำลองสองโหมดขนาด 17 สเตต}\label{sec:ibr}
+\section{อินเวอร์เตอร์: แบบจำลองสองโหมดขนาด 20 สเตต}\label{sec:ibr}
 %=============================================================================
 IBR แต่ละตัวเป็น\emph{อุปกรณ์ชิ้นเดียว}ที่สามารถแสดงตัวควบคุมได้สองแบบบนภาคกำลัง
-ร่วมชุดเดียวกัน เวกเตอร์สเตตเต็มมีขนาดคงที่ 17 ตัว
+ร่วมชุดเดียวกัน เวกเตอร์สเตตเต็มมีขนาดคงที่ 20 ตัว
 \begin{equation}
   x_{\mathrm{IBR}}
-   =\bigl[\underbrace{i_d,\,i_q,\,V_{dc}}_{(3)\;\text{แอ็กทีฟตลอด}}\;\big|\;
-          \underbrace{x_{\mathrm{GFL}}\;(6)}_{\substack{\text{ดัชนี }4\text{--}9\\
-            \text{แอ็กทีฟเฉพาะ GFL}}}\;\big|\;
-          \underbrace{x_{\mathrm{GFM}}\;(7)}_{\substack{\text{ดัชนี }10\text{--}16\\
-            \text{แอ็กทีฟเฉพาะ GFM}}}\;\big|\;
-          \underbrace{I_{dc}}_{\substack{\text{ดัชนี }17\\
-            \text{แอ็กทีฟตลอด}}}\bigr]^{\top}
-   \in\mathbb{R}^{17},
+   =\bigl[\underbrace{i_d,\,i_q,\,V_{dc}}_{x_{\mathrm{pl}}\;(3)}\;\big|\;
+          \underbrace{x_{\mathrm{GFL}}\;(8)}_{\text{ดัชนี }4\text{--}11}\;\big|\;
+          \underbrace{x_{\mathrm{GFM}}\;(9)}_{\text{ดัชนี }12\text{--}20}\bigr]^{\top}
+   \in\mathbb{R}^{20},
    \label{eq:ibrstate}
 \end{equation}
 ซึ่งเรียงตามลำดับจริงในโค้ด (ABI) โดยบล็อกตัวควบคุมเขียนแยกกันดังนี้
 \begin{align}
   x_{\mathrm{GFL}}&=[\,\delta_{\mathrm{PLL}},\,\xi_{\mathrm{PLL}},\,\xi_P,\,\xi_Q,
-      \,\xi_{Id},\,\xi_{Iq}\,],\\
+      \,\xi_{Id},\,\xi_{Iq},\,V_{d,\mathrm{del}},\,V_{q,\mathrm{del}}\,],\\
   x_{\mathrm{GFM}}&=[\,\delta_{\mathrm{VSG}},\,\omega_{\mathrm{VSG}},\,E,
-      \,\xi_{Vd},\,\xi_{Vq},\,\xi_{Id},\,\xi_{Iq}\,].
+      \,\xi_{Vd},\,\xi_{Vq},\,\xi_{Id},\,\xi_{Iq},
+      \,V_{d,\mathrm{del}},\,V_{q,\mathrm{del}}\,].
 \end{align}
-บล็อกภาคกำลังคือ $x_{\mathrm{pl}}=(i_d,i_q,V_{dc},I_{dc})$ และ\emph{ไม่ต่อเนื่อง}
-กัน: กระแสแหล่ง DC อยู่ที่ดัชนี 17 หลังบล็อกตัวควบคุมสองชุด เพราะถูกเพิ่มเข้ากับ
-เลย์เอาต์ที่ดัชนี 1--16 เผยแพร่ไปแล้ว การต่อท้ายแทนการแทรกทำให้ดัชนีเดิมทุกตัวยังหมาย
-ความตรงเดิม ซึ่งเป็นเหตุผลที่ช่วง $4$--$9$ และ $10$--$16$ ในหัวข้อนี้ไม่เปลี่ยนจาก
-รอบก่อน ๆ
-
 ณ ขณะใดขณะหนึ่ง มีเพียง\emph{ภาพฉาย} (projection) ของ~\eqref{eq:ibrstate} เท่านั้น
 ที่ถูกอินทิเกรต แผนที่ดัชนีที่แอ็กทีฟคืนค่า
 \begin{equation}
-  \mathcal{A}_{\mathrm{GFL}}=\{1{:}9,\,17\},\qquad
-  \mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16,\,17\},\qquad
+  \mathcal{A}_{\mathrm{GFL}}=\{1{:}11\},\qquad
+  \mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,12{:}20\},\qquad
   \mathcal{A}_{\mathrm{tripped}}=\varnothing,
   \label{eq:ibractive}
 \end{equation}
-กล่าวคือ 10 สเตตแอ็กทีฟในโหมด GFL, 11 สเตตในโหมด GFM และไม่มีสเตตใดแอ็กทีฟเมื่อ
-อุปกรณ์ถูกตัดออก จุดตัด
-$\mathcal{A}_{\mathrm{GFL}}\cap\mathcal{A}_{\mathrm{GFM}}=\{1,2,3,17\}$ คือภาค
-กำลังร่วมพอดี และยูเนียนคือทั้งชุด $\{1{:}17\}$ บล็อกภาคกำลังร่วมแอ็กทีฟตลอดเวลา
-ส่วนบล็อกตัวควบคุมสองชุดใช้งานแบบไม่ทับซ้อนกัน (mutually exclusive) จำนวนสเตต
-แอ็กทีฟจึงเป็น $10$ หรือ $11$ ไม่เคยเป็น $17$ --- มิติซูเปอร์เซ็ตไม่เคยเป็นมิติ
-พลวัต
+กล่าวคือ 11 สเตตแอ็กทีฟในโหมด GFL, 12 สเตตในโหมด GFM และไม่มีสเตตใดแอ็กทีฟเมื่อ
+อุปกรณ์ถูกตัดออก บล็อกภาคกำลังร่วมแอ็กทีฟตลอดเวลา ส่วนบล็อกตัวควบคุมสองชุดใช้งาน
+แบบไม่ทับซ้อนกัน (mutually exclusive)
 
-ตารางที่~\ref{tab:ibrstates} แจกแจงทั้ง 17 สเตตตามลำดับดัชนีจริง พร้อมระบุว่าสเตต
+ตารางที่~\ref{tab:ibrstates} แจกแจงทั้ง 20 สเตตตามลำดับดัชนีจริง พร้อมระบุว่าสเตต
 ใดแอ็กทีฟในโหมดใด สัญลักษณ์ $\bullet$ หมายถึงถูกอินทิเกรต และ $\circ$ หมายถึงถูก
 ตรึงค่าไว้ (frozen) ประเด็นที่ควรชี้ให้เห็นตอนนำเสนอคือ PLL ปรากฏ\emph{เฉพาะ}ใน
 บล็อก GFL และไม่มีอยู่ในบล็อก GFM เลย ขณะที่บล็อก GFM มีสมการการแกว่งเสมือนแทน
 
 \begin{table}[H]
 \centering\footnotesize
-\caption{แจกแจงสเตตทั้ง 17 ตัวของ IBR ตามลำดับดัชนีในโค้ด: ดัชนี 1--3 คือภาคกำลัง
-ร่วมที่แอ็กทีฟทั้งสองโหมด ดัชนี 4--9 คือตัวควบคุม GFL ดัชนี 10--16 คือตัวควบคุม
-GFM และดัชนี 17 คือกระแสแหล่ง DC ที่แอ็กทีฟทั้งสองโหมด}
+\caption{แจกแจงสเตตทั้ง 20 ตัวของ IBR ตามลำดับดัชนีในโค้ด: ดัชนี 1--3 คือภาคกำลัง
+ร่วมที่แอ็กทีฟทั้งสองโหมด ดัชนี 4--11 คือตัวควบคุม GFL และดัชนี 12--20 คือตัวควบคุม
+GFM}
 \label{tab:ibrstates}
 \begin{tabular}{@{}c l l c c@{}}
 \toprule
@@ -736,46 +626,24 @@ GFM และดัชนี 17 คือกระแสแหล่ง DC ท�
 7 & $\xi_{Q}$ & ตัวอินทิเกรตวงรอบกำลังรีแอกทีฟ & $\bullet$ & $\circ$ \\
 8 & $\xi_{Id}$ & ตัวอินทิเกรตกระแสชั้นในแกน d & $\bullet$ & $\circ$ \\
 9 & $\xi_{Iq}$ & ตัวอินทิเกรตกระแสชั้นในแกน q & $\bullet$ & $\circ$ \\
+10 & $V_{d,\mathrm{del}}$ & คำสั่งแรงดันหน่วงแกน d & $\bullet$ & $\circ$ \\
+11 & $V_{q,\mathrm{del}}$ & คำสั่งแรงดันหน่วงแกน q & $\bullet$ & $\circ$ \\
 \midrule
 \multicolumn{5}{@{}l}{\textit{ตัวควบคุม GFM (ตรึงเมื่ออยู่ในโหมด GFL)}}\\
-10 & $\delta_{\mathrm{VSG}}$ & มุมของเครื่องซิงโครนัสเสมือน & $\circ$ & $\bullet$ \\
-11 & $\omega_{\mathrm{VSG}}$ & ความถี่ของเครื่องซิงโครนัสเสมือน & $\circ$ & $\bullet$ \\
-12 & $E$ & แอมพลิจูดแรงดันที่วงรอบ $Q$--$V$ สร้าง & $\circ$ & $\bullet$ \\
-13 & $\xi_{Vd}$ & ตัวอินทิเกรตวงรอบแรงดันแกน d & $\circ$ & $\bullet$ \\
-14 & $\xi_{Vq}$ & ตัวอินทิเกรตวงรอบแรงดันแกน q & $\circ$ & $\bullet$ \\
-15 & $\xi_{Id}$ & ตัวอินทิเกรตกระแสชั้นในแกน d & $\circ$ & $\bullet$ \\
-16 & $\xi_{Iq}$ & ตัวอินทิเกรตกระแสชั้นในแกน q & $\circ$ & $\bullet$ \\
+12 & $\delta_{\mathrm{VSG}}$ & มุมของเครื่องซิงโครนัสเสมือน & $\circ$ & $\bullet$ \\
+13 & $\omega_{\mathrm{VSG}}$ & ความถี่ของเครื่องซิงโครนัสเสมือน & $\circ$ & $\bullet$ \\
+14 & $E$ & แอมพลิจูดแรงดันที่วงรอบ $Q$--$V$ สร้าง & $\circ$ & $\bullet$ \\
+15 & $\xi_{Vd}$ & ตัวอินทิเกรตวงรอบแรงดันแกน d & $\circ$ & $\bullet$ \\
+16 & $\xi_{Vq}$ & ตัวอินทิเกรตวงรอบแรงดันแกน q & $\circ$ & $\bullet$ \\
+17 & $\xi_{Id}$ & ตัวอินทิเกรตกระแสชั้นในแกน d & $\circ$ & $\bullet$ \\
+18 & $\xi_{Iq}$ & ตัวอินทิเกรตกระแสชั้นในแกน q & $\circ$ & $\bullet$ \\
+19 & $V_{d,\mathrm{del}}$ & คำสั่งแรงดันหน่วงแกน d & $\circ$ & $\bullet$ \\
+20 & $V_{q,\mathrm{del}}$ & คำสั่งแรงดันหน่วงแกน q & $\circ$ & $\bullet$ \\
 \midrule
-\multicolumn{5}{@{}l}{\textit{แหล่ง DC (แอ็กทีฟทั้งสองโหมด)}}\\
-17 & $I_{dc}$ & กระแสแหล่งจ่าย DC วงจร Thevenin & $\bullet$ & $\bullet$ \\
-\midrule
-\multicolumn{3}{@{}l}{\textit{จำนวนสเตตแอ็กทีฟรวม}} & \textit{10} & \textit{11} \\
+\multicolumn{3}{@{}l}{\textit{จำนวนสเตตแอ็กทีฟรวม}} & \textit{11} & \textit{12} \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{สเตตความหน่วงคำสั่งที่ถูกลดออก}\label{sec:ibr-reduction}
-แผนภาพบล็อกของแหล่งอ้างอิงมีความหน่วงของตัวขับอันดับหนึ่งหนึ่งตัวต่อหนึ่งแกน
-$T_d\,\dot V_{\mathrm{del}}=v_{\mathrm{cmd}}-V_{\mathrm{del}}$ ซึ่งค่าคงตัวเวลาทาง
-กายภาพของมันคือความหน่วงของคอนเวอร์เตอร์เชิงเลข $T_d=1.5/f_{\mathrm{sw}}\approx0.3$~ms
-ที่ $f_{\mathrm{sw}}=5$~kHz ค่านี้เล็กกว่าขั้นเวลาแบบเฟเซอร์ที่ใช้ในงานนี้มากกว่าสอง
-อันดับของสิบ ดังนั้นตามทฤษฎีการก่อกวนเอกฐาน (singular perturbation) ความหน่วงที่เร็ว
-กว่ามากจะยุบลงบนแมนิโฟลด์ช้าของตัวเอง $V_{\mathrm{del}}=v_{\mathrm{cmd}}$ สเตตความ
-หน่วงสองตัวต่อหนึ่งกิ่งจึงถูกกำจัดออกเชิงพีชคณิต และสมการกระแสของตัวกรองใช้คำสั่ง
-แรงดัน $v_{cd},v_{cq}$ โดยตรง
-
-นี่คือการลดอันดับแบบจำลองมาตรฐานซึ่งไม่เปลี่ยนทั้งจุดสมดุลและพลวัตของสเตตที่คงไว้
-และยังกำจัดโพลที่อยู่ราว $530$~Hz ซึ่งแบบจำลองเครือข่ายแบบเฟเซอร์ RMS ไม่สามารถ
-แทนได้อยู่แล้ว การลดอันดับนี้ทำให้ซูเปอร์เซ็ตสองโหมดลดจาก $20$ เหลือ $16$ สเตต
-และแต่ละกิ่งเดี่ยวลดจาก $12$ เหลือ $10$ สเตต จากนั้นกระแสแหล่ง DC
-$I_{dc}$ (ดัชนี 17 ของ~\eqref{eq:ibrstate} ดูการอนุมานวงจรที่ย่อหน้าแถว~(3)
-ด้านล่างและหัวข้อการมีส่วนร่วมของ DC) เพิ่มอีกหนึ่งสเตต ให้ขนาด $17$ และ $11$
-ต่อกิ่งเดี่ยว
-การลดอันดับจัดเป็น \textsf{PROJECT\_DERIVED} และเป็นการตัดสินของเจ้าของงาน
-ดูบันทึกข้อบกพร่อง \textsf{TD-2026-08-12-01}
-
-\emph{ข้อความที่ต้องระบุตามจริง} รายงานฉบับก่อนหน้านี้พิมพ์ผังสเตตขนาด $20$ ตัว
-ก่อนการลดอันดับ ซึ่งเป็นผังที่แบบจำลองที่รันจริง\emph{ไม่มี}อีกแล้ว
 
 \paragraph{ตัวดำเนินการสองตัวที่ใช้ซ้ำในทั้งสองโหมด}
 $\Pi_I(a,b;I_{\max})$ คือตัวจำกัดกระแสแบบ\emph{วงกลม}: ถ้า $r=\sqrt{a^2+b^2}>I_{\max}$
@@ -802,19 +670,14 @@ $(v_d,v_q)=\Re,\Im\,(Ve^{-\mathrm{j}\theta})$ การใช้ $\kappa$ อย
 พลวัตกระแสของตัวกรองแบบ $L$ และบัส DC ใช้ร่วมกันทั้งสองโหมดและแอ็กทีฟตลอดเวลา
 เขียนหนึ่งสเตตต่อหนึ่งบรรทัดตามลำดับดัชนี
 \begin{align}
-  \tfrac{L}{\omega_b}\,\dot{i}_d &= v_{cd}-v_d-R\,i_d+\omega L\,i_q,
+  \tfrac{L}{\omega_b}\,\dot{i}_d &= v_{d,\mathrm{del}}-v_d-R\,i_d+\omega L\,i_q,
     &&\text{(1) กระแสตัวกรองแกน $d$}\\
-  \tfrac{L}{\omega_b}\,\dot{i}_q &= v_{cq}-v_q-R\,i_q-\omega L\,i_d,
+  \tfrac{L}{\omega_b}\,\dot{i}_q &= v_{q,\mathrm{del}}-v_q-R\,i_q-\omega L\,i_d,
     &&\text{(2) กระแสตัวกรองแกน $q$}\\
-  \dot{V}_{dc} &= \tfrac{1}{C}\!\left[\tfrac{E_{dc}-V_{dc}}{R_{dc}}-\frac{P_{ac}}{V_{dc}}-\frac{\max(0,\,V_{dc}-V_{dc}^{\max})}{R_{ch}}\right],
+  \dot{V}_{dc} &= \tfrac{1}{C}\!\left[\tfrac{C}{T_{dc}}(V_{dc}^{0}-V_{dc})\right],
     &&\text{(3) แรงดันบัส DC}
 \end{align}
-โดย $R=R_f$, $L=L_f$, $C=C_{dc}$, $\omega_b=2\pi f_b$ และ $v_{cd},v_{cq}$ คือคำสั่งแรงดันชั้นในที่นิยามไว้รายกิ่งด้านล่าง
-ส่วน $E_{dc}$ คือแรงเคลื่อนไฟฟ้าของแหล่งจ่าย DC, $R_{dc}$ คือความต้านทานภายในของมัน,
-$R_{ch}$ และ $V_{dc}^{\max}$ คือความต้านทานและขีดเริ่มนำกระแสของชอปเปอร์กันแรงดันเกิน
-และ $P_{ac}=v_{cd}i_d+v_{cq}i_q$ คือกำลังด้านคอนเวอร์เตอร์ ซึ่งเท่ากับกำลังที่บัสบวก
-กำลังสูญเสียในตัวกรอง อันเป็นกำลังที่บัส DC ต้องจ่ายจริง คำสั่งแรงดันปรากฏในแถว (1)--(2)
-โดยตรงแทนคำสั่งที่ผ่านความหน่วง เพราะการลดอันดับในหัวข้อย่อย~\ref{sec:ibr-reduction}
+โดย $R=R_f$, $L=L_f$, $C=C_{dc}$ และ $\omega_b=2\pi f_b$
 
 \emph{พิสูจน์ทีละแถว} แถว (1)--(2) คือกฎแรงดันของ Kirchhoff คร่อมตัวกรองอนุกรม
 $R_f,L_f$ ในกรอบหมุน พจน์ไขว้ $\pm\omega L$ คือแรงเคลื่อนไฟฟ้าที่เกิดจากการหมุนของ
@@ -823,50 +686,15 @@ $R_f,L_f$ ในกรอบหมุน พจน์ไขว้ $\pm\omega L$ 
 สมการภาคกำลังรับรู้ว่าโหมดเปลี่ยน จึงเป็นเหตุผลเชิงโครงสร้างว่าทำไมภาคกำลังจึงใช้
 ร่วมกันได้โดยไม่ต้องเขียนสมการซ้ำสองชุด
 
-แถว (3) คือการปิดสมการแหล่งจ่าย DC แบบ \textsf{PROJECT\_DERIVED}: กรณีศึกษาให้เพียง
-สมดุลพลังงานของบัส DC คือ $C\dot V_{dc}=I_{dc}-P_{ac}/V_{dc}$ แต่\emph{ไม่}ให้กฎของ
-$I_{dc}$ ดังนั้นกฎนี้จึงเป็นสิ่งที่โครงการอนุมานและต้องแสดงเหตุผล แหล่งจ่ายด้าน DC
-ใดก็ตาม --- เรกติไฟเออร์ แบตเตอรี่ สตริงเซลล์แสงอาทิตย์ในย่านแหล่งแรงดัน หรือฟีดเดอร์
-DC --- ในอันดับแรกคือแรงเคลื่อนไฟฟ้าหลังความต้านทานภายในรวมสายเคเบิล จึงได้
-$I_{dc}=(E_{dc}-V_{dc})/R_{dc}$ หักด้วยกระแสชอปเปอร์กันแรงดันเกิน
-$I_{ch}=\max(0,V_{dc}-V_{dc}^{\max})/R_{ch}$ ตามที่แสดงในแถว (3)
+แถว (3) คือการปิดสมการแหล่งจ่าย DC แบบ \textsf{PROJECT\_DERIVED}: กระแสที่โค้ด
+คำนวณคือ $I_{dc}=P_{ac}/V_{dc}+(C/T_{dc})(V_{dc}^{0}-V_{dc})$ และ
+$\dot V_{dc}=(I_{dc}-P_{ac}/V_{dc})/C$ ซึ่งพจน์ป้อนไปข้างหน้า $P_{ac}/V_{dc}$
+\emph{หักล้างกันพอดี} เหลือเพียงการคืนแรงดันอันดับหนึ่งตามที่แสดง การหักล้างนี้เป็น
+เจตนาของการออกแบบ: แหล่งจ่าย DC ที่กรณีศึกษาไม่ได้กำหนดกฎไว้ ต้องไม่มีอำนาจเลื่อน
+จุดสมดุลด้าน AC ที่มาจากแหล่งอ้างอิง ที่สภาวะคงตัวแถว (3) ให้ $V_{dc}=V_{dc}^{0}$
+พอดี ซึ่งเป็นการยืนยันว่า closure นี้เป็นกลางต่อผลลัพธ์ทางไฟฟ้า
 
-\emph{ไม่มีพจน์ใดหักล้างกันในแถวนี้}: $P_{ac}$ เป็นตัวขับพิกัด และ $C_{dc}$ เป็นตัวสเกล
-ทั้งสองจึงปรากฏจริงในเรซิดวลและในจาโคเบียน ค่า $E_{dc}$ ไม่ใช่ค่าที่เลือกได้ตามใจ แต่
-ถูก\emph{บังคับ}โดยเงื่อนไขที่ว่าจุดจ่ายที่สั่งไว้ต้องเป็นจุดสมดุล: การให้
-$\dot V_{dc}=0$ ที่ $V_{dc}=V_{dc}^{0}$ และ $P_{ac}=P_{ac}^{0}$ เหลือค่าที่ยอมรับได้
-เพียงค่าเดียวคือ $E_{dc}=V_{dc}^{0}+R_{dc}P_{ac}^{0}/V_{dc}^{0}$ โดย
-$P_{ac}^{0}=\kappa P_{\mathrm{ref}}+R_f(i_{d0}^{2}+i_{q0}^{2})$ ผลที่ตามมามีสองข้อ:
-เงื่อนไขเริ่มต้นด้าน AC ที่มาจากแหล่งอ้างอิงและการไหลของกำลังในหัวข้อ~\ref{sec:pf}
-\emph{ไม่}ถูกแตะต้อง (ค่า $\dot V_{dc}(0)$ ที่วัดได้เป็นศูนย์ในระดับความคลาดของ
-การปัดเศษ) และเนื่องจาก $E_{dc}$ คำนวณจาก $P_{\mathrm{ref}},Q_{\mathrm{ref}},V_0,R_f$
-ชุดเดียวกันทั้งสองกิ่ง ค่าจึงเท่ากันใน GFL และ GFM การถ่ายโอนโหมดขณะรันจึงไม่สร้าง
-ขั้นกระโดดใน $\dot V_{dc}$ ไม่ใช่เพียงไม่สร้างขั้นใน $V_{dc}$
-
-\emph{จุดสมดุลและขอบเขต} การให้ $\dot V_{dc}=0$ ขณะชอปเปอร์ปิดให้
-$V_{dc}^{2}-E_{dc}V_{dc}+R_{dc}P_{ac}=0$ ซึ่งรากบนคือ $V_{dc}=V_{dc}^{0}$ ที่ภาระ
-ที่สั่งไว้ $P_{ac}=P_{ac}^{0}$ พอดี --- นั่นคือสิ่งที่ตรึงค่า $E_{dc}$ --- และเลื่อน
-ไปตาม $P_{ac}$ ที่ภาระอื่นทุกค่า สำหรับ $V_{dc}>E_{dc}$ ทุกพจน์ของแถว (3) เป็นลบเมื่อ
-$P_{ac}\ge0$ จึงได้ $\dot V_{dc}<0$ และ $V_{dc}(t)\le\max(V_{dc}(0),E_{dc})=E_{dc}$
-\emph{ขณะที่ตัวแปลงจ่ายกำลังออก} ความต้านทานภายในจึงเป็นขอบเขตด้วยตัวมันเอง และที่จุด
-ที่สั่งไว้ $E_{dc}=1.0453\pu$ อยู่ต่ำกว่าขีดเริ่มนำกระแสของชอปเปอร์ $V_{dc}^{\max}=1.10\pu$
-
-\emph{สมมติฐาน $P_{ac}\ge0$ ไม่ใช่ส่วนเกิน และมีแขนหนึ่งที่หลุดจากมัน} ขอบเขตข้างต้น
-ไม่ได้บอกอะไรเลยเมื่อ $P_{ac}<0$ ตัวแปลงที่ถูกผลักให้\emph{ดูดกำลัง} --- ถูกตรึงไว้ที่
-ขีดจำกัดกระแสขณะที่แรงดันและมุมของเกาะวิ่งหนีจากมัน --- เปลี่ยนพจน์ภาระให้เป็นพจน์
-\emph{อัดประจุ} $+|P_{ac}|/V_{dc}$ ดังนั้น $V_{dc}$ จึงไต่ผ่าน $E_{dc}$ ขึ้นไปถึงชอปเปอร์ได้
-กรณีนี้เกิดขึ้นจริงในแขนนโยบายควบคุมห้าแขนของงานนี้ บนสามแขนที่ไปถึงขอบฟ้า
-แรงดันลิงก์สูงสุดของทั้งสี่ตัวแปลงคือ $1.0108$, $1.0224$ และ $1.0167\pu$ ชอปเปอร์ไม่นำ
-กระแสเลย แต่บนแขนที่ตรึงสี่ตัวซึ่งล่ม IBR$_1$ ข้าม $V_{dc}^{\max}$ ที่ $t=20.4573\second$
-และอยู่เหนือขีดนั้นต่อเนื่อง $94$ ตัวอย่างที่ยอมรับจนแขนจบ ยอดสูงสุด $1.1030\pu$ โดยมี
-$P_{ac}\in[-0.925,-0.747]\pu$ และ $|i|\approx1.204\pu$ คือถูกจำกัดกระแสและดูดกำลัง
-อยู่ทุกตัวอย่าง เมื่อจำกัดเฉพาะตัวอย่างของแขนเดียวกันที่ $P_{ac}\ge0$ ยอดสูงสุดคือ
-$1.0482\pu$ ต่ำกว่าขีด รายงานนี้จึงระบุว่าชอปเปอร์\emph{ทำงานจริง}บนแขนนั้นและอยู่เฉย
-บนสามแขนที่รอด ไม่ใช่ระบุว่าเป็นอุปกรณ์ป้องกันที่พิสูจน์แล้วว่าไม่จำเป็น การตัดสินว่ามัน
-นำกระแสหรือไม่บนวิถีใดทำภายหลังจาก $\max_t V_{dc}$ เทียบ $V_{dc}^{\max}$ ซึ่งแม่นยำ
-เพราะเงื่อนไขการนำกระแสขึ้นกับ $V_{dc}$ เพียงตัวเดียว
-
-\subsection{GFL (สเตต 4--9): แหล่งกระแสที่มี PLL}
+\subsection{GFL (สเตต 4--11): แหล่งกระแสที่มี PLL}
 ปริมาณพีชคณิตช่วยได้แก่ ความผิดพลาดของกำลัง
 $e_P=\kappa u_1-P_{\mathrm{inv}}$, $e_Q=\kappa u_2-Q_{\mathrm{inv}}$
 ค่าอ้างอิงกระแสก่อนและหลังการจำกัด
@@ -878,7 +706,7 @@ $e_P=\kappa u_1-P_{\mathrm{inv}}$, $e_Q=\kappa u_2-Q_{\mathrm{inv}}$
 และคำสั่งแรงดันชั้นใน
 $v_{cd}=v_d+R i_d-\omega L i_q+k_{pI}(i_{d,\mathrm{ref}}-i_d)+k_{iI}\xi_{Id}$,
 $v_{cq}=v_q+R i_q+\omega L i_d+k_{pI}(i_{q,\mathrm{ref}}-i_q)+k_{iI}\xi_{Iq}$
-จากนั้นสเตต GFL ทั้งหกตัวเปลี่ยนแปลงทีละบรรทัดตามลำดับดัชนี
+จากนั้นสเตต GFL ทั้งแปดตัวเปลี่ยนแปลงทีละบรรทัดตามลำดับดัชนี
 \begin{align}
   \dot{\delta}_{\mathrm{PLL}} &= k_{p,\mathrm{PLL}}v_q+k_{i,\mathrm{PLL}}\xi_{\mathrm{PLL}},
      &&\text{(4) มุม PLL};\quad \omega=1+\dot\delta_{\mathrm{PLL}}/\omega_b\\
@@ -888,7 +716,9 @@ $v_{cq}=v_q+R i_q+\omega L i_d+k_{pI}(i_{q,\mathrm{ref}}-i_q)+k_{iI}\xi_{Iq}$
   \dot{\xi}_Q &= \mathcal{H}(e_Q,\,-k_{iQ},\,r_{i,q},\,\text{sat}),
      &&\text{(7) ตัวอินทิเกรตกำลังรีแอกทีฟ}\\
   \dot{\xi}_{Id} &= i_{d,\mathrm{ref}}-i_d, &&\text{(8) ตัวอินทิเกรตกระแสแกน $d$}\\
-  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{(9) ตัวอินทิเกรตกระแสแกน $q$}
+  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{(9) ตัวอินทิเกรตกระแสแกน $q$}\\
+  \dot{V}_{d,\mathrm{del}} &= (v_{cd}-V_{d,\mathrm{del}})/T_d, &&\text{(10) ความหน่วงคำสั่งแกน $d$}\\
+  \dot{V}_{q,\mathrm{del}} &= (v_{cq}-V_{q,\mathrm{del}})/T_d, &&\text{(11) ความหน่วงคำสั่งแกน $q$}
 \end{align}
 
 \emph{พิสูจน์ทีละสเตต} (4)--(5) คือ PLL แบบกรอบอ้างอิงซิงโครนัส หน้าที่ของมันคือ
@@ -902,14 +732,17 @@ $Q_{\mathrm{inv}}=\kappa u_2$ กล่าวคืออุปกรณ์จ�
 $I_{\max}$ เท่านั้น เครื่องหมายลบใน (7) สืบเนื่องจากนิยาม
 $i_{q,\mathrm{ref}}^{\mathrm{raw}}=-(k_{pQ}e_Q+k_{iQ}\xi_Q)$ ไม่ใช่การเดาเครื่องหมาย
 (8)--(9) คือตัวควบคุม PI ของกระแสชั้นใน: $\dot\xi_{Id}=i_{d,\mathrm{ref}}-i_d=0$
-ทำให้กระแสตัวกรองตามค่าอ้างอิงได้ และแกน $q$ เป็นไปในทำนองเดียวกัน
+ทำให้กระแสตัวกรองตามค่าอ้างอิงได้ และแกน $q$ เป็นไปในทำนองเดียวกัน (10)--(11) คือ
+ความหน่วงของตัวขับอันดับหนึ่ง: $\dot V_{d,\mathrm{del}}=0\Rightarrow
+V_{d,\mathrm{del}}=v_{cd}$ ดังนั้นคำสั่งที่หน่วงแล้วเท่ากับคำสั่งที่คำนวณได้ที่
+สภาวะคงตัว
 
 \emph{ข้อสรุปเชิงกายภาพของกิ่งนี้} GFL เป็น\emph{แหล่งกระแส} มันต้องอาศัย PLL เพื่อ
 รู้มุมของกริด จึงไม่สามารถกำหนดแรงดันบนเครือข่ายที่ไร้แหล่งอ้างอิงได้ด้วยตัวเอง
 นี่คือเหตุผลรากฐานว่าทำไมเมื่อ SG หลุดออกไป การปล่อยให้ IBR ทุกตัวเป็น GFL ต่อจึง
 ไม่ใช่ทางเลือก
 
-\subsection{ GFM (สเตต 10--16): แหล่งแรงดัน มีสมการแกว่งเสมือน ไม่มี PLL}
+\subsection{ GFM (สเตต 12--20): แหล่งแรงดัน มีสมการแกว่งเสมือน ไม่มี PLL}
 กิ่งสร้างกริดแทน PLL ด้วยสมการการแกว่งของเครื่องซิงโครนัสเสมือน (virtual
 synchronous generator, VSG) ร่วมกับวงรอบสร้างแรงดันแบบ $Q$--$V$ ค่าอ้างอิงแรงดันคือ
 $v_{d,\mathrm{ref}}=E$ และ $v_{q,\mathrm{ref}}=0$ ความผิดพลาดแรงดันคือ
@@ -918,36 +751,39 @@ $i_{d,\mathrm{ref}}^{\mathrm{raw}}=k_{pV}e_{vd}+k_{iV}\xi_{Vd}$,
 $i_{q,\mathrm{ref}}^{\mathrm{raw}}=k_{pV}e_{vq}+k_{iV}\xi_{Vq}$,
 $[i_{d,\mathrm{ref}},i_{q,\mathrm{ref}}]=\Pi_I(\cdot;I_{\max})$ และคำสั่งชั้นใน
 $v_{cd},v_{cq}$ เหมือนกิ่ง GFL แต่เปลี่ยน $\omega\to\omega_{\mathrm{VSG}}$
-สเตต GFM ทั้งเจ็ดตัวเปลี่ยนแปลงทีละบรรทัดตามลำดับดัชนี
+สเตต GFM ทั้งเก้าตัวเปลี่ยนแปลงทีละบรรทัดตามลำดับดัชนี
 \begin{align}
-  \dot{\delta}_{\mathrm{VSG}} &= \omega_b(\omega_{\mathrm{VSG}}-1), &&\text{(10) มุม VSG}\\
+  \dot{\delta}_{\mathrm{VSG}} &= \omega_b(\omega_{\mathrm{VSG}}-1), &&\text{(12) มุม VSG}\\
   M\,\dot{\omega}_{\mathrm{VSG}} &= \kappa u_1-P_{\mathrm{inv}}-D_v(\omega_{\mathrm{VSG}}-1),
-     &&\text{(11) สมการแกว่ง VSG}\\
+     &&\text{(13) สมการแกว่ง VSG}\\
   \tau_E\,\dot{E} &= k_Q(\kappa u_2-Q_{\mathrm{inv}})-k_E(E-E_{\mathrm{ref}}),
-     &&\text{(12) สเตตแรงดันวงรอบ $Q$--$V$}\\
+     &&\text{(14) สเตตแรงดันวงรอบ $Q$--$V$}\\
   \dot{\xi}_{Vd} &= \mathcal{H}(e_{vd},\,k_{iV},\,r_{i,d},\,\text{sat}),
-     &&\text{(13) ตัวอินทิเกรตแรงดันแกน $d$}\\
+     &&\text{(15) ตัวอินทิเกรตแรงดันแกน $d$}\\
   \dot{\xi}_{Vq} &= \mathcal{H}(e_{vq},\,k_{iV},\,r_{i,q},\,\text{sat}),
-     &&\text{(14) ตัวอินทิเกรตแรงดันแกน $q$}\\
-  \dot{\xi}_{Id} &= i_{d,\mathrm{ref}}-i_d, &&\text{(15) ตัวอินทิเกรตกระแสแกน $d$}\\
-  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{(16) ตัวอินทิเกรตกระแสแกน $q$}
+     &&\text{(16) ตัวอินทิเกรตแรงดันแกน $q$}\\
+  \dot{\xi}_{Id} &= i_{d,\mathrm{ref}}-i_d, &&\text{(17) ตัวอินทิเกรตกระแสแกน $d$}\\
+  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{(18) ตัวอินทิเกรตกระแสแกน $q$}\\
+  \dot{V}_{d,\mathrm{del}} &= (v_{cd}-V_{d,\mathrm{del}})/T_d, &&\text{(19) ความหน่วงคำสั่งแกน $d$}\\
+  \dot{V}_{q,\mathrm{del}} &= (v_{cq}-V_{q,\mathrm{del}})/T_d, &&\text{(20) ความหน่วงคำสั่งแกน $q$}
 \end{align}
 
-\emph{พิสูจน์ทีละสเตต} (10)--(11) คือ VSG: สมการการแกว่งให้คอนเวอร์เตอร์มีมุม
+\emph{พิสูจน์ทีละสเตต} (12)--(13) คือ VSG: สมการการแกว่งให้คอนเวอร์เตอร์มีมุม
 \emph{ของตัวเอง} จากสมดุลกำลังจริง $M\dot\omega_{\mathrm{VSG}}
 =\kappa u_1-P_{\mathrm{inv}}-D_v(\omega_{\mathrm{VSG}}-1)$ ดังนั้นที่จุดสมดุลจะได้
 $\omega_{\mathrm{VSG}}=1$ และ $P_{\mathrm{inv}}=\kappa u_1$ เพราะมุมถูกสร้างขึ้น
 ภายในเอง กิ่งนี้จึง\emph{ไม่มี PLL} และสามารถจ่ายไฟให้เครือข่ายที่ไม่มีแหล่งอ้างอิง
-ได้ (12) คือวงรอบ $Q$--$V$ ซึ่งสเตต $E$ \emph{คือ}ค่าอ้างอิงของวงรอบแรงดันเอง
+ได้ (14) คือวงรอบ $Q$--$V$ ซึ่งสเตต $E$ \emph{คือ}ค่าอ้างอิงของวงรอบแรงดันเอง
 ($v_{d,\mathrm{ref}}=E$): ที่จุดสมดุล $E=E_{\mathrm{ref}}
 +(k_Q/k_E)(\kappa u_2-Q_{\mathrm{inv}})$ ซึ่งเป็นความชัน (droop) ระหว่างค่าสั่งกำลัง
 รีแอกทีฟกับแรงดันที่สร้างขึ้น จุดที่ต้องระวังคือพจน์ $-k_E(E-E_{\mathrm{ref}})$
 ต้องอ้างกับ $E_{\mathrm{ref}}$ ซึ่งเป็นค่าอ้างอิงจากภายนอกตามกรณีศึกษา ไม่ใช่ขนาด
 แรงดันที่วัดได้ $|V|$ เพราะถ้าใช้ค่าที่วัดได้ พจน์คืนแรงดันจะหายไปที่จุดสมดุลและ
-เปลี่ยนพฤติกรรมสัญญาณขนาดเล็กของทั้งวงรอบ (13)--(14) คือตัวควบคุม PI ของแรงดันที่
+เปลี่ยนพฤติกรรมสัญญาณขนาดเล็กของทั้งวงรอบ (15)--(16) คือตัวควบคุม PI ของแรงดันที่
 ผลัก $v_d\to E$ และ $v_q\to 0$ (ทำให้แรงดันที่ขั้วเรียงตัวกับมุม VSG ที่ขนาด $E$)
-(15)--(16) คือ PI กระแสชั้นใน ตัวกันการอิ่มตัวสะสม $\mathcal H$ ในกิ่งนี้ย้ายไปอยู่ที่
-ตัวอินทิเกรตของวงรอบ\emph{แรงดัน} เพราะวงรอบแรงดันคือชั้นที่ผลิตค่าอ้างอิงกระแสที่ถูกจำกัด
+(17)--(18) คือ PI กระแสชั้นใน และ (19)--(20) คือความหน่วงคำสั่งอันดับหนึ่งชุดเดียวกับ
+กิ่ง GFL ตัวกันการอิ่มตัวสะสม $\mathcal H$ ในกิ่งนี้ย้ายไปอยู่ที่ตัวอินทิเกรตของ
+วงรอบ\emph{แรงดัน} เพราะวงรอบแรงดันคือชั้นที่ผลิตค่าอ้างอิงกระแสที่ถูกจำกัด
 
 \emph{ข้อสรุปเชิงกายภาพของกิ่งนี้} GFM เป็น\emph{แหล่งแรงดัน} จึงเป็นเหตุผลว่าทำไม
 เกตกันการสูญเสียแหล่งอ้างอิงจึงยก IBR ขึ้นเป็น GFM ทันทีที่ SG slack หลุดออกไป
@@ -1007,11 +843,11 @@ $\xi_{\mathrm{PLL}}\!:=\!\omega_b(\omega_{\mathrm{VSG}}-1)/k_{i,\mathrm{PLL}}$
         การแกว่ง ฟลักซ์ชั่วครู่ และฟลักซ์ชั่วครู่ย่อย) โดยมีห้าตัวที่ถูกอินทิเกรต
         เพราะ $E_d'$ ถูกตรึงไว้ที่ลิมิตเอกฐาน (ชุดแอ็กทีฟ $[\,1,2,3,5,6\,]$);
   \item \textbf{IBR ที่อยู่ในโหมด GFL} อินทิเกรตภาคกำลังร่วมบวกบล็อกตัวควบคุมที่มี
-        PLL --- รวม $10$ สเตต, $\mathcal{A}_{\mathrm{GFL}}=\{1{:}9,\,17\}$
+        PLL --- รวม $11$ สเตต, $\mathcal{A}_{\mathrm{GFL}}=\{1{:}11\}$
         จาก~\eqref{eq:ibractive};
   \item \textbf{IBR ที่อยู่ในโหมด GFM} อินทิเกรตภาคกำลังชุดเดิมบวกตัวควบคุมเครื่อง
-        ซิงโครนัสเสมือน (ไม่มี PLL) --- รวม $11$ สเตต,
-        $\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16,\,17\}$;
+        ซิงโครนัสเสมือน (ไม่มี PLL) --- รวม $12$ สเตต,
+        $\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,12{:}20\}$;
   \item \textbf{อุปกรณ์ที่ถูกตัดออก} ไม่อินทิเกรตสเตตใดเลย
         ($\mathcal{A}_{\mathrm{tripped}}=\varnothing$)
 \end{itemize}
@@ -1150,14 +986,14 @@ $\mathcal T(x_0,V)$ ซึ่งถูกเลือกให้ผ่านเ
 \begin{equation}
   n_x(t)=\underbrace{5}_{\text{SG (ตรึง }E_d'\text{)}}
         +\sum_{i=1}^{4}\begin{cases}
-          9,  & \text{IBR}_i \text{ อยู่ในโหมด GFL},\\
-          10, & \text{IBR}_i \text{ อยู่ในโหมด GFM},\\
+          11, & \text{IBR}_i \text{ อยู่ในโหมด GFL},\\
+          12, & \text{IBR}_i \text{ อยู่ในโหมด GFM},\\
           0,  & \text{IBR}_i \text{ ถูกตัดออก},
         \end{cases}
   \label{eq:nxcount}
 \end{equation}
-ดังนั้นถ้า IBR ทั้งสี่เป็น GFL ค่าที่คาดคือ $5+4\times9=41$ และถ้าทั้งสี่เป็น GFM
-ค่าที่คาดคือ $5+4\times10=45$ ทุกครั้งที่มี IBR หนึ่งตัวสลับโหมด เส้นขั้นบันไดจะขยับ
+ดังนั้นถ้า IBR ทั้งสี่เป็น GFL ค่าที่คาดคือ $5+4\times11=49$ และถ้าทั้งสี่เป็น GFM
+ค่าที่คาดคือ $5+4\times12=53$ ทุกครั้งที่มี IBR หนึ่งตัวสลับโหมด เส้นขั้นบันไดจะขยับ
 หนึ่งหน่วยเท่านั้น ประเด็นสำคัญคือรูปนี้ไม่ได้ฝังตัวเลขไว้ล่วงหน้า: ตัวสร้างรูปเรียก
 แผนที่สเตตของอุปกรณ์แต่ละตัว ณ ทุกจุดตัวอย่างที่ยอมรับ แล้วหักดัชนีที่ถูกตรึงออก จึง
 เป็นการอ่านค่าเดียวกับที่ตัวอินทิเกรตใช้จริง และถ้าอุปกรณ์ใดไม่สามารถรายงานแผนที่ของ
@@ -1180,7 +1016,7 @@ $\mathrm{tol}=10^{-8}$ ตามหัวข้อ~\ref{sec:ts-newton} เสม
 \caption{(a) จำนวนสเตตเชิงอนุพันธ์ที่ระบบรวมอินทิเกรตจริง $n_x(t)$ วาดเป็นเส้นขั้น
 บันได อ่านจากแผนที่สเตตของอุปกรณ์เองที่ทุกจุดตัวอย่างที่ยอมรับ (b) เรซิดวลของแต่ละ
 ขั้นเวลาที่ยอมรับ $\lVert R\rVert_\infty$ บนสเกลลอการิทึม เส้นประแนวตั้งสีเทาคือเวลา
-ที่ SG ถูกตัดออก ทุกจุดเป็นค่าดิบที่ตัวแก้ยอมรับจากวิถี 250 วินาทีของแขนสลับอัตโนมัติ}
+ที่ SG ถูกตัดออก ทุกจุดเป็นค่าดิบที่ตัวแก้ยอมรับจากวิถี 200 วินาทีที่เก็บรักษาไว้}
 \label{fig:nx}
 \end{figure}
 
@@ -1225,83 +1061,26 @@ $\mathrm{tol}=10^{-8}$ ตามหัวข้อ~\ref{sec:ts-newton} เสม
 %=============================================================================
 ตารางโมดัลด้านล่างแสดงค่าลักษณะเฉพาะ (eigenvalue) ของสัญญาณขนาดเล็กที่การจัดรูป
 หลังการรบกวนแบบตัวแทนหนึ่งกรณี (มี IBR หนึ่งตัวเป็น GFM และสามตัวเป็น GFL) โดยแสดง
-ลำดับที่ ส่วนจริงและส่วนจินตภาพของค่าลักษณะเฉพาะ $\lambda$ แยกเป็นคนละคอลัมน์
-ความถี่โมดัล $f$ อัตราการหน่วง $\zeta$ และรายการมีส่วนร่วมสามอันดับแรกพร้อมค่า
-ที่ปรับบรรทัดฐานแล้วในวงเล็บ คู่สังยุค (conjugate pair) พิมพ์เพียงแถวเดียว
-ส่วนจินตภาพจึงเขียนด้วย $\pm$ และหมายถึงทั้งสองสมาชิกของคู่ ขณะที่โมดที่เป็นจำนวน
-จริงล้วนพิมพ์ $0$ ที่คอลัมน์นั้นและ $\zeta=1$ ค่าในวงเล็บคือสิ่งที่ทำให้คอลัมน์
-สุดท้ายอ่านเป็นหลักฐานได้: สามรายการที่ใกล้ $0.13$ เท่า ๆ กันบอกว่าโมดนั้นเป็น
-ครอบครัวที่แชร์กัน ขณะที่รายการเดียวที่ $1.000$ บอกว่าไม่มีสเตตอื่นขับพิกัดนั้นเลย
-ค่าการมีส่วนร่วมเป็นข้อมูลเชิงรายงานและไม่เข้าเกตใด ตารางนี้คือตารางที่ตัวสร้างผลิต
-ไว้เอง ไม่ใช่สำเนาที่พิมพ์เรียงใหม่ จึงเป็นตารางเดียวกับที่รายงานฉบับภาษาอังกฤษใช้
-และตัวเลขตรงกันบิตต่อบิต
+ลำดับที่ ค่าลักษณะเฉพาะ $\lambda$ ความถี่โมดัล $f$ อัตราการหน่วง $\zeta$ และสเตต
+ที่มีส่วนร่วมเด่นที่สุดหนึ่งตัว คู่สังยุค (conjugate pair) พิมพ์เพียงแถวเดียว
+ตารางนี้เป็นการฉายคอลัมน์เพื่อการนำเสนอจากตารางโมดัลที่ตัวสร้างผลิตไว้ --- ตัดเฉพาะ
+รายการส่วนร่วมที่ต่อท้ายออกเท่านั้น ไม่มีค่าลักษณะเฉพาะ ความถี่ หรืออัตราการหน่วงใด
+ถูกคำนวณใหม่ จัดลำดับใหม่ หรือจัดรูปใหม่ ตัวเลขจึงตรงกันบิตต่อบิตกับตารางเต็ม
 
 \emph{วิธีอ่านตารางโมดัล} นิยามที่ใช้คือ $f_i=|\Im\lambda_i|/2\pi$ และ
 $\zeta_i=-\Re\lambda_i/|\lambda_i|$ ดังนั้นค่าลักษณะเฉพาะที่เป็นจำนวนจริงจะมี
 $f=0$ และ $\zeta=1$ ตามนิยาม ไม่ใช่เพราะถูกปรับแต่ง สิ่งที่ควรสังเกตเป็นกลุ่มคือ
-โมดที่มีความถี่สูงระดับร้อยเฮิรตซ์เป็นกลุ่มของกระแสตัวกรองและเครือข่าย รากจริงสี่ราก
-ที่อยู่เหนือ $-100~\mathrm{s}^{-1}$ ขึ้นมาเล็กน้อยคือครอบครัวของบัส DC ทั้งสี่ตัว และ
-โมดที่ช้าที่สุดคือกลุ่มตัวอินทิเกรตของวงรอบแรงดัน ซึ่งเป็นตัวกำหนดขอบของอัตราการหน่วง
-ในการจัดรูปนี้
-
-\paragraph{โมดของบัส DC เป็นการตรวจสอบแบบจำลอง ไม่ใช่ข้อสังเกตที่ได้มาฟรี}
-คอนเวอร์เตอร์แต่ละตัวให้พิกัดบัส DC มาหนึ่งตัว และด้วยแหล่งจ่าย DC ไม่อุดมคติใน
-หัวข้อ~\ref{sec:ibr} พิกัดนั้นเป็นสเตตที่มีชีวิตซึ่งผูกกับสเตตด้าน AC ผ่านกำลังของ
-คอนเวอร์เตอร์ $P_{ac}$ ค่าลักษณะเฉพาะของมันถูก\emph{ทำนายไว้ก่อน}คำนวณสเปกตรัม โดย
-การเชิงเส้นแถว DC ขณะปิดชอปเปอร์ ซึ่งด้วย $C_{dc}=R_{dc}=0.10$ ย่อลงเป็นข้อความที่
-พิสูจน์เท็จได้ว่า $\lambda_{dc}=-(1/C)\bigl(1/R_{dc}-P_{ac}/V_{dc}^{2}\bigr)
-=-100+10\,P_{ac}/V_{dc}^{2}~\mathrm{s^{-1}}$ ดังนั้นแถว DC ทั้งสี่ต้องเป็นจำนวนจริง
-ต้องอยู่เหนือ $-100~\mathrm{s^{-1}}$ ขึ้นมาเล็กน้อย และต้อง\emph{แยกจากกันและเรียง
-ตามกำลังที่คอนเวอร์เตอร์แต่ละตัวรับ} --- ยิ่งบัสรับภาระมาก โมดยิ่งลบน้อยลง เพราะพจน์
-ที่สองคือความต้านทานส่วนเพิ่มค่าลบของโหลดกำลังคงที่ ตารางเป็นไปตามทั้งสามข้อ: สี่แถว
-เป็นค่าที่แยกจากกันโดยมีแรงดันบัส DC เป็นสเตตเด่น และการผกผันความสัมพันธ์ข้างต้นคืนค่า
-กำลังรายคอนเวอร์เตอร์ในช่วง $0.3\text{--}0.9$~pu ซึ่งเป็นภาระเดียวกับที่รูปโดเมนเวลา
-แสดงสำหรับอุปกรณ์เดียวกัน ไม่มีการปรับค่าใดเพื่อให้ได้ความสอดคล้องนี้ closure ถูก
-อนุมานก่อน แล้วจึงคำนวณสเปกตรัมทีหลัง
-
-\paragraph{ทำไมค่าการมีส่วนร่วมของ DC ยังเป็น $1.000$ และทำไมมันเป็นข้อเท็จจริง
-คนละเรื่องแล้ว}
-รายงานฉบับก่อนหน้านี้พิมพ์สี่แถวที่ $\lambda=-10.000000$ เท่ากันทั้งสี่แถว แต่ละแถว
-มีค่าการมีส่วนร่วม $1.000$ พอดีบนแรงดันบัส DC ที่นั่นมีคุณสมบัติสองอย่างถูกรวมปนกัน
-และมีเพียงอย่างเดียวที่เปลี่ยนไป
-
-ค่าลักษณะเฉพาะที่\emph{ซ้ำกัน}คือลายเซ็นของ closure อุดมคติ มันทำให้แถว DC ถูกแยก
-ออกโดยสมบูรณ์ ดังนั้น $-1/T_{dc}$ จึงเป็นค่าลักษณะเฉพาะที่มีพหุคูณเชิงพีชคณิตเท่าสี่
-ไม่ว่าตัวแปลงจะทำอะไรอยู่ และ $V_{dc}$ คงที่ตลอดวิถี สิ่งนั้นหายไปแล้ว แถว DC ทั้งสี่
-เป็นเลขสี่ค่าที่ต่างกัน เรียงตามกำลังที่แต่ละลิงก์รับ ตรงตามที่สมการทำนาย และ $V_{dc}$
-ขยับเป็นพิสัยไม่กี่เปอร์เซ็นต์บนทุกแขน นั่นคือข้อเท็จจริงที่บอกว่าลิงก์มีชีวิต
-
-ค่าการมีส่วนร่วม $1.000$ \emph{ไม่ใช่}หนึ่งในข้อเท็จจริงนั้น และไม่เคยเป็นหลักฐาน
-เกี่ยวกับ closure เลย มันเป็นผลของการที่การต่อกันเป็น\emph{ทางเดียว} ซึ่งวัดได้และ
-วัดแล้ว: การรบกวน $V_{dc}$ ไม่เปลี่ยนอนุพันธ์ของสเตตอื่นเลยแม้แต่ตัวเดียว
-\begin{equation}
-  \max_{i\neq V_{dc}}\left|\frac{\partial f_i}{\partial V_{dc}}\right| = 0
-  \quad\text{พอดี ทั้งสองสาขา}
-  \label{eq:oneway}
-\end{equation}
-ขณะที่แถว DC อ่านสเตตด้าน AC จริง โดย
-$\max_j|\partial f_{V_{dc}}/\partial x_j|=17.65$ จาโคเบียนของอุปกรณ์จึงเป็นบล็อก
-สามเหลี่ยมในการแบ่ง (AC, DC) ทำให้เวกเตอร์ลักษณะเฉพาะ\emph{ขวา}ของโมด DC เป็นเวกเตอร์
-หนึ่งหน่วยบนพิกัดนั้นพอดี และตัวประกอบการมีส่วนร่วม
-$p_{ki}=|\phi_{ik}\psi_{ki}|$ จึงกระจุกอยู่ที่นั่นในเชิงพีชคณิต ไม่ว่าแหล่งจ่าย DC
-จะเป็นแบบใด ผู้อ่านควรอ่าน $1.000$ ในคอลัมน์นั้นว่า ``ไม่มีสิ่งอื่นขับพิกัดนี้''
-ไม่ใช่ ``พิกัดนี้ไม่ทำอะไรเลย''
-
-\paragraph{ข้อจำกัดของแบบจำลองที่อยู่เบื้องหลังสมการ~\eqref{eq:oneway}}
-การต่อกันทางเดียวเป็นคุณสมบัติของแบบจำลองนี้ ไม่ใช่ของตัวแปลงจริง วงรอบชั้นในสร้างคำสั่ง
-แรงดัน $v_{cd},v_{cq}$ จากความผิดพลาดของกระแสเพียงอย่างเดียว ไม่มีอะไรผูกคำสั่งนั้นกับ
-แรงดัน DC ที่มีให้ใช้สังเคราะห์ ตัวแปลงสองระดับจริงผลิตได้ราว $m\,V_{dc}/2$ ต่อเฟส
-ดังนั้นลิงก์ที่ตกจะตัดยอดคำสั่ง AC และการต่อกันจะกลายเป็นสองทาง สเตต DC จะปรากฏใน
-แถว AC ความเป็นบล็อกสามเหลี่ยมจะแตก และการมีส่วนร่วมของ DC จะกระจายออก การเพิ่มขีดจำกัด
-ดัชนีการมอดูเลตเป็นการเปลี่ยนสมการด้าน AC และไม่ได้ทำในงานนี้ จนกว่าจะทำ ลิงก์ DC ของ
-งานนี้ตอบสนองต่อด้าน AC ได้แต่ย้อนไปกระทำกับมันไม่ได้ และไม่มีข้ออ้างใดในรายงานนี้
-ที่อาศัยความสามารถนั้น
+โมดที่มีความถี่สูงระดับร้อยเฮิรตซ์เป็นกลุ่มของกระแสตัวกรองและเครือข่าย โมดที่เป็นราก
+จริงราว $-10~\mathrm{s}^{-1}$ สี่รากคือครอบครัวของบัส DC ทั้งสี่ตัว (เมื่อรากซ้ำกัน
+เวกเตอร์ลักษณะเฉพาะภายในสเปซนั้นหมุนเปลี่ยนฐานได้ จึงต้องอ่านเป็น ``ครอบครัวสี่ราก''
+ไม่ใช่ยืนยันว่าแถวใดเป็นของอุปกรณ์ใดโดยเอกลักษณ์) และโมดที่ช้าที่สุดคือกลุ่มตัว
+อินทิเกรตของวงรอบแรงดัน ซึ่งเป็นตัวกำหนดขอบของอัตราการหน่วงในการจัดรูปนี้
 
 \begin{center}\footnotesize
-\IfFileExists{figures/switch_ieee14/sssa_modes_n1.tex}
- {\input{figures/switch_ieee14/sssa_modes_n1.tex}}
- {\ttfamily sssa\_modes\_n1.tex รอการสร้างใหม่
-  (รัน \texttt{generate\_gfl\_gfm\_sssa\_tables}).}
+\IfFileExists{figures/switch_ieee14/sssa_modes_compact_n1.tex}
+ {\input{figures/switch_ieee14/sssa_modes_compact_n1.tex}}
+ {\ttfamily sssa\_modes\_compact\_n1.tex รอการสร้างใหม่
+  (รัน \texttt{write\_sssa\_modes\_compact}).}
 \end{center}
 
 สเปกตรัมทั้งหมดอยู่ในระนาบครึ่งซ้ายที่การจัดรูปนี้ ข้อความนี้เป็นข้อความเกี่ยวกับ
@@ -1313,122 +1092,48 @@ $p_{ki}=|\phi_{ik}\psi_{ki}|$ จึงกระจุกอยู่ที่�
 %=============================================================================
 \section{ผลตอบสนองชั่วครู่: การจำลองในโดเมนเวลา}\label{sec:transient}
 %=============================================================================
-รูปที่~\ref{fig:periods} วางไทม์ไลน์หกช่วงไว้เหนือกราฟผลลัพธ์ทั้งหมดของหัวข้อนี้
-เพื่อให้เทียบเวลาเหตุการณ์กับเส้นกราฟได้โดยตรง
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  font=\normalsize,
-  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
-    align=center,text=white,font=\bfseries},
-  tlbl/.style={font=\small},
-  tlab/.style={midway,above,font=\small},
-  tlabb/.style={midway,below,font=\small},
-  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
-
-\node[per,fill=pgreen] (p1) at (0,0)     {ช่วง 1\\ ทำงาน\\ ปกติ};
-\node[per,fill=pred]   (p2) at (4.4,0)   {ช่วง 2\\ ตัด $SG_1$\\ (เสีย slack)};
-\node[per,fill=pblue]  (p3) at (8.8,0)   {ช่วง 3\\ โหลด $P,Q$\\ เพิ่ม $+20\%$};
-\node[per,fill=pred]   (p4) at (8.8,-4.4){ช่วง 4\\ ฟอลต์\\ ที่บัส 9};
-\node[per,fill=pyellow](p5) at (4.4,-4.4){ช่วง 5\\ เปิดสาย\\ 6--13};
-\node[per,fill=pblue]  (p6) at (0,-4.4)  {ช่วง 6\\ ต่อกลับ\\ $SG_1$};
-
-\draw[arr] (-3.2,0) -- node[tlab]{$t=0\second$} (p1);
-\draw[arr] (p1) -- node[tlab]{$t=20\second$} (p2);
-\draw[arr] (p2) -- node[tlab]{$t=50\second$} (p3);
-\draw[arr] (p3) -- node[font=\small,left=2mm,pos=0.5,align=right]{$t=85.000$\\--$85.150\second$} (p4);
-\draw[arr] (p4) -- node[tlabb]{$t=110\second$} (p5);
-\draw[arr] (p5) -- node[tlabb]{$t=145\second$} (p6);
-\draw[arr] (p6) -- node[tlabb,pos=0.62]{$t\to\NewRunEnd\second$} ++(-3.2,0);
-
-\node[tlbl,below=3pt of p6,align=center,text=black]
-  {ต่อกลับที่ $\NewRunReclose\second$\\ ปลดโหมดครั้งแรกที่ $\NewRunFirstRelease\second$};
-\end{tikzpicture}
-\caption{ลำดับเหตุการณ์รบกวนหกช่วง สีเขียว: ยังไม่ถูกรบกวน สีแดง: เหตุการณ์ที่
-ทำให้สูญเสียแหล่งจ่ายหรือทำให้บัสเกิดฟอลต์ สีเหลือง: การเปลี่ยนโครงสร้างเครือข่าย
-สีน้ำเงิน: การกระทำเพื่อฟื้นฟูระบบ เวลาที่ตั้งไว้ล่วงหน้า ($0$, $20$, $50$,
-$85.000$--$85.150$, $110$, $145\second$) เป็นค่าจากกรณีศึกษา ส่วนเวลาต่อกลับและ
-เวลาปลดโหมดครั้งแรกอ่านจากบันทึกเหตุการณ์ที่ตัวแก้ยอมรับ}
-\label{fig:periods}
-\end{figure}
-
-ตารางที่~\ref{tab:runscalars} รวมตัวเลขสรุปของการรันที่ใช้วาดกราฟทุกรูป
-ในหัวข้อนี้ ตัวเลขทั้งหมดเป็นค่าที่ตัวแก้ยอมรับจากวิถี $\NewRunEnd$ วินาทีของแขน
-สลับโหมดอัตโนมัติ และถูกอ่านผ่านมาโครที่ตัวสร้างเขียนให้ ไม่มีตัวเลขใดพิมพ์ตรงลงใน
-เนื้อความ ค่าสุดขีดของแรงดันและความถี่ในตารางนี้เป็น\emph{ผลที่รายงาน}
-ไม่ใช่เกณฑ์ยอมรับ และไม่ถูกนำไปปรับแบบจำลองย้อนกลับ
+ก่อนดูกราฟ ตารางที่~\ref{tab:runscalars} รวมตัวเลขสรุปของการรันที่ใช้วาดกราฟทุกรูป
+ในหัวข้อนี้ ตัวเลขทั้งหมดเป็นค่าที่ตัวแก้ยอมรับจากวิถี 200 วินาทีที่เก็บรักษาไว้ และ
+ถูกตรึงไว้เป็นชุดเดียวกับที่รายงานฉบับภาษาอังกฤษใช้ ค่าสุดขีดของแรงดันและความถี่ใน
+ตารางนี้เป็น\emph{ผลที่รายงาน} ไม่ใช่เกณฑ์ยอมรับ และไม่ถูกนำไปปรับแบบจำลองย้อนกลับ
 
 \begin{table}[H]
 \centering\footnotesize
-\caption{ตัวเลขสรุปของการรัน $\NewRunEnd$ วินาทีที่ใช้วาดกราฟในหัวข้อนี้}
+\caption{ตัวเลขสรุปของการรัน 200 วินาทีที่ใช้วาดกราฟในหัวข้อนี้}
 \label{tab:runscalars}
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.40\textwidth}l X@{}}
 \toprule
 รายการ & ค่า & หมายเหตุ \\ \midrule
-เวลาสุดท้ายที่ยอมรับได้ & $\NewRunEnd\second$ & ขอบฟ้าเต็มของการรัน ไม่มีการตัดท้าย \\
-สถานะการต่อกลับ & \NewRunRecloseStatus & อ่านจากบันทึกเหตุการณ์ \\
+เวลาสุดท้ายที่ยอมรับได้ & $\NewRunEnd\second$ & ขอบฟ้าของวิถีที่เก็บรักษาไว้ \\
 ช่วงแรงดันทุกบัสที่พบ & $\NewRunVMin$--$\NewRunVMax\pu$ & ค่าสุดขีดชั่วครู่ ไม่ใช่พิกัดใช้งาน \\
 ช่วงความถี่ที่พบ & $\NewRunFMin$--$\NewRunFMax$~Hz & ค่าสุดขีดชั่วครู่ระหว่างฟอลต์และการสลับโหมด \\
-ความถี่จุดศูนย์กลางความเฉื่อยปลายทาง & $\NewRunTerminalF$~Hz & ที่ $t=\NewRunEnd\second$ \\
-ช่วงแรงดันปลายทาง & $\NewRunTerminalVMin$--$\NewRunTerminalVMax\pu$ & ที่ $t=\NewRunEnd\second$ \\
 เรซิดวลสูงสุดของขั้นที่ยอมรับ & \NewRunResidual & ต่ำกว่าเกณฑ์ $10^{-8}$ ทุกขั้น \\
 ระดับการแบ่งขั้นเวลาย่อยที่ลึกสุด & $\NewRunSubdivision$ ชั้น & กลไกแบ่งครึ่งแบบทวิภาค \\
 ขั้นทดลองที่ถูกปฏิเสธเพราะออกนอกโดเมน & $\NewRunDomainRejects$ ครั้ง & ไม่มีการผ่อนเกณฑ์เพื่อให้ผ่าน \\
-ขั้นเวลาที่ตัวควบคุมปฏิเสธ & $\NewRunRejectedSteps$ ครั้ง & ตัวเดินขั้นแบบ \NewRunStepper \\
-จำนวนจุดตัวอย่างที่ยอมรับ & $\NewRunSamples$ & \\
 เวลาที่ SG ต่อกลับสำเร็จ & $\NewRunReclose\second$ & อ่านจากบันทึกเหตุการณ์ \\
 ส่วนต่างขณะปิดเบรกเกอร์ & $\Delta V=\NewRunSyncDV\pu$ & ผ่านกรอบการซิงโครไนซ์เดิม \\
- & $\Delta f=$ \NewRunSyncDF\ pu & \\
+ & $\Delta f=\NewRunSyncDF\pu$ & \\
  & $\Delta\theta=\NewRunSyncDTheta^{\circ}$ & \\
-เวลาที่เลื่อนโหมดขึ้น ($\NewRunNAugment$ ครั้ง) &
-$\NewRunAugmentOne$, $\NewRunAugmentTwo$, & แต่ละครั้งผ่านใบรับรองการเปลี่ยนสภาพ \\
- & $\NewRunAugmentThree$, $\NewRunAugmentFour\second$ & \\
-เวลาที่ปลดโหมด ($\NewRunNRelease$ ครั้ง) &
-$\NewRunReleaseOne$, $\NewRunReleaseTwo$, & ปลดได้ครั้งละหนึ่งตัว \\
- & $\NewRunReleaseThree\second$ & \\
-จำนวน GFM สูงสุดที่ถือพร้อมกัน & $\NewRunGfmMax$ ตัว & ไปถึงแบบเป็นขั้น ไม่ใช่กระโดด \\
-การคืนโหมดหลังต่อกลับ ($\NewRunNReselection$ ครั้ง) &
-ที่ $\NewRunModeReselectionTime\second$ & หน่วย grid-forming สุดท้ายส่งคืน \\
-สถานะการเลือกชุดใหม่หลังต่อกลับ & \NewRunReselection & ผ่านการตรวจกับตาราง SG-online \\
+เวลาที่พิจารณาปลดโหมดทีละตัว &
+$\NewRunReleaseOne$, $\NewRunReleaseTwo$, & หลังการต่อกลับ ปลดได้ครั้งละหนึ่งตัว \\
+ & $\NewRunReleaseThree$, $\NewRunReleaseFour\second$ & \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-รูปที่~\ref{fig:pq} แสดงกำลังจริงและกำลังรีแอกทีฟรายตัวของ IBR ตลอดขอบฟ้าเต็ม
-$0\text{--}\NewRunEnd\second$ ด้านบนของแผงกำลังมีแถบสถานะเชิงกำกับสองแถบ: แถบบนสุด
-คือโหมด GFM/GFL ของ IBR แต่ละตัว และแถบที่สองคือ\emph{เจ้าของแหล่งอ้างอิง}
-คืออุปกรณ์ตัวเดียวที่ถือมุมอ้างอิงของเกาะไฟฟ้าไว้ในแต่ละขณะ
+รูปที่~\ref{fig:pq} แสดงกำลังจริงและกำลังรีแอกทีฟรายตัวของ IBR ตลอดขอบฟ้าที่เก็บ
+รักษาไว้ $0\text{--}200\second$ ด้านบนของแผงกำลังมีแถบสถานะเชิงกำกับสองแถบ: แถบบนสุด
+คือโหมด GFM/GFL ของ IBR แต่ละตัว (ทั้งสี่ตัวขยับขึ้นเป็น GFM พร้อมกันเมื่อ SG หลุด)
+และแถบที่สองคือ\emph{เจ้าของแหล่งอ้างอิง} คืออุปกรณ์ตัวเดียวที่ถือมุมอ้างอิงของเกาะ
+ไฟฟ้าไว้ในแต่ละขณะ
 
 โหมดและความเป็นเจ้าของแหล่งอ้างอิงเป็นสัญญาที่\emph{แยกกัน}: IBR หลายตัวเป็น GFM ได้
 พร้อมกัน แต่มีเพียงตัวเดียวที่เป็นเจ้าของมุมอ้างอิง ในผลนี้ SG เป็นเจ้าของจนถึง
 $t=20\second$ และกลับมาเป็นเจ้าของอีกครั้งหลังการต่อกลับ ช่วงระหว่างนั้น
-IBR$_1$ (บัส~2) เป็นผู้นำอ้างอิง เส้นทั้งสี่คือ IBR ทั้งสี่ตัวที่บัส 2, 3, 6 และ 8
-ทุกจุดตัวอย่างเป็นค่าดิบที่ตัวแก้ยอมรับ และช่วง $0\text{--}\NewRunEnd\second$
-คือขอบฟ้าเต็มของวิถี (ไม่มีการตัดช่วงแสดงผล)
-
-\paragraph{วงจรปิดสมบูรณ์: ตัวแปลงทุกตัวกลับสู่ grid-following}
-เมื่อเครื่องกลับมาและทางลาดคำสั่ง C$_1$ จบลง ตัวกำกับจะทบทวนแผนที่โหมดเป็นครั้ง
-สุดท้าย ที่ $t=\NewRunModeReselectionTime\second$ --- จุดตัวอย่างแรกหลังทางลาด
-จบ โดย $\NewRunModeReselectionTime=\NewRunReclose+\NewRunHandback$ --- มันส่ง
-หน่วย grid-forming ที่เหลืออยู่ตัวเดียวคือ IBR$_1$ กลับสู่ grid-following โดย
-ผ่านการตรวจเป็นการปลดแบบหนึ่งขั้นที่ตรวจกับตาราง SG-online: การจัดรูป
-all-grid-following ผ่านเกณฑ์ความหน่วงที่ประกาศไว้ด้วย $\zeta$ แย่สุด $0.156$
-เทียบข้อกำหนด $0.05$ และเครื่องถือมุมอ้างอิงตั้งแต่การต่อกลับเป็นต้นไป จึงไม่จำเป็น
-ต้องมีแหล่งสร้างแรงดันอีก สถานะปลายทางคือ all-grid-following โดยเครื่องเป็น
-เจ้าของมุมอ้างอิงเพียงผู้เดียว --- เป็นการจัดรูปเดียวกับที่การส่งมอบแบบประสาน
-(coordinated hand-back) ไปถึงโดยเส้นทางของมันเอง วงจรจึงปิดสมบูรณ์: เครื่องถูก
-ตัด ตัวแปลงหนึ่งตัวรับหน้าที่สร้างแรงดัน หน่วยเสริมถูกเติมตามความรุนแรงและปลดเมื่อ
-ความรุนแรงลดลง เครื่องกลับมา และตัวแปลงทุกตัวกลับสู่ grid-following
-
-จุดสำคัญของผลชุดนี้อยู่ที่แถบโหมด: ตัวกำกับ\emph{ไม่ได้}ยกทั้งสี่ตัวขึ้นพร้อมกัน
-มันเลื่อนขึ้นเป็นขั้น $\NewRunNAugment$ ครั้ง (ที่ $\NewRunAugmentOne$,
-$\NewRunAugmentTwo$, $\NewRunAugmentThree$ และ $\NewRunAugmentFour\second$)
-จนถือ GFM สูงสุด $\NewRunGfmMax$ ตัว แล้วปลดลง $\NewRunNRelease$ ครั้งหลังการ
-ต่อกลับ ก่อนการส่งคืนครั้งสุดท้ายตามย่อหน้าข้างบน ในทางกลับกัน การ\emph{ตรึง}
-$\NewRunGfmMax$ ตัวไว้ตั้งแต่วินาทีที่ตัด SG ทำให้ระบบพังที่ $t=25.491\second$
-ก่อนถึงขอบฟ้า ทั้งที่ชุดเดียวกันนั้นผ่านการรับรองเชิงเส้น นั่นคือเหตุผลที่ลำดับ
-การเลื่อนขึ้นสำคัญไม่แพ้ปลายทาง
+IBR$_1$ (บัส~2) เป็นผู้นำอ้างอิง (IBR$_4$ ถือไว้เพียงเศษเสี้ยววินาทีแรกก่อนที่ตัวกำกับ
+จะลงตัวที่ IBR$_1$) เส้นทั้งสี่คือ IBR ทั้งสี่ตัวที่บัส 2, 3, 6 และ 8 ทุกจุดตัวอย่าง
+เป็นค่าดิบที่ตัวแก้ยอมรับจากวิถี 200 วินาทีที่เก็บรักษาไว้ และช่วง
+$0\text{--}200\second$ คือขอบฟ้าเต็มของวิถีนั้น (ไม่มีการตัดช่วงแสดงผล)
 
 \emph{วิธีอ่านรูปที่~\ref{fig:pq}} อ่านจากบนลงล่างเป็นลำดับเหตุ--ผล: แถบโหมดบอกว่า
 ตัวกำกับ\emph{ตัดสินใจ}อะไร แถบเจ้าของอ้างอิงบอกว่าใคร\emph{ถือ}มุมอ้างอิงอยู่ และ
@@ -1438,17 +1143,16 @@ $\NewRunGfmMax$ ตัวไว้ตั้งแต่วินาทีที�
 
 \begin{figure}[H]
 \centering
-\IfFileExists{figures/switch_ieee14_decision/mode_switch_PQ.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/mode_switch_PQ.png}}
+\IfFileExists{figures/switch_ieee14_new/mode_switch_PQ.png}
+ {\includegraphics[width=6.20in]{figures/switch_ieee14_new/mode_switch_PQ.png}}
  {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily mode\_switch\_PQ.png\\[4pt]
    \normalfont รอการสร้างรูปใหม่
-   (รัน \texttt{generate\_ieee14\_mode\_pq\_figure}).\vspace{3em}}}}
+   (รัน \texttt{generate\_switch\_new\_report\_figures}).\vspace{3em}}}}
 \caption{แถบบนสุด: โหมด GFM/GFL ของ IBR แต่ละตัว (ขั้น GFL/GFM สี่เส้นวางทับกัน
 ไม่มีการเลื่อนระดับเพื่อการแสดงผล) แถบที่สอง: เจ้าของแหล่งอ้างอิง (อุปกรณ์ที่ถือมุม
 อ้างอิงของเกาะไฟฟ้า --- SG แล้วเป็น IBR$_1$ แล้วกลับเป็น SG) (a) กำลังจริงรายตัว
-$P_i\pu$ (b) กำลังรีแอกทีฟรายตัว $Q_i\pu$ เส้นประแนวตั้งคือเวลาเหตุการณ์ที่อ่านจาก
-ตารางเหตุการณ์และบันทึกที่ยอมรับ ทุกจุดเป็นค่าดิบที่ตัวแก้ยอมรับจากวิถี
-$\NewRunEnd$ วินาที ช่วง $t\in[0,\NewRunEnd]\second$ เป็นขอบฟ้าเต็ม}
+$P_i\pu$ (b) กำลังรีแอกทีฟรายตัว $Q_i\pu$ ทุกจุดเป็นค่าดิบที่ตัวแก้ยอมรับจากวิถี
+200 วินาทีที่เก็บรักษาไว้ ช่วง $t\in[0,200]\second$ เป็นขอบฟ้าเต็ม}
 \label{fig:pq}
 \end{figure}
 
@@ -1461,19 +1165,44 @@ $\NewRunEnd$ วินาที ช่วง $t\in[0,\NewRunEnd]\second$ เป�
 
 \begin{figure}[H]
 \centering
-\IfFileExists{figures/switch_ieee14_decision/electrical_adaptive.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/electrical_adaptive.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily electrical\_adaptive.png\\[4pt]
+\IfFileExists{figures/switch_ieee14_new/mode_switch_electrical.png}
+ {\includegraphics[width=6.20in]{figures/switch_ieee14_new/mode_switch_electrical.png}}
+ {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily mode\_switch\_electrical.png\\[4pt]
    \normalfont รอการสร้างรูปใหม่
-   (รัน \texttt{generate\_ieee14\_switch\_evidence}).\vspace{3em}}}}
-\caption{ผลตอบสนองทางไฟฟ้าแปดแผง (ค่าดิบที่ตัวแก้ยอมรับ จากวิถี $\NewRunEnd$ วินาที
-ช่วง $t\in[0,\NewRunEnd]\second$ เป็นขอบฟ้าเต็ม) (a) กำลังจริง $P_i$
+   (รัน \texttt{generate\_switch\_new\_report\_figures}).\vspace{3em}}}}
+\caption{ผลตอบสนองทางไฟฟ้าแปดแผง (ค่าดิบที่ตัวแก้ยอมรับ จากวิถี 200 วินาทีที่เก็บ
+รักษาไว้ ช่วง $t\in[0,200]\second$ เป็นขอบฟ้าเต็ม) (a) กำลังจริง $P_i$
 (b) กำลังรีแอกทีฟ $Q_i$ (c) กระแสแกน $d$ (d) กระแสแกน $q$ (e) ความถี่ที่จุดต่อร่วม
 หรือความถี่โรเตอร์เสมือน (f) มุมของอุปกรณ์เทียบจุดต่อร่วม (g) แรงดันที่จุดต่อร่วม
-(h) แรงดันต่ำสุดของเครือข่าย IBR ทั้งสี่ใช้สีตามคำอธิบายด้านบนรูป และ SG เป็นเส้น
-ดำประในทุกแผงที่มีคู่เทียบ แผง (h) เป็นสเกลาร์ของทั้งระบบจึงมีเส้นเดียวโดยนิยาม}
+(h) แรงดันต่ำสุดของเครือข่าย โดย IBR$_1$ เส้นน้ำเงิน IBR$_2$ เส้นแดงประ IBR$_3$
+เส้นแดง IBR$_4$ เส้นดำ และ SG เส้นดำประ}
 \label{fig:elec}
 \end{figure}
 
+%=============================================================================
+\section{ข้อจำกัด}\label{sec:lim}
+%=============================================================================
+\begin{itemize}\itemsep2pt
+  \item \textbf{ไม่มีข้ออ้างเรื่องความพร้อมใช้งานเชิงปฏิบัติการ} การที่วิถี 200
+        วินาทีเป็นคำตอบที่ลู่เข้าและถูกยอมรับของระบบ DAE รวม บอกได้เพียงว่าการคำนวณ
+        สอดคล้องกันในตัวเอง ไม่ใช่หลักฐานของการผ่านเกณฑ์กริดโค้ด การประสานงานของ
+        ระบบป้องกัน หรือความเป็นไปได้ในการสร้างฮาร์ดแวร์
+  \item \textbf{ค่าสุดขีดชั่วครู่คือค่าสุดขีด ไม่ใช่พิกัดใช้งาน} วิถีที่ยอมรับมี
+        แรงดันเครือข่ายขึ้นถึงจุดสูงสุด $\NewRunVMax\pu$ และความถี่จุดศูนย์กลางความ
+        เฉื่อยอยู่ในแถบ $\NewRunFMin$--$\NewRunFMax$~Hz ระหว่างช่วงฟอลต์และช่วงสลับ
+        โหมด ค่าเหล่านี้เป็นการแกว่งจริงของแบบจำลองภายใต้ลำดับเหตุการณ์ที่รุนแรง ซึ่ง
+        ถูกเปิดเผยตรง ๆ ไม่ใช่ค่าที่สภาวะคงตัว และย้ำว่างานนี้เป็นการศึกษาเชิงตัวเลข
+        ไม่ใช่การลงนามรับรองการออกแบบ
+  \item \textbf{การวิเคราะห์เชิงเส้นเพียงจุดเดียว} สเปกตรัมในหัวข้อ~\ref{sec:sssa}
+        เป็นการวิเคราะห์ที่จุดทำงานหนึ่งจุด จึงไม่ได้ให้ขอบเขตแก่ระบบแบบสลับโหมด
+  \item \textbf{การสร้างค่าย้อนกลับเพื่อการอธิบาย} ค่า $J_V,J_f$ ที่อธิบายในรายงาน
+        ถูกสร้างย้อนกลับจากความถี่จุดศูนย์กลางความเฉื่อยที่ยอมรับและแรงดันรายบัส
+        สภาวะปกติจากผลการไหลของกำลัง เพื่อการอธิบายเท่านั้น ขณะที่ตัวกำกับตอนรันใช้
+        สัญญาณภายในลูปของตัวเอง ทั้งสองตรงกันในเชิงเจตนา แต่ไม่จำเป็นต้องตรงกันทุก
+        จุดตัวอย่าง
+  \item \textbf{ขอบฟ้าของรูป} สมการมาจากโค้ดฉบับ 250 วินาที แต่เส้นกราฟมาจากการรัน
+        200 วินาทีที่เก็บรักษาไว้ เมื่อวิถี 250 วินาทีเสร็จสมบูรณ์ รูปและตัวเลขสรุป
+        ที่ถูกตรึงไว้ต้องถูกสร้างใหม่พร้อมกันทั้งชุด
+\end{itemize}
 
 \end{document}

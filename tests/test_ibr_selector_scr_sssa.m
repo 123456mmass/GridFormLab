@@ -212,7 +212,28 @@ if ~isempty(feas)
     testCase.verifyEqual(cc.eq_u_eq, cc.eq_u_eq, 'AbsTol', 0); % sanity
     % Check that SSSA eigenvalues come from full-KCL (no vcon rows replaced)
     testCase.verifyTrue(cc.full_kcl);
-    testCase.verifyEqual(cc.sssa_pass, cc.omega <= -result.gamma_req, 'AbsTol', 1e-12);
+    % The acceptance criterion is the DAMPING-RATIO floor the selector contract
+    % declares, not the absolute decay-rate floor. The previous assertion here
+    % was `cc.sssa_pass == (cc.omega <= -result.gamma_req)`, which asserted the
+    % gate IS the sigma floor. That equivalence is false: the two coincide only
+    % at f* = gamma_req/(2*pi*zeta_min), so a configuration whose least-damped
+    % mode lies away from f* can satisfy one and fail the other. The old
+    % assertion survived only because the sampled row happened to agree, which
+    % made it a latent trap rather than a check. Assert the real contract, and
+    % assert the ratio is minimised over the WHOLE spectrum (the worst-zeta mode
+    % is generally not the rightmost one) and holds across the frozen FD set.
+    testCase.verifyTrue(isfield(cc,'zeta_worst'));
+    testCase.verifyTrue(isfield(cc,'zeta_min'));
+    zeta_all = -real(cc.physical_eigenvalues(:))./abs(cc.physical_eigenvalues(:));
+    testCase.verifyEqual(cc.zeta_worst, min(min(zeta_all), min(cc.fd_zeta_worsts)), ...
+        'AbsTol', 1e-12, ...
+        'zeta_worst must be the least damping ratio over the FD set.');
+    testCase.verifyEqual(cc.sssa_pass, ...
+        all(cc.fd_zeta_worsts >= cc.zeta_min) && all(cc.fd_omegas < 0), ...
+        'sssa_pass must equal the declared damping-ratio criterion.');
+    testCase.verifyEqual(cc.zeta_margin, cc.zeta_worst - cc.zeta_min, 'AbsTol', 1e-12);
+    % gamma_req survives as the ORDERING key, so margin keeps its old meaning.
+    testCase.verifyEqual(cc.margin, -cc.omega - result.gamma_req, 'AbsTol', 1e-12);
 end
 end
 
@@ -384,4 +405,106 @@ ibr = struct('resource_id','IBR2','bus_id',2, ...
     'limits',empty_limits,'ratings',struct('Mbase',100),'dynamic_params',struct('Mbase',100), ...
     'provenance',base_provenance);
 resources = [sg, ibr];
+end
+
+% =========================================================================
+% Damping-ratio acceptance criterion (the selector contract's declared basis)
+% =========================================================================
+
+function test_the_criterion_is_the_ratio_the_contract_declares(testCase)
+% The case contract declares 5 % damping at the 1 Hz electromechanical mode.
+% An absolute decay-rate floor and a damping-ratio floor are the same
+% requirement at exactly one frequency; this test pins that identity from the
+% contract's own numbers instead of from the implementation.
+c = cases.case_ieee14_1sg_4ibr_auto_vsg();
+testCase.verifyTrue(isfield(c.selector,'zeta_min_damping'));
+testCase.verifyEqual(c.selector.zeta_min_damping, 0.05, 'AbsTol', 0);
+testCase.verifyEqual(c.selector.acceptance_criterion, 'damping_ratio_floor');
+% f* = gamma/(2*pi*zeta) is where the two criteria coincide, derived here
+% independently of the case field so the field cannot silently drift.
+f_star = c.selector.gamma_req_rad_per_s/(2*pi*c.selector.zeta_min_damping);
+testCase.verifyEqual(c.selector.equivalence_frequency_Hz, f_star, 'RelTol', 1e-12);
+% Below f* the absolute floor is the stricter of the two; above it, the ratio
+% floor is. Verified on two concrete modes rather than asserted.
+lam_slow = -0.0652 + 0.1244i;                       % 0.0198 Hz
+lam_em   = -1.1460 + 7.2549i;                       % 1.1547 Hz
+zeta = @(l) -real(l)/abs(l);
+testCase.verifyLessThan(abs(imag(lam_slow))/(2*pi), f_star);
+testCase.verifyGreaterThan(abs(imag(lam_em))/(2*pi), f_star);
+% slow mode: passes the ratio, fails the absolute floor
+testCase.verifyGreaterThan(zeta(lam_slow), c.selector.zeta_min_damping);
+testCase.verifyGreaterThan(real(lam_slow), -c.selector.gamma_req_rad_per_s);
+% electromechanical mode: passes both, and is the one the derivation names
+testCase.verifyGreaterThan(zeta(lam_em), c.selector.zeta_min_damping);
+testCase.verifyLessThan(real(lam_em), -c.selector.gamma_req_rad_per_s);
+end
+
+function test_worst_damping_ratio_is_not_the_rightmost_root(testCase)
+% Falsifies the shortcut of reading the ratio off max(Re lambda). If the gate
+% did that it would certify on the wrong mode. Uses the real SG_ON all-GFL
+% spectrum of the EECON49 case.
+s = cases.scenario_ieee14_1sg_4ibr(struct('case_profile','eecon49_figure4'));
+opt = struct('case_data',s.case_data,'gamma_req',0.1,'sg_online',true, ...
+    'n_gfm_required',0);
+res = stability.ibr_config_selector(s.resources, ...
+    struct('case_data',s.case_data), s, opt);
+testCase.assertNotEmpty(res.configurations);
+cc = res.configurations(1);
+testCase.assertTrue(cc.sssa_evaluated, 'the all-GFL row must reach the SSSA gate');
+ev = cc.physical_eigenvalues(:);
+zeta = -real(ev)./abs(ev);
+[~, i_right] = max(real(ev));
+[~, i_worst] = min(zeta);
+testCase.verifyNotEqual(i_right, i_worst, ...
+    'this fixture exists because the two roots differ; if they coincide the test is void');
+% The gate must have used the worst-zeta root, not the rightmost one.
+% cc.physical_eigenvalues is the eps=1.0 spectrum, so it is the exact oracle for
+% the middle FD entry only. cc.zeta_worst is the worst over the whole FD set and
+% is therefore <= that entry; comparing it directly to the eps=1.0 spectrum with
+% a 1e-9 tolerance is wrong because the three FD spectra differ at ~1e-7.
+testCase.verifyEqual(cc.fd_zeta_worsts(2), min(zeta), 'AbsTol', 1e-12, ...
+    'the middle FD entry must be the ratio of the stored spectrum exactly');
+testCase.verifyEqual(cc.zeta_worst, min(cc.fd_zeta_worsts), 'AbsTol', 0, ...
+    'zeta_worst must be the worst over the frozen FD set');
+testCase.verifyLessThanOrEqual(cc.zeta_worst, min(zeta) + 1e-12);
+testCase.verifyEqual(cc.zeta_worst, min(zeta), 'AbsTol', 1e-5, ...
+    'FD perturbation must not move the ratio beyond FD accuracy');
+testCase.verifyNotEqual(cc.zeta_worst, zeta(i_right));
+% And this configuration is admissible: its electromechanical damping clears
+% the declared 5 % with room, which is the whole point of the correction.
+testCase.verifyTrue(cc.feasible);
+testCase.verifyTrue(cc.ready_to_commit);
+testCase.verifyGreaterThan(cc.zeta_margin, 0);
+% Its decay-rate margin is NEGATIVE, proving margin is no longer the gate.
+testCase.verifyLessThan(cc.margin, 0);
+end
+
+function test_a_low_damping_ratio_still_fails_closed(testCase)
+% The correction must not become a blanket pass. A spectrum containing a
+% lightly damped oscillatory mode must be rejected even when every root is
+% comfortably to the left of -gamma_req, i.e. even when the OLD gate accepted.
+zeta_min = 0.05;
+worst = @(lam) local_worst_zeta(lam);
+% A 5 Hz mode at 1 % damping: Re = -zeta*|lam|.
+wn = 2*pi*5; z = 0.01;
+lam_bad = -z*wn + 1i*wn*sqrt(1-z^2);
+lam_set = [lam_bad; conj(lam_bad); -3.0];
+testCase.verifyLessThan(max(real(lam_set)), -0.1, ...
+    'the old absolute-rate gate would have accepted this set');
+testCase.verifyLessThan(worst(lam_set), zeta_min, ...
+    'the damping-ratio gate must reject it');
+% A marginal zero-frequency root has an undefined ratio and must never certify.
+testCase.verifyEqual(worst([0; -3.0]), -Inf);
+% A real negative root does not oscillate, so it cannot be ratio-limiting.
+testCase.verifyEqual(worst([-0.001; -3.0]), 1, 'AbsTol', 1e-12);
+end
+
+function z = local_worst_zeta(lam)
+% Independent re-implementation of the gate's ratio, written from the
+% definition zeta = -Re(lambda)/|lambda| so it is an oracle, not a copy.
+lam = lam(:);
+mag = abs(lam);
+zz = -real(lam)./mag;
+zz(~(mag > 0)) = -Inf;
+z = min(zz);
 end

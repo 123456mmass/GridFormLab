@@ -229,6 +229,13 @@ for gfield = {'agsi_reference','agsi_rocof_base_Hz_s','agsi_dP_base_pu', ...
         ts_opt_base.(gfield{1}) = opt.(gfield{1});
     end
 end
+% Post-reclose mode-reselection policy (opt-OUT, default true). Forwarded only
+% when set, so a run that omits it is byte-identical. Declaring the option here
+% rather than letting it ride on an unfiltered struct keeps the whitelist
+% explicit: every option that reaches the kernel is named in this file.
+if isfield(opt,'post_reclose_mode_reselection') && ~isempty(opt.post_reclose_mode_reselection)
+    ts_opt_base.post_reclose_mode_reselection = opt.post_reclose_mode_reselection;
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...
@@ -482,6 +489,12 @@ if isfield(ts_res,'reselection_status')
     result.reselection_status = ts_res.reselection_status;
 else
     result.reselection_status = 'NOT_REQUESTED';
+end
+% Structured refusal reasons behind the aggregate status above (diagnostic only).
+if isfield(ts_res,'reselection_rejection_detail')
+    result.reselection_rejection_detail = ts_res.reselection_rejection_detail;
+else
+    result.reselection_rejection_detail = {};
 end
 if isfield(ts_res,'reference_owner_indices')
     result.reference_owner_indices = ts_res.reference_owner_indices;

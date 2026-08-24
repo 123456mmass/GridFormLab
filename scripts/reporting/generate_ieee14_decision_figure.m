@@ -50,7 +50,12 @@ arguments
     opts.height_in (1,1) double = 8.10
     opts.font_size (1,1) double = 11
     opts.dpi (1,1) double = 300
-    opts.title (1,1) logical = true
+    % Off by default. The report caption already names the arm and states that
+    % J_R, J_P, J_lock and J_SCR are reference-only, so an in-figure title block
+    % repeats the caption and spends roughly a tenth of the page height that the
+    % nine panels need. Set title=true for a standalone copy read outside the
+    % report.
+    opts.title (1,1) logical = false
     opts.title_suffix (1,1) string = ""
 end
 
@@ -82,15 +87,25 @@ h = gobjects(1,nd);
 for q = 1:nd
     h(q) = plot(ax,d.t,d.S(:,q),'-','Color',col(q,:),'LineWidth',1.0);
 end
+% Thresholds, labelled INSIDE the axes on the left. Anchored right at the axis
+% limit they were clipped by the figure edge.
 yline(ax,opts.gamma_on ,'k-' ,'\Gamma_{on}' , ...
-    'LineWidth',0.9,'FontName',FN,'FontSize',FS-2,'HandleVisibility','off');
+    'LineWidth',0.9,'FontName',FN,'FontSize',FS-3,'HandleVisibility','off', ...
+    'LabelHorizontalAlignment','left','LabelVerticalAlignment','bottom');
 yline(ax,opts.gamma_off,'k--','\Gamma_{off}', ...
-    'LineWidth',0.9,'FontName',FN,'FontSize',FS-2,'HandleVisibility','off');
-ylim(ax,[-0.03 1.03]);
+    'LineWidth',0.9,'FontName',FN,'FontSize',FS-3,'HandleVisibility','off', ...
+    'LabelHorizontalAlignment','left','LabelVerticalAlignment','bottom');
+% S saturates at 1 by construction, so the axis is drawn to S_TOP and the
+% chronology names occupy the band above 1. Nothing is hidden: no sample can lie
+% in the reserved band, and the band is the only place three staggered rows of
+% names fit without crossing a trace.
+S_TOP = 1.90;
+ylim(ax,[-0.03 S_TOP]);
+set(ax,'YTick',[0 opts.gamma_off opts.gamma_on 1]);
 finish_panel(ax,'(a) severity index S', ...
     '{\itS} [-]',FN,FS,true,false);
 pf_draw_marks(ax,M,labels=true,label_families=opts.label_families, ...
-    font_size=FS-3,window=win);
+    font_size=FS-4,window=win,label_band=[0.62 0.93]);
 
 lg = legend(ax,h,lbl,'Orientation','horizontal','NumColumns',nd,'Box','off');
 lg.Layout.Tile = 'north';
@@ -98,12 +113,12 @@ set(lg,'FontName',FN,'FontSize',FS-2);
 
 % --- (b)-(g) the six sub-indices ----------------------------------------
 spec = { ...
-  'J_V',   '(b) J_V: decision term',             '{\itJ_V} [-]',     false; ...
-  'J_f',   '(c) J_f: decision term, system COI', '{\itJ_f} [-]',     true ; ...
-  'J_R',   '(d) J_R: reference only, ROCOF',     '{\itJ_R} [-]',     true ; ...
-  'J_P',   '(e) J_P: reference only',            '{\itJ_P} [-]',     false; ...
-  'J_lock','(f) J_{lock}: reference only',       '{\itJ}_{lock} [-]',false; ...
-  'J_SCR', '(g) J_{SCR}: reference only',        '{\itJ}_{SCR} [-]', false};
+  'J_V',   '(b) J_V',      '{\itJ_V} [-]',     false; ...
+  'J_f',   '(c) J_f',      '{\itJ_f} [-]',     true ; ...
+  'J_R',   '(d) J_R',      '{\itJ_R} [-]',     true ; ...
+  'J_P',   '(e) J_P',      '{\itJ_P} [-]',     false; ...
+  'J_lock','(f) J_{lock}', '{\itJ}_{lock} [-]',false; ...
+  'J_SCR', '(g) J_{SCR}',  '{\itJ}_{SCR} [-]', false};
 
 in_win = d.t >= win(1) & d.t <= win(2);
 for k = 1:size(spec,1)
@@ -130,7 +145,7 @@ for k = 1:size(spec,1)
     end
     ttl = spec{k,2};
     if ~isempty(Tw) && max(Tw) > 3
-        ttl = sprintf('%s, peak %.3g',ttl,max(Tw));
+        ttl = sprintf('%s, peak %s',ttl,tex_peak(max(Tw)));
     end
     finish_panel(ax,ttl,spec{k,3},FN,FS,true,false);
     pf_draw_marks(ax,M,labels=false,window=win);
@@ -202,6 +217,29 @@ for k = 1:numel(d.term_names)
 end
 out.presentation_offset_mode_panel = OFFSET;
 out.window = win;
+end
+
+% ==========================================================================
+function s = tex_peak(v)
+%TEX_PEAK  Peak value for a MATLAB tex-interpreter title, never in %e form.
+%   Mirrors private/pf_tex_sci, but emits bare tex rather than $...$ because a
+%   MATLAB title with the latex interpreter would be typeset in Computer Modern
+%   and break the body-font contract (AGENTS.md:19-22).
+% %g is deliberately NOT used here: it switches to an exponent form on its own
+% (sprintf('%.3g',1110) is '1.11e+03'), which is exactly the string the
+% presentation rule forbids. Decimals are chosen from the magnitude instead.
+if ~isfinite(v), s = '--'; return; end
+a = abs(v);
+if a >= 1e-3 && a < 1e4
+    if     a >= 100, s = sprintf('%.0f',v);
+    elseif a >= 10,  s = sprintf('%.1f',v);
+    elseif a >= 1,   s = sprintf('%.2f',v);
+    else,            s = sprintf('%.3f',v);
+    end
+    return;
+end
+e = floor(log10(a));
+s = sprintf('%.2f\\times10^{%d}',v/10^e,e);
 end
 
 % ==========================================================================

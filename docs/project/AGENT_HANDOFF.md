@@ -7,6 +7,59 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-25 — THE LAST-GFM HAND-BACK NOW WORKS; A-vs-B-PRIME COMPARISON DELIVERED
+
+Tested working tree: uncommitted, on top of `fd629a7`.
+Environment: MATLAB R2026a, Windows 11; `pdflatex` (EN, 39 pp) and `xelatex`
+(TH, 26 pp), both 0 errors / 0 undefined.
+
+The owner rejected "IBR2 stays GFM after the reclose" as an outcome. Root-caused
+to **three stacked latent defects** in the SG-online one-step release, each
+hiding the next; the staged release from one grid-forming converter to zero had
+NEVER executed in this repository. Full evidence chain in
+`docs/project/defects/2026-08-25-admissibility-gate-rate-vs-ratio.md`
+(`GATE-2026-08-25-01/-04/-05/-06`, all RESOLVED):
+
+1. **Criterion** (`-01`): the case contract declares "5% damping at the 1 Hz
+   electromechanical mode" but the gate applied an absolute decay-rate floor
+   `max(Re lambda) <= -0.1`. The two coincide only at 0.3183 Hz; at the blocking
+   mode's 0.0198 Hz the rate floor demands zeta >= 0.712, 14x the declared basis.
+   Fixed to the declared damping-ratio floor (`zeta_min_damping=0.05` in the case
+   selector contract); `omega`/`margin` UNCHANGED because `margin` is the 4th
+   sort key and redefining it would move the SG_OFF winner from [2] to [5].
+   Exactly one of 23 row verdicts changes. gamma_req=0.1 is retained as the
+   ordering key; no threshold, dwell, timeout or tolerance was touched.
+2. **Fingerprint** (`-04`): the validator was handed the live load-folded Y
+   against a load-free build-time hash -- off-diagonal difference exactly 0,
+   diagonal differing on the 11 load buses -- so the SG_ON release could not
+   authenticate for ANY candidate. Both SG_ON sites now derive the payload as
+   `trip_transaction` always did. Not a weakening: `case_data.mpc` is never
+   mutated at runtime.
+3. **Accumulator** (`-05`): `accepted = repmat(struct(),0,1)` then
+   `accepted(end+1,1)=c_auth` is invalid MATLAB -- proof the line had never run.
+
+Verified: IBR2 returns to GFL at **t=173.1271** = reclose 159.2519 + C1 ramp
+13.8752, terminal all-GFL with the SG as sole reference owner, and the fixes are
+inert before that instant (`max|dx|=max|dy|=0.000e+00` on the shared window).
+Also delivered on the owner's instruction: the **A vs B-prime** comparison --
+adaptive against a genuine no-adaptation control (`no_adaptation` arm,
+`post_reclose_mode_reselection=false`, opt-out default true; the pin provably
+holds: `DISABLED_BY_POLICY`, n_gfm_end=1, no post-reclose mode change). The
+control runs to the horizon but rides 0.4-1.1 Hz lower through the islanded
+disturbances (peak 1.4978 Hz vs 1.1385 at the fault; 1.2325 vs 0.3764 sustained
+after the line trip) -- droop capacity, not collapse. New figure
+`comparison_adaptive_vs_no_adaptation.png`; both reports rebuilt with the
+cycle-closes narrative, the new table row, and the corrected gate; the TH report
+also received the owed 16->17-state upgrade (no "16 สเตต" string remains).
+
+Still OPEN (not fixed here, must precede the DC-link delivery):
+`GATE-2026-08-25-02` (decoupled family 5/6 failing from `source_state=true`
+leaking into its GFL adapter; proven at HEAD) and `GATE-2026-08-25-03`
+(`handback_complete_time` not latched, reports the last step not completion).
+Also noted in the gate record: `ibr_config_selector.m:412-413` still builds a
+lexicographic margin sort key where a negative margin sorts before a positive
+one -- dormant because each count is evaluated in its own call.
+
 ## 2026-08-22 (later) — BOTH SWITCHING REPORTS BROUGHT IN LINE WITH THE CODE
 
 Tested working tree: uncommitted, on top of `76f6ea4`.

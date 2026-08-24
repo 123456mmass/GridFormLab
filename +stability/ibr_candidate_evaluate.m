@@ -60,11 +60,35 @@ if ~isfield(cand,'fd_omegas'), cand.fd_omegas = []; end
 if ~isfield(cand,'fd_stable_classification'), cand.fd_stable_classification = []; end
 if ~isfield(cand,'fd_classification_consistent'), cand.fd_classification_consistent = false; end
 if ~isfield(cand,'fd_robust_margin_pass'), cand.fd_robust_margin_pass = false; end
+if ~isfield(cand,'fd_zeta_worsts'), cand.fd_zeta_worsts = []; end
+if ~isfield(cand,'zeta_min'), cand.zeta_min = NaN; end
+if ~isfield(cand,'zeta_worst'), cand.zeta_worst = NaN; end
+if ~isfield(cand,'zeta_margin'), cand.zeta_margin = NaN; end
 
 % --- gamma_req frozen check ---
+% gamma_req is retained as the candidate ORDERING key and the reference decay
+% rate quoted in the evidence.  It is validated with the same strictness as
+% before even though it no longer decides admissibility.
 if ~isscalar(gamma_req) || ~isfinite(gamma_req) || gamma_req < 0
     cand.reason = 'gamma_req invalid';
     cand.failure_id = 'stability:ibr_candidate_evaluate:badGammaReq';
+    return;
+end
+
+% --- zeta_min frozen check (the acceptance criterion) ---
+% Resolved from the case's frozen selector contract so the criterion travels
+% with the case rather than with the caller.  The fallback matches the value the
+% contract's own derivation cites (5 % damping at the 1 Hz electromechanical
+% mode), so a case that predates the field is evaluated at its declared basis.
+zeta_min = 0.05;
+if isfield(case_data,'selector') && isstruct(case_data.selector) && ...
+        isfield(case_data.selector,'zeta_min_damping') && ...
+        ~isempty(case_data.selector.zeta_min_damping)
+    zeta_min = case_data.selector.zeta_min_damping;
+end
+if ~isscalar(zeta_min) || ~isfinite(zeta_min) || zeta_min <= 0 || zeta_min >= 1
+    cand.reason = 'zeta_min_damping invalid';
+    cand.failure_id = 'stability:ibr_candidate_evaluate:badZetaMin';
     return;
 end
 
@@ -370,16 +394,28 @@ cand.sssa_f0_norm = sssa.active_f_residual_norm;
 cand.sssa_g0_norm = sssa.physical_kcl_residual_norm;
 cand.full_kcl = sssa.full_kcl;
 
-% --- Stability gate (frozen gamma_req) ---
+% --- Stability gate (frozen damping-ratio criterion) ---
 % The full state spectrum is retained above for reporting.  The decision
 % spectrum is a pre-eig fixed-active-set/gauge-coordinate projection; no
 % eigenvalue is filtered or deleted after eig.
+%
+% ACCEPTANCE CRITERION: every mode of the decision spectrum must satisfy
+% zeta_i = -Re(lambda_i)/|lambda_i| >= zeta_min, evaluated at EVERY member of
+% the frozen FD perturbation set.  This is the criterion case_data.selector
+% states; gamma_req is retained below as the ordering key and reference decay
+% rate only.  An absolute-rate floor and a ratio floor coincide at one
+% frequency, f* = gamma_req/(2*pi*zeta_min), so a floor calibrated at the 1 Hz
+% electromechanical mode is not the same requirement at 0.02 Hz.  The worst-zeta
+% mode is generally NOT the rightmost mode, so the ratio is minimised over the
+% whole spectrum rather than read off max(Re lambda).
 cand.raw_omega = max(real(sssa.eigenvalues));
 base_fd_eps = sssa.fd_eps;
 fd_factors = [0.5 1.0 2.0];
 cand.fd_eps_values = base_fd_eps*fd_factors;
 cand.fd_omegas = nan(size(fd_factors));
+cand.fd_zeta_worsts = nan(size(fd_factors));
 cand.fd_omegas(2) = max(real(sssa.physical_eigenvalues));
+cand.fd_zeta_worsts(2) = worst_damping_ratio(sssa.physical_eigenvalues);
 for kk = [1 3]
     perturbed_opt = sssa_opt;
     perturbed_opt.fd_eps = cand.fd_eps_values(kk);
@@ -387,6 +423,7 @@ for kk = [1 3]
         perturbed = stability.composite_sssa_model(devices,eq_result.x0, ...
             eq_result.y0,case_data,perturbed_opt);
         cand.fd_omegas(kk) = max(real(perturbed.physical_eigenvalues));
+        cand.fd_zeta_worsts(kk) = worst_damping_ratio(perturbed.physical_eigenvalues);
     catch me
         cand.reason = sprintf('FD robustness SSSA failed at eps %.6g: %s', ...
             cand.fd_eps_values(kk),me.message);
@@ -398,13 +435,26 @@ end
 cand.fd_stable_classification = cand.fd_omegas < 0;
 cand.fd_classification_consistent = all(isfinite(cand.fd_omegas)) && ...
     (all(cand.fd_stable_classification) || ~any(cand.fd_stable_classification));
+% Robust damping-ratio gate.  A non-finite entry (a mode at the origin, where
+% the ratio is undefined) fails closed through the isfinite test.  The explicit
+% stability test is redundant with zeta_min > 0 but is kept so the intent is
+% readable and so a zero-frequency marginal mode can never certify.
+cand.zeta_min = zeta_min;
+cand.zeta_worst = min(cand.fd_zeta_worsts);
+cand.zeta_margin = cand.zeta_worst - zeta_min;
 cand.fd_robust_margin_pass = all(isfinite(cand.fd_omegas)) && ...
-    all(cand.fd_omegas <= -gamma_req);
+    all(cand.fd_omegas < 0) && ...
+    all(isfinite(cand.fd_zeta_worsts)) && ...
+    all(cand.fd_zeta_worsts >= zeta_min);
 % Consume the worst (least damped) member of the frozen FD perturbation set.
 omega = max(cand.fd_omegas);
 cand.omega = omega;
-% margin definition: positive means stable beyond requirement
-% margin = -omega - gamma_req (so >0 means pass)
+% ORDERING KEY, not the gate.  margin = -omega - gamma_req is the decay-rate
+% headroom against the reference rate and is what candidate_order_matrix ranks
+% on.  It is deliberately left unchanged by the criterion correction: ranking on
+% the damping ratio instead would reorder the admissible set and move the
+% selected configuration, which is a separate decision.  A candidate can
+% therefore be admissible (zeta_margin >= 0) while margin < 0.
 if isfinite(omega) && isfinite(gamma_req)
     cand.margin = -omega - gamma_req;
 else
@@ -414,10 +464,12 @@ if cand.fd_classification_consistent && cand.fd_robust_margin_pass
     cand.sssa_pass = true;
 else
     cand.sssa_pass = false;
-    cand.reason = sprintf(['robust Omega %s, worst %.4g, gamma_req %.4g, ' ...
-        'classification_consistent=%d, margin %.4g insufficient'], ...
-        mat2str(cand.fd_omegas,6),omega,gamma_req, ...
-        cand.fd_classification_consistent,cand.margin);
+    cand.reason = sprintf(['robust zeta %s, worst %.4g < zeta_min %.4g, ' ...
+        'Omega %s worst %.4g, classification_consistent=%d, ' ...
+        'zeta_margin %.4g insufficient'], ...
+        mat2str(cand.fd_zeta_worsts,6),cand.zeta_worst,zeta_min, ...
+        mat2str(cand.fd_omegas,6),omega, ...
+        cand.fd_classification_consistent,cand.zeta_margin);
     cand.failure_id = 'stability:ibr_candidate_evaluate:insufficientRobustMargin';
     cand.feasible = false;
     return;
@@ -426,13 +478,41 @@ end
 % --- All gates pass ---
 cand.feasible = true;
 cand.ready_to_commit = true;
-cand.reason = sprintf(['feasible: KCL %.2e, robust physical Omega %.4g <= -%.4g, ' ...
-    'margin %.4g, FD eps=%s, full roots=%d, decision roots=%d, SCR pass'], ...
-    cand.physical_kcl_norm, omega, gamma_req, cand.margin, ...
+cand.reason = sprintf(['feasible: KCL %.2e, robust zeta %.4g >= %.4g ' ...
+    '(margin %.4g), Omega %.4g, decay margin %.4g vs gamma_req %.4g, ' ...
+    'FD eps=%s, full roots=%d, decision roots=%d, SCR pass'], ...
+    cand.physical_kcl_norm, cand.zeta_worst, zeta_min, cand.zeta_margin, ...
+    omega, cand.margin, gamma_req, ...
     mat2str(cand.fd_eps_values,6),numel(cand.eigenvalues), ...
     numel(cand.physical_eigenvalues));
 cand.failure_id = '';
 
+end
+
+function z = worst_damping_ratio(lambda)
+%WORST_DAMPING_RATIO  Least damping ratio over a spectrum.
+%   Z = worst_damping_ratio(LAMBDA) returns min_i zeta_i with
+%   zeta_i = -Re(lambda_i)/|lambda_i|, the standard damping ratio of a mode.
+%   A real negative root gives zeta = 1 (it does not oscillate, so it can never
+%   be the ratio-limiting mode); an unstable root gives zeta < 0.
+%
+%   A root AT the origin has an undefined ratio.  It is mapped to -Inf rather
+%   than skipped, so a marginal zero-frequency mode fails any positive floor
+%   instead of silently certifying.  The gauge quotient already removes the one
+%   rigid network-angle coordinate, so a surviving zero root is a genuine
+%   marginal mode and must fail closed.
+%
+%   An empty spectrum returns -Inf for the same reason: no evidence is not
+%   evidence of damping.
+lambda = lambda(:);
+if isempty(lambda)
+    z = -Inf;
+    return;
+end
+mag = abs(lambda);
+zeta = -real(lambda)./mag;
+zeta(~(mag > 0)) = -Inf;
+z = min(zeta);
 end
 
 function tf = has_dispatch_values(dispatch)

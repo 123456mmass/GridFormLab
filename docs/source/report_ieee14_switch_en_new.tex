@@ -1,0 +1,824 @@
+%=============================================================================
+%  report_ieee14_switch_en_new.tex
+%  Standalone English report: automatic GFL/GFM reference-mode switching in a
+%  1-SG / 4-IBR IEEE-14 system. Model equations, small-signal spectrum, and the
+%  switched time-domain formulation.
+%
+%  PROVENANCE AND NUMERICAL INTEGRITY
+%  - Every model equation reproduced below is transcribed from the project-owned
+%    base-MATLAB production code that the 250-s chronology run executes
+%    (scripts/diagnostics/run_ieee14_gfl_gfm_state_release.m and the +stability
+%    / +ibr packages it calls). No equation is invented for the report.
+%  - Every plotted sample is a raw accepted value of the preserved 200-s
+%    trajectory. No signal is smoothed, filtered, decimated, offset, re-sampled
+%    or augmented with synthetic noise. The generator stamps
+%    presentation_noise = struct('kind','none',...) into its provenance output,
+%    and this report inherits that contract.
+%  - Sourced inputs, project-derived closures, case-defined parameters and
+%    numerical-method choices are labelled where they first appear.
+%
+%  BUILD:  xelatex report_ieee14_switch_en_new.tex   (run twice for references)
+%=============================================================================
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
+\usepackage{newtxtext,newtxmath}
+\usepackage{geometry,booktabs,tabularx,array,longtable,microtype}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\geometry{margin=1in}
+\setlength{\headheight}{14.5pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{IEEE-14  GFL/GFM  switching}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\arraystretch}{1.12}
+\emergencystretch=1.5em
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,
+  urlcolor=blue!45!black}
+
+\DeclareMathOperator{\sat}{sat}
+\newcommand{\pu}{\,\mathrm{p.u.}}
+\newcommand{\second}{\,\mathrm{s}}
+
+% Graphics search path (report lives in docs/source/).
+\graphicspath{{figures/}{figures/switch_ieee14/}{figures/switch_ieee14_new/}}
+
+% Frozen 200-s run scalars (\New*-prefixed). Guarded so the document still
+% builds before the figure pipeline has run.
+\IfFileExists{figures/switch_ieee14_new/run_summary_new.tex}
+  {\input{figures/switch_ieee14_new/run_summary_new.tex}}
+  {\newcommand{\NewRunEnd}{200.000}\newcommand{\NewRunVMin}{--}%
+   \newcommand{\NewRunVMax}{--}\newcommand{\NewRunFMin}{--}%
+   \newcommand{\NewRunFMax}{--}\newcommand{\NewRunSubdivision}{--}%
+   \newcommand{\NewRunDomainRejects}{--}\newcommand{\NewRunResidual}{--}%
+   \newcommand{\NewRunReclose}{--}\newcommand{\NewRunFirstRelease}{--}%
+   \newcommand{\NewRunReleaseOne}{--}\newcommand{\NewRunReleaseTwo}{--}%
+   \newcommand{\NewRunReleaseThree}{--}\newcommand{\NewRunReleaseFour}{--}%
+   \newcommand{\NewRunSyncDV}{--}\newcommand{\NewRunSyncDF}{--}%
+   \newcommand{\NewRunSyncDTheta}{--}}
+
+% Period colours for the disturbance-chronology diagram.
+\definecolor{pgreen}{RGB}{41,153,69}
+\definecolor{pred}{RGB}{191,45,45}
+\definecolor{pblue}{RGB}{46,107,191}
+\definecolor{pyellow}{RGB}{199,178,38}
+\definecolor{pgrey}{RGB}{90,90,90}
+
+\title{\bfseries Automatic GFL/GFM Reference-Mode Switching in a
+1-SG / 4-IBR IEEE-14 System:\\[2pt]
+\large Model, Small-Signal Spectrum, and Switched Time-Domain Formulation}
+\author{Power-flow / stability toolchain --- generated report}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+A modified IEEE-14 network is driven through a six-period chronology in which a
+single synchronous generator (SG) is tripped, the load is stepped, a shunt fault
+is applied and cleared, a tie line is opened, and the SG is finally reclosed.
+Four inverter-based resources (IBRs) switch \emph{automatically} between
+grid-following (GFL) and grid-forming (GFM) reference behaviour under an
+amplitude--frequency severity index with hysteresis and dwell. This report
+documents, from the production code, (i) the severity index and its two
+component sub-indices $J_V,J_f$; (ii) the sixth-order SG model with an
+order-by-order derivation and the singular limit that freezes one flux state;
+(iii) the twenty-state dual-mode IBR superset with its active projections and
+current-continuity-gated transfer; (iv) the switched implicit-trapezoidal
+time-domain formulation, including the exact mechanism by which an integrated
+state update is replaced by a discrete transfer at a mode change; and (v) the
+solved power flow, the small-signal spectrum, and the accepted transient
+response. All equations are those the 250-s run executes; all plotted curves are
+raw accepted samples of the preserved 200-s trajectory. No claim of operational
+readiness is made: convergence of the simulation is not evidence of
+grid-code compliance.
+\end{abstract}
+
+%=============================================================================
+\section{Scope, sources and reproduction}\label{sec:scope}
+%=============================================================================
+The study system is the IEEE-14 bus network with one modelled SG at the
+reference bus and four modelled IBRs at buses 2, 3, 6 and 8. The whole system is
+assembled as a single all-KCL composite differential--algebraic system
+\begin{equation}
+  g(x,V)\;=\;Y_{\mathrm{net}}\,V \;-\; I_{\mathrm{bus}}(x,V)\;=\;0,
+  \label{eq:kcl}
+\end{equation}
+where $Y_{\mathrm{net}}$ is the network admittance, $V$ the stacked complex bus
+voltages, and $I_{\mathrm{bus}}$ the total device injection. The SG and every
+IBR contribute their own differential state block $x$ and their own injection
+into~\eqref{eq:kcl}; no device is delegated to an external solver, model or
+reference program. Audited linear primitives ($\backslash$, \texttt{lu},
+\texttt{qr}, \texttt{eig}) are the only numerical libraries used.
+
+\paragraph{Equation source.}
+Every model equation in Sections~\ref{sec:sev}--\ref{sec:ts} is transcribed
+verbatim from the production code that the chronology driver executes. The
+driver, its event schedule and its supervisor gains are fixed by
+\begin{quote}\footnotesize\ttfamily\raggedright
+s = cases.scenario\_ieee14\_1sg\_4ibr(\allowbreak struct('case\_profile',\allowbreak 'eecon49\_figure4'));\\
+run\_ieee14\_gfl\_gfm\_state\_release\quad \%\ t\_end=250, dt=0.1
+\end{quote}
+The case profile name above is a code identifier and is shown only in this
+reproduction command.
+
+\paragraph{Figure source and no-synthetic-signal contract.}
+\begin{sloppypar}
+The transient figures (Section~\ref{sec:transient}) are rendered from the
+preserved accepted trajectory
+\texttt{output/\allowbreak diagnostics/\allowbreak engine\_\allowbreak
+release\_\allowbreak 200s\_\allowbreak preserved.mat}. This is a
+deliberate choice: the equations are taken from the current 250-s code, while
+the plotted curves are the established 200-s results. Every plotted sample is a
+raw accepted value. Nothing is smoothed, filtered, decimated, clipped, offset,
+interpolated or augmented with synthetic noise; the figure generator records
+\texttt{presentation\_\allowbreak noise=struct('kind',\allowbreak 'none',\allowbreak
+'seed\_\allowbreak base',NaN,\allowbreak 'affects\_\allowbreak solver\_\allowbreak
+or\_\allowbreak switching',false)}. Where a display
+window is applied it is a horizontal range only --- no in-window sample is
+altered or dropped.
+\end{sloppypar}
+
+\paragraph{Classification.}
+\begin{sloppypar}
+The SG AC/flux equations and the IBR AC/control equations are
+\textsf{SOURCE\_\allowbreak MAPPED}. The fixed 20-state IBR superset, the
+GFL$\leftrightarrow$GFM transfer map and the DC-source regulator closure are
+\textsf{PROJECT\_\allowbreak DERIVED}.
+Machine and converter parameters, per-unit bases and the disturbance times are
+\textsf{CASE\_\allowbreak DEFINED}. The predictor and step-subdivision policy are
+\textsf{NUMERICAL\_\allowbreak METHOD}. These labels are carried from the code
+provenance fields and are not re-decided here.
+\end{sloppypar}
+
+%=============================================================================
+\section{Disturbance chronology}\label{sec:chrono}
+%=============================================================================
+The scheduled disturbance times are \textsf{CASE\_DEFINED} constants of the
+event structure; the reclose and severity-release instants are outcomes read
+from the accepted event log. Figure~\ref{fig:periods} shows the six operating
+periods and the transition instants. The shunt fault is applied at $t=85.000$~s
+and cleared at $t=85.150$~s (a $0.150$~s bus-9 fault, impedance
+$Z_f=0.01+\mathrm{j}0.01\pu$); this exact window is taken from the driver and
+supersedes any wider nominal fault interval.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\normalsize,
+  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
+    align=center,text=white,font=\bfseries},
+  tlbl/.style={font=\small},
+  tlab/.style={midway,above,font=\small},
+  tlabb/.style={midway,below,font=\small},
+  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
+
+\node[per,fill=pgreen] (p1) at (0,0)     {Period 1\\ normal\\ operation};
+\node[per,fill=pred]   (p2) at (4.4,0)   {Period 2\\ $SG_1$ tripped\\ (slack lost)};
+\node[per,fill=pblue]  (p3) at (8.8,0)   {Period 3\\ $P,Q$ load\\ step $+20\%$};
+\node[per,fill=pred]   (p4) at (8.8,-4.4){Period 4\\ fault\\ at bus 9};
+\node[per,fill=pyellow](p5) at (4.4,-4.4){Period 5\\ line 6--13\\ tripped};
+\node[per,fill=pblue]  (p6) at (0,-4.4)  {Period 6\\ $SG_1$\\ reclosed};
+
+\draw[arr] (-3.2,0) -- node[tlab]{$t=0\second$} (p1);
+\draw[arr] (p1) -- node[tlab]{$t=20\second$} (p2);
+\draw[arr] (p2) -- node[tlab]{$t=50\second$} (p3);
+\draw[arr] (p3) -- node[font=\small,left=2mm,pos=0.5,align=right]{$t=85.000$\\--$85.150\second$} (p4);
+\draw[arr] (p4) -- node[tlabb]{$t=110\second$} (p5);
+\draw[arr] (p5) -- node[tlabb]{$t=145\second$} (p6);
+\draw[arr] (p6) -- node[tlabb,pos=0.62]{$t\to\NewRunEnd\second$} ++(-3.2,0);
+
+\node[tlbl,below=3pt of p6,align=center,text=black]
+  {reclose $\NewRunReclose\second$\\ first severity release $\NewRunFirstRelease\second$};
+\end{tikzpicture}
+\caption{Six-period disturbance chronology. Green: undisturbed. Red: a
+contingency that removes a source or faults a bus. Yellow: a topology change.
+Blue: a restorative action. Scheduled instants ($0$, $20$, $50$,
+$85.000$--$85.150$, $110$, $145\second$) are case-defined; the reclose and
+first severity-release instants are read from the accepted event log.}
+\label{fig:periods}
+\end{figure}
+
+%=============================================================================
+\section{Automatic GFL/GFM selection: the severity index}\label{sec:sev}
+%=============================================================================
+Each IBR carries a two-state supervisor that decides whether it should behave as
+a grid-following current source (GFL) or as a grid-forming voltage source (GFM).
+The decision is driven by a scalar severity $S(t)\in[0,1]$ built from two
+normalised sub-indices: a voltage-deviation index $J_V$ and a
+frequency-deviation index $J_f$.
+
+\paragraph{Sub-indices.}
+Let $|V_i(t)|$ be the terminal voltage magnitude of IBR~$i$ and $V_i^{\star}$ the
+healthy per-bus power-flow magnitude at the SG-online operating point
+(Section~\ref{sec:pf}). Let $f_{\mathrm{coi}}(t)$ be the centre-of-inertia
+frequency. With bases $\Delta V_{\mathrm{base}}=0.10\pu$ and
+$\Delta f_{\mathrm{base}}=0.50$~Hz,
+\begin{equation}
+  J_V(t)=\frac{\bigl|\,|V_i(t)|-V_i^{\star}\,\bigr|}{\Delta V_{\mathrm{base}}},
+  \qquad
+  J_f(t)=\frac{\bigl|\,f_{\mathrm{coi}}(t)-f_0\,\bigr|}{\Delta f_{\mathrm{base}}},
+  \qquad f_0=60~\mathrm{Hz}.
+  \label{eq:jvjf}
+\end{equation}
+
+\paragraph{Two-term severity (AGSI).}
+The severity is the saturated equal-weight average
+\begin{equation}
+  S(t)=\sat_{[0,1]}\!\Bigl(\tfrac12 J_V(t)+\tfrac12 J_f(t)\Bigr),
+  \qquad
+  \sat_{[0,1]}(z)=\min\{1,\max\{0,z\}\}.
+  \label{eq:agsi}
+\end{equation}
+$J_V$ responds to a local voltage collapse or overshoot; $J_f$ responds to a
+system-wide frequency excursion such as the one that follows the loss of the SG
+slack at $t=20$~s. The equal weighting is a \textsf{PROJECT\_DERIVED} choice and
+is frozen before any result is read.
+
+\paragraph{Hysteresis and dwell.}
+A bare threshold on $S$ would chatter. The supervisor therefore uses an
+asymmetric two-level comparator with minimum dwell times:
+\begin{equation}
+  \begin{aligned}
+    \text{GFL}\to\text{GFM}:&\quad S\ge\Gamma_{\mathrm{on}}=0.65
+       \ \text{held for}\ T_{d,\mathrm{on}}=0.10\second,\\
+    \text{GFM}\to\text{GFL}:&\quad S\le\Gamma_{\mathrm{off}}=0.35
+       \ \text{held for}\ T_{d,\mathrm{off}}=1.00\second.
+  \end{aligned}
+  \label{eq:hyst}
+\end{equation}
+The gap $\Gamma_{\mathrm{on}}>\Gamma_{\mathrm{off}}$ gives the comparator its
+hysteresis band; the asymmetric dwell ($T_{d,\mathrm{on}}\ll T_{d,\mathrm{off}}$)
+makes the supervisor quick to add grid-forming support and deliberately slow to
+release it. A separate reference-loss guard forces every online IBR to GFM the
+instant the SG slack is lost, before the dwell logic runs, so the network never
+spends a step without a voltage reference.
+
+%=============================================================================
+\section{Synchronous generator: sixth-order model and its proof}\label{sec:sg}
+%=============================================================================
+The SG is a sixth-order machine (IEEE~1110 Model~2.2 / round-rotor GENTPJ
+structure) with state
+\begin{equation}
+  x_{\mathrm{sg}}=[\,\delta,\;\omega,\;E_q',\;E_d',\;E_q'',\;E_d''\,]^{\top},
+  \qquad u_{\mathrm{sg}}=[\,T_m,\;E_{fd}\,]^{\top},
+  \label{eq:sgstate}
+\end{equation}
+where $\delta$ is the rotor angle, $\omega$ the per-unit speed deviation (slip),
+$E_q',E_d'$ the transient EMFs, and $E_q'',E_d''$ the subtransient EMFs. The two
+control inputs $T_m$ (mechanical torque) and $E_{fd}$ (field voltage) are held at
+the constant values determined by the mixed-network equilibrium solve; they are
+not re-solved each step.
+
+\subsection{Order-by-order derivation}
+The connected-machine equations are, term for term as coded,
+\begin{align}
+  \dot\delta            &= \omega_0\,\omega, \label{eq:sg1}\\
+  2H\,\dot\omega        &= T_m - T_e - D\,\omega, \label{eq:sg2}\\
+  T_{d0}'\,\dot{E}_q'   &= E_{fd} + c_d E_q'' - d_d E_q', \label{eq:sg3}\\
+  T_{q0}'\,\dot{E}_d'   &= c_q E_d'' - d_q E_d', \label{eq:sg4}\\
+  T_{d0}''\,\dot{E}_q''  &= E_q' - E_q'' - (X_d'-X_d'')\,I_d, \label{eq:sg5}\\
+  T_{q0}''\,\dot{E}_d''  &= E_d' - E_d'' + (X_q'-X_q'')\,I_q, \label{eq:sg6}
+\end{align}
+with $\omega_0=2\pi f_0$. The air-gap electrical torque that closes the swing
+equation~\eqref{eq:sg2} is
+\begin{equation}
+  T_e = V_d I_d + V_q I_q + R_a\,(I_d^2+I_q^2), \label{eq:sgte}
+\end{equation}
+and the four flux-coupling coefficients are defined from the reactance ladder as
+\begin{equation}
+  c_d=\frac{X_d-X_d'}{X_d'-X_d''},\quad
+  d_d=\frac{X_d-X_d''}{X_d'-X_d''},\quad
+  c_q=\frac{X_q-X_q'}{X_q'-X_q''},\quad
+  d_q=\frac{X_q-X_q''}{X_q'-X_q''}.
+  \label{eq:cddd}
+\end{equation}
+
+\emph{What each order is.}
+Equations~\eqref{eq:sg1}--\eqref{eq:sg2} are the mechanical (2nd-order) swing:
+angle and speed. Equations~\eqref{eq:sg3}--\eqref{eq:sg4} are the transient (rotor
+field / q-axis damper) fluxes on the slow time constants $T_{d0}',T_{q0}'$.
+Equations~\eqref{eq:sg5}--\eqref{eq:sg6} are the subtransient (damper) fluxes on
+the fast time constants $T_{d0}'',T_{q0}''$. The armature-reaction terms
+$-(X_d'-X_d'')I_d$ and $+(X_q'-X_q'')I_q$ couple the fast fluxes to the stator
+current.
+
+\emph{Proof anchor --- the $d-c=1$ identity.}
+From~\eqref{eq:cddd},
+\begin{equation}
+  d_d-c_d=\frac{(X_d-X_d'')-(X_d-X_d')}{X_d'-X_d''}
+         =\frac{X_d'-X_d''}{X_d'-X_d''}=1,
+  \qquad\text{and identically } d_q-c_q=1.
+  \label{eq:identity}
+\end{equation}
+Consider the open-circuit steady state ($I_d=I_q=0$, $\dot x=0$). Then
+\eqref{eq:sg5} gives $E_q''=E_q'$, and substituting into~\eqref{eq:sg3},
+\begin{equation}
+  0=E_{fd}+c_d E_q'-d_d E_q'=E_{fd}-(d_d-c_d)E_q'=E_{fd}-E_q'
+  \;\Longrightarrow\; E_q'=E_{fd}.
+\end{equation}
+So the identity~\eqref{eq:identity} is exactly what makes the open-circuit field
+EMF equal the applied field voltage --- the standard consistency check for this
+flux parameterisation, and the reason the coefficients are written as
+ratios~\eqref{eq:cddd} rather than as free constants. The same argument on the
+q-axis gives $E_d'=0$ at open circuit when $E_{fd}$ has no q-axis analogue.
+
+\subsection{Algebraic stator interface}
+The stator currents are \emph{not} reverse-derived from power; they are solved
+from the subtransient EMFs behind subtransient reactance. Projecting the complex
+terminal voltage $V$ onto the machine $dq$ frame ($V_d,V_q$) and writing
+$r_d=V_d-E_d''$, $r_q=V_q-E_q''$,
+\begin{equation}
+  \det=X_d''X_q''+R_a^2,\qquad
+  I_d=\frac{-R_a r_d - X_q'' r_q}{\det},\qquad
+  I_q=\frac{X_d'' r_d - R_a r_q}{\det},
+  \label{eq:stator}
+\end{equation}
+which is the exact inverse of the subtransient stator relations
+$V_d=E_d''-R_a I_d+X_q'' I_q$, $V_q=E_q''-R_a I_q-X_d'' I_d$. The electrical
+torque~\eqref{eq:sgte} uses these same $I_d,I_q$.
+
+\subsection{The singular limit that freezes $E_d'$}\label{sec:frozen}
+For the machine data used here the q-axis transient open-circuit time constant is
+set to its singular limit $T_{q0}'=0$ (audited round-rotor case). Then
+\eqref{eq:sg4} is no longer differential: it degenerates to the algebraic
+constraint
+\begin{equation}
+  0 = c_q E_d'' - d_q E_d'.
+\end{equation}
+For this machine $c_q=0,\;d_q=1$, so $E_d'\equiv 0$. The code detects
+$T_{q0}'=0$ exactly and \emph{removes} $E_d'$ (state index~4) from the integrated
+set, holding it at its algebraic value $0$. The SG therefore contributes
+\textbf{five} dynamic states $[\delta,\omega,E_q',E_q'',E_d'']$, not six. This is
+a \textsf{SOURCE\_DEFINED} singular limit, not a numerical convenience: it is the
+$T_{q0}'\to0$ reduction of the same equations.
+
+\subsection{Breaker-open coast}
+When the SG breaker opens at $t=20$~s the machine does not vanish from the state
+vector. Its network injection becomes zero ($I_d=I_q=0$, $T_e=0$) and its fluxes
+decay on the open-circuit branch of~\eqref{eq:sg3}--\eqref{eq:sg6} (the
+armature-reaction terms drop out because $I_d=I_q=0$); the swing
+\eqref{eq:sg1}--\eqref{eq:sg2} coasts on a frozen mechanical torque $T_m$. The
+map that reports how many states the SG integrates is context-independent: it
+returns $[\,1,2,3,5,6\,]$ whether the breaker is closed or open. Consequently the
+loss of the SG slack does \emph{not} change the SG's own state count; the
+composite dimension changes only because the IBRs switch mode
+(Section~\ref{sec:ibr}).
+
+%=============================================================================
+\section{Inverter-based resource: the dual-mode 20-state model}\label{sec:ibr}
+%=============================================================================
+Each IBR is a single device that can present either of two controllers on a
+common power stage. The full state is a fixed 20-vector,
+\begin{equation}
+  x_{\mathrm{IBR}}
+   =\bigl[\underbrace{i_d,\,i_q,\,V_{dc}}_{x_{\mathrm{pl}}\;(3)}\;\big|\;
+          \underbrace{x_{\mathrm{GFL}}\;(8)}_{\text{indices }4\text{--}11}\;\big|\;
+          \underbrace{x_{\mathrm{GFM}}\;(9)}_{\text{indices }12\text{--}20}\bigr]^{\top}
+   \in\mathbb{R}^{20}.
+   \label{eq:ibrstate}
+\end{equation}
+The user's shorthand $x_{\mathrm{IBR}}=[x_{\mathrm{GFM}}\;x_{\mathrm{GFL}}]$ is the
+same object with the shared plant block $x_{\mathrm{pl}}$ made explicit and the
+two controller blocks kept in their code order. The controller blocks are
+\begin{align}
+  x_{\mathrm{GFL}}&=[\,\delta_{\mathrm{PLL}},\,\xi_{\mathrm{PLL}},\,\xi_P,\,\xi_Q,
+      \,\xi_{Id},\,\xi_{Iq},\,V_{d,\mathrm{del}},\,V_{q,\mathrm{del}}\,],\\
+  x_{\mathrm{GFM}}&=[\,\delta_{\mathrm{VSG}},\,\omega_{\mathrm{VSG}},\,E,
+      \,\xi_{Vd},\,\xi_{Vq},\,\xi_{Id},\,\xi_{Iq},
+      \,V_{d,\mathrm{del}},\,V_{q,\mathrm{del}}\,].
+\end{align}
+Only a projection of~\eqref{eq:ibrstate} is integrated at any instant. The
+active-index map returns
+\begin{equation}
+  \mathcal{A}_{\mathrm{GFL}}=\{1{:}11\},\qquad
+  \mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,12{:}20\},\qquad
+  \mathcal{A}_{\mathrm{tripped}}=\varnothing,
+  \label{eq:ibractive}
+\end{equation}
+i.e.\ 11 active states in GFL, 12 in GFM, none when tripped. The shared plant
+block is always active; the two controller blocks are mutually exclusive.
+
+Two operators recur below. $\Pi_I(a,b;I_{\max})$ is the \emph{circular} current
+limiter: if $r=\sqrt{a^2+b^2}>I_{\max}$ it scales $(a,b)\mapsto(a,b)\,I_{\max}/r$,
+else it is the identity; its rejected part is the limiter residual
+$r_i=(a,b)-\Pi_I(a,b)$. $\mathcal{H}(e,\gamma,r_i,\text{sat})$ is the conditional
+anti-windup integrator: it returns $0$ when the reference is clipped and the
+error would wind further ($\text{sat}$ and $\gamma\,e\,r_i>0$), and $e$ otherwise.
+The instantaneous injection is $I=(i_d+\mathrm{j}i_q)e^{\mathrm{j}\theta}/\kappa$,
+$S=V\overline{I}$, $P_{\mathrm{inv}}=\kappa\Re S$, $Q_{\mathrm{inv}}=\kappa\Im S$,
+with $\kappa=S_{\mathrm{base}}/M_{\mathrm{base}}$ and $(v_d,v_q)=\Re,\Im\,(Ve^{-\mathrm{j}\theta})$.
+
+\subsection{Shared power stage (states 1--3)}
+The $L$-filter current dynamics and DC-link are common to both modes and are
+always active. Written one state per line in index order:
+\begin{align}
+  \tfrac{L}{\omega_b}\,\dot{i}_d &= v_{d,\mathrm{del}}-v_d-R\,i_d+\omega L\,i_q,
+    &&\text{ $d$-axis filter current}\\
+  \tfrac{L}{\omega_b}\,\dot{i}_q &= v_{q,\mathrm{del}}-v_q-R\,i_q-\omega L\,i_d,
+    &&\text{ $q$-axis filter current}\\
+  \dot{V}_{dc} &= \tfrac{1}{C}\!\left[\tfrac{C}{T_{dc}}(V_{dc}^{0}-V_{dc})\right],
+    &&\text{ DC-link voltage}
+\end{align}
+with $R=R_f$, $L=L_f$, $C=C_{dc}$, $\omega_b=2\pi f_b$. \emph{Proof of each row.}
+Rows (1)--(2) are Kirchhoff's voltage law across the series $R_f,L_f$ filter in
+the rotating frame; the cross terms $\pm\omega L$ are the frame-rotation EMF, and
+the rotation rate $\omega$ is supplied by whichever controller is active (the PLL
+in GFL, the VSG swing in GFM) --- this is the only place the plant equations feel
+the mode. Row (3) is the \textsf{PROJECT\_DERIVED} DC-source closure: the coded
+current is $I_{dc}=P_{ac}/V_{dc}+(C/T_{dc})(V_{dc}^{0}-V_{dc})$ and
+$\dot V_{dc}=(I_{dc}-P_{ac}/V_{dc})/C$, in which the power feed-forward
+$P_{ac}/V_{dc}$ cancels exactly, leaving the first-order voltage restoration
+shown. This cancellation is deliberate: the unpublished DC source cannot move the
+sourced AC equilibrium. At steady state row (3) gives $V_{dc}=V_{dc}^{0}$.
+
+\subsection{GFL (states 4--11):}
+The auxiliary algebraic quantities are the power errors
+$e_P=\kappa u_1-P_{\mathrm{inv}}$, $e_Q=\kappa u_2-Q_{\mathrm{inv}}$, the raw and
+clipped current references
+\begin{equation}
+  i_{d,\mathrm{ref}}^{\mathrm{raw}}=k_{pP}e_P+k_{iP}\xi_P,\quad
+  i_{q,\mathrm{ref}}^{\mathrm{raw}}=-(k_{pQ}e_Q+k_{iQ}\xi_Q),\quad
+  [i_{d,\mathrm{ref}},i_{q,\mathrm{ref}}]=\Pi_I(\cdot;I_{\max}),
+\end{equation}
+and the inner voltage commands
+$v_{cd}=v_d+R i_d-\omega L i_q+k_{pI}(i_{d,\mathrm{ref}}-i_d)+k_{iI}\xi_{Id}$,
+$v_{cq}=v_q+R i_q+\omega L i_d+k_{pI}(i_{q,\mathrm{ref}}-i_q)+k_{iI}\xi_{Iq}$.
+The eight GFL states then evolve, one per line in index order:
+\begin{align}
+  \dot{\delta}_{\mathrm{PLL}} &= k_{p,\mathrm{PLL}}v_q+k_{i,\mathrm{PLL}}\xi_{\mathrm{PLL}},
+     &&\text{ PLL angle};\quad \omega=1+\dot\delta_{\mathrm{PLL}}/\omega_b\\
+  \dot{\xi}_{\mathrm{PLL}} &= v_q, &&\text{ PLL integrator}\\
+  \dot{\xi}_P &= \mathcal{H}(e_P,\,k_{iP},\,r_{i,d},\,\text{sat}),
+     &&\text{ active-power integrator}\\
+  \dot{\xi}_Q &= \mathcal{H}(e_Q,\,-k_{iQ},\,r_{i,q},\,\text{sat}),
+     &&\text{ reactive-power integrator}\\
+  \dot{\xi}_{Id} &= i_{d,\mathrm{ref}}-i_d, &&\text{ $d$-current integrator}\\
+  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{ $q$-current integrator}\\
+  \dot{V}_{d,\mathrm{del}} &= (v_{cd}-V_{d,\mathrm{del}})/T_d, &&\text{ $d$-command lag}\\
+  \dot{V}_{q,\mathrm{del}} &= (v_{cq}-V_{q,\mathrm{del}})/T_d, &&\text{ $q$-command lag}
+\end{align}
+\emph{Proof of each state.} (4)--(5) are the synchronous-reference-frame PLL: it
+drives the measured $q$-axis voltage $v_q$ to zero, so at lock $\dot\xi_{\mathrm{PLL}}
+=v_q=0$ and the frame is aligned with the terminal voltage; the loop frequency is
+$\omega=1+\dot\delta_{\mathrm{PLL}}/\omega_b$. (6)--(7) are the outer $P$/$Q$ PIs:
+at equilibrium $\dot\xi_P=e_P=0$ forces $P_{\mathrm{inv}}=\kappa u_1$ and
+$\dot\xi_Q=e_Q=0$ forces $Q_{\mathrm{inv}}=\kappa u_2$, i.e.\ the IBR meets its
+$P,Q$ set-points; the $\mathcal H$ wrapper freezes them only while the current
+reference is on the $I_{\max}$ circle. (8)--(9) are the inner current PIs:
+$\dot\xi_{Id}=i_{d,\mathrm{ref}}-i_d=0$ makes the filter current track its
+reference (and symmetrically on $q$). (10)--(11) are the first-order actuation
+lags: $\dot V_{d,\mathrm{del}}=0\Rightarrow V_{d,\mathrm{del}}=v_{cd}$, so the
+delayed command equals the computed command at steady state. The GFL branch is a
+\emph{current source}: it needs the PLL to know the grid angle, so it cannot by
+itself define a voltage on a dead network.
+
+\subsection{GFM (states 12--20): voltage source, VSG, }
+The grid-forming branch replaces the PLL by a virtual-synchronous-generator swing
+and a $Q$--$V$ voltage-forming loop. The voltage references are
+$v_{d,\mathrm{ref}}=E$, $v_{q,\mathrm{ref}}=0$; the voltage errors are
+$e_{vd}=E-v_d$, $e_{vq}=-v_q$; the raw/clipped current references are
+$i_{d,\mathrm{ref}}^{\mathrm{raw}}=k_{pV}e_{vd}+k_{iV}\xi_{Vd}$,
+$i_{q,\mathrm{ref}}^{\mathrm{raw}}=k_{pV}e_{vq}+k_{iV}\xi_{Vq}$,
+$[i_{d,\mathrm{ref}},i_{q,\mathrm{ref}}]=\Pi_I(\cdot;I_{\max})$; and the inner
+commands $v_{cd},v_{cq}$ are as in the GFL branch but with $\omega\to\omega_{\mathrm{VSG}}$.
+The nine GFM states evolve, one per line in index order:
+\begin{align}
+  \dot{\delta}_{\mathrm{VSG}} &= \omega_b(\omega_{\mathrm{VSG}}-1), &&\text{ VSG angle}\\
+  M\,\dot{\omega}_{\mathrm{VSG}} &= \kappa u_1-P_{\mathrm{inv}}-D_v(\omega_{\mathrm{VSG}}-1),
+     &&\text{ VSG swing}\\
+  \tau_E\,\dot{E} &= k_Q(\kappa u_2-Q_{\mathrm{inv}})-k_E(E-E_{\mathrm{ref}}),
+     &&\text{ $Q$--$V$ voltage state}\\
+  \dot{\xi}_{Vd} &= \mathcal{H}(e_{vd},\,k_{iV},\,r_{i,d},\,\text{sat}),
+     &&\text{ $d$-voltage integrator}\\
+  \dot{\xi}_{Vq} &= \mathcal{H}(e_{vq},\,k_{iV},\,r_{i,q},\,\text{sat}),
+     &&\text{ $q$-voltage integrator}\\
+  \dot{\xi}_{Id} &= i_{d,\mathrm{ref}}-i_d, &&\text{ $d$-current integrator}\\
+  \dot{\xi}_{Iq} &= i_{q,\mathrm{ref}}-i_q, &&\text{ $q$-current integrator}\\
+  \dot{V}_{d,\mathrm{del}} &= (v_{cd}-V_{d,\mathrm{del}})/T_d, &&\text{ $d$-command lag}\\
+  \dot{V}_{q,\mathrm{del}} &= (v_{cq}-V_{q,\mathrm{del}})/T_d, &&\text{ $q$-command lag}
+\end{align}
+\emph{Proof of each state.} (12)--(13) are the VSG: the swing gives the converter
+its \emph{own} angle from active-power balance, $M\dot\omega_{\mathrm{VSG}}
+=\kappa u_1-P_{\mathrm{inv}}-D_v(\omega_{\mathrm{VSG}}-1)$, so at equilibrium
+$\omega_{\mathrm{VSG}}=1$ and $P_{\mathrm{inv}}=\kappa u_1$; because the angle is
+generated internally there is \emph{no PLL} and the branch can energise a passive
+network. (14) is the $Q$--$V$ loop whose state $E$ \emph{is} the voltage-loop
+reference $v_{d,\mathrm{ref}}=E$: at equilibrium $E=E_{\mathrm{ref}}
++(k_Q/k_E)(\kappa u_2-Q_{\mathrm{inv}})$, a droop between reactive set-point and
+formed voltage. (15)--(16) are the voltage PIs that drive $v_d\to E$, $v_q\to 0$
+(so the terminal voltage aligns with the VSG angle at magnitude $E$); (17)--(18)
+the inner current PIs; (19)--(20) the same first-order command lags as GFL. The
+anti-windup $\mathcal H$ again holds the voltage integrators only while the
+current reference is saturated. The GFM branch is a \emph{voltage source}: this is
+why the reference-loss guard promotes IBRs to GFM the instant the SG slack is
+lost.
+
+\subsection{Current-continuity-gated transfer}\label{sec:transfer}
+When the supervisor changes an IBR's mode, the new-mode controller states are not
+continued by integration; they are \emph{re-initialised} at the current terminal
+operating point so that the injected current does not jump. Let the pre-switch
+state $x^{-}$ inject $I^{-}=I(x^{-},V)$ with $S=V\overline{I^{-}}$,
+$P=\Re S$, $Q=\Im S$. The transfer $x^{-}\mapsto x^{+}$ is
+\begin{equation}
+  x^{+}_{\mathrm{pl}}=x^{-}_{\mathrm{pl}}\ (\text{carry }i_d,i_q,V_{dc}),\qquad
+  x^{+}_{\mathrm{ctrl}}=\text{equilibrium\_initialize}(V,P,Q),
+  \label{eq:transfer}
+\end{equation}
+with one physical carry-across of frequency: GFL$\to$GFM sets
+$\omega_{\mathrm{VSG}}\!:=\!\omega_{\mathrm{PLL}}$, and GFM$\to$GFL sets the PLL
+integrator $\xi_{\mathrm{PLL}}\!:=\!\omega_b(\omega_{\mathrm{VSG}}-1)/k_{i,\mathrm{PLL}}$.
+The transfer is then \emph{gated}: the post-switch injection $I^{+}=I(x^{+},V)$
+must satisfy
+\begin{equation}
+  \bigl|I^{+}-I^{-}\bigr|\le\varepsilon_{\mathrm{tol}}=10^{-10},
+  \label{eq:contgate}
+\end{equation}
+otherwise the step is rejected fail-closed. Equation~\eqref{eq:contgate} is the
+bumpless-transfer guarantee: the mode may change discontinuously in
+\emph{parameterisation}, but the current the network sees is continuous.
+
+%=============================================================================
+\section{Switched time-domain formulation}\label{sec:ts}
+%=============================================================================
+The composite system is advanced in time by \emph{one} coupled implicit step
+that the plain and the hybrid drivers share. Three questions are answered in
+turn, because they are the three things that make this harder than integrating a
+single machine: (i)~the differential equations are \emph{not} the same from one
+device to the next, nor even for one device across a mode change
+(\S\ref{sec:ts-hetero}); (ii)~they are nonetheless solved \emph{together}, in a
+single system per step, by discretising the differential part with the implicit
+trapezoidal rule and appending the network law (\S\ref{sec:ts-couple}); and
+(iii)~that system is nonlinear, so each step is closed by a damped Newton solve
+(\S\ref{sec:ts-newton}). Two refinements specific to this study --- the frozen
+coordinates (\S\ref{sec:ts-frozen}) and the mode switch that replaces
+integration by a direct assignment (\S\ref{sec:ts-switch}) --- follow.
+
+\subsection{Why the device ODEs are not the same}\label{sec:ts-hetero}
+Each device owns a different differential model, so the right-hand side is
+heterogeneous by construction:
+\begin{itemize}\itemsep2pt
+  \item the \textbf{SG} obeys the sixth-order EMF6 equations of
+        Section~\ref{sec:sg} (swing pair, transient and sub-transient fluxes),
+        of which five are integrated because $E_d'$ is frozen at the
+        singular limit (active set $[\,1,2,3,5,6\,]$);
+  \item an \textbf{IBR in GFL} integrates its shared power stage plus the
+        phase-locked-loop controller block --- $11$ states,
+        $\mathcal{A}_{\mathrm{GFL}}=\{1{:}11\}$ of~\eqref{eq:ibractive};
+  \item an \textbf{IBR in GFM} integrates the same power stage plus the
+        virtual-synchronous-machine controller (no PLL) --- $12$ states,
+        $\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,12{:}20\}$;
+  \item a \textbf{tripped} device integrates nothing
+        ($\mathcal{A}_{\mathrm{tripped}}=\varnothing$).
+\end{itemize}
+The full state is the concatenation of these blocks,
+$x=[\,x_{\mathrm{SG}};\,x_{\mathrm{IBR}_1};\dots;x_{\mathrm{IBR}_4}\,]$, and the
+right-hand side is the matching concatenation
+\begin{equation}
+  \dot x \;=\; f(x,V)\;=\;
+  \bigl[\,f_{\mathrm{SG}}(x_{\mathrm{SG}},V)\,;\;
+          f_{\mathrm{IBR}_1}(x_{\mathrm{IBR}_1},V;\,m_1)\,;\;\dots\;\bigr],
+  \label{eq:stackf}
+\end{equation}
+where each block $f_{\mathrm{IBR}_i}$ depends on that inverter's current mode
+$m_i\in\{\mathrm{GFL},\mathrm{GFM},\mathrm{tripped}\}$ and is written by the
+device itself. There is no single ODE that all devices share; the coupling
+between them is \emph{only} through the terminal voltages $V$ that every block
+reads.
+
+\subsection{One coupled DAE, one implicit trapezoidal step}\label{sec:ts-couple}
+The heterogeneous ODE~\eqref{eq:stackf} is coupled to the all-KCL network
+law~\eqref{eq:kcl} to form the composite differential--algebraic system
+\begin{equation}
+  \dot x = f(x,V),\qquad 0 = g(x,V)=Y_{\mathrm{net}}V-I_{\mathrm{bus}}(x,V).
+  \label{eq:dae}
+\end{equation}
+It is advanced from $(x_0,V_0)$ to $(x_1,V_1)$ over a step $h$ by discretising
+the differential rows with the implicit trapezoidal rule and carrying the
+algebraic rows exactly. With $f_0=f(x_0,V_0)$, $f_1=f(x_1,V_1)$ and the active
+set $\mathcal{A}\subseteq\{1,\dots,n_x\}$ (the union of the per-device active
+sets above), the step solves
+\begin{equation}
+  \underbrace{\bigl[x_1-x_0-\tfrac{h}{2}(f_0+f_1)\bigr]_{\mathcal{A}}}
+     _{\text{active trapezoidal rows}}=0,
+  \qquad
+  \underbrace{g(x_1,V_1)=0}_{\text{all KCL rows}}.
+  \label{eq:trap}
+\end{equation}
+Because $f_1$ and $g$ are evaluated at the unknown end-of-step state, this is an
+\emph{implicit} (nonlinear, coupled) system, not an explicit update: the states
+of every device and the voltages of every bus are unknowns of one and the same
+system, so the machine and all four inverters are solved simultaneously and are
+never sub-iterated device by device. For an active state $i$ the first block is
+exactly the trapezoidal rule
+$x_{1,i}=x_{0,i}+\tfrac{h}{2}(f_{0,i}+f_{1,i})$.
+
+\subsection{How the step is solved: the damped Newton system}\label{sec:ts-newton}
+Stacking the unknowns as $z=[\,x_1|_{\mathcal{A}};\,V_1\,]$, the two blocks
+of~\eqref{eq:trap} become a single nonlinear residual
+\begin{equation}
+  r(z)=\begin{bmatrix} \bigl[x_1-x_0-\tfrac{h}{2}(f_0+f_1)\bigr]_{\mathcal{A}}\\[2pt]
+       g(x_1,V_1)\end{bmatrix}=0,
+  \label{eq:resid}
+\end{equation}
+which is driven to zero by a damped Newton iteration. This is the single Newton
+owner reused by the equilibrium solve, the trapezoidal step, and the event
+solve; no device supplies its own solver. One iteration is:
+\begin{enumerate}\itemsep2pt
+  \item form the Jacobian $J=\partial r/\partial z$ by \emph{forward finite
+        differences} (column $j$ is $[r(z+\varepsilon e_j)-r(z)]/\varepsilon$
+        with $\varepsilon=3\times10^{-6}$); no analytic Jacobian is assembled,
+        so a device may change its equations without hand-derived derivatives;
+  \item test conditioning: if $\operatorname{rcond}(J)<\epsilon_{\mathrm{mach}}$
+        the step is rejected fail-closed rather than solved through a singular
+        system;
+  \item take the Newton direction $\Delta z=-(J\,\backslash\,r)$ with the
+        audited MATLAB backslash --- the only linear solve in the loop;
+  \item damp it with a backtracking line search: try $z+\alpha\,\Delta z$ at
+        $\alpha=1$ and halve $\alpha$ (up to $20$ times) until
+        $\lVert r\rVert_\infty$ strictly decreases; if no $\alpha$ decreases the
+        residual the step fails closed at the last accepted iterate.
+\end{enumerate}
+The iteration is declared converged when
+$\lVert r(z)\rVert_\infty<\mathrm{tol}=10^{-8}$, and at most $50$ iterations are
+taken. Nothing in the loop is tuned to the case: the tolerance, the
+finite-difference increment, the conditioning gate and the line-search contract
+are fixed constants of the solver.
+
+\subsection{Frozen coordinates: the $\Pi$-projection}\label{sec:ts-frozen}
+Every index \emph{not} in $\mathcal{A}$ --- the frozen set
+$\mathcal{F}=\{1,\dots,n_x\}\setminus\mathcal{A}$ --- is removed from the Newton
+system and held exactly:
+\begin{equation}
+  x_{1,i}=x_{0,i}\quad\text{for all }i\in\mathcal{F}.
+  \label{eq:frozen}
+\end{equation}
+The solver begins from $x_1\!\leftarrow\!x_0$ and never writes a frozen row, and a
+drift check re-verifies $x_{1}|_{\mathcal F}=x_{0}|_{\mathcal F}$ after the step;
+any change of a frozen coordinate is a hard error. Two distinct things live in
+$\mathcal{F}$: the singular-limit flux $E_d'$ of Section~\ref{sec:frozen} (frozen
+for the whole run), and the entire controller block that a given IBR is
+\emph{not} currently using (frozen for as long as that mode is inactive). The map
+$\Pi$ that selects $\mathcal{A}$ is the same runtime authority
+(\texttt{ts\_dynamic\_state\_indices}) at every one of its call sites, so the
+figure of $n_x(t)$ below cannot disagree with what the integrator actually
+solved.
+
+\subsection{The switch: from integration to assignment}\label{sec:ts-switch}
+A mode change is landed \emph{exactly} on a step boundary (the step is subdivided
+so the event time is a grid point). At that boundary the state is not advanced by
+\eqref{eq:trap}; it is replaced by the discrete transfer of
+Section~\ref{sec:transfer}:
+\begin{equation}
+  x_1 \;=\; \mathcal{T}(x_0,V)\quad\text{(a re-initialisation), not }
+  \;x_1=x_0+\tfrac{h}{2}(f_0+f_1).
+  \label{eq:assign}
+\end{equation}
+At the mode boundary the controller coordinates jump to the transferred values
+$\mathcal T(x_0,V)$ chosen to satisfy the current-continuity
+gate~\eqref{eq:contgate}, and integration resumes on the \emph{new} active set on
+the very next step. Two important consequences follow for this study:
+\begin{itemize}\itemsep2pt
+  \item The \textbf{SG trip} is \emph{not} such an assignment. The SG keeps the
+        same active set $[\,1,2,3,5,6\,]$; its trajectory is continuous across
+        $t=20$~s (the coast of Section~\ref{sec:sg}). Only the right-hand side
+        branch changes (connected stator $\to$ open circuit).
+  \item The \textbf{IBR GFL$\to$GFM} changes at $t=20$~s \emph{are} such
+        assignments: each IBR's active dimension steps $11\to12$ and its
+        controller states are re-initialised by~\eqref{eq:transfer}. The
+        composite dynamic dimension therefore changes because of the inverters,
+        not the generator.
+\end{itemize}
+
+%=============================================================================
+\section{Power-flow results}\label{sec:pf}
+%=============================================================================
+Table~\ref{tab:pfbus} is the solved SG-online power flow (the reference operating
+point from which $V_i^{\star}$ in~\eqref{eq:jvjf} is taken); Table~\ref{tab:pfline}
+the corresponding branch flows and losses. The reference bus supplies
+$P_g=1.3319\pu$, $Q_g=-0.1957\pu$; the four IBR buses (2, 3, 6, 8) inject at
+their scheduled set-points while every load bus meets its $P_L,Q_L$.
+
+\begin{table}[H]
+\centering\footnotesize
+\caption{Solved bus power flow at the SG-online operating point (per unit on the
+system base; angles in degrees).}
+\label{tab:pfbus}
+\IfFileExists{figures/switch_ieee14/table_pf_bus_results.tex}
+ {\input{figures/switch_ieee14/table_pf_bus_results.tex}}
+ {\centering\ttfamily table\_pf\_bus\_results.tex pending regeneration.}
+\end{table}
+
+\begin{table}[H]
+\centering\footnotesize
+\caption{Branch power flows and losses at the SG-online operating point.}
+\label{tab:pfline}
+\IfFileExists{figures/switch_ieee14/table_pf_line_results.tex}
+ {\input{figures/switch_ieee14/table_pf_line_results.tex}}
+ {\centering\ttfamily table\_pf\_line\_results.tex pending regeneration.}
+\end{table}
+
+%=============================================================================
+\section{Small-signal spectrum}\label{sec:sssa}
+%=============================================================================
+The modal table below lists the small-signal eigenvalues at a representative
+post-disturbance configuration (one IBR grid-forming, three grid-following):
+index, eigenvalue $\lambda$, modal frequency $f$, damping ratio $\zeta$, and the
+single dominant participating state. Conjugate pairs are printed once. The table
+is a presentation-only column projection of the generated modal table --- only
+the trailing participation entries are dropped; no eigenvalue, frequency or
+damping ratio is recomputed, reordered or reformatted, so the numbers are
+bit-identical to the full table.
+
+\begin{center}\footnotesize
+\IfFileExists{figures/switch_ieee14/sssa_modes_compact_n1.tex}
+ {\input{figures/switch_ieee14/sssa_modes_compact_n1.tex}}
+ {\ttfamily sssa\_modes\_compact\_n1.tex pending regeneration
+  (run \texttt{write\_sssa\_modes\_compact}).}
+\end{center}
+
+The spectrum is entirely in the left half-plane at this configuration. This is a
+small-signal statement about one linearisation point; it is not, and must not be
+read as, a stability certificate for the full switched trajectory.
+
+%=============================================================================
+\section{Time-Domain Simulation}\label{sec:transient}
+%=============================================================================
+Figure~\ref{fig:pq} shows the per-IBR active and reactive power over the full
+preserved horizon $0\text{--}200\second$. Two strips above the power panels give the supervisory
+state: the top strip is each IBR's grid-forming/grid-following mode (all four
+step to GFM together when the SG is lost), and the second strip is the
+\emph{reference owner} --- the single device that holds the island angle
+reference at each instant. Mode and reference ownership are distinct contracts:
+several IBRs can be grid-forming at once, but only one of them owns the
+reference. Here the SG owns it up to $t=20\second$ and again after the reclose;
+in between, IBR$_1$ (bus~2) is the reference leader (IBR$_4$ holds it only for
+the first fraction of a second before the supervisor settles on IBR$_1$). The
+four traces are the four IBRs at buses 2, 3, 6 and 8. Every sample is a raw
+accepted value of the preserved 200-s trajectory; the $0\text{--}200\second$
+range is the full preserved horizon (no display truncation).
+
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/switch_ieee14_new/mode_switch_PQ.png}
+ {\includegraphics[width=6.20in]{figures/switch_ieee14_new/mode_switch_PQ.png}}
+ {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily mode\_switch\_PQ.png\\[4pt]
+   \normalfont pending figure regeneration
+   (run \texttt{generate\_switch\_new\_report\_figures}).\vspace{3em}}}}
+\caption{Top strip: grid-forming/grid-following mode of each IBR (GFL/GFM step,
+four traces overlaid, no display offset). Second strip: reference owner (which
+device holds the island angle reference --- SG, then IBR$_1$, then SG again).
+(a) Per-IBR active power $P_i\pu$. (b) Per-IBR reactive power $Q_i\pu$. Raw
+accepted samples of the preserved 200-s trajectory; $t\in[0,200]\second$ full
+window.}
+\label{fig:pq}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/switch_ieee14_new/mode_switch_electrical.png}
+ {\includegraphics[width=6.20in]{figures/switch_ieee14_new/mode_switch_electrical.png}}
+ {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily mode\_switch\_electrical.png\\[4pt]
+   \normalfont pending figure regeneration
+   (run \texttt{generate\_switch\_new\_report\_figures}).\vspace{3em}}}}
+\caption{Eight-panel electrical response (raw accepted samples, preserved 200-s
+trajectory, $t\in[0,200]\second$ full window). (a) active power $P_i$;
+(b) reactive power $Q_i$; (c) $d$-axis current; (d) $q$-axis current; (e) PCC /
+virtual-rotor frequency; (f) device-to-PCC angle; (g) PCC voltage; (h) network
+minimum voltage. IBR$_1$ blue, IBR$_2$ red dashed, IBR$_3$ red, IBR$_4$ black;
+SG black dashed.}
+\label{fig:elec}
+\end{figure}
+
+%=============================================================================
+\section{Limitations}\label{sec:lim}
+%=============================================================================
+\begin{itemize}\itemsep2pt
+  \item \textbf{No operational-readiness claim.} That the 200-s trajectory is an
+        accepted, converged solution of the composite DAE means only that the
+        numerics are self-consistent. It is not evidence of grid-code
+        compliance, protection coordination or hardware realisability.
+  \item \textbf{Transient extrema are extrema, not ratings.} The accepted
+        trajectory reaches a peak network voltage of $\NewRunVMax\pu$ and a COI
+        frequency band of $\NewRunFMin$--$\NewRunFMax$~Hz during the fault and
+        switching window. These are honest excursions of the model under a severe
+        chronology, not steady operating values, and they underline that the
+        study is a numerical exercise, not a design sign-off.
+  \item \textbf{One linearisation.} The spectrum of Section~\ref{sec:sssa} is a
+        single operating-point analysis; it does not bound the switched system.
+  \item \textbf{Reporting reconstruction.} $J_V,J_f$ in the report are
+        reconstructed from the accepted COI frequency and healthy per-bus PF
+        voltage for exposition; the run-time supervisor uses its own in-loop
+        signals. The two agree in intent, not necessarily sample-for-sample.
+  \item \textbf{Figure horizon.} Equations are those of the 250-s code; the
+        plotted curves are the preserved 200-s run. When the 250-s trajectory is
+        finalised the figures and the frozen run scalars must be regenerated
+        together.
+\end{itemize}
+
+\end{document}

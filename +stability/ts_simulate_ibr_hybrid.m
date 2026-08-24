@@ -95,6 +95,11 @@ t_trip = NaN;
 pending_reselection = false;
 actual_mode_reselection = NaN;
 reselection_status = 'NOT_REQUESTED';
+% Structured refusal reasons from the last one-step release attempt. Diagnostic
+% only: no gate reads it. It exists because the aggregate status alone cannot
+% distinguish a missing table row from a present-but-unready row from a runtime
+% or fingerprint rejection, which made a real refusal expensive to diagnose.
+reselection_rejection_detail = {};
 reselection_good_since = NaN;
 reselection_deadline = NaN;  % exact-landing target: actual_reclose + T_down
 sg_on_cand = [];  % authenticated SG_ON candidate (Step 5); [] until authenticated
@@ -1013,8 +1018,21 @@ while t < settings.t_end-settings.event_tol
                     % profile this is the per-IBR 2-term severity supervisor;
                     % without that profile the authenticated SG_ON selector
                     % remains the legacy authority.
-                    pending_reselection=true;
-                    reselection_status='PENDING';
+                    %
+                    % post_reclose_mode_reselection=false declares a policy that
+                    % does NOT revisit the mode map once the machine is back. It
+                    % is the only way to express a genuine no-adaptation control
+                    % arm: disabling the severity supervisor alone is not enough,
+                    % because control then falls through to the legacy SG_ON
+                    % authority, which reselects by its own route. Default true,
+                    % so every existing run is unaffected.
+                    if settings.post_reclose_mode_reselection
+                        pending_reselection=true;
+                        reselection_status='PENDING';
+                    else
+                        pending_reselection=false;
+                        reselection_status='DISABLED_BY_POLICY';
+                    end
                     reselection_good_since=NaN;
                     reselection_deadline=NaN;
                     severity_release_since(:)=NaN;
@@ -1125,6 +1143,15 @@ while t < settings.t_end-settings.event_tol
                         authority = '';
                         attempt_transaction = false;
                         reselection_status = release_audit.reason;
+                        % Publish the structured refusal reasons. Without this
+                        % the run reports only the aggregate status and the
+                        % actual guard that refused is unrecoverable after the
+                        % fact. Diagnostic only; retains the LAST attempt's
+                        % reasons, which is the one the terminal status
+                        % describes.
+                        if isfield(release_audit,'rejection_detail')
+                            reselection_rejection_detail = release_audit.rejection_detail;
+                        end
                     end
                 else
                     reselection_status = 'PENDING_SEVERITY';
@@ -1285,6 +1312,7 @@ end
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
 res.actual_mode_reselection_time=actual_mode_reselection;
 res.reselection_status=reselection_status;
+res.reselection_rejection_detail=reselection_rejection_detail;
 res.support_supervision_status=support_status;
 % Propagate reference-ownership + fingerprint fields from the final event context.
 if ~isempty(res.event_context_history) && iscell(res.event_context_history)
@@ -1444,6 +1472,16 @@ if xor(has_healthy_v,has_healthy_bus)
         'healthy_pf_V and healthy_pf_bus_ids must be supplied together.');
 end
 s.severity_handback_enabled = has_healthy_v && has_healthy_bus;
+% --- Post-reclose mode reselection (opt-out, default ON) -------------------
+% When false, the reclose transaction does NOT arm the post-reclose handback at
+% all, so no converter is returned to GFL after the machine comes back and the
+% committed mode map is the one the policy chose once. This exists to express a
+% no-adaptation CONTROL policy, not to bypass a gate: nothing is relaxed, a
+% transaction is simply never requested, and the published status is the explicit
+% DISABLED_BY_POLICY rather than a refusal. Default true keeps every existing
+% run byte-identical.
+s.post_reclose_mode_reselection = ...
+    logical(option(opt,'post_reclose_mode_reselection',true));
 s.severity_support_enabled = logical(option(opt,'automatic_support_supervision',false)) && ...
     logical(option(opt,'automatic_gfm_switching',true)) && ...
     has_healthy_v && has_healthy_bus;
@@ -2136,9 +2174,25 @@ if isfield(sched,'selection_request') && isstruct(sched.selection_request) && ..
 end
 runtime_context = assemble_runtime_context(ec.hybrid_state, dae);
 runtime_context.event_time = t;
-Ytopo = Y;
-if isempty(Ytopo) && isfield(case_data,'mpc') && isstruct(case_data.mpc)
+% Topology payload for the input-fingerprint layer. It MUST be the load-free
+% canonical Ybus, because that is what ibr_selector_table hashed at build time
+% (ibr_selector_table.m:101,390). The TS-side Y carries the constant-impedance
+% LOAD admittance that composite_dae folds into the diagonal, so handing it to
+% the validator makes the input layer differ on every load bus and the table can
+% never authenticate -- measured as a 1.028 pu diagonal difference on the eleven
+% IEEE-14 load buses with the off-diagonal branch network identical to 0.
+% trip_transaction (:1929-1933) already derives the payload this way and is the
+% path that authenticates successfully at runtime; the note on
+% canonical_ybus_from_mpc (:3663-3669) states the requirement outright. Deriving
+% it here the same way makes the SG_ON paths consistent with the SG_OFF path
+% instead of leaving them permanently unauthenticable. Y is retained as the
+% fallback only for callers that supply no mpc.
+Ytopo = [];
+if isfield(case_data,'mpc') && isstruct(case_data.mpc)
     Ytopo = canonical_ybus_from_mpc(case_data.mpc);
+end
+if isempty(Ytopo)
+    Ytopo = Y;
 end
 [ok, err_id, err_msg, ~, cand] = stability.validate_runtime_candidate_compatibility( ...
     table, req, dae, sched, 'sg_on', Ytopo, runtime_context);
@@ -2154,11 +2208,17 @@ function [target_selected, audit, ok] = choose_sg_online_one_step( ...
 %   contracts.  No TS-step equilibrium or eigenvalue solve occurs here.
 target_selected = [];
 ok = false;
+% rejection_detail records WHY each evaluated one-step target was refused. Every
+% `continue` below previously discarded the validator's structured err_id, so the
+% audit could only ever report the generic NO_FEASIBLE_SG_ON_ONE_STEP and an
+% operator could not distinguish "no such row in the table" from "row present but
+% not ready" from "runtime/fingerprint rejection". The reasons are diagnostic
+% only: no gate consumes them and no decision depends on them.
 audit = struct('reason','NO_FEASIBLE_SG_ON', 'failure_id', ...
     'stability:gfm_selection:noAuthenticatedCandidate', ...
     'evaluated_candidates',0,'accepted_candidates',0, ...
     'selected_release_index',NaN,'candidate_margin',NaN, ...
-    'candidate_fingerprint','');
+    'candidate_fingerprint','','rejection_detail',{{}});
 if ~isstruct(table) || ~isfield(table,'sg_on') || ...
         ~isstruct(table.sg_on) || ~isfield(table.sg_on,'configurations')
     audit.reason = 'NO_AUTHENTICATED_SG_ON_TABLE';
@@ -2181,7 +2241,19 @@ end
 % this prevents a previously authenticated winner from becoming a hidden
 % authority after another device's mode has changed.
 cfgs = table.sg_on.configurations;
-accepted = repmat(struct(),0,1);
+% Load-free canonical topology payload for the input-fingerprint layer, derived
+% exactly as trip_transaction (:1929-1933) derives it. The live TS Y carries the
+% constant-impedance load admittance on its diagonal and therefore never matches
+% the build-time hash; see the note in authenticate_sg_on_candidate above and on
+% canonical_ybus_from_mpc (:3663-3669).
+Ytopo = [];
+if isfield(case_data,'mpc') && isstruct(case_data.mpc)
+    Ytopo = canonical_ybus_from_mpc(case_data.mpc);
+end
+if isempty(Ytopo)
+    Ytopo = Y;
+end
+accepted_cells = {};
 for q = 1:numel(release_candidates)
     k_release = release_candidates(q);
     target = setdiff(current_gfm,k_release,'stable');
@@ -2200,6 +2272,9 @@ for q = 1:numel(release_candidates)
         end
     end
     if numel(match) ~= 1
+        audit.rejection_detail{end+1} = sprintf( ...
+            'release %d: %d table rows match target %s (require exactly 1)', ...
+            k_release, numel(match), mat2str(target));
         continue;
     end
     c0 = cfgs(match);
@@ -2212,20 +2287,55 @@ for q = 1:numel(release_candidates)
     runtime_context.event_time = t;
     [valid,err_id,err_msg,~,c_auth] = ...
         stability.validate_runtime_candidate_compatibility( ...
-        table,req,dae,sched,'sg_on',Y,runtime_context);
+        table,req,dae,sched,'sg_on',Ytopo,runtime_context);
     if ~valid || ~isstruct(c_auth) || isempty(fieldnames(c_auth))
+        audit.rejection_detail{end+1} = sprintf( ...
+            'release %d: validator refused (%s) %s', ...
+            k_release, char(string(err_id)), char(string(err_msg)));
         continue;
     end
     % A manual match must retain the exact one-step relation.  The validator
     % authenticates the candidate but intentionally does not rank it.
     if ~isequal(sort(reshape(c_auth.selected_gfm_indices,1,[])),sort(target)) || ...
             numel(setdiff(current_gfm,c_auth.selected_gfm_indices)) ~= 1
+        audit.rejection_detail{end+1} = sprintf( ...
+            'release %d: authenticated set %s is not a one-step step from %s', ...
+            k_release, mat2str(reshape(c_auth.selected_gfm_indices,1,[])), ...
+            mat2str(current_gfm));
         continue;
     end
     c_auth.release_index = k_release;
     c_auth.validation_failure_id = err_id;
     c_auth.validation_message = err_msg;
-    accepted(end+1,1) = c_auth; %#ok<AGROW>
+    % Accumulate in a CELL. `accepted` was initialised as repmat(struct(),0,1),
+    % a struct array with NO fields, so `accepted(end+1,1) = c_auth` raises
+    % "Subscripted assignment between dissimilar structures" the first time an
+    % authenticated candidate is appended. That line had never executed: while
+    % the all-GFL row was not ready_to_commit, and later while the input
+    % fingerprint could not match, the loop always reached `continue` first.
+    % A cell accumulator has no field-set precondition, and the struct array the
+    % ranking needs is built once below.
+    accepted_cells{end+1} = c_auth; %#ok<AGROW>
+end
+% Materialise the struct array the frozen ranking indexes. Field sets are
+% normalised against the first accepted candidate; all of them come from the
+% same table through the same validator plus the three fields added above, so a
+% genuine mismatch is a real inconsistency and is reported rather than padded.
+accepted = repmat(struct(),0,1);
+if ~isempty(accepted_cells)
+    accepted = accepted_cells{1};
+    for j = 2:numel(accepted_cells)
+        try
+            accepted(j,1) = orderfields(accepted_cells{j}, accepted(1));
+        catch me
+            audit.reason = 'SG_ON_CANDIDATE_FIELD_MISMATCH';
+            audit.failure_id = 'stability:gfm_selection:candidateFieldMismatch';
+            audit.rejection_detail{end+1} = sprintf( ...
+                'accepted candidate %d has an incompatible field set: %s', ...
+                j, me.message);
+            return;
+        end
+    end
 end
 if isempty(accepted)
     audit.reason = 'NO_FEASIBLE_SG_ON_ONE_STEP';

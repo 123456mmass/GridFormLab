@@ -10,7 +10,8 @@
 %      (output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat);
 %    - the AGSI decision page and its two zoom pages were added;
 %    - the disturbance-chronology diagram was moved above the result figures;
-%    - the IBR state count was CORRECTED from 20 to the 16 states the run
+%    - the IBR state count was CORRECTED from 20 to 16, then extended to the
+%      17 states the run
 %      actually integrates (defect TD-2026-08-12-01 reduced the two
 %      command-delay states per branch by singular perturbation; the earlier
 %      report text described the pre-reduction layout);
@@ -90,7 +91,15 @@
    \newcommand{\NewRunGfmMax}{--}\newcommand{\NewRunSamples}{--}%
    \newcommand{\NewRunRejectedSteps}{--}\newcommand{\NewRunTerminalF}{--}%
    \newcommand{\NewRunTerminalVMin}{--}\newcommand{\NewRunTerminalVMax}{--}%
-   \newcommand{\NewRunStepper}{--}\newcommand{\NewRunReselection}{--}}
+   \newcommand{\NewRunStepper}{--}\newcommand{\NewRunReselection}{--}%
+   % Post-reclose reselection macros (added with the working hand-back): the
+   % number of SG-online mode commits and the instant of the first one. A report
+   % built before the scalars exist falls back to an em dash, never to a stale
+   % value.
+   \newcommand{\NewRunNReselection}{--}%
+   \newcommand{\NewRunReselectionOne}{--}%
+   \newcommand{\NewRunModeReselectionTime}{--}%
+   \newcommand{\NewRunHandback}{--}}
 
 % Cross-arm comparison macros, written by
 %   pf_init_paths; generate_ieee14_gfm_lock_comparison
@@ -217,16 +226,17 @@ chronology, and it contributes the following.
   \item An exhaustive small-signal screening of every candidate grid-forming
         configuration in the islanded band, which finds only
         $\CandReady$ of $\CandTotal$ admissible and the best margin at
-        \emph{two} units rather than four (Sections~\ref{sec:sssa}
-        and~\ref{sec:compare}).
+        \emph{two} units rather than four (Section~\ref{sec:sssa}).
   \item A five-policy comparison on one trajectory --- all-GFL locked, one, two
         and four pinned grid-forming units, and the adaptive supervisor --- which
         shows that promoting at least one converter is a necessary condition for a
         post-trip trajectory to exist at all, that the four-unit configuration
         fails when pinned from the trip although it passes the linear screen, and
         that the adaptive arm reaches that same configuration and survives by
-        staging the transitions through per-step certificates
-        (Section~\ref{sec:compare}).
+        staging the transitions through per-step certificates. Those five arms are
+        run and their outcomes are used below where they bear on a claim; the
+        comparison itself is held out of this revision and will be presented
+        separately.
 \end{enumerate}
 
 \paragraph{What this report does not claim.}
@@ -251,14 +261,20 @@ chronology, and it contributes the following.
   \item \textbf{One linearisation per point.} The spectrum of
         Section~\ref{sec:sssa} and every damping margin in the admissibility
         table are single operating-point analyses and do not bound the switched
-        system. Section~\ref{sec:compare} exhibits a configuration that passes the
-        linear screen and is still not reachable, which is a limit of the linear
-        tool itself.
+        system. The four-unit configuration is admissible by that screen and is
+        still not reachable when pinned from the trip, which is a limit of the
+        linear tool itself and not of the screen's arithmetic.
   \item \textbf{DC-link dynamics are at the resolution limit of the method.} The
         DC source is non-ideal (Section~\ref{sec:dcsource}) and its mode is
         faster than the nominal phasor step, so it is resolved only where the
         adaptive controller reduces the step. A firmer DC source is stiffer still
         and belongs to an EMT study rather than to this one.
+  \item \textbf{The DC circuit responds but cannot act back.} There is no
+        modulation-index constraint tying the commanded AC voltage to the
+        available $V_{dc}$, so $\partial f_i/\partial x_j=0$ for every AC state
+        $i$ and both DC coordinates $j$, and the coupling is one-way. A sagging
+        link therefore never clips an AC command in this model, and no conclusion
+        here may be read as covering DC-limited ride-through.
   \item \textbf{Cross-arm numerical quality is not compared.} Residuals and
         rejected-step counts are not comparable between trajectories of unequal
         length, and an arm that ends early is never extended to match the others.
@@ -333,7 +349,7 @@ The SG AC/flux equations and the IBR AC/control equations are
 in the converter and machine literature cited where each block is
 derived~\cite{ieee1110,kundur1994,yazdani2010,teodorescu2011,sakimoto2015,regfmb1},
 and their transcription into this project's state layout is recorded in the
-project's own equation contract. The fixed 16-state IBR superset, the
+project's own equation contract. The fixed 17-state IBR superset, the
 GFL$\leftrightarrow$GFM transfer map, the command-delay reduction of
 Section~\ref{sec:ibr-reduction} and the DC-source regulator closure are
 \textsf{PROJECT\_\allowbreak DERIVED}. Machine parameters come from the Waterloo
@@ -408,6 +424,8 @@ $v_{cd}$, $v_{cq}$ & inner-loop commanded voltages \\
 $R_f$, $L_f$, $C_{dc}$ & filter resistance and inductance; DC-link capacitance \\
 $E_{dc}$, $R_{dc}$ & DC-source EMF and internal resistance (Section~\ref{sec:dcsource}) \\
 $R_{ch}$, $V_{dc}^{\max}$ & overvoltage-chopper resistance and conduction threshold \\
+$I_{dc}$ & DC-source current, state 17 of the IBR \\
+$\tau_s$, $L_s$ & DC-source circuit time constant $L_s/R_{dc}$ and its inductance \\
 $\varepsilon$, $P_r$ & DC-source regulation at rated converter power, and that power \\
 $M$, $D_v$, $\tau_E$, $k_Q$, $k_E$ & virtual inertia, damping, amplitude time constant and $Q$--$V$ gains \\
 $I_{\max}$, $\Pi_I$ & current magnitude limit and the circular limiter \\
@@ -490,9 +508,10 @@ breaker opening that would leave an energised island with \emph{no}
 voltage-forming device at all is \textbf{refused}. The network must not spend even
 one step without a voltage reference, or~\eqref{eq:kcl} has nothing to fix the
 reference angle and the system loses its mathematical gauge condition. The guard
-is evaluated \emph{before} Newton is called even once, and
-Section~\ref{sec:compare} shows its effect directly: the arm that locks all four
-IBRs in GFL is refused at exactly $t=\ArmLockedgflHorizon\second$. The guard is a
+is evaluated \emph{before} Newton is called even once, and its effect is measured:
+an arm that locks all four IBRs in grid-following mode is refused at exactly
+$t=\ArmLockedgflHorizon\second$, the instant of the trip, with
+\ArmLockedgflFailure. The guard is a
 feasibility gate, not a promotion rule --- it does not itself raise any converter
 to GFM. In the delivered run the supervisor reaches its maximum of
 $\NewRunGfmMax$ grid-forming units by $\NewRunNAugment$ separate staged
@@ -712,21 +731,30 @@ composite dimension changes only because the IBRs switch mode
 (Section~\ref{sec:ibr}).
 
 %=============================================================================
-\section{Inverter-based resource: the dual-mode 16-state model}\label{sec:ibr}
+\section{Inverter-based resource: the dual-mode 17-state model}\label{sec:ibr}
 %=============================================================================
 Each IBR is a single device that can present either of two controllers on a
-common power stage. The full state is a fixed 16-vector,
+common power stage. The full state is a fixed 17-vector,
 \begin{equation}
   x_{\mathrm{IBR}}
-   =\bigl[\underbrace{i_d,\,i_q,\,V_{dc}}_{\substack{x_{\mathrm{pl}}\;(3)\\
+   =\bigl[\underbrace{i_d,\,i_q,\,V_{dc}}_{\substack{(3)\\
             \text{\scriptsize always live}}}\;\big|\;
           \underbrace{x_{\mathrm{GFL}}\;(6)}_{\substack{\text{indices }4\text{--}9\\
             \text{\scriptsize live only in GFL}}}\;\big|\;
           \underbrace{x_{\mathrm{GFM}}\;(7)}_{\substack{\text{indices }10\text{--}16\\
-            \text{\scriptsize live only in GFM}}}\bigr]^{\top}
-   \in\mathbb{R}^{16}.
+            \text{\scriptsize live only in GFM}}}\;\big|\;
+          \underbrace{I_{dc}}_{\substack{\text{index }17\\
+            \text{\scriptsize always live}}}\bigr]^{\top}
+   \in\mathbb{R}^{17}.
    \label{eq:ibrstate}
 \end{equation}
+The plant block is $x_{\mathrm{pl}}=(i_d,i_q,V_{dc},I_{dc})$ and it is not
+contiguous: the DC-source current sits at index 17, after the two controller
+blocks, because it was added to a layout whose indices 1--16 were already
+published. Appending rather than inserting keeps every one of those indices
+meaning exactly what it meant before, which is why the ranges $4$--$9$ and
+$10$--$16$ in this section are unchanged from earlier revisions. A test asserts
+that all sixteen earlier names are still in their original positions.
 
 \paragraph{The two controllers never run at the same time.}
 Equation~\eqref{eq:ibrstate} is a fixed \emph{superset} of coordinates, not a
@@ -755,19 +783,19 @@ two controller blocks kept in their code order. The controller blocks are
 Only a projection of~\eqref{eq:ibrstate} is integrated at any instant. The
 active-index map returns
 \begin{equation}
-  \mathcal{A}_{\mathrm{GFL}}=\{1{:}9\},\qquad
-  \mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16\},\qquad
+  \mathcal{A}_{\mathrm{GFL}}=\{1{:}9,\,17\},\qquad
+  \mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16,\,17\},\qquad
   \mathcal{A}_{\mathrm{tripped}}=\varnothing,
   \label{eq:ibractive}
 \end{equation}
-i.e.\ 9 active states in GFL, 10 in GFM, none when tripped. The intersection
-$\mathcal{A}_{\mathrm{GFL}}\cap\mathcal{A}_{\mathrm{GFM}}=\{1,2,3\}$ is exactly
-the shared plant, and the union is all of $\{1{:}16\}$: the plant is always
-live, and every controller index belongs to one branch alone. The active count
-is therefore $9$ or $10$, never $16$ --- the superset dimension is never the
-dynamic dimension. With
+i.e.\ 10 active states in GFL, 11 in GFM, none when tripped. The intersection
+$\mathcal{A}_{\mathrm{GFL}}\cap\mathcal{A}_{\mathrm{GFM}}=\{1,2,3,17\}$ is
+exactly the shared plant, and the union is all of $\{1{:}17\}$: the plant is
+always live, and every controller index belongs to one branch alone. The active
+count is therefore $10$ or $11$, never $17$ --- the superset dimension is never
+the dynamic dimension. With
 one SG contributing six stored states, the composite state vector of this study
-therefore has $6+4\times16=70$ rows, which is exactly the row count of the stored
+therefore has $6+4\times17=74$ rows, which is exactly the row count of the stored
 trajectory.
 
 \subsection{Reduced command-delay states}\label{sec:ibr-reduction}
@@ -782,8 +810,10 @@ algebraically and the filter-current equations use the commanded voltage
 $v_{cd},v_{cq}$ directly. This is a standard model-order reduction that leaves
 both the equilibrium and the retained-state dynamics unchanged, and it removes a
 pole near $530$~Hz that an RMS phasor network model cannot represent in the first
-place. The reduction takes the dual-mode superset from $20$ to the $16$ states
-of~\eqref{eq:ibrstate} and each standalone branch from $12$ to $10$. It is
+place. The reduction takes the dual-mode superset from $20$ to $16$ states and each
+standalone branch from $12$ to $10$; the DC-source current of
+Section~\ref{sec:dcsource} then adds one, giving the $17$
+of~\eqref{eq:ibrstate} and $11$ per standalone branch. It is
 \textsf{PROJECT\_DERIVED} and owner-set; see defect record
 \textsf{TD-2026-08-12-01}. Report revisions before this one printed the
 pre-reduction $20$-state layout, which the executed model no longer has.
@@ -845,9 +875,16 @@ assumed. Any DC-side source --- a rectifier, a battery, a photovoltaic string in
 its voltage-source region, or a DC feeder --- is to first order an EMF behind its
 internal plus cable resistance, which gives
 \begin{equation}
-  I_{dc}=\frac{E_{dc}-V_{dc}}{R_{dc}},
+  \tau_s\,\dot I_{dc}=\frac{E_{dc}-V_{dc}}{R_{dc}}-I_{dc},
+  \qquad \tau_s=\frac{L_s}{R_{dc}},
   \label{eq:dcsrc}
 \end{equation}
+in which $I_{dc}$ is a \emph{state}: that circuit has inductance, so the current
+it actually delivers chases its own static characteristic rather than equalling it
+instantaneously. Setting $\tau_s=0$ recovers the algebraic law
+$I_{dc}=(E_{dc}-V_{dc})/R_{dc}$, and that limit is exact rather than approximate
+--- see the degeneracy statement below --- so a reader comparing this section with
+an earlier revision is comparing one model with its own limit, not two models.
 and, with the overvoltage chopper of~\eqref{eq:dcchop} below, the DC-link row
 of the shared power stage.
 
@@ -888,33 +925,79 @@ margin $2.15$ and coincides with the usual ten per cent regulation of a DC link
 fed through a boost stage or a feeder. It is \emph{not} chosen to suit the
 integrator step; see the stiffness statement below.
 
-\paragraph{The link cannot run away, and this is proved rather than assumed.}
-For $V_{dc}>E_{dc}$ every term of the DC-link row is negative whenever
-$P_{ac}\ge0$, hence $\dot V_{dc}<0$ and
+\paragraph{$\tau_s$ comes from a filter criterion, with a bound on each side.}
+Linearising the two DC rows about the dispatched point, chopper off, gives the
+$2\times2$ block
 \begin{equation}
-  V_{dc}(t)\ \le\ \max\bigl(V_{dc}(0),E_{dc}\bigr)=E_{dc}
-   =V_{dc}^{0}\Bigl(1+\varepsilon P_{ac}^{0}/(V_{dc}^{0})^{2}\Bigr)
-  \quad\text{for all }t.
-  \label{eq:dcbound}
+  A_{dc}=\begin{bmatrix}
+    \dfrac{P_{ac}^{0}}{C(V_{dc}^{0})^{2}} & \dfrac1C\\[8pt]
+    -\dfrac{1}{\tau_sR_{dc}} & -\dfrac1{\tau_s}\end{bmatrix},
+  \quad
+  \det A_{dc}=\frac{K}{\tau_s},\ \ \operatorname{tr}A_{dc}=a-\frac1{\tau_s},
+  \label{eq:dcblock}
 \end{equation}
-When the network collapses during a fault and $P_{ac}\to0$, the link therefore
-rises only towards $E_{dc}$; the internal resistance is itself the limit. The
-overvoltage chopper is a braking resistor conducting in its linear region,
+with $K=\frac1C\bigl(\frac1{R_{dc}}-\frac{P_{ac}^{0}}{(V_{dc}^{0})^{2}}\bigr)$ and
+$a=\frac{P_{ac}^{0}}{C(V_{dc}^{0})^{2}}$. Two conditions bound $\tau_s$ without
+reference to any reported quantity. Positive determinant requires
+$R_{dc}<(V_{dc}^{0})^{2}/P_{ac}^{0}$, which is the same constant-power-load
+condition the algebraic source had; adding the state does not relax it. Negative
+trace requires
+\begin{equation}
+  \tau_s<\frac{C(V_{dc}^{0})^{2}}{P_{ac}^{0}},
+  \label{eq:dctau}
+\end{equation}
+which is \emph{new}: a source that reacts too slowly cannot hold a constant-power
+load. Between those bounds $\tau_s$ is fixed by the maximally-flat criterion
+$\zeta=1/\sqrt2$ on the $L$--$C$ pair, the ordinary way a filter of this shape is
+specified, which with $x=1/\tau_s$ and $\zeta=(x-a)/(2\sqrt{Kx})$ has the closed
+form $\tau_s=1/y^2$, $y=\zeta^{\star}\sqrt K+\sqrt{\zeta^{\star2}K+a}$. On this
+device that returns $\tau_s=5.00$~ms, the realised damping is $0.707$ at
+$P_{ac}^{0}=0.45\pu$ and $0.708$ at $0.90\pu$ --- so one declared component value
+serves the whole dispatch range --- and the pair sits at
+$-97.7\pm97.7\ \mathrm{s^{-1}}$, about $15.5$~Hz. \textbf{Degeneracy:} as
+$\tau_s\to0$ the pair separates into a fast root near $-1/\tau_s$ and a slow root
+at $-K$, which is exactly the eigenvalue of the algebraic-source model; this is
+verified numerically and falls linearly with $\tau_s$.
+
+\paragraph{What replaces the run-away bound.}
+With an algebraic source the link obeyed
+$V_{dc}\le\max(V_{dc}(0),E_{dc})$ whenever $P_{ac}\ge0$, by a sign argument on a
+single row. That argument does not survive the extra state, because an inductive
+source overshoots: at $\zeta=1/\sqrt2$ the step response passes its target once by
+about four per cent before settling. What does survive is the mechanism rather
+than the inequality --- the source row of~\eqref{eq:dcsrc} drives $I_{dc}$
+\emph{down} whenever $V_{dc}$ exceeds $E_{dc}$, and~\eqref{eq:dcblock} is stable,
+so the pair returns. At this dispatch $E_{dc}=1.0453\pu$ still lies below the
+chopper threshold $V_{dc}^{\max}=1.10\pu$, but that is now a statement about the
+settling point and not a bound on the excursion. The overvoltage chopper is a braking resistor
+conducting in its linear region,
 \begin{equation}
   I_{ch}=\frac{\max\bigl(0,\,V_{dc}-V_{dc}^{\max}\bigr)}{R_{ch}},
   \label{eq:dcchop}
 \end{equation}
 continuous and Lipschitz, non-differentiable only on $V_{dc}=V_{dc}^{\max}$ in
 exactly the way $\Pi_I$ is, so it needs no separate smoothness argument and is
-covered by Remark~\ref{rem:nonsmooth}. By~\eqref{eq:dcbound} it is inactive
-whenever $E_{dc}\le V_{dc}^{\max}$, which holds here; it is retained because a
-real converter has one and a different dispatch would engage it, and whether it
-conducted on a given trajectory is decided afterwards from $\max_t V_{dc}$
-against $V_{dc}^{\max}$, which is exact because the conduction condition depends
-on $V_{dc}$ alone.
+covered by Remark~\ref{rem:nonsmooth}.
+
+\paragraph{Why the chopper is not ornamental.}
+Everything above assumes the converter \emph{exports}. A converter driven into
+\emph{absorption} --- held at its current limit while the island voltage and angle
+run away from it --- turns the load term of the link equation into a charging term
+$+|P_{ac}|/V_{dc}$. Its equilibrium is then the upper root of
+$V_{dc}^{2}-E_{dc}V_{dc}+R_{dc}P_{ac}=0$ with $P_{ac}<0$, which lies above
+$E_{dc}$ and, for the powers a saturated current limiter permits, above
+$V_{dc}^{\max}$. The chopper is what arrests it. That is not a hypothetical
+condition: it arises among the five control-policy arms of this study whenever the
+island runs away from a converter faster than the converter can follow. Whether it
+conducted on a given trajectory is decided afterwards from $\max_t V_{dc}$ against
+$V_{dc}^{\max}$, an exact test because the conduction condition depends on
+$V_{dc}$ alone; the per-arm outcome is reported with the trajectories rather than
+asserted here, and the chopper is never presented as protection that was proved
+unnecessary.
 
 \paragraph{The stiffness this exposes is reported, not designed around.}
-Linearising the DC-link row with the chopper off about the dispatched point gives
+The slow root of~\eqref{eq:dcblock}, which is also the whole spectrum of the
+algebraic-source limit, is
 \begin{equation}
   \lambda_{dc}=-\frac{1}{C}\left(\frac{1}{R_{dc}}-\frac{P_{ac}^{0}}{(V_{dc}^{0})^{2}}\right),
   \label{eq:dclam}
@@ -1467,9 +1550,16 @@ system base; angles in degrees).}
 %=============================================================================
 The modal table below lists the small-signal eigenvalues at a representative
 post-disturbance configuration (one IBR grid-forming, three grid-following):
-index, eigenvalue $\lambda$, modal frequency $f$, and the single dominant
-participating device and state. Conjugate pairs are printed once. It is the
-generated table itself, not a re-typeset copy.
+index, the real and imaginary parts of the eigenvalue $\lambda$ in separate
+columns, the modal frequency $f$, the damping ratio $\zeta$, and the three
+largest normalised participation entries with their factors in parentheses.
+Conjugate pairs are printed once, so a tabulated imaginary part is written $\pm$
+and stands for both members of the pair; a purely real mode prints $0$ there and
+$\zeta=1$. The participation factors are what make the last column readable as
+evidence: three entries near $0.13$ each describe a shared family, whereas a
+single entry at $1.000$ describes a coordinate that no other state drives.
+Participation is a reporting diagnostic and enters no gate. It is the generated
+table itself, not a re-typeset copy.
 
 \begin{center}\footnotesize
 \IfFileExists{figures/switch_ieee14/sssa_modes_n1.tex}
@@ -1483,38 +1573,73 @@ small-signal statement about one linearisation point; it is not, and must not be
 read as, a stability certificate for the full switched trajectory.
 
 \paragraph{The DC-link modes are a check on the model, not a free observation.}
-Each converter contributes one DC-link coordinate, and with the non-ideal source
-of Section~\ref{sec:dcsource} that coordinate is a live state coupled to the AC
-states through the converter power $P_{ac}$. Equation~\eqref{eq:dclam} predicts
-its eigenvalue \emph{before} the spectrum is computed, and with
-$C_{dc}=R_{dc}=0.10$ it reduces to the falsifiable statement
-\begin{equation}
-  \lambda_{dc}=-\frac{1}{C}\left(\frac{1}{R_{dc}}-\frac{P_{ac}}{V_{dc}^{2}}\right)
-   =-100+10\,\frac{P_{ac}}{V_{dc}^{2}}\ \ \mathrm{s^{-1}},
-  \label{eq:dclamnum}
-\end{equation}
-so the four DC rows must be real, must lie a little above $-100\ \mathrm{s^{-1}}$,
-and must be \emph{distinct and ordered by the power each converter carries} ---
-the more heavily loaded the link, the less negative its mode, because the second
-term of~\eqref{eq:dclamnum} is the negative incremental resistance of a
-constant-power load. The table satisfies all three: the four rows are separate
-values with the link voltage as their dominant state, and inverting
-\eqref{eq:dclamnum} on them returns per-converter powers in the range
-$0.3\text{--}0.9\pu$, which is the loading the time-domain figures show for the
-same devices. Nothing was fitted to produce that agreement; the closure was
-derived first and the spectrum computed afterwards.
+Each converter contributes two DC coordinates, $V_{dc}$ and the source current
+$I_{dc}$, and Section~\ref{sec:dcsource} predicts their joint behaviour
+\emph{before} the spectrum is computed. Equation~\eqref{eq:dcblock} is a
+$2\times2$ block whose maximally-flat design target is $\zeta=1/\sqrt2$, so the
+table must show, per converter, one complex conjugate pair with damping ratio
+$0.707$ and a modal frequency near $15$~Hz --- and the four pairs must differ from
+one another, ordered by the power each link carries, because the loading enters
+$A_{dc}$ through $a=P_{ac}^{0}/(C(V_{dc}^{0})^{2})$. The table satisfies every
+part of that: the four pairs are
+$-98.41\pm98.38\mathrm{j}$, $-96.46\pm96.33\mathrm{j}$,
+$-96.35\pm96.21\mathrm{j}$ and $-95.56\pm95.35\mathrm{j}$, at
+$15.18$--$15.66$~Hz with $\zeta=0.7072$--$0.7079$. Nothing was fitted to obtain
+that agreement: $\tau_s$ was derived from the filter criterion and the spectrum
+was computed afterwards.
 
-Revisions of this report before the present one printed four rows at exactly
-$\lambda=-10.000000$ with zero modal frequency, unit damping ratio and a
-participation of exactly $1.000$ on a DC-link voltage. That was neither a
-coincidence nor a numerical artefact but the signature of the earlier ideal
-closure: it made the DC row exactly decoupled, so $-1/T_{dc}$ was its eigenvalue
-with algebraic multiplicity four, the unit vector on that coordinate was exactly
-a left eigenvector, and the participation was therefore exactly one as a matter
-of algebra. The same idealisation kept $V_{dc}$ identically constant over the
-whole trajectory. Both are described, with the measurement, at the end of
-Section~\ref{sec:dcsource}; the closure has been replaced and those four rows are
-not expected to reappear.
+\paragraph{Reading the DC participation, and what it does and does not say.}
+Each of those pairs carries a participation of exactly $0.500$ on that
+converter's $V_{dc}$ and $0.500$ on its own $I_{dc}$, with every other
+coordinate at $0.000$. Both halves of that sentence are structural and were
+measured on the assembled system rather than assumed.
+
+The \emph{equal split} is the symmetry of a $2\times2$ block with a conjugate
+pair: the $8\times8$ DC sub-matrix of the assembled model is exactly
+block-diagonal by converter, the measured largest entry outside those four
+$2\times2$ blocks being $0$, so each pair lives in a two-dimensional invariant
+subspace and the two coordinates in it participate equally.
+
+The \emph{zeros elsewhere} are the one-way coupling, which the source state does
+not change. Perturbing either DC coordinate changes no AC state derivative at
+all,
+\begin{equation}
+  \max_{i\,\in\,\mathrm{AC}}\ \max_{j\,\in\,\{V_{dc},I_{dc}\}}
+  \left|\frac{\partial f_i}{\partial x_j}\right| = 0
+  \quad\text{exactly, on the assembled } 40\times40 \text{ matrix,}
+  \label{eq:oneway}
+\end{equation}
+while the DC rows do read the AC states, with a largest entry of $33.4$. So the
+DC family is a closed sub-system driven by the AC side, and no DC participation
+ever reaches $i_d$ or $i_q$. A reader should take $0.500/0.500$ as ``this mode is
+the DC circuit of one converter, shared between its two coordinates'', not as
+``the DC circuit is coupled into the network''.
+
+\paragraph{The modelling limitation behind~\eqref{eq:oneway}.} That one-way
+coupling is a property of this model, not of a real converter. The inner loop
+forms its commanded voltage $v_{cd},v_{cq}$ from the current error alone; nothing
+ties that command to the DC voltage available to synthesise it. A physical
+two-level converter can only produce roughly $m\,V_{dc}/2$ per phase, so a
+sagging link clips the AC command, the coupling becomes two-way, and the DC
+participation would spread beyond the two DC coordinates. Adding that modulation
+limit is a change to the AC equations and is not made here. Until it is, the DC
+circuit of this study responds to the AC side but cannot act back on it, and no
+claim in this report depends on it doing so.
+
+\paragraph{Three revisions of the same coordinate.} It is worth recording what
+changed and what did not, because the participation column has carried three
+different readings. The first revision printed \emph{four identical} rows at
+$\lambda=-10.000000$ with participation $1.000$: that was an ideal source, whose
+exact power feed-forward decoupled the DC row from everything, fixed its
+eigenvalue at $-1/T_{dc}$ with multiplicity four, and held $V_{dc}$ identically
+constant. The second printed \emph{four distinct real} roots, still with
+participation $1.000$, because a resistive source gives each converter one DC
+coordinate and its own loading-dependent eigenvalue. The present revision prints
+\emph{four distinct pairs} with participation split $0.500/0.500$, because the
+source circuit has an inductance and therefore a second coordinate. Only the
+first of those three was an idealisation; the second and third differ by whether
+$\tau_s$ is zero, and Section~\ref{sec:dcsource} shows the second is the limit of
+the third.
 
 \paragraph{The same analysis over every admissible grid-forming set.}
 The single configuration above is one row of a larger enumeration. With the SG
@@ -1523,10 +1648,13 @@ duty is solved for \emph{its own} equilibrium and linearised on the full-KCL
 composite system. There are $\CandTotal$ such candidates and only $\CandReady$ of
 them are admissible, with the best damping margin at $n=\CandBestN$ units
 ($\CandBestSet$, $\Omega=\CandBestOmega$) rather than at the largest set
-($\Omega=\CandFullOmega$). The table and figure are given with the comparison in
-Section~\ref{sec:compare}, because their purpose there is to show that the
-admissible sets are \emph{not} monotone in the number of grid-forming units, and
-that a set can be admissible without being reachable.
+($\Omega=\CandFullOmega$). Two facts follow and neither is a matter of taste. The
+admissible sets are \emph{not} monotone in the number of grid-forming units, so
+the table has to be \emph{computed} and cannot be guessed from a count. And a set
+can be admissible here and still not be reachable by a trajectory, which is why
+this screen is a necessary and not a sufficient condition. The per-configuration
+table and figure are held out of this revision with the control-policy comparison
+they belong to.
 
 %=============================================================================
 \section{Time-Domain Simulation}\label{sec:transient}
@@ -1609,7 +1737,9 @@ Mode releases ($\NewRunNRelease$) &
 $\NewRunReleaseOne$, $\NewRunReleaseTwo$, & one device at a time \\
  & $\NewRunReleaseThree\second$ & \\
 Maximum simultaneous GFM units & $\NewRunGfmMax$ & reached in stages, not at once \\
-Post-reclose reselection status & \NewRunReselection & a correct fail-closed outcome \\
+Post-reclose mode return ($\NewRunNReselection$) &
+at $\NewRunModeReselectionTime\second$ & the last grid-forming unit handed back \\
+Post-reclose reselection status & \NewRunReselection & authenticated against the SG-online table \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1626,15 +1756,34 @@ ownership are distinct contracts: several IBRs can be grid-forming at once, but
 only one of them owns the reference. Here the SG owns it up to $t=20\second$ and
 again after the reclose; in between, IBR$_1$ (bus~2) is the reference leader.
 
+\paragraph{The cycle closes: every converter returns to grid-following.}
+Once the machine is back and the C$_1$ command ramp has finished, the supervisor
+revisits the mode map one last time. At
+$t=\NewRunModeReselectionTime\second$ --- the first sample after the ramp
+completes, $\NewRunModeReselectionTime=\NewRunReclose+\NewRunHandback$ --- it
+commits the one remaining grid-forming unit, IBR$_1$, back to grid-following,
+authenticated as an exact one-step release against the SG-online table: the
+all-grid-following configuration is admissible on the declared damping criterion
+with worst $\zeta=0.156$ against the $0.05$ requirement, and the machine owns the
+angle reference from the reclose onwards, so no grid-forming source is needed.
+The terminal state is all-grid-following with the machine as sole reference owner
+--- the same configuration the coordinated hand-back reaches by its own route.
+The full cycle is therefore closed: the machine trips, one converter takes the
+voltage-forming duty, support units are augmented on severity and released when
+it subsides, the machine returns, and every converter goes back to
+grid-following.
+
 The point of this result set is in the mode strip: the supervisor does \emph{not}
 raise all four converters together. It augments in $\NewRunNAugment$ stages, at
 $\NewRunAugmentOne$, $\NewRunAugmentTwo$, $\NewRunAugmentThree$ and
 $\NewRunAugmentFour\second$, until it holds $\NewRunGfmMax$ grid-forming units,
-then releases $\NewRunNRelease$ times after the reclose.
-Section~\ref{sec:compare} shows that \emph{pinning} those same $\NewRunGfmMax$
-units from the trip onwards destroys the run before the horizon, even though that
-set passes the linear admissibility check. The order in which the set is reached
-therefore matters as much as the set itself.
+then releases $\NewRunNRelease$ times after the reclose, before the final
+one-device return above.
+\emph{Pinning} those same $\NewRunGfmMax$ units from the trip onwards instead
+destroys the run at $t=\ArmPinnedgfmFourHorizon\second$ with
+\ArmPinnedgfmFourFailure, even though that set passes the linear admissibility
+check. The order in which the set is reached therefore matters as much as the set
+itself.
 
 \clearpage
 \begin{figure}[H]
@@ -1679,183 +1828,35 @@ Raw accepted samples.}
 \label{fig:elec}
 \end{figure}
 
-%=============================================================================
-\section{Control-policy comparison}\label{sec:compare}
-%=============================================================================
-The same trajectory is run five times with the \emph{same} network, dispatch,
-event schedule, solver and step controller, changing only the IBR control
-policy. The runner declares which option fields each arm may differ in and
-checks that the structure it built differs from the shared base in no other
-field. All five arms are bit-identical on $[0,\CommonWindowSplit)\second$, before
-the first event, with $\max|\Delta x|=\max|\Delta y|=\max|\Delta u|=0$ over the
-$\CommonWindowPinnedgfmOneSamples$ shared samples, so every later difference is
-an effect of the control policy alone. The figures and tables below are the
-result; each caption states what it shows and what may not be concluded from it.
-
-\begin{table}[H]
-\centering\footnotesize
-\caption{Outcome of five control policies on the same $\NewRunEnd\second$
-trajectory. A \textbf{--} means the quantity is meaningless for that arm, not that
-it is zero.}
-\label{tab:arms}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}
-  rrrl X@{}}
-\toprule
-Control policy & Reached [s] & Reclose [s] & Max GFM & Refused by & Outcome \\ \midrule
-all IBRs locked GFL &
-$\ArmLockedgflHorizon$ & \ArmLockedgflReclose & $\ArmLockedgflGfmMax$ &
-\ArmLockedgflFailure &
-island left with no voltage-forming source; refused before Newton runs \\
-1 GFM pinned (IBR$_1$) &
-$\ArmPinnedgfmOneHorizon$ & $\ArmPinnedgfmOneReclose$ & $\ArmPinnedgfmOneGfmMax$ &
-\ArmPinnedgfmOneFailure &
-survives the horizon, but carries the whole imbalance alone \\
-2 GFM pinned (IBR$_2$+IBR$_3$) &
-$\ArmPinnedgfmTwoHorizon$ & $\ArmPinnedgfmTwoReclose$ & $\ArmPinnedgfmTwoGfmMax$ &
-\ArmPinnedgfmTwoFailure &
-survives the horizon; best-damped set in the table \\
-all 4 GFM pinned &
-$\ArmPinnedgfmFourHorizon$ & \ArmPinnedgfmFourReclose & $\ArmPinnedgfmFourGfmMax$ &
-\ArmPinnedgfmFourFailure &
-\textbf{fails before the horizon}, although this set is linearly admissible \\
-automatic switching (delivered) &
-$\ArmAdaptiveHorizon$ & $\ArmAdaptiveReclose$ & $\ArmAdaptiveGfmMax$ &
-\ArmAdaptiveFailure &
-survives the horizon \emph{and} reaches the four-unit set \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
+\begin{figure}[H]
+\centering
+\IfFileExists{figures/switch_ieee14_decision/comparison_adaptive_vs_no_adaptation.png}
+ {\includegraphics[width=5.80in]{figures/switch_ieee14_decision/comparison_adaptive_vs_no_adaptation.png}}
+ {\fbox{\parbox{6.0in}{\centering\vspace{3em}\ttfamily
+   comparison\_adaptive\_vs\_no\_adaptation.png\\[4pt]
+   \normalfont pending figure regeneration
+   (run \texttt{generate\_ieee14\_gfm\_lock\_comparison}).\vspace{3em}}}}
+\caption{Switching against not adapting, over the whole horizon from five
+seconds before the machine trip. Solid: the delivered adaptive policy. Dashed:
+the no-adaptation control, which commits one grid-forming unit --- the best
+single-unit configuration of the admissibility table --- at the trip and never
+revisits that choice. Top: COI frequency, where the control rides
+$0.4$--$1.1$~Hz lower through every islanded disturbance and only recovers once
+the machine returns; the two traces coincide again after the hand-back. Second:
+network minimum voltage. Third: grid-forming unit count --- the control holds
+exactly one throughout, the adaptive policy raises four under stress and returns
+to zero after the mode return. Bottom: reference owner, which both policies hand
+back to the machine, after the C$_1$ ramp in both policies. The control is not a
+collapse: it runs to the horizon. Its cost is a persistent frequency deficit
+--- a peak of $\DfNoadaptationFault\,\mathrm{Hz}$ from nominal at the fault and
+$\DfNoadaptationLinetrip\,\mathrm{Hz}$ sustained after the line trip, against
+$\DfAdaptiveFault\,\mathrm{Hz}$ and $\DfAdaptiveLinetrip\,\mathrm{Hz}$ for the
+adaptive policy --- which is the physical price of carrying the island on the
+minimum grid-forming capacity with no droop support added under stress.}
+\label{fig:avsb}
+\end{figure}
 \clearpage
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/comparison_switch_vs_lock.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/comparison_switch_vs_lock.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{2em}\ttfamily
-   comparison\_switch\_vs\_lock.png\\[4pt]\normalfont
-   pending figure regeneration.\vspace{2em}}}}
-\caption{Switching against not switching, in the window where the two part
-company. Rows, top to bottom: centre-of-inertia frequency, network minimum
-voltage, number of grid-forming units, and which device holds the island angle
-reference. \textbf{Switching} (solid) rides through the loss of the synchronous
-machine and continues to the end of the horizon. \textbf{All four units pinned
-grid-forming} from the outset, with no run-time switching, breaks into a growing
-oscillation and the trajectory ends at
-$t=\ArmPinnedgfmFourHorizon\second$ with \ArmPinnedgfmFourFailure; the terminating
-sample is marked, and the curve is not continued past it. \textbf{All units
-locked grid-following} cannot be integrated at all past the trip: the island is
-left with no voltage-forming source, the per-island admissibility gate refuses
-the transaction before Newton is called even once, and the trajectory ends at the
-left-limit sample of the event, exactly $t=\ArmLockedgflHorizon\second$. An arm
-that ends early is never extended to match the others, and no quantity is
-reported for an arm over an interval it did not reach.}
-\label{fig:swlock}
-\end{figure}
 
-\clearpage
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/comparison_full.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/comparison_full.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{2em}\ttfamily comparison\_full.png\\[4pt]
-   \normalfont pending figure regeneration.\vspace{2em}}}}
-\caption{Five arms overlaid over the full horizon. Rows top to bottom:
-centre-of-inertia frequency, network minimum voltage, number of grid-forming
-units, and reference-angle owner. The chronology is named once, on the top row,
-in a band reserved above the data. This page reads the \emph{settled} behaviour:
-the three surviving arms separate into three distinct frequency levels, and the
-staged $1\!\to\!2\!\to\!4$ progression of the switching arm is visible in the
-third row. An arm that ends before the horizon stops at its own last accepted
-sample (solid marker) and is \emph{not} extended, held, or extrapolated to match
-the others. Every y range is taken from the data actually inside the plotted time
-window, and the generator aborts if any sample would fall outside it.}
-\label{fig:cmparms}
-\end{figure}
-
-\clearpage
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/comparison_windows.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/comparison_windows.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{2em}\ttfamily comparison\_windows.png\\[4pt]
-   \normalfont pending figure regeneration.\vspace{2em}}}}
-\caption{The same four rows over the three windows in which the transients are
-resolvable, every bound derived from the event schedule. Left: island formation,
-where the pinned four-unit arm breaks into a growing oscillation and terminates.
-Centre: the fault, with the $0.150$~s shunt interval shaded, showing the network
-minimum voltage collapsing and recovering. Right: reclose and hand-back. Each
-column is scaled to its own window, which is what the previous single-page version
-failed to do.}
-\label{fig:cmpwin}
-\end{figure}
-
-\begin{table}[H]
-\centering\footnotesize
-\caption{Frequency deviation in the 15-second window after each event, for the
-three arms that reach the horizon. Peak is $\max|f_{COI}-60|$; settled is the mean
-of $|f_{COI}-60|$ over the last 30\% of the window. All values in hertz.}
-\label{tab:excursion}
-\begin{tabular}{lrrr|rrr}
-\toprule
-& \multicolumn{3}{c|}{Peak} & \multicolumn{3}{c}{Settled} \\
-Event & 1 GFM & 2 GFM & switching & 1 GFM & 2 GFM & switching \\ \midrule
-SG trip ($20\second$) &
-$\DfPinnedgfmOneSGtrip$ & $\DfPinnedgfmTwoSGtrip$ & $\DfAdaptiveSGtrip$ &
-$\SetPinnedgfmOneSGtrip$ & $\SetPinnedgfmTwoSGtrip$ & $\SetAdaptiveSGtrip$ \\
-load $+20\%$ ($50\second$) &
-$\DfPinnedgfmOneLoadstep$ & $\DfPinnedgfmTwoLoadstep$ & $\DfAdaptiveLoadstep$ &
-$\SetPinnedgfmOneLoadstep$ & $\SetPinnedgfmTwoLoadstep$ & $\SetAdaptiveLoadstep$ \\
-fault ($85\second$) &
-$\DfPinnedgfmOneFault$ & $\DfPinnedgfmTwoFault$ & $\DfAdaptiveFault$ &
-$\SetPinnedgfmOneFault$ & $\SetPinnedgfmTwoFault$ & $\SetAdaptiveFault$ \\
-line 6--13 open ($110\second$) &
-$\DfPinnedgfmOneLinetrip$ & $\DfPinnedgfmTwoLinetrip$ & $\DfAdaptiveLinetrip$ &
-$\SetPinnedgfmOneLinetrip$ & $\SetPinnedgfmTwoLinetrip$ & $\SetAdaptiveLinetrip$ \\
-reclose ($145\second$) &
-$\DfPinnedgfmOneRestorereclose$ & $\DfPinnedgfmTwoRestorereclose$ &
-$\DfAdaptiveRestorereclose$ &
-$\SetPinnedgfmOneRestorereclose$ & $\SetPinnedgfmTwoRestorereclose$ &
-$\SetAdaptiveRestorereclose$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/comparison_event_excursions.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/comparison_event_excursions.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{2em}\ttfamily
-   comparison\_event\_excursions.png\\[4pt]\normalfont
-   pending figure regeneration.\vspace{2em}}}}
-\caption{(a) Peak frequency deviation in the 15-second window after each event.
-(b) Settled deviation in the same window. (c) Network minimum voltage. A missing
-bar means that arm never entered that window; it does not mean zero.}
-\label{fig:cmpbars}
-\end{figure}
-
-\IfFileExists{figures/switch_ieee14_decision/sg_off_admissibility.tex}
- {\input{figures/switch_ieee14_decision/sg_off_admissibility.tex}}
- {\begin{center}\ttfamily sg\_off\_admissibility.tex pending regeneration
-  (run \texttt{generate\_ieee14\_gfm\_lock\_comparison}).\end{center}}
-
-\begin{figure}[H]
-\centering
-\IfFileExists{figures/switch_ieee14_decision/sg_off_admissibility.png}
- {\includegraphics[width=6.20in]{figures/switch_ieee14_decision/sg_off_admissibility.png}}
- {\fbox{\parbox{6.0in}{\centering\vspace{2em}\ttfamily
-   sg\_off\_admissibility.png\\[4pt]\normalfont
-   pending figure regeneration.\vspace{2em}}}}
-\caption{Damping margin $\Omega$ of every \emph{admissible} grid-forming
-configuration, each at its own measured value, against the number of units (more
-negative is better damped). The connecting line follows the best configuration at
-each cardinality, which makes the interior optimum at two units immediate. Labels
-are separated in point space with leader lines where two margins differ by less
-than one line of type. The configurations with no equilibrium are \emph{not}
-plotted: a marker at a position that is not its value cannot be measured off the
-axis. Their count at each cardinality is printed under the axis and their
-individual reasons are in Table~\ref{tab:cand}.}
-\label{fig:cand}
-\end{figure}
 
 \begin{thebibliography}{99}
 %-----------------------------------------------------------------------------

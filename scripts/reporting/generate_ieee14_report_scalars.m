@@ -41,6 +41,17 @@ if isfield(r,'last_synchronism_guard') && isstruct(r.last_synchronism_guard)
 end
 rel = applied_times(r,'gfm_support_release');
 aug = applied_times(r,'gfm_support_augment');
+% The SG-online reselection is a SEPARATE authority from the SG-off support
+% supervisor and logs a different event type. `gfm_support_release` covers only
+% the supervisor's staged releases while the SG is offline; the post-reclose
+% release of the last grid-forming converter is committed by the reselection
+% transaction and logged as `sg_reselection`. Counting only the former made the
+% release count silently omit the final hand-back, so a report could show the
+% converter returning in its mode strip while the release count stayed at the
+% pre-reclose value. Both are reported: `rel` keeps its historical meaning so no
+% existing macro changes meaning, and the reselection commits are published
+% separately.
+resel = applied_times(r,'sg_reselection');
 
 d = fileparts(char(opts.output));
 if ~isempty(d) && ~isfolder(d), mkdir(d); end
@@ -96,6 +107,13 @@ mac(fid,P,'AugmentThree',nth_or_dash(aug,3,'%.3f'));
 mac(fid,P,'AugmentFour',nth_or_dash(aug,4,'%.3f'));
 mac(fid,P,'NRelease',sprintf('%d',numel(rel)));
 mac(fid,P,'NAugment',sprintf('%d',numel(aug)));
+% Post-reclose SG-online reselection commits (a different authority from the
+% SG-off support supervisor above; see the note where `resel` is computed).
+mac(fid,P,'NReselection',sprintf('%d',numel(resel)));
+mac(fid,P,'ReselectionOne',nth_or_dash(resel,1,'%.3f'));
+mac(fid,P,'ModeReselectionTime',num_or_dash(r,'actual_mode_reselection_time','%.4f'));
+% The C1 command-ramp duration the reselection instant is measured against.
+mac(fid,P,'Handback',num_or_dash(r,'handback_duration_s','%.4f'));
 mac(fid,P,'GfmMax',sprintf('%d',gfm_max(r)));
 mac(fid,P,'Samples',sprintf('%d',numel(r.t)));
 mac(fid,P,'RejectedSteps',int_or_dash(r,'rejected_steps'));

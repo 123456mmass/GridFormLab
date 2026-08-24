@@ -67,21 +67,33 @@ gfl_dev=ibr.gfl_eecon49_full_model(device_id,bus_id,bus_position, ...
 gfm_dev=ibr.gfm_eecon49_full_model(device_id,bus_id,bus_position, ...
     bus_ids,V0,params,P_ref_pu,Q_ref_pu,E_ref_pu);
 
-if gfl_dev.nx~=10 || gfm_dev.nx~=10
+% Both branches expose 10 states without the DC-source current and 11 with it
+% (dc_source.source_state). They must agree, because the superset is sized from
+% them and the source coordinate is shared plant.
+if ~ismember(gfl_dev.nx,[10 11]) || gfl_dev.nx~=gfm_dev.nx
     error('ibr:eecon49_dual_mode_model:branchLayout', ...
-        'EECON49 branch adapters must each expose 10 states.');
+        ['EECON49 branch adapters must each expose 10 or 11 states and must ' ...
+         'agree; got GFL %d and GFM %d.'],gfl_dev.nx,gfm_dev.nx);
 end
+n_src=double(gfl_dev.nx==11);   % 1 when the DC-source current is a state
+nx_dev=16+n_src;
 
 gx=gfl_dev.x0(:); mx=gfm_dev.x0(:);
-if abs(gx(3)-mx(3))>1e-12
+% Both DC plant coordinates must agree between the branches, not just the
+% voltage: the source current is shared too, and a disagreement would step
+% dIdc/dt across a mode transfer.
+if abs(gx(3)-mx(3))>1e-12 || (n_src==1 && abs(gx(11)-mx(11))>1e-12)
     error('ibr:eecon49_dual_mode_model:commonPlantInit', ...
-        'GFL/GFM DC-link initial states disagree.');
+        'GFL/GFM DC plant initial states disagree (V_dc and/or I_dc).');
 end
 x0=merge_branches(gx,mx,mode);
 u0=[P_ref_pu;Q_ref_pu;E_ref_pu];
 
-gfl_active=1:9;
-gfm_active=[1:3 10:16];
+% Index 17 is the DC-source current, a PLANT coordinate appended after the two
+% controller blocks so that every published index 1..16 keeps its meaning. It is
+% always active, exactly like indices 1..3.
+gfl_active=1:9; gfm_active=[1:3 10:16];
+if n_src==1, gfl_active=[gfl_active 17]; gfm_active=[gfm_active 17]; end
 
 % Runtime hybrid_state field key. This is a pure function of the constant
 % device_id, but resolve_status used to rebuild it with
@@ -113,13 +125,14 @@ state_names={'i_d','i_q','V_dc', ...
     'gfl_xi_Id','gfl_xi_Iq', ...
     'gfm_delta_VSG','gfm_omega_VSG','gfm_E','gfm_xi_Vd','gfm_xi_Vq', ...
     'gfm_xi_Id','gfm_xi_Iq'};
+if n_src==1, state_names{17}='I_dc'; end
 
 dev=struct();
 dev.name=char(device_id); dev.device_id=char(device_id);
 dev.bus_id=bus_id; dev.bus_position=bus_position; dev.bus_ids=bus_ids(:).';
 dev.device_type='ibr_eecon49_dual';
 dev.mode=char(mode); dev.initial_mode=char(mode); dev.initial_online=true;
-dev.nx=16; dev.nu=3; dev.state_names=state_names;
+dev.nx=nx_dev; dev.nu=3; dev.state_names=state_names;
 dev.input_names={'P_ref','Q_ref','E_ref'};
 dev.x0=x0; dev.u0=u0; dev.f=f; dev.current_injection=current;
 dev.electrical_power=power; dev.reconstruct=recon;
@@ -142,24 +155,31 @@ dev.provenance=struct( ...
     'model','EECON49_GFL_GFM_SHARED_PLANT_DUAL', ...
     'source','EECON49-P4 Eqs.(6)-(29), Figs.1-2 and parameter table', ...
     'classification','SOURCE_MAPPED AC/control equations; PROJECT_DERIVED fixed superset/transfer/DC regulator', ...
-    'details',['16 states = common plant 3 + GFL controller 6 (PLL) + ' ...
-        'GFM controller 7 (VSG, no PLL); active GFL=9 and active GFM=10; ' ...
-        'command-delay states reduced (v_del=v_cmd, T_d<<dt)']);
+    'details',[sprintf('%d states',nx_dev) ' = common plant 3 or 4 (i_d,i_q,V_dc, I_dc at index ' ...
+        '17) + GFL controller 6 (PLL) + GFM controller 7 (VSG, no PLL); ' ...
+        'active GFL=10 and active GFM=11; command-delay states reduced ' ...
+        '(v_del=v_cmd, T_d<<dt); Tdc retired, DC source is Thevenin with ' ...
+        'a current state, tau_s=Ls/Rdc']);
 end
 
 % -------------------------------------------------------------------------
 function dx=dual_f(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
 validate_state(x); u=resolve_u(u,u0);
 [online,m]=resolve_status(ec,id,default_mode);
-dx=zeros(16,1);
+dx=zeros(numel(x),1);
 if ~online || strcmp(m,'tripped'), return; end
 switch m
 case 'gfl'
     dg=gfl.f(t,to_gfl(x),y,u(1:2),ec);
     dx(1:3)=dg(1:3); dx(4:9)=dg(4:9);
+    % The DC-source current is shared plant at superset index 17 and branch
+    % index 11. Omitting this row leaves it identically zero, which makes the
+    % reduced equilibrium Jacobian singular rather than merely wrong.
+    if numel(dx)>=17, dx(17)=dg(11); end
 case 'GFM'
     dm=gfm.f(t,to_gfm(x),y,u,ec);
     dx(1:3)=dm(1:3); dx(10:16)=dm(4:10);
+    if numel(dx)>=17, dx(17)=dm(11); end
 end
 if any(~isfinite(dx))
     error('ibr:eecon49_dual_mode_model:nonfiniteRhs','Non-finite EECON49 RHS.');
@@ -261,7 +281,9 @@ if strcmp(target,'GFM')
             mt(5)=gr.omega_PLL_pu;
         end
     end
+    % Both DC plant coordinates are carried across the transfer unchanged.
     vdc=xl(3); xr=put_gfm(xr,mt); xr(3)=vdc;
+    if numel(xl)>=17, xr(17)=xl(17); end
 elseif strcmp(target,'gfl')
     gt=gfl.equilibrium_initialize(V,P,Q,ecr);
     if strcmp(source,'GFM')
@@ -272,6 +294,7 @@ elseif strcmp(target,'gfl')
         end
     end
     vdc=xl(3); xr=put_gfl(xr,gt); xr(3)=vdc;
+    if numel(xl)>=17, xr(17)=xl(17); end
 elseif ~strcmp(target,'tripped')
     error('ibr:transfer_maps:unsupportedMode','Unsupported target mode.');
 end
@@ -292,7 +315,8 @@ info=struct('Vbus',V,'I_left',Ileft,'I_right',Iright, ...
     'P_left',P,'Q_left',Q,'P_right',Pright,'Q_right',Qright, ...
     'tol',tol,'source_mode',source,'target_mode',target, ...
     'common_indices',1:3,'gfl_indices',4:9,'gfm_indices',10:16, ...
-    'Vdc_left',xl(3),'Vdc_right',xr(3));
+    'Vdc_left',xl(3),'Vdc_right',xr(3), ...
+    'Idc_left',dc_coord(xl),'Idc_right',dc_coord(xr));
 end
 
 function ec=set_context_mode(ec,fallback,key,target)
@@ -372,21 +396,47 @@ end
 end
 
 function validate_state(x)
-if ~isvector(x) || numel(x)~=16 || any(~isfinite(x))
+if ~isvector(x) || ~ismember(numel(x),[16 17]) || any(~isfinite(x))
     error('ibr:eecon49_dual_mode_model:badState', ...
-        'Expected 16 finite EECON49 superset states.');
+        'Expected 16 or 17 finite EECON49 superset states.');
 end
 end
 
+function v=dc_coord(x)
+% The source current when the layout has one, NaN when it does not. NaN is the
+% repository convention for "not applicable", never a stand-in for a value.
+if numel(x)>=17, v=x(17); else, v=NaN; end
+end
+
+% The DC-source current, when present, sits at branch index 11 and superset index
+% 17. Every map below reads its own argument's length rather than a threaded flag,
+% so a 16-state and a 17-state device use the same code with no configuration
+% argument to keep in sync.
 function x=merge_branches(g,m,mode)
-x=zeros(16,1);
+ns=double(numel(g)>=11);
+x=zeros(16+ns,1);
 if strcmpi(mode,'GFM'), x(1:3)=m(1:3); else, x(1:3)=g(1:3); end
 x(4:9)=g(4:9); x(10:16)=m(4:10);
+if ns==1
+    if strcmpi(mode,'GFM'), x(17)=m(11); else, x(17)=g(11); end
 end
-function g=to_gfl(x), g=[x(1:9);0]; end
-function m=to_gfm(x), m=[x(1:3);x(10:16)]; end
-function x=put_gfl(x,g), x(1:3)=g(1:3); x(4:9)=g(4:9); end
-function x=put_gfm(x,m), x(1:3)=m(1:3); x(10:16)=m(4:10); end
+end
+function g=to_gfl(x)
+g=[x(1:9);0];
+if numel(x)>=17, g(11)=x(17); end
+end
+function m=to_gfm(x)
+m=[x(1:3);x(10:16)];
+if numel(x)>=17, m(11)=x(17); end
+end
+function x=put_gfl(x,g)
+x(1:3)=g(1:3); x(4:9)=g(4:9);
+if numel(x)>=17 && numel(g)>=11, x(17)=g(11); end
+end
+function x=put_gfm(x,m)
+x(1:3)=m(1:3); x(10:16)=m(4:10);
+if numel(x)>=17 && numel(m)>=11, x(17)=m(11); end
+end
 
 function V=bus_voltage(y,bp)
 if numel(y)<2*bp || any(~isfinite(y(2*bp-1:2*bp)))

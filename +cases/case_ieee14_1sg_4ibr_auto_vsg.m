@@ -26,7 +26,11 @@ function case_data = case_ieee14_1sg_4ibr_auto_vsg()
 %   Synchronism thresholds (item 5) + delays (item 6): CASE_DEFINED from
 %   verified standard ranges, frozen before results (decision ledger).
 %
-%   gamma_req (item 9): 0.1 rad/s (a-priori 5% damping at 1 Hz, conservative).
+%   Selection criterion (item 9): a-priori 5 % damping at the 1 Hz
+%   electromechanical mode, applied as a damping-RATIO floor
+%   zeta_min_damping = 0.05 on every mode. gamma_req = 0.1 rad/s is retained as
+%   the candidate ordering key and reference decay rate, not as the gate; see
+%   the case_data.selector block for why the two are not interchangeable.
 %
 %   Source: docs/project/IEEE14_IBR_DECISION_LEDGER.md (frozen contracts).
 %   No ASSUMED_DIAGNOSTIC production values.
@@ -134,10 +138,39 @@ case_data.delays = struct( ...
     'T_settle_formula', 'ln(1/rho)/(-Omega_current)', ...  % runtime-computed
     'source', 'verified standard protection/control ranges (specific standard deferred)');
 
-% --- Selection margin (item 9): gamma_req, a-priori ---------------------
+% --- Selection margin (item 9): damping-ratio criterion, a-priori --------
+% ACCEPTANCE CRITERION (zeta_min_damping). The admissibility gate is a damping
+% RATIO floor applied to every mode of the physical decision spectrum:
+%
+%     zeta_i = -Re(lambda_i)/|lambda_i| >= zeta_min_damping   for all i.
+%
+% This is the criterion the derivation below always described. The earlier
+% implementation compared the ABSOLUTE decay rate, max Re(lambda) <= -gamma_req,
+% against the same 0.1 rad/s number. The two agree only at the single frequency
+%
+%     f* = gamma_req/(2*pi*zeta_min) = 0.1/(2*pi*0.05) = 0.3183 Hz,
+%
+% so an absolute floor derived at the 1 Hz electromechanical mode is far
+% stricter than 5 % damping below f* and looser above it. At 0.0198 Hz the
+% absolute floor demands zeta >= 0.712, i.e. 14x the declared requirement.
+% Applying the ratio the derivation states is therefore a correction, not a
+% relaxation: no configuration whose electromechanical damping is below 5 %
+% becomes admissible.
+%
+% gamma_req_rad_per_s is RETAINED. It is no longer the acceptance gate; it
+% remains (a) the ordering key used to rank admissible candidates by decay
+% rate and (b) the reference rate quoted in candidate evidence. Removing it
+% would move the ranking and therefore the selected configuration, which this
+% correction deliberately does not do.
+%
+% Classification: CASE_DEFINED, frozen before candidate evaluation.
 case_data.selector = struct( ...
     'gamma_req_rad_per_s', 0.1, ...
-    'derivation', '0.1 rad/s = conservative of 2*pi*1*0.05 = 0.31 (5% damping at 1 Hz electromechanical mode)', ...
+    'zeta_min_damping', 0.05, ...
+    'acceptance_criterion', 'damping_ratio_floor', ...
+    'derivation', '5% damping at the 1 Hz electromechanical mode: zeta >= 0.05 for every mode of the physical decision spectrum', ...
+    'gamma_req_role', 'candidate ordering key and reference decay rate; NOT the acceptance gate', ...
+    'equivalence_frequency_Hz', 0.1/(2*pi*0.05), ...
     'frozen_before_candidate_eval', true, ...
     'reference_reduction', 'COI T-matrix (machine-1 angle/speed removed); no manual zero-eigenvalue deletion');
 

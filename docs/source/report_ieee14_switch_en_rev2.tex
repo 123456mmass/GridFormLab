@@ -885,8 +885,9 @@ instantaneously. Setting $\tau_s=0$ recovers the algebraic law
 $I_{dc}=(E_{dc}-V_{dc})/R_{dc}$, and that limit is exact rather than approximate
 --- see the degeneracy statement below --- so a reader comparing this section with
 an earlier revision is comparing one model with its own limit, not two models.
-and, with the overvoltage chopper of~\eqref{eq:dcchop} below, the DC-link row
-of the shared power stage.
+Equation~\eqref{eq:dcsrc}, the energy balance above it and the overvoltage
+chopper of~\eqref{eq:dcchop} below are together the DC-link rows of the shared
+power stage.
 
 \paragraph{$E_{dc}$ is forced, not chosen.} Requiring the dispatched point to be
 an equilibrium, $\dot V_{dc}=0$ at $V_{dc}=V_{dc}^{0}$ and $P_{ac}=P_{ac}^{0}$,
@@ -921,8 +922,9 @@ so requiring margin $m$ in~\eqref{eq:dcdisc} bounds $\varepsilon$ from above. At
 $m=2$ with $V_{\max}=1.06\pu$, $I_{\max}=1.2\pu$ and the dispatched
 $P_{\mathrm{ref}}$ of this study the bound is $\varepsilon\lesssim0.115$. The
 declared value is $\varepsilon=0.10$, which sits inside that bound with realised
-margin $2.15$ and coincides with the usual ten per cent regulation of a DC link
-fed through a boost stage or a feeder. It is \emph{not} chosen to suit the
+margin $2.07$--$2.15$ across the four links at the dispatch whose modal table
+Section~\ref{sec:sssa} prints, and coincides with the usual ten per cent
+regulation of a DC link fed through a boost stage or a feeder. It is \emph{not} chosen to suit the
 integrator step; see the stiffness statement below.
 
 \paragraph{$\tau_s$ comes from a filter criterion, with a bound on each side.}
@@ -967,8 +969,9 @@ source overshoots: at $\zeta=1/\sqrt2$ the step response passes its target once 
 about four per cent before settling. What does survive is the mechanism rather
 than the inequality --- the source row of~\eqref{eq:dcsrc} drives $I_{dc}$
 \emph{down} whenever $V_{dc}$ exceeds $E_{dc}$, and~\eqref{eq:dcblock} is stable,
-so the pair returns. At this dispatch $E_{dc}=1.0453\pu$ still lies below the
-chopper threshold $V_{dc}^{\max}=1.10\pu$, but that is now a statement about the
+so the pair returns. At this dispatch $E_{dc}$ ranges $1.0269$--$1.0448\pu$ over
+the four links and still lies below the chopper threshold
+$V_{dc}^{\max}=1.10\pu$, but that is now a statement about the
 settling point and not a bound on the excursion. The overvoltage chopper is a braking resistor
 conducting in its linear region,
 \begin{equation}

@@ -318,9 +318,31 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     % whole dispatch range. The closed form and both bounds on tau_s are in
     % ibr.dc_source_thevenin_params. Setting tau_s = [] would take the derived
     % value; it is written out here so the number is visible in the case.
-    r.dynamic_params.dc_source=struct('Tdc',0.10, ...
+    %
+    % source_state is PER-FAMILY, not shared. The Thevenin source current is a
+    % state only on the EECON49 family, whose two branches (gfl_eecon49 and
+    % gfm_eecon49) both read this struct and both grew the 11th coordinate
+    % together. The decoupled family shares only the GFL adapter with EECON49;
+    % its GFM branch (gfm_decoupled_full_model) keeps its own Cdc closure, so
+    % giving it an 11-state GFL adapter against an 11-state expectation on one
+    % side and a 10-state one on the other broke the family's branch-layout
+    % guard (GATE-2026-08-25-02). Setting source_state=false here leaves the
+    % decoupled family exactly as it was before the DC-source work: 10-state
+    % GFL adapter, 11-state GFM, algebraic Thevenin current on the shared
+    % adapter. The EECON49 branch below re-enables the state.
+    dc_source_common=struct('Tdc',0.10, ...
         'eps_dc',0.10,'Pr',1.0,'Vdc_max',1.10,'delta_ch',0.02,'Pmax',1.06*1.2, ...
-        'source_state',true,'tau_s',0.005,'zeta_target',1/sqrt(2));
+        'tau_s',0.005,'zeta_target',1/sqrt(2));
+    r.dynamic_params.dc_source=dc_source_common;
+    % The Thevenin source current is a STATE only on the EECON49 family, whose
+    % two branches (gfl_eecon49 and gfm_eecon49) both read this struct and both
+    % grew the 11th coordinate together. The decoupled family shares only the
+    % GFL adapter with EECON49; its GFM branch (gfm_decoupled_full_model) keeps
+    % its own Cdc closure, so an 11-state GFL adapter there broke the family's
+    % branch-layout guard (GATE-2026-08-25-02). source_state=false leaves the
+    % decoupled family exactly as it was before the DC-source work: 10-state
+    % GFL adapter, 11-state GFM, algebraic Thevenin current on the adapter.
+    r.dynamic_params.dc_source.source_state=strcmp(model_id,'eecon49_dual');
 elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
 end

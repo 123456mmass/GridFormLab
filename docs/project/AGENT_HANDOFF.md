@@ -52,13 +52,25 @@ after the line trip) -- droop capacity, not collapse. New figure
 cycle-closes narrative, the new table row, and the corrected gate; the TH report
 also received the owed 16->17-state upgrade (no "16 สเตต" string remains).
 
-Still OPEN (not fixed here, must precede the DC-link delivery):
-`GATE-2026-08-25-02` (decoupled family 5/6 failing from `source_state=true`
-leaking into its GFL adapter; proven at HEAD) and `GATE-2026-08-25-03`
-(`handback_complete_time` not latched, reports the last step not completion).
-Also noted in the gate record: `ibr_config_selector.m:412-413` still builds a
-lexicographic margin sort key where a negative margin sorts before a positive
-one -- dormant because each count is evaluated in its own call.
+ALL SIX 2026-08-25 records are now RESOLVED. `-02` fixed by making
+`dc_source.source_state` per-family (`strcmp(model_id,'eecon49_dual')`); the
+decoupled profile builds again and `test_ieee14_decoupled_full_state` is 6/6
+after its stale pre-DC-link assertions were rewritten from measured oracles
+(per-device 1:9 bit-identity in all-GFL; DC difference by one-for-one root
+matching: 8 conjugate-pair roots vs 4 real roots; all-GFM active counts EQUAL
+at 11/converter with poles at -wD/-1/T_dc vs Thevenin pairs; and
+`solve_profile`'s reference corrected from the TRIPPED machine (1) to the
+committed GFM converter (2) -- with ref=1 the gauge quotient displaced the
+washout poles entirely). `-03` fixed by latching `handback_complete_time` on
+the first transition (flag raised AFTER the write -- an intermediate ordering
+that raised it first returned NaN and is recorded as falsified); verified
+173.1271 = 159.2519 + 13.8752 on a fresh 180-s run. Two reclose-workflow
+tests that asserted the legacy refusal indicator were updated to the new
+signature (PENDING + NaN, release scheduled not refused) with the reasoning
+in the test bodies. Still noted, not fixed: `ibr_config_selector.m:412-413`
+still builds a lexicographic margin sort key where a negative margin sorts
+before a positive one -- dormant because each count is evaluated in its own
+call.
 
 ## 2026-08-22 (later) — BOTH SWITCHING REPORTS BROUGHT IN LINE WITH THE CODE
 

@@ -3992,8 +3992,20 @@ if c.online
     c.u_end(c.u_tm)=Pm1; c.u_end(c.u_efd)=efd_end;
     c.handback_alpha=a1;
     if a1>=1
+        % LATCH the completion instant BEFORE raising the flag. The controller
+        % stays active after the ramp finishes and a1 remains at 1, so an
+        % unconditional write would overwrite this field with every subsequent
+        % accepted step's t+h and the published value would be the final
+        % sample of the run, not the completion time (measured: 250 reported
+        % instead of 173.127 on the delivered chronology --
+        % GATE-2026-08-25-03). The flag itself is the latch: first entry
+        % writes the time, every later entry sees handback_complete already
+        % true and leaves the instant alone.
+        if ~c.handback_complete
+            c.handback_complete_time=t+h;
+        end
         c.handback_active=false; c.handback_complete=true;
-        c.handback_complete_time=t+h; c.handback_status='C1_COMPLETE';
+        c.handback_status='C1_COMPLETE';
     end
     c.history_t(end+1)=t+h; c.history_Psv(end+1)=Psv1;
     c.history_Pm(end+1)=Pm1; c.history_command(end+1)=command;

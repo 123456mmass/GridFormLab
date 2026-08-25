@@ -205,13 +205,37 @@ tc.verifyEqual(r.reclose_status, 'SUCCESS');
 % reselection_status is always published (default 'NOT_REQUESTED'); assert it.
 tc.verifyTrue(isfield(r, 'reselection_status'), ...
     'reselection_status must be published.');
-tc.verifyEqual(r.reselection_status, 'NO_FEASIBLE_SG_ON', ...
+% The CONTRACT under test: no GFM release at the breaker close. The INDICATOR
+% changed with GATE-2026-08-25-01/-04/-05. Before those fixes the all-GFL
+% SG_ON row was infeasible, so the legacy authority refused outright
+% (NO_FEASIBLE_SG_ON). Now the row is ready, so the same authority
+% authenticates it and schedules the release at T_down =
+% max(T_minimum_hold, ln(1/rho)/|omega|) -- about 46 s past the reclose on
+% this row -- which the 0.10-s fixture horizon cannot reach. PENDING with
+% actual_mode_reselection_time = NaN is therefore the correct signature of
+% "no release happened": a release was SCHEDULED, not refused, and none
+% occurred. A bare NO_FEASIBLE_SG_ON here would now mean the table had
+% regressed to infeasible.
+tc.verifyEqual(r.reselection_status, 'PENDING', ...
     sprintf('Unexpected reselection_status: %s', r.reselection_status));
+tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...
+    'no release may occur at the reclose instant');
 end
 
 function test_phase2_does_not_release_before_c1_completion(tc)
 % Zeroing delay overrides does not make an event-left table row a valid
 % immediate release. This falsifies GFM->GFL switching at breaker close.
+% INDICATOR UPDATE (GATE-2026-08-25-01/-04/-05): with the all-GFL SG_ON row
+% now ready, the legacy authority authenticates it and schedules the release
+% through compute_tdown, whose T_down = max(T_minimum_hold,
+% ln(1/rho)/|omega|) is dominated by the ROW's own decay rate (~46 s on this
+% table) and is therefore NOT zeroed by the caller's delay overrides -- the
+% overrides zero the caller-level hold/guard/lockout, not the row-derived
+% settling bound. The 0.10-s horizon cannot reach that deadline, so the
+% correct signature of "no immediate release" is PENDING with a NaN
+% reselection time. The zeroed T_minimum_hold/T_guard can only ever have
+% mattered for a release whose authority was already authenticated, which is
+% exactly the behaviour this test pins: scheduled, not committed.
 over = diagnostic_overrides(0.05);
 over.delays_overrides.T_minimum_hold_s = 0;
 over.delays_overrides.T_guard_s = 0;
@@ -221,7 +245,7 @@ tc.assertTrue(r.converged, r.failure_reason);
 % reselection_status must be published.
 tc.verifyTrue(isfield(r, 'reselection_status'), ...
     'reselection_status must be published.');
-tc.verifyEqual(r.reselection_status, 'NO_FEASIBLE_SG_ON', ...
+tc.verifyEqual(r.reselection_status, 'PENDING', ...
     sprintf('Unexpected reselection_status: %s', r.reselection_status));
 % No Phase-2 mode transition occurs.
 tc.verifyTrue(isnan(r.actual_mode_reselection_time), ...

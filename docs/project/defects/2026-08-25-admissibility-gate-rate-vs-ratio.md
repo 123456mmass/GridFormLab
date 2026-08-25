@@ -748,3 +748,113 @@ HEAD). Runtime inertness before the release instant: `max|dx|=max|dy|=0.000e+00`
 over the shared pre-release window against the criterion-only run. The full
 repository suite was intentionally not run; the targeted set above covers the
 changed producer, its consumers and the relevant failure paths.
+
+---
+
+# `GATE-2026-08-25-02` RESOLVED — per-family source_state + corrected test oracles
+
+- **Status**: `RESOLVED`
+- **Fix**: `+cases/scenario_ieee14_1sg_4ibr.m` now sets
+  `dc_source.source_state = strcmp(model_id,'eecon49_dual')` -- the Thevenin
+  source STATE belongs to the EECON49 family only, whose two branches grew the
+  11th coordinate together; the decoupled family keeps the algebraic source
+  current and its pre-DC-link 10-state GFL adapter. Verified: the decoupled
+  profile builds (`nx = 6 17 17 17 17`, device_type `ibr_decoupled_dual`) and
+  the EECON49 profile still carries `source_state=true`.
+
+## The test corrections, each with its measured oracle
+
+`tests/test_ieee14_decoupled_full_state.m` then failed for a second, separate
+reason: its assertions encoded the PRE-DC-LINK tree and had gone stale against
+the current, owner-approved model. Each was rewritten from a MEASURED oracle,
+not to make it pass:
+
+1. `[bdev(2:end).nx] == [16 16 16 16]` -- the baseline is now the 17-vector
+   with `I_dc` at index 17. Rewritten to expect 17 plus explicit
+   `source_state` assertions on both profiles.
+2. all-GFL equality -- measured partitions: both families are the 74-vector
+   system (SG 6 + 4x17); the decoupled family freezes its 7 GFM states PLUS
+   its washout state 17 (9 active per IBR) while the baseline freezes its 7
+   GFM states and keeps `I_dc` ACTIVE (10 active). Shared coordinates
+   (per-device 1:9, plant + GFL controller) match bit-for-bit; the network
+   solution is identical; and the AC spectra agree because both DC families
+   are one-way-coupled FROM the AC states. Measured DC difference: the state
+   source contributes 8 unmatched roots (4 conjugate pairs, -96..-99 s^-1),
+   the algebraic source 4 real roots (-95..-98 s^-1) -- asserted by
+   one-for-one root matching, which also survives the unrelated fast roots.
+   The earlier oracle ("identical nx_active and identical raw spectra") was
+   correct only when BOTH families were 16-vector with no source coordinate.
+3. all-GFM washout oracle -- measured: BOTH families activate 11 states per
+   converter in all-GFM (the decoupled 11th is the washout, the baseline's is
+   `I_dc`), so the active counts are EQUAL and the spectra differ in WHERE the
+   extra coordinate puts its poles: -wD and -1/T_dc on the decoupled side,
+   Thevenin conjugate pairs on the baseline side. Also corrected inside this
+   test: the washout-pole window is placed on the REAL part at 1e-3 (the
+   FD-linearised pole carries a small imaginary residue, so a 1e-8 complex
+   window rejected the very roots being asserted), the trace-shift assertion
+   is retained (measured d sum(Re) = -4*Dt/M exactly: -8494.236774 ->
+   -9494.236774 at Dt=20), and `solve_profile`'s reference device is corrected
+   from 1 (the TRIPPED synchronous machine -- not a defensible gauge for an
+   island it no longer energises) to 2 (the committed grid-forming converter,
+   as the production candidate path already uses). With ref=1 the gauge
+   quotient displaced the washout poles (measured: zero poles near -wD); with
+   ref=2 exactly four poles sit at -wD (measured -50.0000 x4, and the
+   trace shift lands on -4*Dt/M to six figures).
+4. island margin tolerance 1e-9 -> 1e-7: two independent candidate
+   evaluations differ at 1.0e-9 (FD round-off), exactly at the old tolerance.
+
+## `GATE-2026-08-25-03` RESOLVED -- the completion instant is latched
+
+- **Fix**: `+stability/ts_simulate_ibr_hybrid.m` completion branch now writes
+  `handback_complete_time` only on the FIRST transition
+  (`if ~c.handback_complete`), so the controller's continued stepping after
+  the ramp can no longer overwrite the completion instant with the final
+  sample's time. The boolean gate is untouched; nothing else reads or writes
+  the field.
+- **Verified**: on a fresh 180-s production run the published value equals
+  `actual_reclose_time + handback_duration_s` to within 1e-3 (see the
+  verification note appended after the run completes).
+
+Result: `tests/test_ieee14_decoupled_full_state` 6/6 PASS (was 1/6 at the
+session start of this fix, 5/6 failing before it).
+
+### `-03` verification (measured)
+
+Fresh 180-s production run with the corrected latch:
+
+```
+reclose=SUCCESS at 159.2519
+handback_status=C1_COMPLETE
+handback_duration_s=13.8752
+handback_complete_time=173.1271  (expect reclose+duration=173.1271)
+latch OK: 1
+```
+
+An intermediate probe with the latch placed AFTER the flag raise returned NaN
+-- the guard tested the flag the same branch had just set -- which is itself
+the evidence for the final ordering: the time is written BEFORE the flag is
+raised, so the flag is the latch. The intermediate result is recorded because
+it falsified the first ordering.
+
+## Downstream test corrections forced by `-01/-04/-05` (reclose workflow)
+
+Two `test_ieee14_ibr_sg_reclose_workflow` tests asserted the legacy refusal
+indicator `NO_FEASIBLE_SG_ON` on a 0.10-s fixture. With the all-GFL row now
+ready, the same fixture's legacy authority AUTHENTICATES the row and schedules
+the release through `compute_tdown`, whose `T_down = max(T_minimum_hold,
+ln(1/rho)/|omega|)` is dominated by the ROW's own decay rate (~46 s on this
+table) and is not affected by the caller's zeroed hold/guard/lockout overrides.
+Measured on the fixture: `reselection_status = PENDING`,
+`actual_mode_reselection_time = NaN`. The contract under test -- no GFM release
+at the breaker close -- is unchanged and still holds; the indicator was
+rewritten from "refused" to "scheduled but not yet due", with the reasoning
+recorded in the test body. `test_ieee14_ibr_sg_reclose_workflow` 20/20 PASS.
+
+## Final gate set for this fix
+
+| file | result |
+|---|---|
+| `test_ieee14_decoupled_full_state` | 6/6 (was 1/6 at fix start, 5/6 failing before it) |
+| `test_ibr_decoupled_dual_mode_model` | 8/8 |
+| `test_ibr_selector_scr_sssa` | 16/16 |
+| `test_ieee14_ibr_sg_reclose_workflow` | 20/20 |

@@ -139,20 +139,15 @@ for q=1:numel(idx)
     i=idx(q); z=lam(i);
     pf=participation(:,i);
     [weights,pord]=sort(pf,'descend');
-    % Top three, each with its NORMALISED participation factor in parentheses.
-    % The factor is the point of the column: a mode whose three leading entries
-    % are 0.131, 0.131, 0.128 is a shared family, not an IBR6 mode, and a column
-    % that printed only the first name would say the opposite.
-    top=pord(1:min(3,numel(pord)));
-    labels=cell(1,numel(top));
-    for j=1:numel(top)
-        labels{j}=sprintf('%s (%.3f)', ...
-            state_label_tex(coord(top(j)),devices),weights(j));
-    end
+    % The DOMINANT state's name only, per the owner's presentation call: the
+    % three-name list with parenthesised factors was unreadable in print. The
+    % weights are still computed and carried in the struct (dominant_weight /
+    % runner_up_weight) so the near-tie dagger keeps its independent evidence;
+    % they are simply not printed.
     rows(q).lambda=z;
     rows(q).frequency=abs(imag(z))/(2*pi);
     if abs(z)>eps, rows(q).damping=-real(z)/abs(z); else, rows(q).damping=NaN; end
-    rows(q).dominant=strjoin(labels,'; ');
+    rows(q).dominant=state_label_tex(coord(pord(1)),devices);
     rows(q).dominant_weight=weights(1);
     if numel(weights)>1, rows(q).runner_up_weight=weights(2);
     else, rows(q).runner_up_weight=0; end
@@ -218,9 +213,9 @@ fprintf(fid,'%% nGFM=%d selected=%s reference=%d full=%d physical=%d method=%s\n
     numel(c.eigenvalues),numel(c.physical_eigenvalues),sssa.physical_reduction_method);
 HDR=['No. & $\\Re\\lambda$ (s$^{-1}$) & $\\Im\\lambda$ (s$^{-1}$) & ' ...
      '$f$ (Hz) & $\\zeta$ & ' ...
-     'Dominant participation: device:state (normalised) \\\\ \\midrule\n'];
+     'Dominant state \\\\ \\midrule\n'];
 fprintf(fid,'\\begingroup\\footnotesize\\setlength{\\tabcolsep}{3pt}\n');
-fprintf(fid,'\\begin{longtable}{@{}r r r r r p{0.34\\textwidth}@{}}\n');
+fprintf(fid,'\\begin{longtable}{@{}r r r r r l@{}}\n');
 fprintf(fid,['\\toprule\n' HDR]);
 fprintf(fid,['\\endfirsthead\n\\toprule\n' HDR '\\endhead\n']);
 % A row whose two leading participations differ by less than the resolution of
@@ -242,10 +237,13 @@ for k=1:numel(rows)
 end
 fprintf(fid,'\\bottomrule\n\\end{longtable}\n');
 if n_tie>0
+    % Escape levels here are the ones the committed generator proved correct:
+    % '\\par' emits the single-backslash LaTeX command, and a SINGLE '\n' emits
+    % a real newline. Writing '\\n' instead emits a literal backslash-n, which
+    % LaTeX then reads as an undefined control sequence and the build fails.
     fprintf(fid,['\\noindent$^{\\dagger}$\\,%d of the %d rows carry this mark. ' ...
-        'Their two leading participations differ by less than %.2f, the ' ...
-        'resolution of the printed factors, so the first entry is not a sole ' ...
-        'attribution there and the three entries should be read together.\\par\n'], ...
+        'Their two leading participations differ by less than %.2f, so the ' ...
+        'named state is not a sole attribution there.\\par\n'], ...
         n_tie,numel(rows),TIE_TOL);
 end
 fprintf(fid,'\\endgroup\n'); clear guard

@@ -1551,15 +1551,15 @@ system base; angles in degrees).}
 The modal table below lists the small-signal eigenvalues at a representative
 post-disturbance configuration (one IBR grid-forming, three grid-following):
 index, the real and imaginary parts of the eigenvalue $\lambda$ in separate
-columns, the modal frequency $f$, the damping ratio $\zeta$, and the three
-largest normalised participation entries with their factors in parentheses.
+columns, the modal frequency $f$, the damping ratio $\zeta$, and the dominant
+state --- the single coordinate with the largest normalised participation.
 Conjugate pairs are printed once, so a tabulated imaginary part is written $\pm$
 and stands for both members of the pair; a purely real mode prints $0$ there and
-$\zeta=1$. The participation factors are what make the last column readable as
-evidence: three entries near $0.13$ each describe a shared family, whereas a
-single entry at $1.000$ describes a coordinate that no other state drives.
-Participation is a reporting diagnostic and enters no gate. It is the generated
-table itself, not a re-typeset copy.
+$\zeta=1$. Rows whose two leading participations are too close to rank carry a
+dagger and are counted in the table's footnote, so a named state is never read
+as a sole attribution when it is not one. Participation is a reporting
+diagnostic and enters no gate. It is the generated table itself, not a
+re-typeset copy.
 
 \begin{center}\footnotesize
 \IfFileExists{figures/switch_ieee14/sssa_modes_n1.tex}

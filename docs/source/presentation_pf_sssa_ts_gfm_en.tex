@@ -501,9 +501,13 @@ size & grid-forming set & margin [s$^{-1}$] & outcome \\ \midrule
 \footnotesize
 The four-converter set passes this linear screen yet \emph{fails} dynamically:
 pinned from the trip, sustained power and frequency hunting ends the run
-fail-closed at $t=\ArmPinnedgfmFourHorizon$\,s.
-% SOURCE: comparison_macros.tex:60 (horizon); hunting visible in slide_necessity.png;
-%         the recorded stop is a solver step-floor refusal, cause open (pre-existing)
+fail-closed at $t=\ArmPinnedgfmFourHorizon$\,s --- the run ends there because
+the trajectory does, and the arms table overleaf carries the outcome.
+% SOURCE: comparison_macros.tex:60 (horizon); the recorded stop is a solver
+%         step-floor refusal and the physical cause is open (pre-existing).
+%         The islanding-window zoom that showed the hunting was cut when the
+%         per-converter frame was added; the claim now rests on this macro and
+%         the arms table, both generated.
 \end{alertblock}
 \end{columns}
 \end{frame}
@@ -560,6 +564,20 @@ machine holding the reference again.
 \end{frame}
 
 % ===========================================================================
+\begin{frame}{Electrical response on the same time axis}
+\begin{center}
+\includegraphics[width=5.70in]{figures/presentation_pf_sssa_ts_gfm/slide_electrical.png}
+\end{center}
+\vspace{-0.7em}
+\scriptsize
+The machine (dashed) drops to zero at the trip and returns at the reclose; the
+converters take up the difference. Frequency shows both under- and overshoot at
+the disturbances, then recovers to $\NewRunTerminalF$\,Hz. Voltage collapses only during the bolted
+fault and returns to $\NewRunTerminalVMin$--$\NewRunTerminalVMax\pu$.
+% SOURCE: slide_electrical.png from generate_presentation_switch_figure; run_summary_v2.tex:45-47
+\end{frame}
+
+% ===========================================================================
 \begin{frame}{Each converter, three policies, the whole horizon}
 \begin{center}
 \includegraphics[width=5.55in]{figures/presentation_pf_sssa_ts_gfm/slide_per_converter.png}
@@ -576,40 +594,6 @@ converter returns to its pre-trip dispatch.
 % SOURCE: slide_per_converter.png from generate_presentation_switch_figure
 %         (zeta cache, all three arms); comparison_macros.tex:8,26,44 (recloses),
 %         :103-104 (common window, all arms bit-identical there)
-\end{frame}
-
-% ===========================================================================
-\begin{frame}[shrink=12]{Switching is necessary, not merely better}
-\begin{center}
-\includegraphics[width=4.95in]{figures/presentation_pf_sssa_ts_gfm/slide_necessity.png}
-\end{center}
-\vspace{-0.75em}
-\begin{columns}[T,onlytextwidth]
-\column{.49\textwidth}
-\footnotesize
-\textbf{None allowed to form} --- no voltage-forming capability, so the
-post-trip transaction is \emph{refused} at $t=20$\,s (black $\times$) and no
-trajectory exists after it.
-\textbf{All four pinned} --- rigid forming duty on every unit drives sustained
-power and frequency hunting, and the run ends fail-closed at
-$t=\ArmPinnedgfmFourHorizon$\,s: the purple trace stops because the
-\emph{trajectory} stops there, not because the plot is cut.
-\textbf{Staged switching} --- rides through all six disturbances.
-\column{.47\textwidth}
-\footnotesize
-\begin{itemize}\footnotesize\itemsep1pt
-  \item $f_{\text{COI}}$ settles at nominal $60$\,Hz without hunting;
-        $\min|V|$ recovers after each cleared contingency.
-  \item Settled $|f_{\mathrm{COI}}-60|$ through the fault:
-        $\SetAdaptiveFault$\,Hz staged vs $\SetPinnedgfmOneFault$\,Hz for one
-        pinned forming unit.
-  \item As found: the frozen selections hold the smaller first-event
-        excursion.
-\end{itemize}
-% SOURCE: comparison_summary.tex:26-42 (windows), :59-61 (as-found framing);
-%         comparison_macros.tex:17-18,35-36 (fault-window settled values),
-%         :60 (pinned-four horizon; the trace ends at the arm's last accepted sample)
-\end{columns}
 \end{frame}
 
 % ===========================================================================

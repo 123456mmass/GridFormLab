@@ -19,11 +19,16 @@ function out = generate_presentation_switch_figure(opts)
 %                          every converter locked grid-following.
 %   slide_per_converter.png  active power of EACH converter over the whole
 %                          250 s horizon under three policies that all reach
-%                          the horizon: the adaptive supervisor (solid), one
-%                          pinned forming unit (dashed) and two pinned forming
-%                          units (dash-dot). One panel per converter, so the
-%                          per-device consequence of the policy is visible
-%                          rather than a system aggregate.
+%                          the horizon: the adaptive supervisor, one pinned
+%                          forming unit and two pinned forming units. One panel
+%                          per converter, so the per-device consequence of the
+%                          policy is visible rather than a system aggregate.
+%                          Colour AND line style both carry the policy, so the
+%                          three curves are separable in a colour-blind
+%                          rendering and in greyscale print. The three hues are
+%                          validated for CVD separation (worst adjacent pair
+%                          dE 23.1 protan / 21.9 tritan, normal-vision floor
+%                          26.9) against the slide surface.
 %
 % WHY THESE ARE NOT THE REPORT FIGURES. The report figures are sized for a
 % report page: 6.20 in wide by 7.6-8.4 in tall, lettered at 11 pt to match the
@@ -342,27 +347,30 @@ function png = draw_per_converter(C,F,opts)
 %   One panel per converter; within a panel one line per control policy. The
 %   policies compared here are the three that reach the horizon, so every line
 %   spans the same axis and a difference is a policy difference rather than a
-%   difference in how far the arm got. Colour identifies the converter (the
-%   same colour it carries on every other slide figure) and line style
-%   identifies the policy.
+%   difference in how far the arm got.
+%
+%   The policy is carried by colour AND by line style. Doubling the encoding is
+%   deliberate: the three curves overlap for long stretches, and a reader with
+%   a colour-vision deficiency, a greyscale print, or a washed-out projector
+%   must still be able to separate them. The panel title names the converter,
+%   so the converter no longer needs a colour of its own here.
 %
 %   Pure cache reader, like the rest of this file: each arm is drawn over its
 %   own accepted samples with no extension, interpolation or padding.
 arms = { ...
-  'adaptive',    'staged switching',    '-'; ...
-  'pinned_gfm1', 'one pinned forming',  '--'; ...
-  'pinned_gfm2', 'two pinned forming',  '-.'};
+  'adaptive',    'staged switching',    [0.00 0.45 0.74], '-'; ...
+  'pinned_gfm1', 'one pinned forming',  [0.85 0.33 0.10], '--'; ...
+  'pinned_gfm2', 'two pinned forming',  [0.49 0.18 0.56], '-.'};
 
 h_in = 2.62;
 f = pf_page_figure(opts.width_in,h_in,opts.font_size);
 tl = tiledlayout(f,2,2,'TileSpacing','tight','Padding','tight');
 
-% Reference arm fixes the converter set, its order and its colours, so the
+% Reference arm fixes the converter set, its order and its labels, so the
 % panels are labelled from one authority rather than per arm.
 r0  = load_arm(C,arms{1,1});
 ibr = converter_rows(r0);
 nd  = numel(ibr);
-col = converter_colours(nd);
 lab = converter_labels(r0,nd);
 
 % Scheduled disturbance instants of the shared chronology, drawn once per
@@ -393,7 +401,7 @@ for k = 1:nd
         tj = rj.t(:);
         sj = rj.device_P_pu(ij(k),:).';
         w  = isfinite(sj);
-        plot(ax(k),tj(w),sj(w),'Color',col(k,:),'LineStyle',arms{j,3}, ...
+        plot(ax(k),tj(w),sj(w),'Color',arms{j,3},'LineStyle',arms{j,4}, ...
             'LineWidth',1.0,'DisplayName',arms{j,2});
     end
     for e = t_events

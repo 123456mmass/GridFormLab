@@ -7,6 +7,73 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-28 - Deck restructured to a results-first 16-frame defense set
+
+Tested working tree: presentation/defect changes on `main` at base `044fd3a`.
+Environment: Windows 11, MiKTeX `pdflatex`. Documentation-only.
+
+The owner set four rules for the defense deck: present **results**, argue no
+proofs on a slide, show no code or filename language, keep only the main
+equations plus the switching story, and hold at most 16 frames including the
+cover. The cover itself now carries only the project title, the institution
+logo, the two authors, the advisor, the department and the university — the
+subtitle, the date, the split-panel artwork and the network thumbnail are gone,
+and no `\subtitle`/`\date` is defined at all, so neither can leak back onto the
+page.
+
+Frame count is unchanged at 16 because two old frames merged and two new
+result frames took their place: the study-network and switching-contract frames
+became one, the two PSAT validation frames became one, and the deck gained a
+six-arm outcome table and an "answers to the three questions" summary. The
+whole comparison now reads off generated macros, so the prose cannot drift from
+the runs.
+
+**One material defect was found and is recorded as `DOC-2026-08-28-01`.** The
+spectrum frame claimed "Slowest root $-0.174920$ (machine field flux)" while
+the generated table it cites gives row 35 as $-0.065196\pm0.124395\mathrm{j}$
+($0.019798$ Hz, $\zeta=0.464215$, machine speed) — slower by real part *and*
+modulus. The selector table's machine-online base-case margin $-0.065196$
+independently confirms which root is slowest. The frame now names both
+quantities, keeps the "factor of three of margin" sentence on the
+electromechanical mode (the smallest damping ratio in the table), and calls row
+34 a decay *rate* rather than a damping.
+
+**A second claim was removed rather than re-sourced.** The old mathematics
+frame printed "IEEE-14 converges in 5 Newton steps with
+$\lVert F_{\mathrm{PF}}\rVert_\infty=6.34\times10^{-15}$ pu". No generated
+artefact anywhere in the repository produces that residual — it existed only in
+the deck and one narrative line of this handoff — so under the deck's own
+every-value-is-sourced rule it is deleted. The validation frame already carries
+the machine-precision power-flow agreement, with its artefact cited.
+
+**Comparative claims are now scoped to their metric and window**, because the
+unscoped version was falsifiable from the project's own data: on the *settled*
+deviation the staged policy is best on every window after the first, but on the
+*peak* excursion a frozen two-unit selection is better on four of five, and the
+one- and two-unit pins both reach the horizon and reclose successfully. The
+contributions frame, the necessity frame and the new arms table each state which
+metric they mean, and the necessity frame concedes the first-event peak as
+found. The terminal-frequency figure is attributed to the staged arm alone
+(the pins end at 59.999999 and 60.000000).
+
+Two macros that expand to code identifiers are now provably unprinted, which is
+what makes the no-visible-code rule enforceable: the per-arm refusal-reason
+macros are never referenced, so the arms table writes its outcomes in words.
+
+Gates: two `pdflatex` passes exit 0 with **16 pages**, `Overfull`/`Underfull`
+count **0** (baseline before the edits was also 0, so no density was traded
+away); `pdftotext` returns zero hits for the two refusal identifiers, for
+`Samples`, for any filename extension, for proof/proposition/theorem language
+and for e-notation; `pdfinfo` shows the title without the retired subtitle and
+no date; all 16 pages rendered at 110 dpi and inspected, with frames 3, 13 and
+14 refitted until nothing clipped. Printed numbers were read back against
+`comparison_macros.tex`, `run_summary_v2.tex` and the two modal tables. Full
+MATLAB regression intentionally omitted: no production file was touched.
+
+Still owed by the owner, unchanged: the preferred hand-drawn study-network
+drawing. The current generated diagram is used provisionally, and its artwork
+was not visually reviewed in this session.
+
 ## 2026-08-27 - 16-page English defense deck and report-provenance correction
 
 Tested working tree: presentation/report changes on `main` at base `3b9c67d`.

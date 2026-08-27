@@ -583,9 +583,12 @@ fault and returns to $\NewRunTerminalVMin$--$\NewRunTerminalVMax\pu$.
 \column{.49\textwidth}
 \footnotesize
 \textbf{None allowed to form} --- no voltage-forming capability, so the
-post-trip transaction is \emph{refused} at $t=20$\,s and no trajectory exists.
+post-trip transaction is \emph{refused} at $t=20$\,s (black $\times$) and no
+trajectory exists after it.
 \textbf{All four pinned} --- rigid forming duty on every unit drives sustained
-power and frequency hunting.
+power and frequency hunting, and the run ends fail-closed at
+$t=\ArmPinnedgfmFourHorizon$\,s: the purple trace stops because the
+\emph{trajectory} stops there, not because the plot is cut.
 \textbf{Staged switching} --- rides through all six disturbances.
 \column{.47\textwidth}
 \footnotesize
@@ -599,7 +602,8 @@ power and frequency hunting.
         excursion.
 \end{itemize}
 % SOURCE: comparison_summary.tex:26-42 (windows), :59-61 (as-found framing);
-%         comparison_macros.tex:17-18,35-36 (fault-window settled values)
+%         comparison_macros.tex:17-18,35-36 (fault-window settled values),
+%         :60 (pinned-four horizon; the trace ends at the arm's last accepted sample)
 \end{columns}
 \end{frame}
 

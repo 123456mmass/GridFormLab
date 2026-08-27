@@ -560,17 +560,22 @@ machine holding the reference again.
 \end{frame}
 
 % ===========================================================================
-\begin{frame}{Electrical response on the same time axis}
+\begin{frame}{Each converter, three policies, the whole horizon}
 \begin{center}
-\includegraphics[width=5.70in]{figures/presentation_pf_sssa_ts_gfm/slide_electrical.png}
+\includegraphics[width=5.55in]{figures/presentation_pf_sssa_ts_gfm/slide_per_converter.png}
 \end{center}
 \vspace{-0.7em}
 \scriptsize
-The machine (dashed) drops to zero at the trip and returns at the reclose; the
-converters take up the difference. Frequency shows both under- and overshoot at
-the disturbances, then recovers to $\NewRunTerminalF$\,Hz. Voltage collapses only during the bolted
-fault and returns to $\NewRunTerminalVMin$--$\NewRunTerminalVMax\pu$.
-% SOURCE: slide_electrical.png from generate_presentation_switch_figure; run_summary_v2.tex:45-47
+Staged switching (solid), one pinned forming unit (dashed), two pinned forming
+units (dash-dot). All three reach the horizon and coincide exactly until
+$t=\CommonWindowSplit$\,s, so everything after that is the policy. \emph{Which}
+converter absorbs the islanded imbalance depends on which units are forming.
+Each arm recloses on its own schedule ($\ArmAdaptiveReclose$,
+$\ArmPinnedgfmOneReclose$, $\ArmPinnedgfmTwoReclose$\,s), after which every
+converter returns to its pre-trip dispatch.
+% SOURCE: slide_per_converter.png from generate_presentation_switch_figure
+%         (zeta cache, all three arms); comparison_macros.tex:8,26,44 (recloses),
+%         :103-104 (common window, all arms bit-identical there)
 \end{frame}
 
 % ===========================================================================
@@ -672,13 +677,12 @@ quantity & value \\ \midrule
 last accepted time [s] & $\NewRunEnd$ \\
 largest accepted step residual & \NewRunResidual \\
 deepest step subdivision & $\NewRunSubdivision$ \\
-domain-rejected trial steps & $\NewRunDomainRejects$ \\
 controller-rejected steps & $\NewRunRejectedSteps$ \\
 accepted samples & $\NewRunSamples$ \\
 \bottomrule\end{tabular}
 \end{center}\vspace{-0.35em}
 The residual stays below the $10^{-8}$ acceptance gate at \emph{every} accepted
-step, and a rejected trial is discarded rather than accommodated: no gate,
+step, and a rejected step is discarded rather than accommodated: no gate,
 tolerance or step floor was relaxed to complete the horizon.
 \end{block}
 \begin{block}{The reclose closes on merit}
@@ -686,7 +690,11 @@ tolerance or step floor was relaxed to complete the horizon.
 $\Delta V=\NewRunSyncDV\pu$, $\Delta f=$~\NewRunSyncDF~pu,
 $\Delta\theta=\NewRunSyncDTheta^{\circ}$ --- all three inside the case-defined
 synchronism window, none of it scheduled.
-% SOURCE: run_summary_v2.tex:14-26,43-44 (residual, subdivision, rejects, samples, sync trio)
+% SOURCE: run_summary_v2.tex:14-26,43-44 (residual, subdivision, rejects, samples, sync trio).
+%         \NewRunDomainRejects is deliberately NOT printed: the accepted
+%         trajectory reproduces exactly on a fresh run of this arm, but that
+%         counter did not (1027 -> 1225), so it is not carried onto a slide.
+%         Recorded as DOC-2026-08-28-02.
 \end{block}
 \end{columns}
 \vspace{0.15em}

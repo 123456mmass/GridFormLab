@@ -7,6 +7,80 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-28 (later) - Six arms re-run; the deck gains a per-converter comparison
+
+Tested working tree: figure/deck/defect changes on `main` at base `31e9242`.
+Environment: Windows 11, MATLAB R2025a Update 1, MiKTeX `pdflatex`.
+`dt=0.05`, adaptive stepper, cache
+`output/diagnostics/ieee14_gfm_lock_compare_zeta/`.
+
+The owner asked for the deck's electrical frame to become a full-horizon
+comparison split per converter, with the adaptive policy solid and the fixed
+policies dashed, and authorised a fresh run to produce it. All six arms were
+re-run (three long arms from scratch, then the two short arms and the
+no-adaptation control with `reuse_completed=true`), and every one of them met
+its declared expectation:
+
+```text
+adaptive        250.000 s  reclose SUCCESS 159.2519  3679 samples  GFM max 4  MET
+pinned_gfm1     250.000 s  reclose SUCCESS 151.1321  1766 samples  GFM max 1  MET
+pinned_gfm2     250.000 s  reclose SUCCESS 154.0244  1761 samples  GFM max 2  MET
+pinned_gfm4      25.485 s  step floor, not converged  837 samples  GFM max 4  MET
+locked_gfl       20.000 s  refused, no forming source   43 samples  GFM max 0  MET
+no_adaptation   250.000 s  reclose SUCCESS 151.1321  1565 samples  1 GFM at end MET
+```
+
+**The adaptive arm reproduced exactly and the fixed arms did not.** Every
+published adaptive scalar is unchanged - reclose, samples, rejected steps,
+residual, subdivision depth, terminal frequency, and all four augment and three
+release instants. The pinned and no-adaptation arms moved by one step of
+`dt=0.05`: `pinned_gfm1` reclose $151.0820\to151.1321$, `pinned_gfm2`
+$153.9744\to154.0244$, `pinned_gfm4` horizon $25.488\to25.485$, with sample and
+rejected-step counts shifting by a few. The candidate-enumeration macros and the
+common-window identity are untouched: all six arms remain bit-identical on
+$[0,20)$ s over 42 samples, which is the basis every comparative claim rests on.
+Every deck figure and macro now comes from this one cache set, so no frame
+mixes runs.
+
+**New figure, and it is per-converter by construction.**
+`generate_presentation_switch_figure` gains `draw_per_converter`: one panel per
+converter over the whole 250 s, three policies per panel, colour identifying the
+converter and line style the policy (staged solid, one pinned dashed, two pinned
+dash-dot). Only the three arms that reach the horizon are drawn, so every line
+spans the same axis and a visible difference is a policy difference rather than
+a difference in how far an arm got. Two asserts protect the comparison: the
+converter count must match across arms, and panel $k$ must be the same bus in
+every arm, so a reordered device list fails closed instead of silently comparing
+different devices. It replaces the old system-aggregate electrical frame; the
+deck holds at 16 frames.
+
+**`DOC-2026-08-28-02` (OPEN): one counter did not reproduce.**
+`domain_rejected_trials` differs between the two generations of an otherwise
+identical adaptive trajectory, $1027$ against $1225$, and is the only differing
+line in `run_summary_v2.tex`. The cause is not established and this record does
+not guess: either the earlier cache predates a touch to the counter's call site,
+or the line-search trial sequence is not bit-reproducible where its accepted
+iterates are. Distinguishing them needs two consecutive fresh runs on one
+unchanged tree, which was not performed. It is not a numerical defect - a
+rejected trial is discarded and never assigns accepted state, residual or
+Jacobian, and a violation at an accepted state still aborts - so the counter
+describes the search path rather than the trajectory. The owner chose to drop
+the value from the slide rather than print a number that cannot be reproduced on
+demand; the no-gate-was-relaxed claim now rests on the residual, the subdivision
+depth and the controller-rejected step count, all of which reproduce. The
+decision is recorded at the frame's own `% SOURCE` comment so it is not
+reinstated later. The report still prints it, regenerated, and is left as found.
+
+Gates: two `pdflatex` passes, exactly 16 pages, `Overfull`/`Underfull` count 0
+(the new frame needed the figure narrowed to 5.55 in and the caption trimmed
+before that held); `pdftotext` free of refusal identifiers, filenames, proof
+language and e-notation, with no unexpanded macro; every page rendered at 110
+dpi and inspected; printed numbers read back against the regenerated macro
+files. `checkcode` clean on the changed generator. Full MATLAB regression not
+run and not required - the only MATLAB touched is a reporting figure generator,
+and the production runner was executed unmodified with its own declared arm
+table.
+
 ## 2026-08-28 - Deck restructured to a results-first 16-frame defense set
 
 Tested working tree: presentation/defect changes on `main` at base `044fd3a`.

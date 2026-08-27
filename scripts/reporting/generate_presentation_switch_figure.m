@@ -17,6 +17,13 @@ function out = generate_presentation_switch_figure(opts)
 %   slide_necessity.png    frequency over the islanding window for three
 %                          control policies -- adaptive, all-four pinned, and
 %                          every converter locked grid-following.
+%   slide_per_converter.png  active power of EACH converter over the whole
+%                          250 s horizon under three policies that all reach
+%                          the horizon: the adaptive supervisor (solid), one
+%                          pinned forming unit (dashed) and two pinned forming
+%                          units (dash-dot). One panel per converter, so the
+%                          per-device consequence of the policy is visible
+%                          rather than a system aggregate.
 %
 % WHY THESE ARE NOT THE REPORT FIGURES. The report figures are sized for a
 % report page: 6.20 in wide by 7.6-8.4 in tall, lettered at 11 pt to match the
@@ -57,6 +64,7 @@ out = struct();
 out.supervisor = draw_supervisor(r,F,opts);
 out.electrical = draw_electrical(r,F,opts);
 out.necessity  = draw_necessity(C,F,opts);
+out.per_converter = draw_per_converter(C,F,opts);
 out.width_in = opts.width_in;
 out.font_size = opts.font_size;
 out.dpi = opts.dpi;
@@ -325,6 +333,91 @@ ylabel(ax4,'min|{\itV}| [pu]'); xlabel(ax4,'{\itt} [s]');
 title(ax4,'(d) network min voltage','FontWeight','normal','FontSize',opts.font_size-1);
 
 png = fullfile(F,'slide_necessity.png');
+pf_page_export(f,png,opts.dpi);
+end
+
+% =========================================================================
+function png = draw_per_converter(C,F,opts)
+%DRAW_PER_CONVERTER  Active power of each converter, three policies, 250 s.
+%   One panel per converter; within a panel one line per control policy. The
+%   policies compared here are the three that reach the horizon, so every line
+%   spans the same axis and a difference is a policy difference rather than a
+%   difference in how far the arm got. Colour identifies the converter (the
+%   same colour it carries on every other slide figure) and line style
+%   identifies the policy.
+%
+%   Pure cache reader, like the rest of this file: each arm is drawn over its
+%   own accepted samples with no extension, interpolation or padding.
+arms = { ...
+  'adaptive',    'staged switching',    '-'; ...
+  'pinned_gfm1', 'one pinned forming',  '--'; ...
+  'pinned_gfm2', 'two pinned forming',  '-.'};
+
+h_in = 2.62;
+f = pf_page_figure(opts.width_in,h_in,opts.font_size);
+tl = tiledlayout(f,2,2,'TileSpacing','tight','Padding','tight');
+
+% Reference arm fixes the converter set, its order and its colours, so the
+% panels are labelled from one authority rather than per arm.
+r0  = load_arm(C,arms{1,1});
+ibr = converter_rows(r0);
+nd  = numel(ibr);
+col = converter_colours(nd);
+lab = converter_labels(r0,nd);
+
+% Scheduled disturbance instants of the shared chronology, drawn once per
+% panel so a step can be read against the event that caused it.
+t_events = [20 50 85 110 145];
+
+R = cell(1,size(arms,1));
+for j = 1:size(arms,1)
+    R{j} = load_arm(C,arms{j,1});
+end
+
+ax = gobjects(1,nd);
+for k = 1:nd
+    ax(k) = nexttile(tl);
+    hold(ax(k),'on');
+    for j = 1:numel(R)
+        rj = R{j};
+        ij = converter_rows(rj);
+        assert(numel(ij) == nd, ...
+            'generate_presentation_switch_figure:converterCountMismatch', ...
+            'Arm "%s" carries %d converters against %d in the reference arm.', ...
+            arms{j,1},numel(ij),nd);
+        assert(rj.device_bus_ids(ij(k)) == r0.device_bus_ids(ibr(k)), ...
+            'generate_presentation_switch_figure:converterBusMismatch', ...
+            ['Panel %d is bus %d in the reference arm but bus %d in arm ' ...
+             '"%s"; the panels would compare different devices.'], ...
+            k,r0.device_bus_ids(ibr(k)),rj.device_bus_ids(ij(k)),arms{j,1});
+        tj = rj.t(:);
+        sj = rj.device_P_pu(ij(k),:).';
+        w  = isfinite(sj);
+        plot(ax(k),tj(w),sj(w),'Color',col(k,:),'LineStyle',arms{j,3}, ...
+            'LineWidth',1.0,'DisplayName',arms{j,2});
+    end
+    for e = t_events
+        xline(ax(k),e,':','Color',[0.55 0.55 0.55],'LineWidth',0.7, ...
+            'HandleVisibility','off');
+    end
+    grid(ax(k),'on'); box(ax(k),'on'); xlim(ax(k),[0 250]);
+    ylabel(ax(k),'{\itP} [pu]');
+    title(ax(k),sprintf('(%c) %s','a'+k-1,lab{k}),'FontWeight','normal', ...
+        'FontSize',opts.font_size-1);
+    if k <= nd-2
+        set(ax(k),'XTickLabel',[]);
+    else
+        xlabel(ax(k),'{\itt} [s]');
+    end
+end
+
+% One legend for the whole tile, carrying the policy styles only: the panel
+% titles already name the converters.
+lg = legend(ax(1),'Orientation','horizontal', ...
+    'FontSize',opts.font_size-2.5,'Box','off');
+lg.Layout.Tile = 'north';
+
+png = fullfile(F,'slide_per_converter.png');
 pf_page_export(f,png,opts.dpi);
 end
 

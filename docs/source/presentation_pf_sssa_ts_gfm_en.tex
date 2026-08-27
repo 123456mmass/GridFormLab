@@ -84,10 +84,9 @@
 \IfFileExists{figures/switch_ieee14_decision/comparison_macros.tex}%
   {\input{figures/switch_ieee14_decision/comparison_macros.tex}}{}
 
-\title{An Automatic Following/Forming Framework for Inverter-Based Resources}
-\subtitle{\texorpdfstring{PF--SSSA--TS analysis with automatic,\\
-mathematically screened GFL/GFM reference-mode switching}%
-{PF-SSSA-TS analysis with automatic, mathematically screened GFL/GFM reference-mode switching}}
+\title{Automatic GFL/GFM\\Mode Switching}
+\subtitle{\texorpdfstring{A unified PF--SSSA--TS framework\\with screened reference-mode transitions}%
+{A unified PF-SSSA-TS framework with screened reference-mode transitions}}
 \author{\texorpdfstring{Mr. Phichitchai Jueajan (66010569)\\Mr. Pakkapol Phdungdan (66010612)}%
 {Mr. Phichitchai Jueajan (66010569); Mr. Pakkapol Phdungdan (66010612)}}
 \institute{\texorpdfstring{Department of Electrical Engineering, Faculty of Engineering\\
@@ -101,25 +100,38 @@ Advisor: Dr. Tossaporn Surinkaew}%
 % ===========================================================================
 \begin{frame}[plain]
   \begin{tikzpicture}[remember picture,overlay]
-    \fill[pnavy] (current page.south west) rectangle (current page.north east);
-    \fill[pcyan] (current page.south west) rectangle ([xshift=.16\paperwidth]current page.north west);
-    \draw[white,opacity=.18,line width=1.2pt] ([xshift=.20\paperwidth,yshift=-.17\paperheight]current page.north west)
-      -- ([xshift=.94\paperwidth,yshift=-.17\paperheight]current page.north west);
-    \node[anchor=north east] at ([xshift=-0.28cm,yshift=-0.22cm]current page.north east)
-      {\includegraphics[width=0.62in]{figures/images.png}};
+    \fill[plight] (current page.south west) rectangle (current page.north east);
+    \fill[pnavy] (current page.south west) rectangle
+      ([xshift=.595\paperwidth]current page.north west);
+    \fill[pcyan] ([xshift=.595\paperwidth]current page.south west) rectangle
+      ([xshift=.607\paperwidth]current page.north west);
+    \fill[porange] ([xshift=.055\paperwidth,yshift=-.145\paperheight]current page.north west)
+      rectangle ([xshift=.18\paperwidth,yshift=-.139\paperheight]current page.north west);
+    \node[anchor=north west,fill=white,rounded corners=2pt,inner sep=3pt]
+      at ([xshift=.047\paperwidth,yshift=-.035\paperheight]current page.north west)
+      {\includegraphics[width=.48in]{figures/images.png}};
+    \begin{scope}
+      \clip ([xshift=.607\paperwidth]current page.south west) rectangle
+        (current page.north east);
+      \node[opacity=.94] at ([xshift=.803\paperwidth,yshift=-.49\paperheight]current page.north west)
+        {\includegraphics[height=.70\paperheight]{../figures/ieee14_sld_eecon49.png}};
+    \end{scope}
+    \node[anchor=south,text width=.35\paperwidth,align=center,text=pnavy!62,font=\tiny]
+      at ([xshift=.803\paperwidth,yshift=.032\paperheight]current page.south west)
+      {IEEE 14-bus \textbullet\ 1 synchronous machine \textbullet\ 4 dual-mode converters};
+    \node[anchor=north west,text width=.525\paperwidth,inner sep=0pt]
+      at ([xshift=.055\paperwidth,yshift=-.225\paperheight]current page.north west)
+      {\raggedright
+       {\fontsize{24}{28}\selectfont\bfseries\color{white}\inserttitle\par}
+       \vspace{.25cm}
+       {\usebeamerfont{subtitle}\color{white!86}\insertsubtitle\par}
+       \vspace{.42cm}
+       {\scriptsize\color{white!92}\insertauthor\par}
+       \vspace{.10cm}
+       {\tiny\color{white!72}\insertinstitute\par}
+       \vspace{.13cm}
+       {\tiny\bfseries\color{porange!70!white}\insertdate\par}};
   \end{tikzpicture}
-  \vspace{0.24cm}
-  \hspace{1.15cm}\begin{minipage}{.81\textwidth}\raggedright
-    {\usebeamerfont{title}\color{white}\inserttitle\par}
-    \vspace{.14cm}
-    {\usebeamerfont{subtitle}\color{white}\insertsubtitle\par}
-    \vspace{.22cm}
-    {\small\color{white!92}\insertauthor\par}
-    \vspace{.08cm}
-    {\footnotesize\color{white!84}\insertinstitute\par}
-    \vspace{.08cm}
-    {\footnotesize\color{white!84}\insertdate\par}
-  \end{minipage}
 \end{frame}
 
 % ===========================================================================

@@ -6,12 +6,13 @@
 %  trajectory.
 %
 %  This revision supersedes report_ieee14_switch_en_new.tex. What changed:
-%    - results moved from the preserved 200-s run to the 250-s adaptive arm
-%      (output/diagnostics/ieee14_gfm_lock_compare_dcreal/adaptive_250s.mat);
+%    - results moved from the preserved 200-s run to the present 250-s adaptive
+%      arm with the inductive Thevenin DC source
+%      (output/diagnostics/ieee14_gfm_lock_compare_zeta/adaptive_250s.mat);
 %    - the AGSI decision page and its two zoom pages were added;
 %    - the disturbance-chronology diagram was moved above the result figures;
-%    - the IBR state count was CORRECTED from 20 to 16, then extended to the
-%      17 states the run
+%    - the IBR state count was corrected from the stale pre-reduction 20-state
+%      description to the 17-coordinate superset the present run
 %      actually integrates (defect TD-2026-08-12-01 reduced the two
 %      command-delay states per branch by singular perturbation; the earlier
 %      report text described the pre-reduction layout);
@@ -69,7 +70,7 @@
 
 % Run scalars of the 250-s adaptive arm (\New*-prefixed), written by
 %   pf_init_paths; generate_ieee14_report_scalars
-% from output/diagnostics/ieee14_gfm_lock_compare/adaptive_250s.mat. The macro
+% from output/diagnostics/ieee14_gfm_lock_compare_zeta/adaptive_250s.mat. The macro
 % NAMES are unchanged from the earlier 200-s file, so the body text below moved
 % onto the new run without a single edit to a number: prose and tables read the
 % macros, never a literal. Guarded so the document still builds before the figure
@@ -140,7 +141,7 @@ documents, from the production code, (i) the severity index and its two
 component sub-indices $J_V,J_f$, together with the four reference-only
 diagnostic indices published alongside them; (ii) the sixth-order SG model with
 an order-by-order derivation and the singular limit that freezes one flux state;
-(iii) the sixteen-state dual-mode IBR superset with its active projections and
+(iii) the seventeen-state dual-mode IBR superset with its active projections and
 current-continuity-gated transfer; (iv) the switched implicit-trapezoidal
 time-domain formulation, including a proof of the block structure of the stacked
 right-hand side and the exact mechanism by which an integrated state update is
@@ -214,7 +215,7 @@ chronology, and it contributes the following.
   \item A complete transcription, from the executing code, of the switched
         composite model: the severity index that decides the mode
         (Section~\ref{sec:sev}), the sixth-order machine with its singular-limit
-        flux reduction (Section~\ref{sec:sg}), the sixteen-state dual-mode
+        flux reduction (Section~\ref{sec:sg}), the seventeen-state dual-mode
         converter with its current-continuity-gated transfer
         (Section~\ref{sec:ibr}), and the implicit-trapezoidal switched
         formulation (Section~\ref{sec:ts}).
@@ -317,7 +318,7 @@ in any field that the arm did not declare.
 The transient figures (Sections~\ref{sec:agsi-fig} and~\ref{sec:transient}) are
 rendered from the accepted trajectory
 \texttt{output/\allowbreak diagnostics/\allowbreak ieee14\_\allowbreak
-gfm\_\allowbreak lock\_\allowbreak compare\_\allowbreak dcreal/\allowbreak
+gfm\_\allowbreak lock\_\allowbreak compare\_\allowbreak zeta/\allowbreak
 adaptive\_\allowbreak 250s.mat}. Every plotted sample is a raw accepted
 value. Nothing is smoothed, filtered, decimated, clipped, offset, interpolated
 or augmented with synthetic
@@ -326,20 +327,22 @@ in-window sample is altered or dropped, and an arm whose trajectory ends early i
 drawn only as far as it ran.
 \end{sloppypar}
 
-\paragraph{Why this run and not the delivered one.}
+\paragraph{Which result set is presented.}
 \begin{sloppypar}
 The six diagnostic indices of Section~\ref{sec:agsi-fig} are published by an
 \emph{opt-in} post-processing overlay (option \texttt{agsi\_reference}) that
 defaults to off, so the previously delivered chronology artefact does not contain
 them, and one of them cannot be recovered after the fact because the admittance
 log it needs is built under the same flag. The run above therefore re-executes
-the delivered option set with that single flag added. The re-run was gated on
-being \textbf{bit-identical} to the delivered artefact before any figure was
-drawn: $\max|\Delta x|=\max|\Delta y|=\max|\Delta u|=0$ exactly, identical time
-grid, sample sides, device modes and online flags, identical event log entry by
-entry, and the same reclose outcome at $t=\NewRunReclose\second$. The overlay is
-therefore established as inert rather than assumed to be. See defect record
-\textsf{AGSI-2026-08-16-01}.
+the present option set with that overlay enabled. The figures and macros in this
+revision come from the inductive-Thevenin, 17-coordinate result set. It is
+\emph{not} bit-identical to the earlier ideal-DC or resistive-Thevenin artefacts,
+because the DC-source model changed deliberately; those revisions are compared
+by outcome, never by cross-model bit identity. The identity that is established
+for the present six policy arms is their common pre-disturbance window
+$[0,20)\second$: all 42 accepted samples agree exactly before the policies are
+allowed to diverge. See defect records \textsf{NUM-2026-08-20-01} and
+\textsf{DOC-2026-08-26-03}.
 \end{sloppypar}
 
 \paragraph{Classification.}
@@ -1168,12 +1171,12 @@ heterogeneous by construction:
         Section~\ref{sec:sg} (swing pair, transient and sub-transient fluxes),
         of which five are integrated because $E_d'$ is frozen at the
         singular limit (active set $[\,1,2,3,5,6\,]$);
-  \item an \textbf{IBR in GFL} integrates its shared power stage plus the
-        phase-locked-loop controller block --- $9$ states,
-        $\mathcal{A}_{\mathrm{GFL}}=\{1{:}9\}$ of~\eqref{eq:ibractive};
+  \item an \textbf{IBR in GFL} integrates its shared power stage, DC-source
+        current and phase-locked-loop controller block --- $10$ states,
+        $\mathcal{A}_{\mathrm{GFL}}=\{1{:}9,17\}$ of~\eqref{eq:ibractive};
   \item an \textbf{IBR in GFM} integrates the same power stage plus the
-        virtual-synchronous-machine controller (no PLL) --- $10$ states,
-        $\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16\}$;
+        virtual-synchronous-machine controller (no PLL) --- $11$ states,
+        $\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,\,10{:}16,17\}$;
   \item a \textbf{tripped} device integrates nothing
         ($\mathcal{A}_{\mathrm{tripped}}=\varnothing$).
 \end{itemize}

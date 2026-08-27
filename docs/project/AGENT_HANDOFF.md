@@ -7,6 +7,30 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-27 - 16-page English defense deck and report-provenance correction
+
+Tested working tree: presentation/report changes on `main` at base `3b9c67d`.
+Environment: Windows 11, TeX Live 2026, MATLAB R2026a.
+
+Delivered a 16-page English project-defense deck for the automatic GFL/GFM
+reference-mode switching study, with KMITL identity, the two presenters,
+mathematical formulation, independent PF/SSSA/TS validation, exhaustive
+candidate-set evidence, full switching chronology, result figures, and explicit
+limitations.  Visible slides and the English/Thai speaking aids discuss results
+and mathematics only; no source-code or filename language is presented.  The
+existing study-network drawing is used provisionally until the owner supplies
+the preferred replacement.
+
+Also resolved `DOC-2026-08-26-03`: the English report now identifies the current
+17-coordinate result set consistently, states only the measured six-arm
+pre-disturbance identity, and gives active counts 10 GFL / 11 GFM with coordinate
+17 in both sets.  No numerical model, equation, parameter, event, or gate was
+changed.  Gates: deck built twice with `pdflatex` (16 pages), report built twice
+with `xelatex` (38 pages), all deck pages and affected report pages rendered and
+visually inspected, and extracted deck text checked for prohibited code/file
+language.  Full numerical regression intentionally omitted because the changes
+are documentation/presentation only.
+
 ## 2026-08-25 — THE LAST-GFM HAND-BACK NOW WORKS; A-vs-B-PRIME COMPARISON DELIVERED
 
 Tested working tree: uncommitted, on top of `fd629a7`.

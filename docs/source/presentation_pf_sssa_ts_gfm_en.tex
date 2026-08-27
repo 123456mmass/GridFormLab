@@ -632,39 +632,65 @@ and it ends still holding a forming unit instead of handing it back.
 \end{frame}
 
 % ===========================================================================
-\begin{frame}{Answers to the three questions}
+\begin{frame}[shrink=6]{The switching chronology, and the run that carries it}
 \begin{columns}[T,onlytextwidth]
-\column{.32\textwidth}
-\begin{block}{How many?}
+\column{.505\textwidth}
+\begin{block}{The supervisor never raises all four at once}
 \footnotesize
-At least one forming unit is \emph{necessary} for a post-trip trajectory to
-exist at all. Of \CandTotal{} candidate sets \CandReady{} are admissible, the
-best margin is an interior pair, and the supervisor stages capacity with the
-disturbance --- up to $\NewRunGfmMax$ units here.
+\vspace{-0.35em}\begin{center}\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llr}\toprule
+stage & when & $t$ [s] \\ \midrule
+augment 1 & after the machine trips ($20$\,s) & $\NewRunAugmentOne$ \\
+release 1 & severity subsides & $\NewRunReleaseOne$ \\
+augment 2 & after the load step ($50$\,s) & $\NewRunAugmentTwo$ \\
+augment 3 & same window, second stage & $\NewRunAugmentThree$ \\
+release 2 & after topology restoration ($145$\,s) & $\NewRunReleaseTwo$ \\
+augment 4 & before the reclose & $\NewRunAugmentFour$ \\
+release 3 & severity subsides & $\NewRunReleaseThree$ \\
+\textbf{mode return} & \textbf{last forming unit handed back} & $\mathbf{\NewRunModeReselectionTime}$ \\
+\bottomrule\end{tabular}
+\end{center}\vspace{-0.35em}
+$\NewRunNAugment$ augmentations, $\NewRunNRelease$ releases (one device at a
+time), peak $\NewRunGfmMax$ forming units. Between augment 3 and release 2 the
+map does not move at all --- the capacity that rides the bolted fault and the
+line outage was already committed. The machine recloses at $\NewRunReclose$\,s
+and the hand-back ramp takes $\NewRunHandback$\,s, so
+$\NewRunModeReselectionTime=\NewRunReclose+\NewRunHandback$.
+% SOURCE: run_summary_v2.tex:22,27-41 (augments, releases, reselection, handback duration);
+%         report_ieee14_switch_en_rev2.tex:1742-1744 (releases are one device at a time)
 \end{block}
-\column{.32\textwidth}
-\begin{block}{Which ones?}
+\column{.475\textwidth}
+\begin{block}{Accepted-run quality, over the whole horizon}
 \footnotesize
-Each set is solved at its \emph{own} equilibrium and screened before it can be
-chosen. With the machine off, the best certified pair is buses 3 + 6 at
-$\CandBestOmega$\,s$^{-1}$; the ranking decides, not intuition or unit size.
+\vspace{-0.35em}\begin{center}\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lr}\toprule
+quantity & value \\ \midrule
+last accepted time [s] & $\NewRunEnd$ \\
+largest accepted step residual & \NewRunResidual \\
+deepest step subdivision & $\NewRunSubdivision$ \\
+domain-rejected trial steps & $\NewRunDomainRejects$ \\
+controller-rejected steps & $\NewRunRejectedSteps$ \\
+accepted samples & $\NewRunSamples$ \\
+\bottomrule\end{tabular}
+\end{center}\vspace{-0.35em}
+The residual stays below the $10^{-8}$ acceptance gate at \emph{every} accepted
+step, and a rejected trial is discarded rather than accommodated: no gate,
+tolerance or step floor was relaxed to complete the horizon.
 \end{block}
-\column{.32\textwidth}
-\begin{block}{By what route?}
+\begin{block}{The reclose closes on merit}
 \footnotesize
-Severity-triggered, continuity-gated assignments: quick to promote
-($0.10$\,s), deliberately slow to release ($1.00$\,s), each commit tried
-forward before acceptance. The machine recloses on merit at
-$\NewRunReclose$\,s, the final mode reselection occurs at
-$\NewRunModeReselectionTime$\,s, and the hand-back ramp that follows takes
-$\NewRunHandback$\,s.
+$\Delta V=\NewRunSyncDV\pu$, $\Delta f=$~\NewRunSyncDF~pu,
+$\Delta\theta=\NewRunSyncDTheta^{\circ}$ --- all three inside the case-defined
+synchronism window, none of it scheduled.
+% SOURCE: run_summary_v2.tex:14-26,43-44 (residual, subdivision, rejects, samples, sync trio)
 \end{block}
 \end{columns}
-\vspace{0.3em}
-\centering\small\bfseries One framework, one chronology --- measured answers to
-how many, which ones, and by what route.
-% SOURCE: comparison_macros.tex:125-139 (candidate counts, best pair);
-%         run_summary_v2.tex:22,40-42,45 (reclose, reselection, handback duration, terminal f)
+\vspace{0.15em}
+\centering\footnotesize\bfseries
+The staged route reaches the same four-unit configuration that collapses when
+it is pinned from the trip --- so the order in which a set is reached matters as
+much as the set itself.
+% SOURCE: report_ieee14_switch_en_rev2.tex:1782-1792 (staging vs pinning, order matters)
 \end{frame}
 
 % ===========================================================================

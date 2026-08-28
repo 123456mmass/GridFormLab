@@ -36,4 +36,4 @@ counts are intentionally omitted from the Thai report.
 Full MATLAB regression was intentionally omitted under the documentation/report-only
 risk policy; generator assertions, checkcode, and PDF QA were the targeted gates.
 
-Delivery commit: recorded after commit in this handoff.
+Delivery commit: 6a9fa44

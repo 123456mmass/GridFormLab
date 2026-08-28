@@ -7,6 +7,16 @@ Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top 
 This is the current canonical handoff. Historical phase handoffs remain
 provenance but do not override this runtime status.
 
+## 2026-08-29 - Final Thai project report
+
+The final Thai XeLaTeX report is documented in
+docs/project/handoffs/2026-08-29-final-thai-report.md. It supersedes the
+older presentation-only layout notes below for the report artifact: the
+report is 19 pages, uses the bundled TH Sarabun PSK text font and Latin
+Modern math/mono fonts, and intentionally omits the still-open
+domain-rejected-trial counter. The report-only generator, three PNG figures,
+and PDF were verified without changing production numerical paths.
+
 ## 2026-08-28 (later) - Six arms re-run; the deck gains a per-converter comparison
 
 Tested working tree: figure/deck/defect changes on `main` at base `31e9242`.

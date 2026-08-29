@@ -46,9 +46,9 @@ arguments
     opts.width_in (1,1) double {mustBePositive} = 7.10
     opts.font_size (1,1) double {mustBePositive} = 16
     opts.font_name (1,1) string = "TH SarabunPSK"
-    opts.height_electrical (1,1) double {mustBePositive} = 5.00
-    opts.height_supervisor (1,1) double {mustBePositive} = 5.30
-    opts.height_policy (1,1) double {mustBePositive} = 3.30
+    opts.height_electrical (1,1) double {mustBePositive} = 3.90
+    opts.height_supervisor (1,1) double {mustBePositive} = 4.20
+    opts.height_policy (1,1) double {mustBePositive} = 2.55
 end
 
 % ---------------------------------------------------------------------------

@@ -43,9 +43,12 @@ arguments
     opts.cache_dir (1,1) string = "output/diagnostics/ieee14_gfm_lock_compare_zeta"
     opts.out_dir (1,1) string = "docs/source/figures/final_report_th"
     opts.dpi (1,1) double {mustBePositive} = 300
-    opts.width_in (1,1) double {mustBePositive} = 6.20
-    opts.font_size (1,1) double {mustBePositive} = 12
+    opts.width_in (1,1) double {mustBePositive} = 7.10
+    opts.font_size (1,1) double {mustBePositive} = 16
     opts.font_name (1,1) string = "TH SarabunPSK"
+    opts.height_electrical (1,1) double {mustBePositive} = 5.00
+    opts.height_supervisor (1,1) double {mustBePositive} = 5.30
+    opts.height_policy (1,1) double {mustBePositive} = 3.30
 end
 
 % ---------------------------------------------------------------------------
@@ -297,7 +300,7 @@ end
 % ===========================================================================
 function png = draw_electrical(r,opts,FC,ev_col,t_events,t_reclose,t_modeend,out_dir)
 %DRAW_ELECTRICAL  2x2: per-device P, Q; system f_COI; network min|V|.
-w = opts.width_in; h = 3.7;
+w = opts.width_in; h = opts.height_electrical;
 f = pf_page_figure(w,h,opts.font_size,opts.font_name);
 tl = tiledlayout(f,2,2,'TileSpacing','compact','Padding','compact');
 
@@ -317,10 +320,10 @@ if ~isempty(sg)
 end
 mark_events(ax,ev_col,t_events,t_reclose,t_modeend,opts);
 ylabel(ax,'$P$ [pu]','Interpreter','latex');
-title(ax,'(ก) กำลังรับ-จ่ายจริงของอุปกรณ์','FontWeight','normal','FontSize',opts.font_size);
+title(ax,'(a) Device active power','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'XTickLabel',[],'xlim',[0 250],'box','on');
 grid(ax,'on');
-lg = legend(ax,[arrayfun(@(b) sprintf('บัส %d',b),bus,'UniformOutput',false),{'เครื่อง SG'}], ...
+lg = legend(ax,[arrayfun(@(b) sprintf('Bus %d',b),bus,'UniformOutput',false),{'SG'}], ...
     'Orientation','horizontal','Box','off');
 lg.Layout.Tile = 'north';
 
@@ -334,7 +337,7 @@ if ~isempty(sg)
 end
 mark_events(ax,ev_col,t_events,t_reclose,t_modeend,opts);
 ylabel(ax,'$Q$ [pu]','Interpreter','latex');
-title(ax,'(ข) กำลังรีแอกทีฟของอุปกรณ์','FontWeight','normal','FontSize',opts.font_size);
+title(ax,'(b) Device reactive power','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'XTickLabel',[],'xlim',[0 250],'box','on');
 grid(ax,'on');
 
@@ -344,8 +347,8 @@ mark_events(ax,ev_col,t_events,t_reclose,t_modeend,opts);
 yline(ax,60,':','Color',[0.45 0.45 0.45],'LineWidth',0.8,'HandleVisibility','off', ...
     'FontName',char(opts.font_name),'FontSize',opts.font_size);
 ylabel(ax,'$f_{\mathrm{COI}}$ [Hz]','Interpreter','latex');
-xlabel(ax,'เวลา t [s]','Interpreter','none');
-title(ax,'(ค) ความถี่เฉลี่ยระบบ','FontWeight','normal','FontSize',opts.font_size);
+xlabel(ax,'$t$ [s]','Interpreter','latex');
+title(ax,'(c) System COI frequency','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'xlim',[0 250],'box','on');
 grid(ax,'on');
 
@@ -353,8 +356,8 @@ ax = nexttile(tl); % (d) network minimum voltage
 plot(ax,t,min(r.bus_voltage_magnitude,[],1),'Color',[0.18 0.55 0.34],'LineWidth',1.1);
 mark_events(ax,ev_col,t_events,t_reclose,t_modeend,opts);
 ylabel(ax,'$\min|V|$ [pu]','Interpreter','latex');
-xlabel(ax,'เวลา t [s]','Interpreter','none');
-title(ax,'(ง) แรงดันต่ำสุดของเครือข่าย','FontWeight','normal','FontSize',opts.font_size);
+xlabel(ax,'$t$ [s]','Interpreter','latex');
+title(ax,'(d) Network minimum voltage','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'xlim',[0 250],'box','on');
 grid(ax,'on');
 
@@ -366,7 +369,7 @@ end
 % ===========================================================================
 function png = draw_supervisor(r,opts,FC,ev_col,t_events,t_reclose,t_modeend,out_dir)
 %DRAW_SUPERVISOR  3x1: severity index, committed modes, reference owner.
-w = opts.width_in; h = 3.9;
+w = opts.width_in; h = opts.height_supervisor;
 f = pf_page_figure(w,h,opts.font_size,opts.font_name);
 tl = tiledlayout(f,3,1,'TileSpacing','compact','Padding','compact');
 
@@ -391,11 +394,11 @@ text(ax,247,0.70,'$\Gamma_{on}=0.65$','Color',[0.75 0.10 0.10], ...
 text(ax,247,0.30,'$\Gamma_{off}=0.35$','Color',[0.10 0.35 0.75], ...
     'HorizontalAlignment','right','Interpreter','latex');
 ylim(ax,[0 1.12]); set(ax,'YTick',[0 0.35 0.65 1]);
-ylabel(ax,'ดัชนี S','Interpreter','none');
-title(ax,'(ก) ดัชนีความรุนแรงรายอุปกรณ์','FontWeight','normal','FontSize',opts.font_size);
+ylabel(ax,'$S$','Interpreter','latex');
+title(ax,'(a) Per-device severity index','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'XTickLabel',[],'xlim',[0 250],'box','on');
 grid(ax,'on');
-lg = legend(ax,arrayfun(@(b) sprintf('บัส %d',b),bus,'UniformOutput',false), ...
+lg = legend(ax,arrayfun(@(b) sprintf('Bus %d',b),bus,'UniformOutput',false), ...
     'Orientation','horizontal','Box','off');
 lg.Layout.Tile = 'north';
 
@@ -408,9 +411,9 @@ for k = 1:nd
 end
 mark_events(ax,ev_col,t_events,t_reclose,t_modeend,opts);
 ylim(ax,[-0.25 1.25]);
-set(ax,'YTick',[0 1],'YTickLabel',{'ตามกริด','สร้างกริด'});
-ylabel(ax,'โหมด');
-title(ax,'(ข) โหมดที่คอมมิทของแต่ละอุปกรณ์','FontWeight','normal','FontSize',opts.font_size);
+set(ax,'YTick',[0 1],'YTickLabel',{'GFL','GFM'});
+ylabel(ax,'Mode');
+title(ax,'(b) Committed mode per device','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'XTickLabel',[],'xlim',[0 250],'box','on');
 grid(ax,'on');
 
@@ -422,9 +425,9 @@ nvis = max(1,max(code));
 ylim(ax,[-0.4 nvis+0.4]);
 lbls = owner_labels(r,nvis);
 set(ax,'YTick',0:nvis,'YTickLabel',lbls);
-ylabel(ax,'ผู้ถืออ้างอิง');
-xlabel(ax,'เวลา t [s]','Interpreter','none');
-title(ax,'(ค) ผู้ถือมุมอ้างอิงของเครือข่าย','FontWeight','normal','FontSize',opts.font_size);
+ylabel(ax,'Owner');
+xlabel(ax,'$t$ [s]','Interpreter','latex');
+title(ax,'(c) Network reference-angle owner','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'xlim',[0 250],'box','on');
 grid(ax,'on');
 
@@ -436,14 +439,14 @@ end
 % ===========================================================================
 function png = draw_policy(R,opts,ev_col,t_events,out_dir)
 %DRAW_POLICY  f_COI of every arm that reaches the horizon, one axis.
-w = opts.width_in; h = 2.6;
+w = opts.width_in; h = opts.height_policy;
 f = pf_page_figure(w,h,opts.font_size,opts.font_name);
 ax = axes(f); hold(ax,'on');
 styles = {'-','--','-.',':',':'};
 cols   = {[0.00 0.24 0.75],[0.80 0.30 0.10],[0.00 0.55 0.35], ...
           [0.55 0.20 0.55],[0.30 0.30 0.30]};
-names  = {'สลับแบบทยอย (adaptive)','ตรึง 1 ตัวสร้างกริด','ตรึง 2 ตัวสร้างกริด', ...
-          'ตรึง 4 ตัวสร้างกริด','ปิดการสลับโหมด'};
+names  = {'Adaptive switching','Pinned 1 GFM','Pinned 2 GFM', ...
+          'Pinned 4 GFM','No adaptation'};
 keys = {'adaptive','pinned_gfm1','pinned_gfm2','pinned_gfm4','no_adaptation'};
 drew = 0;
 for k = 1:numel(keys)
@@ -462,8 +465,8 @@ end
 yline(ax,60,':','Color',[0.45 0.45 0.45],'LineWidth',0.8,'HandleVisibility','off', ...
     'FontName',char(opts.font_name),'FontSize',opts.font_size);
 ylabel(ax,'$f_{\mathrm{COI}}$ [Hz]','Interpreter','latex');
-xlabel(ax,'เวลา t [s]','Interpreter','none');
-title(ax,'ความถี่เฉลี่ยระบบของแต่ละนโยบาย (เฉพาะแขนงที่ถึง 250 s)','FontWeight','normal','FontSize',opts.font_size);
+xlabel(ax,'$t$ [s]','Interpreter','latex');
+title(ax,'System COI frequency by control policy (arms reaching 250 s)','FontWeight','normal','FontSize',opts.font_size);
 set(ax,'xlim',[0 250],'box','on');
 grid(ax,'on');
 lg = legend(ax,'Orientation','horizontal','Box','off','NumColumns',2);
@@ -747,11 +750,11 @@ end
 function lbls = owner_labels(r,nvis)
 %OWNER_LABELS  Y-tick labels for the reference-owner trace.
 lbls = cell(1,nvis+1);
-lbls{1} = 'SG (บัส 1)';
+lbls{1} = 'SG (bus 1)';
 ibr = findconverterrows(r);
 for k = 1:nvis
     if k<=numel(ibr)
-        lbls{k+1} = sprintf('บัส %d',r.device_bus_ids(ibr(k)));
+        lbls{k+1} = sprintf('Bus %d',r.device_bus_ids(ibr(k)));
     else
         lbls{k+1} = sprintf('%d',k);
     end

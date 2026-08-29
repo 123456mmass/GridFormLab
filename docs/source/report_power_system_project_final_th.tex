@@ -1,3 +1,21 @@
+%=============================================================================
+%  report_power_system_project_final_th.tex
+%  เอกสารสรุปวิชาโครงงาน (ภาษาไทย)
+%  An Automatic Following/Forming Framework for Inverter-Based Resources
+%
+%  PROVENANCE AND NUMERICAL INTEGRITY
+%  - หัวข้อของเอกสารเรียงตามแบบฟอร์ม "เอกสารสรุปวิชาโครงงาน" ของภาควิชา
+%  - ทุกสมการที่ปรากฏถอดมาจากแบบจำลองที่การรัน 250 วินาทีใช้จริง ไม่มีสมการใด
+%    ถูกสร้างขึ้นใหม่เพื่อรายงานฉบับนี้
+%  - ตัวเลขผลลัพธ์ทุกตัวมาจากชุด artifact เดียวของสแนปช็อต c56ff9f (2026-08-28)
+%    ผ่านมาโครที่ \input ไว้ด้านล่าง หรือระบุที่มาไว้ด้วยคอมเมนต์ % SOURCE
+%  - ทุกจุดที่พล็อตเป็นค่าดิบที่ตัวแก้ยอมรับ ไม่มีการทำให้เรียบ กรอง ลดจำนวนจุด
+%    ตัดยอด เลื่อนระดับ แทรกค่า หรือเติมสัญญาณสังเคราะห์
+%  - การจำแนกชั้นข้อมูล (SOURCE_MAPPED / CASE_DEFINED / PROJECT_DERIVED /
+%    NUMERICAL_METHOD) สืบทอดจาก provenance ของแบบจำลอง ไม่ตัดสินใหม่ที่นี่
+%
+%  BUILD:  xelatex report_power_system_project_final_th.tex   (รันสองครั้ง)
+%=============================================================================
 \documentclass[12pt,a4paper]{article}
 \usepackage{fontspec}
 \XeTeXlinebreaklocale "th"
@@ -13,999 +31,807 @@
 ]{THSarabun}
 \setmonofont{Latin Modern Mono}
 \usepackage{amsmath,amssymb,mathtools}
-\usepackage{unicode-math}
-\setmathfont[
-  Path={C:/Program Files/MiKTeX/fonts/opentype/public/lm-math/},
-  Extension=.otf
-]{latinmodern-math}
-\usepackage{graphicx,float,caption,xcolor}
-\usepackage{geometry,booktabs,tabularx,array,longtable}
+\usepackage{graphicx,float,caption}
+\usepackage[table]{xcolor}
+\usepackage{geometry,booktabs,tabularx,array}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
+\usepackage{enumitem}
+\usepackage{multirow}
 \usepackage{fancyhdr}
 \usepackage[hidelinks]{hyperref}
-\geometry{margin=0.72in}
-\setlength{\headheight}{20pt}
-\setlength{\parindent}{1.2em}
-\setlength{\parskip}{2pt}
-\linespread{1.02}
+\geometry{top=0.52in,bottom=0.50in,left=0.58in,right=0.58in}
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{0pt}
+\linespread{0.95}
 \emergencystretch=2em
 \renewcommand{\arraystretch}{1.12}
-\captionsetup{font=normalsize,labelfont=bf}
 \setlength{\tabcolsep}{4pt}
-\pagestyle{fancy}
-\fancyhf{}
-\lhead{รายงานโครงการระบบไฟฟ้ากำลัง: PF--SSSA--TS--IBR}
-\rhead{\thepage}
-\renewcommand{\headrulewidth}{0.35pt}
+\captionsetup{font=normalsize,labelfont=bf}
 \renewcommand{\figurename}{รูปที่}
 \renewcommand{\tablename}{ตารางที่}
-\renewcommand{\abstractname}{บทคัดย่อ}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.15em,topsep=0.25em}
+\setlist[itemize]{leftmargin=2.0em,itemsep=0.15em,topsep=0.25em}
 \definecolor{navy}{RGB}{24,54,93}
 \definecolor{teal}{RGB}{0,110,112}
-\definecolor{redp}{RGB}{165,45,45}
-\definecolor{greenp}{RGB}{35,125,67}
-\definecolor{goldp}{RGB}{180,139,24}
-\definecolor{lightblue}{RGB}{235,244,250}
-\definecolor{lightgreen}{RGB}{236,247,239}
-\DeclareMathOperator{\sat}{sat}
+\definecolor{lightblue}{RGB}{238,245,250}
+\definecolor{lightgreen}{RGB}{238,248,241}
+\definecolor{academicblue}{RGB}{35,64,96}
+\definecolor{academicgray}{RGB}{238,241,244}
+\definecolor{tablehead}{RGB}{220,228,236}
+\definecolor{tablerow}{RGB}{247,249,251}
+\setlength{\headheight}{19pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\fontsize{14}{16}\selectfont\color{academicblue}\textbf{An Automatic Following/Forming Framework for IBRs}}
+\fancyhead[R]{\fontsize{14}{16}\selectfont\color{academicblue}IEEE 14-bus Study}
+\renewcommand{\headrulewidth}{0.7pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{academicblue}\leaders\hrule height \headrulewidth\hfill}}
+\fancyfoot[C]{\fontsize{14}{16}\selectfont\thepage}
 \newcommand{\pu}{\ensuremath{\,\mathrm{pu}}}
-\newcommand{\second}{\ensuremath{\,\mathrm{s}}}
 \newcommand{\hz}{\ensuremath{\,\mathrm{Hz}}}
+\newcommand{\second}{\ensuremath{\,\mathrm{s}}}
 \newcommand{\sci}[2]{\ensuremath{#1\times10^{#2}}}
-\newcommand{\reportsection}[1]{\section*{#1}}
-\newcommand{\source}[1]{\textbf{#1}}
-\newcommand{\result}[1]{\textit{#1}}
+\newcommand{\templateheading}[1]{%
+  \vspace{0.45em}\noindent\colorbox{academicblue}{\parbox{\dimexpr\textwidth-2\fboxsep\relax}{\color{white}\fontsize{20}{22}\selectfont\bfseries #1}}\par\vspace{0.28em}}
+\newcommand{\templatesubheading}[1]{%
+  \vspace{0.35em}\noindent{\color{academicblue}\rule{0.055\textwidth}{1.4pt}\hspace{0.45em}\fontsize{20}{22}\selectfont\bfseries #1}\par\vspace{0.12em}}
+\newcommand{\tableheader}{\rowcolor{tablehead}}
+\newcommand{\class}[1]{\textbf{\textup{#1}}}
+\newcommand{\resultbox}[1]{\par\noindent\colorbox{academicgray}{\parbox{\dimexpr\textwidth-2\fboxsep\relax}{\textbf{ผลสำคัญ:} #1}}\par}
 \input{figures/switch_ieee14_decision/comparison_macros.tex}
 \input{figures/switch_ieee14_decision/run_summary_v2.tex}
-\graphicspath{{figures/}{figures/final_report_th/}}
+\graphicspath{{figures/}{figures/final_report_th/}{figures/presentation_pf_sssa_ts_gfm/}}
 
 \begin{document}
-
+\makeatletter
+\renewcommand\normalsize{\@setfontsize\normalsize{16}{17.6}}
+\makeatother
+\normalsize
 \begin{titlepage}
 \thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+\draw[academicblue,line width=1.1pt]
+  ([xshift=0.40in,yshift=-0.40in]current page.north west)
+  rectangle
+  ([xshift=-0.40in,yshift=0.40in]current page.south east);
+\draw[academicblue,line width=3.2pt]
+  ([xshift=0.40in,yshift=-0.62in]current page.north west)--
+  ([xshift=-0.40in,yshift=-0.62in]current page.north east);
+\end{tikzpicture}
 \begin{center}
-\vspace*{0.55in}
-\includegraphics[width=1.08in]{figures/images.png}\\[0.35in]
-{\color{navy}\fontsize{25}{31}\selectfont\bfseries
-รายงานโครงการระบบไฟฟ้ากำลัง\par}
-\vspace{0.10in}
-{\color{teal}\fontsize{20}{25}\selectfont\bfseries
-การไหลของกำลัง การวิเคราะห์เสถียรภาพ และการสลับโหมด GFL/GFM อัตโนมัติ\par}
+\vspace*{0.20in}
+{\fontsize{26}{31}\selectfont\bfseries เอกสารสรุปวิชาโครงงาน\par}
+\vspace{0.32in}
+{\fontsize{18}{22}\selectfont\bfseries ชื่องานโครงงาน\par}
 \vspace{0.12in}
-{\color{navy}\fontsize{16}{20}\selectfont
-กรณีศึกษา IEEE 14-bus: PF, SSSA, TS และ IBR แบบผสม\par}
-\vspace{0.50in}
-\rule{4.7in}{0.8pt}\\[0.30in]
-{\fontsize{15}{19}\selectfont
-Mr. Phichitchai Jueajan (66010569)\\
-Mr. Pakkapol Phdungdan (66010612)\par}
-\vspace{0.22in}
-{\fontsize{14}{18}\selectfont
-อาจารย์ที่ปรึกษา: Dr.\ Tossaporn Surinkaew\\
-อาจารย์ที่ปรึกษาร่วม: Prof.\ Dr.\ Issarachai Ngamroo\par}
+{\fontsize{18}{22}\selectfont\bfseries
+(ภาษาไทย) กรอบการทำงานสำหรับการสลับโหมด Grid-Following/Grid-Forming\\
+แบบอัตโนมัติของ Inverter-Based Resources\par}
+\vspace{0.13in}
+{\fontsize{19}{24}\selectfont\bfseries
+(ภาษาอังกฤษ) An Automatic Following/Forming Framework\\
+for Inverter-Based Resources\par}
+\vspace{0.38in}
+{\fontsize{18}{22}\selectfont\bfseries สมาชิกผู้จัดทำ\par}
+\vspace{0.08in}
+{\fontsize{18}{22}\selectfont
+1. Phichitchai Jueajan \hspace{0.35in} 66010569\\
+2. Pakkapol Phadungdaen \hspace{0.35in} 66010612\par}
+\vspace{0.28in}
+{\fontsize{18}{22}\selectfont\bfseries อาจารย์ที่ปรึกษา\par}
+\vspace{0.08in}
+{\fontsize{18}{22}\selectfont
+1. Dr. Tossaporn Surinkaew\\
+2. Prof. Dr. Issarachai Ngamroo\par}
 \vfill
-{\fontsize{13}{17}\selectfont
+{\fontsize{18}{22}\selectfont
 ภาควิชาวิศวกรรมไฟฟ้า คณะวิศวกรรมศาสตร์\\
 สถาบันเทคโนโลยีพระจอมเกล้าเจ้าคุณทหารลาดกระบัง\par}
-\vspace{0.32in}
-{\fontsize{12}{15}\selectfont สิงหาคม พ.ศ. 2569\par}
+\vspace{0.15in}
+{\fontsize{18}{22}\selectfont\bfseries ปีการศึกษา 2569\par}
 \end{center}
 \end{titlepage}
-
-\reportsection{บทคัดย่อ วัตถุประสงค์ และขอบเขตข้ออ้าง}
-\begin{abstract}
-โครงการนี้พัฒนาสายงานคำนวณระบบไฟฟ้ากำลังภายในโครงการเดียว ตั้งแต่การแก้
-สมการการไหลของกำลัง (PF) ไปยังจุดสมดุลของระบบสมการเชิงอนุพันธ์--พีชคณิต
-(DAE) การวิเคราะห์เสถียรภาพสัญญาณขนาดเล็ก (SSSA) และการจำลองโดเมนเวลา (TS)
-ด้วยตัวแก้สมการ MATLAB แบบฐานล้วนของโครงการ จากนั้นนำ DAE เดียวกันไปทดสอบ
-เครือข่าย IEEE-14 ที่มี synchronous generator (SG) หนึ่งเครื่องและ
-inverter-based resource (IBR) สี่ตัว ซึ่งสลับระหว่าง grid-following (GFL)
-และ grid-forming (GFM) โดย supervisor ที่มี hysteresis, dwell และ guard
-สำหรับเจ้าของมุมอ้างอิง
-
-ผลหลักมาจาก cache หกแขนชุดเดียวที่ commit \texttt{c56ff9f} และสร้างรูปใหม่
-ด้วยตัวอ่าน cache ที่ตรวจ hash ก่อนและหลังอ่าน ค่าในตารางและรูปจึงเป็นค่าที่
-ตัวแก้ยอมรับจริง ไม่มีการทำให้เรียบ การเติมสัญญาณ หรือการตัดข้อมูล การรัน
-adaptive ไปถึง \ArmAdaptiveHorizon\ วินาที ปิด SG ได้และ reclose ที่
-\ArmAdaptiveReclose\ วินาที ขณะที่แขนที่ตรึง GFM สี่ตัวตั้งแต่ต้นหยุดที่
-\ArmPinnedgfmFourHorizon\ วินาที ตัวเลขเหล่านี้เป็น \result{PROJECT\_RESULT}
-ของแบบจำลอง ไม่ใช่การรับรองการใช้งานภาคสนาม
-\end{abstract}
-
-\paragraph{วัตถุประสงค์}
-(1) ทำให้สมการ PF--SSSA--TS ใช้ residual และลำดับตัวแปรเดียวกัน
-(2) แสดงหลักฐาน independent ของ equilibrium, Schur complement และ
-finite-difference (FD) Jacobian
-(3) ตรวจสัญญา IBR GFL/GFM และการถ่ายโอน state โดยไม่ให้กระแสกระโดด
-และ (4) รายงานผล chronology 250 วินาทีพร้อมการเปรียบเทียบนโยบายหกแขนอย่าง
-ตรวจสอบย้อนกลับได้
-
-\paragraph{ขอบเขตข้ออ้าง}
-ข้อมูล network และเหตุการณ์ที่ระบุว่า \source{SOURCE\_DEFINED} หรือ
-\source{CASE\_DEFINED} ถูกใช้ตามต้นทาง ผลของตัวแก้เป็น
-\result{PROJECT\_RESULT} และสมการ/การปิดที่เจ้าของโครงการกำหนดถูกระบุเป็น
-\source{PROJECT\_DERIVED} หรือ \source{NUMERICAL\_METHOD} รายงานนี้ไม่อ้าง
-grid-code compliance, protection coordination, EMT accuracy หรือ readiness
-สำหรับการใช้งานจริง
-
-\paragraph{การทำซ้ำ}
-รายงานภาษาไทยอ่าน macro ที่สร้างจาก cache โดยตรงและอ่าน PNG ที่ตัวสร้าง
-รายงานสร้างขึ้นใหม่ ทุกค่าในหน้าต่อไปจึงผูกกับ provenance เดียวกัน ไม่ใช่
-การคัดตัวเลขจากรายงานฉบับก่อน
-
-\clearpage
-
-\reportsection{จุดเริ่มต้นของโครงการและ milestone สำคัญ}
-จุดเริ่มต้นคือปัญหาที่การสูญเสีย SG ทำให้โครงข่ายไม่มีแหล่งกำหนดแรงดัน
-อ้างอิง GFL ต้องอาศัย PLL ส่วน GFM สร้างมุมและแรงดันของตนเอง โครงการจึง
-วางสายงานแบบลำดับชั้น: PF สร้าง operating point, equilibrium ปิด KCL และ
-สมการ device, SSSA ตรวจการรบกวนเล็ก, TS ตรวจเหตุการณ์ขนาดใหญ่ และ supervisor
-ตัดสินใจ mode จาก state ที่ยอมรับแล้ว
-
-\begin{table}[H]
-\centering
-\caption{ลำดับพัฒนาการที่ใช้เป็นหลักฐานในรายงานนี้}
-\begin{tabularx}{\textwidth}{@{}c p{0.25\textwidth} X@{}}
-\toprule
-ลำดับ & milestone & หลักฐานและความหมาย \\
-\midrule
-1 & สัญญา base และ bus type & power-case 1.0, bus 12 คอลัมน์, REF/PV/PQ เป็น 1/2/3 \\
-2 & Ybus และ PF Newton & residual $[P,Q]$ มี mapping และ limit ที่ตรวจย้อนกลับได้ \\
-3 & shared DAE & equilibrium, SSSA และ TS เรียก residual เดียวกัน \\
-4 & SSSA Schur & กำจัดตัวแปร algebraic ด้วย backslash และตรวจ conditioning \\
-5 & FD/eigenpair gates & ตรวจ plateau, conjugate pair, gauge และ participation \\
-6 & implicit trapezoidal TS & corrector แก้ differential และ KCL พร้อมกัน \\
-7 & event landing & แต่ละ event ลงตรง grid และเปลี่ยน topology แบบ right-limit \\
-8 & GFL-RMS10 SMIB & ปิด nonlinear PLL, current plant และ power identity แยกกรณี \\
-9 & GFM no-PLL SMIB & ปิด VSG angle และ voltage law โดยไม่มี PLL แฝง \\
-10 & dual-mode 17-state & plant ร่วมและ controller block ที่ active ได้ทีละ branch \\
-11 & IEEE-14 integration & SG bus 1 กับ IBR bus 2, 3, 6, 8 ใน composite DAE \\
-12 & six-arm snapshot & เปรียบเทียบ adaptive, pinned และ no-adaptation จาก cache เดียว \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\paragraph{หลักวินัยข้อมูล}
-external PSAT, PGAz และเอกสารอ้างอิงใช้เป็น oracle หรือ comparison เท่านั้น
-ไม่ถูกเรียกจาก production path และผลจากภายนอกไม่ถูกป้อนกลับไปเลือก state,
-parameter, correction หรือ gate การเปลี่ยนแปลงของรายงานนี้จำกัดอยู่ที่
-report-only generator และเอกสาร จึงไม่เปลี่ยน numerical contract
-
-\paragraph{จุดที่ไม่ถูกนำมาอ้าง}
-ตัวนับ trial ที่ถูกปฏิเสธใน search path มี defect record เปิดอยู่ จึงไม่นำ
-ตัวเลขดังกล่าวมาสนับสนุนข้ออ้างใดในรายงานนี้ การเปรียบเทียบใช้ accepted
-samples, horizon, residual และสถานะ convergence ซึ่งเป็นค่าที่ตรวจซ้ำได้
-
-\clearpage
-
-% ============================================================================
-% 4. Architecture and numerical integrity
-\reportsection{สถาปัตยกรรม PF ถึงการสลับโหมด และหลัก numerical integrity}
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  node distance=0.18in and 0.12in,
-  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
-    minimum width=1.18in,minimum height=0.65in,align=center},
-  gate/.style={draw=teal,fill=lightgreen,rounded corners=2pt,
-    minimum width=1.30in,minimum height=0.65in,align=center},
-  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
-]
-\node[box] (data) {case data\\และฐานหน่วย};
-\node[box,right=of data] (pf) {PF Newton\\$P,Q$ residual};
-\node[box,right=of pf] (eq) {equilibrium\\$f=0,\;g=0$};
-\node[box,right=of eq] (ssa) {SSSA\\Schur + eigenpairs};
-\node[box,right=of ssa] (ts) {TS\\trapezoidal + KCL};
-\node[gate,below=0.45in of ts] (switch) {supervisor\\GFL/GFM + guard};
-\node[gate,left=of switch] (events) {events\\right-limit};
-\node[gate,left=of events] (qa) {accepted state\\provenance};
-\draw[arr] (data)--(pf)--(eq)--(ssa)--(ts);
-\draw[arr] (ts)--(switch);
-\draw[arr] (switch)--(events);
-\draw[arr] (events)--(qa);
-\draw[arr] (qa) |- (eq.south);
-\node[below=0.17in of pf,align=center,text=navy] {one in-house\\residual owner};
-\node[below=0.17in of eq,align=center,text=navy] {same state order\\for SSSA/TS};
-\end{tikzpicture}
-\caption{สถาปัตยกรรมที่ใช้จริง: PF สร้างจุดตั้งต้น, equilibrium ปิด DAE,
-SSSA และ TS ใช้สมการเดียวกัน และ supervisor เปลี่ยน mode เฉพาะที่ accepted
-right-limit}
-\end{figure}
-
-\paragraph{ตัวแปรและสัญญา}
-ให้ $x$ เป็น differential state, $y$ เป็น rectangular bus-voltage state
-เรียงเป็น $[\operatorname{Re}V_1,\operatorname{Im}V_1,\ldots]$ และ $u$ เป็น
-input ของ device ระบบแก้
-\begin{equation}
-\dot{x}=f(x,y,u),\qquad 0=g(x,y,u).
-\end{equation}
-กระแสของ device เป็นบวกเมื่อฉีดเข้าสู่ network และ
-$S=V I^{*}=P+\mathrm{j}Q$ บน system base สัญญานี้ไม่เปลี่ยนเมื่อเปลี่ยน
-เครื่องมือ comparison
-
-\paragraph{การปิดแบบ fail-closed}
-ทุก stage ตรวจ finite state, residual, rank/conditioning และ mapping ก่อน
-commit หากเงื่อนไขไม่ผ่านจะหยุดและเก็บ failure status ตัวอย่างสำคัญคือ
-การไม่มี voltage-forming source หลัง SG trip และการที่ Newton step ลง domain
-ไม่ได้รับการแก้ด้วยการผ่อน gate
-
-\paragraph{การจำแนกค่า}
-\source{SOURCE\_DEFINED} ใช้เมื่อแหล่งอ้างอิงระบุสมการหรือค่าโดยตรง
-\source{CASE\_DEFINED} ใช้กับ case และ event
-\source{PROJECT\_DERIVED} ใช้กับ closure ที่ต้องพิสูจน์ด้วยสมการ
-\source{NUMERICAL\_METHOD} ใช้กับวิธีแก้และ tolerance
-และ \source{ASSUMED\_DIAGNOSTIC} ใช้กับดัชนีที่แสดงเพื่อวิเคราะห์เท่านั้น
-
-\clearpage
-
-
-% ============================================================================
-% 5. PF method
-\reportsection{วิธีแก้ Power Flow: สมการ ตัวแปร และเกณฑ์หยุด}
-สำหรับ bus $i$ ให้ $V_i=|V_i|e^{\mathrm{j}\theta_i}$ และ
-$Y=G+\mathrm{j}B$ สมการกำลังที่ production ใช้คือ
-\begin{align}
-P_i&=\sum_k |V_i||V_k|
- (G_{ik}\cos\theta_{ik}+B_{ik}\sin\theta_{ik}),\\
-Q_i&=\sum_k |V_i||V_k|
- (G_{ik}\sin\theta_{ik}-B_{ik}\cos\theta_{ik}),
-\end{align}
-โดย $\theta_{ik}=\theta_i-\theta_k$ และ
-$P_i^{\mathrm{spec}}=P_{G,i}-P_{L,i}$,
-$Q_i^{\mathrm{spec}}=Q_{G,i}-Q_{L,i}$
-
-\begin{table}[H]
-\centering
-\caption{บทบาทของ bus และ unknown ใน Newton--Raphson}
-\begin{tabularx}{\textwidth}{@{}l l X@{}}
-\toprule
-ประเภท & ค่าที่กำหนด & ค่าที่แก้หรือรายงาน \\
-\midrule
-REF & $|V|,\theta$ & $P,Q$ เป็นผลลัพธ์ของ balance \\
-PV & $P,|V|$ & $\theta$ แก้; $Q$ รายงานและตรวจ limit \\
-PQ & $P,Q$ & $\theta,|V|$ แก้ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Mismatch vector เรียงเฉพาะค่าที่ไม่ถูกกำหนด:
-\begin{equation}
-r_{\mathrm{PF}}=
-\begin{bmatrix}P^{\mathrm{spec}}-P^{\mathrm{calc}}\\
-Q^{\mathrm{spec}}-Q^{\mathrm{calc}}\end{bmatrix},
-\qquad
-J=
-\begin{bmatrix}H&N\\M&L\end{bmatrix}
-=\frac{\partial r_{\mathrm{PF}}}{\partial[\theta\;\;|V|]}.
-\end{equation}
-แต่ละรอบแก้ $J\Delta z=r_{\mathrm{PF}}$ ด้วย backslash แล้วอัปเดต
-$z\leftarrow z+\Delta z$ จน $\|r_{\mathrm{PF}}\|_\infty$ ต่ำกว่า tolerance
-ที่ประกาศไว้
-
-\paragraph{Limits และการหยุด}
-เมื่อ reactive generation ของ PV ออกนอก $[Q_{\min},Q_{\max}]$ ค่า $Q$ จะถูก
-ตรึงที่ limit และ bus เปลี่ยนเป็น PQ ก่อนแก้ต่อ REF ไม่ถูกใช้เป็น unknown
-แรงดันและมุมที่ได้จึงยังเป็น output ของสมการ ไม่ใช่ค่าที่ป้อนกลับจาก oracle
-การประกอบ $Y$ รวม series admittance, shunt, line charging และ transformer tap
-ตาม case data และตรวจ power balance
-$P_{\mathrm{gen}}=P_{\mathrm{load}}+P_{\mathrm{loss}}$
-
-\paragraph{หน่วย}
-ค่ากำลังใช้ pu บนฐาน 100 MVA ของ case; แรงดันและกระแสใช้ pu; มุมแสดงเป็น
-องศาแต่สมการใช้เรเดียน ความแตกต่างของ frame หรือ sign จึงถูกตรวจที่ residual
-ก่อนจะนำไป SSSA หรือ TS
-
-\paragraph{หลักฐาน independent}
-PF production เป็น Newton ภายในโครงการ ส่วน PSAT/MATPOWER/PGAz ถูกใช้เพื่อ
-อ่านหรือเปรียบเทียบข้อมูลเท่านั้น การตรงกันของค่าภายนอกจึงเป็น diagnostic
-ไม่ใช่ source ของ correction
-
-\clearpage
-
-
-% ============================================================================
-% 6. PF evidence
-\reportsection{หลักฐาน PF: IEEE-14, RTS-24 และ comparison ที่รายงานตามจริง}
-\begin{table}[H]
-\centering
-\caption{ผล PF จาก artifact ที่สร้างสดและ mapping เดียวกับ production}
-\begin{tabularx}{\textwidth}{@{}l r r r r X@{}}
-\toprule
-กรณี & สถานะ & รอบ Newton & $\|r_{\mathrm{PF}}\|_\infty$ & $P_G$ (pu) & balance \\
-\midrule
-IEEE-14 & converged & 5 & $\sci{6.33521}{-15}$ & 2.72393 &
-$P_L=2.59000,\;P_{\mathrm{loss}}=0.133933$ \\
-RTS-24 & converged & 5 & $\sci{2.30926}{-12}$ & 29.0125 &
-$P_L=28.5000,\;P_{\mathrm{loss}}=0.512464$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\paragraph{IEEE-14}
-เครือข่ายหลักใช้ bus ID จาก case14 และรักษา semantic ของ REF/PV/PQ ก่อน
-ส่งผลให้ equilibrium ของ SG bus 1 และ IBR bus 2, 3, 6, 8 ถูกสร้างใน coordinate
-ชุดเดียวกับ composite DAE ค่า residual ที่ต่ำกว่า
-$\sci{10}{-14}\pu$ เป็นหลักฐาน numerical convergence ของ operating point
-ไม่ใช่หลักฐานว่า parameter ของ SG เป็นค่าจากโรงงาน
-
-\paragraph{RTS-24}
-RTS-24 ใช้เป็นกรณีข้ามขนาดเพื่อจับ error ใน bus/branch mapping, power balance
-และการแยก state ออกจาก algebraic variable ไม่ได้ใช้ผล RTS-24 ไป tune
-IEEE-14 การเทียบข้ามกรณีจึงเป็นการตรวจ implementation contract
-
-\paragraph{การเทียบ PSAT และ PGAz}
-ใน fixed-grid IEEE-14 fault test ค่า PSAT--Ours สูงสุดคือ
-$\Delta\mathrm{COI}=\sci{9.5711}{-3}$ องศา,
-$\Delta\omega=\sci{3.8160}{-6}\pu$,
-$\Delta P_e=0.042171$ MW และ
-$\Delta V=\sci{3.1793}{-5}\pu$ ซึ่งอยู่ใน primary tolerance ที่ประกาศ
-PGAz ทำงานจบแต่ต่างมากกว่า: $\Delta\mathrm{COI}=0.616348$ องศาและ
-$\Delta P_e=2.467655$ MW จึงรายงานเป็น secondary diagnostic ไม่ได้ซ่อน
-ด้วยการผ่อน tolerance
-
-\paragraph{PGAz FAIL ตามจริง}
-artifact ระบุว่า PGAz execution ผ่าน แต่ corrector ไม่ส่ง residual และ gate
-ของ trajectory comparison ไม่ผ่าน การเขียนว่า "ผ่านทั้งหมด" จะเกิน
-หลักฐาน จึงใช้คำว่า comparison diagnostic เท่านั้น
-
-\clearpage
-
-
-% ============================================================================
-% 7. SSSA method
-\reportsection{วิธี SSSA: DAE, Schur complement, eigenpairs และ participation}
-ที่ equilibrium $(x_0,y_0)$ มี $f(x_0,y_0)=0$ และ $g(x_0,y_0)=0$
-การรบกวนอันดับหนึ่งให้
-\begin{equation}
-\begin{bmatrix}\Delta\dot{x}\\0\end{bmatrix}=
-\begin{bmatrix}J_{xx}&J_{xy}\\J_{yx}&J_{yy}\end{bmatrix}
-\begin{bmatrix}\Delta x\\\Delta y\end{bmatrix}.
-\end{equation}
-เมื่อ $J_{yy}$ อยู่ใน free algebraic set, production กำจัด $\Delta y$ ด้วย
-\begin{equation}
-A=J_{xx}-J_{xy}
-\left(J_{yy}\right)^{-1}J_{yx}
-\quad\Longrightarrow\quad
-A=J_{xx}-J_{xy}\left(J_{yy}\backslash J_{yx}\right)
-\end{equation}
-โดยรูปที่สองคือรูปที่ใช้จริงและไม่มีการสร้าง explicit inverse
-
-\paragraph{FD Jacobian}
-แต่ละ block ของ $J$ ได้จาก central FD รอบ equilibrium ด้วย step ที่ตรึงไว้
-การเลือก step อาศัย plateau ของ eigenvalues ที่วัดได้ ไม่ได้อาศัยการปรับให้
-ตรงกับหนังสือหรือโปรแกรมอ้างอิง Eigenpair residual, conjugate pairing,
-conditioning และ reference-angle structure เป็น gates แยกกัน
-
-\paragraph{Gauge และ reduction}
-ระบบ autonomous มี rotational symmetry จึงมี zero mode ของการเลื่อนมุมร่วม
-full matrix เก็บ mode นี้ ส่วน COI reduction ใช้เมื่อโจทย์ต้องการ modes
-ที่ตัด common motion การอ่าน damping ใช้
-\begin{equation}
-\lambda=\sigma+\mathrm{j}\varpi,\qquad
-f_\lambda=\frac{|\varpi|}{2\pi},\qquad
-\zeta=-\frac{\sigma}{|\lambda|}.
-\end{equation}
-ถ้า $\operatorname{Re}\lambda<0$ mode ลดลง; ถ้าไม่ finite หรืออยู่อีกฝั่ง
-ต้อง fail-closed ไม่ตีความเป็น stable
-
-\paragraph{Participation}
-left/right eigenvectors ใช้เพื่อจัดอันดับ state ที่เด่นเท่านั้น หาก conditioning
-ไม่พอผล participation จะถูกทำเครื่องหมาย unavailable การจัดอันดับนี้ไม่
-เปลี่ยน eigenvalue, candidate set หรือ solver state
-
-\paragraph{หลักฐานจาก shared path}
-SSSA เรียก DAE เดียวกับ TS บนลำดับ $(x,y)$ เดียวกัน ดังนั้น residual ที่ถูก
-ตรวจใน SSSA ไม่ใช่ residual ที่สร้างขึ้นเพื่อรายงาน หลังจาก SSSA ผ่านจึงนำ
-equilibrium เดิมไปเริ่ม TS โดยไม่ copy ค่า eigenvalue หรือ reference table
-
-\clearpage
-
-
-% ============================================================================
-% 8. SSSA evidence
-\reportsection{หลักฐาน SSSA: residual, FD plateau, gates และ Padiyar discrepancy}
-\begin{table}[H]
-\centering
-\caption{ค่าหลักจาก SSSA validation artifact}
-\begin{tabularx}{\textwidth}{@{}l r r r r X@{}}
-\toprule
-แบบจำลอง & $\max|f_0|$ & $\max|g_0|$ & จำนวน state & จำนวน eigenvalue & FD plateau \\
-\midrule
-Padiyar manual & $\sci{1.249}{-15}$ & $\sci{5.684}{-14}$ & 16 & 16 &
-$\sci{1.686}{-7}$ \\
-Padiyar AVR & $\sci{9.215}{-13}$ & $\sci{5.684}{-14}$ & 20 & 20 &
-$\sci{5.799}{-9}$ \\
-EMF6 & $\sci{1.665}{-15}$ & $\sci{2.132}{-14}$ & 24 & 24 &
-$\sci{1.078}{-7}$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-ค่าทั้งหมดต่ำกว่า $\sci{10}{-10}$ ที่ equilibrium และ eigenvalues finite
-ทุกตัว Schur reconstruction ของ Padiyar AVR ให้ความต่างเชิงตัวเลขเป็นศูนย์
-และ $J_{yy}$ มี rcond ประมาณ $\sci{9.74}{-3}$ สำหรับ Padiyar กับ
-$\sci{1.11}{-2}$ สำหรับ EMF6 จึงไม่ใช่การแก้ระบบที่เกือบ singular
-
-\paragraph{FD plateau}
-การเปรียบเทียบ $h=10^{-5}$ กับ $h=10^{-6}$ ให้ความต่าง physical modes
-ตามตาราง โดยค่าทั้งหมดต่ำกว่า $\sci{10}{-3}$ ที่ประกาศไว้ default step
-ของ production อยู่บน plateau นี้
-
-\paragraph{Gate matrix}
-รายการ gate ของ SSSA validation artifact ผ่านทั้งหมด ครอบคลุม shared DAE,
-state order/count, FD convergence, default-on-plateau, Schur solve,
-ไม่มี explicit inverse, gauge, conjugate pair, modal metrics,
-reference independence, provenance และ no external solver การทดสอบที่
-บันทึกไว้คือ targeted 62 ผ่าน, 0 ไม่ผ่าน, 0 incomplete; ตัวเลขนี้เป็น
-evidence ของ code path เดิม ไม่ใช่การรันซ้ำเพื่อให้รายงานผ่าน
-
-\paragraph{Padiyar discrepancy}
-การจับคู่ Table 9.5 ของ Padiyar เป็น \source{ASSUMED\_DIAGNOSTIC} แบบ
-greedy one-to-one เท่านั้น มี 18 physical roots และความต่างสูงสุดประมาณ
-$\sci{4.3}{-2}$ การตรวจ FD plateau อยู่ระดับ $\sci{10}{-7}$ จึงอธิบาย
-ความต่าง $\sci{4.3}{-2}$ ด้วย FD noise ไม่ได้ สาเหตุที่แท้จริงยังไม่ปิด
-อาจเกี่ยวกับ model, data, convention หรือ precision ของสิ่งพิมพ์ รายงาน
-ความต่างนี้ตรง ๆ และไม่ใช้เป็น acceptance gate
-
-\clearpage
-
-
-% ============================================================================
-% 9. TS method
-\reportsection{วิธี TS: implicit trapezoidal, corrector, event landing และ COI}
-สำหรับช่วงที่ topology คงที่ production ใช้ implicit trapezoidal:
-\begin{equation}
-R_x=x_{n+1}-x_n-\frac{h}{2}
-\left[f(t_n,x_n,y_n)+f(t_{n+1},x_{n+1},y_{n+1})\right]=0,
-\qquad
-R_g=g(t_{n+1},x_{n+1},y_{n+1})=0.
-\end{equation}
-Newton corrector แก้ $[R_x;R_g]$ พร้อมกันจน update และ residual ผ่าน
-ตัวแก้ EMF6 ใช้ corrector iteration คงที่สามรอบตาม contract ส่วน adaptive
-stepper ใช้ step-doubling เพื่อประมาณ local error และยอมรับ fine solution
-เมื่อ weighted error และ KCL residual ผ่าน
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
-    minimum width=1.68in,minimum height=0.70in,align=center},
-  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
-]
-\node[box] (left) {$t_n$\\left topology\\accepted $(x_n,y_n)$};
-\node[box,right=0.65in of left] (step) {predict + Newton\\solve $R_x,R_g$};
-\node[box,right=0.65in of step] (right) {$t_{n+1}$\\accepted right limit};
-\node[box,below=0.45in of step] (event) {ถ้า $t_{n+1}=t_e$\\apply event transaction};
-\draw[arr] (left)--(step)--(right);
-\draw[arr] (step)--(event);
-\draw[arr] (event)--(right);
-\end{tikzpicture}
-\caption{แต่ละ step แก้ DAE บน topology เดียว; event ที่ลง grid ใช้
-left topology สำหรับ arrival และ re-solve right topology แบบ atomic}
-\end{figure}
-
-\paragraph{Exact event landing}
-ถ้า event อยู่ก่อนปลาย step จะลด $h$ ให้ลงตรง event เสมอ ห้าม step เดียว
-คร่อมสอง topology เมื่อเปลี่ยน mode จะ carry plant state, initialize
-controller block ของปลายทาง และตรวจ terminal-current continuity
-\begin{equation}
-|I^{+}-I^{-}|\le \sci{10}{-10}\pu.
-\end{equation}
-ถ้า right-limit Newton หรือ continuity gate ไม่ผ่าน transaction ถูก rollback
-ทั้งชุด
-
-\paragraph{COI metrics}
-สำหรับเครื่องที่มี inertia $H_i$ ใช้
-$\delta_{\mathrm{COI}}=\sum_iH_i\delta_i/\sum_iH_i$ และ
-$f_{\mathrm{COI}}$ เป็น frequency metric ของระบบ การลบ common motion นี้
-ใช้กับ comparison เท่านั้น ไม่เปลี่ยน state ที่ตัวแก้ integrate
-
-\paragraph{Adaptive policy}
-ตัวควบคุมเวลาเลือก $h_{\mathrm{new}}$ จาก error ที่ normalize ด้วย
-$\mathrm{atol}+\mathrm{rtol}\max|x|$ และจำกัดอัตราขยาย/หดตามค่าที่ประกาศ
-เมื่อ reject จะไม่เขียนทับ accepted state ไม่มี extrapolation ของ arm ที่หยุด
-ก่อน horizon
-
-\clearpage
-
-
-% ============================================================================
-% 10. TS evidence
-\reportsection{หลักฐาน TS: common grid, IEEE-14 และ RTS-24}
-\begin{table}[H]
-\centering
-\caption{ผล comparison บน common grid ที่ไม่ extrapolate}
-\begin{tabularx}{\textwidth}{@{}l l r r r r@{}}
-\toprule
-คู่เทียบ & metric & $\max|\Delta\mathrm{COI}|$ (deg) &
-$\max|\Delta\omega|$ (pu) & $\max|\Delta P_e|$ (MW) &
-$\max|\Delta V|$ (pu) \\
-\midrule
-PSAT--Ours & IEEE-14 & 0.009571 & $\sci{3.816033}{-6}$ & 0.042171 &
-$\sci{3.179264}{-5}$ \\
-PGAz--Ours & IEEE-14 & 0.616348 & $\sci{2.916429}{-4}$ & 2.467655 &
-$\sci{2.264528}{-3}$ \\
-PSAT--Ours & RTS-24 & 0.0067685 & $\sci{4.6205}{-6}$ & 0.082705 &
-$\sci{5.3538}{-6}$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\paragraph{วิธีอ่านตาราง}
-กริดเปรียบเทียบใช้ event และ sample time ที่มีอยู่จริงของแต่ละ solver
-ห้าม extrapolate ออกนอกช่วงที่ solver ให้มา ค่า PSAT--Ours ของ IEEE-14
-อยู่ใต้ tolerance ที่ประกาศ จึงเป็น primary comparison ส่วน PGAz มี
-trajectory difference ใหญ่กว่าและ corrector residual ไม่พร้อมให้ยืนยัน
-ดังนั้นเป็น diagnostic เท่านั้น
-
-\paragraph{RTS-24 เป็น held-out check}
-RTS-24 ตรวจว่าการประกอบ network, constant-impedance conversion ที่ runtime,
-COI mapping และ event landing ไม่ผูกกับจำนวน bus ของ IEEE-14 ผลที่ต่างจาก
-PSAT ถูกพิมพ์เป็น metric ไม่ถูกใช้เพื่อเปลี่ยน solver
-
-\paragraph{สิ่งที่ TS พิสูจน์และไม่พิสูจน์}
-TS พิสูจน์ว่า accepted DAE state มี residual และ event order ตามสัญญา
-แต่ไม่ได้พิสูจน์ hardware control, protection, unbalanced fault หรือ
-accuracy ของ switching waveform ระดับ EMT นอกจากนี้ fixed-step และ adaptive
-เป็น numerical routes ที่ต้องอ่านแยกกัน ไม่สรุปว่าการรันสั้นรับรอง horizon ยาว
-
-\begin{center}
-\fcolorbox{teal}{lightgreen}{\begin{minipage}{0.90\textwidth}
-\textbf{ข้อสรุปหน้านี้:} common-grid comparison ผ่านในส่วน PSAT primary
-ตามตัวเลขที่วัดได้ ส่วน PGAz ถูกเก็บไว้เพื่อบอกขอบเขตของความสอดคล้อง ไม่ใช่
-ถูกลบหรือปรับ tolerance ให้ดูดี
-\end{minipage}}
-\end{center}
-
-\clearpage
-
-
-% ============================================================================
-% 11. IBR development
-\reportsection{พัฒนาการ IBR: GFL+PLL, GFM no-PLL, 17-state superset}
-IBR แต่ละตัวมี plant ร่วมและ controller สอง branch แต่ integrate branch เดียว
-ในเวลาใดเวลาหนึ่ง GFL ใช้ current control และ SRF-PLL ส่วน GFM ใช้ VSG
-swing และ voltage-forming loop การเลือก mode ไม่ได้หมายความว่าสอง controller
-ทำงานพร้อมกัน
-
-\begin{align}
-x_{\mathrm{GFL}}&=[\,\delta_{\mathrm{PLL}},\xi_{\mathrm{PLL}},
-\xi_P,\xi_Q,\xi_{Id},\xi_{Iq}\,],\\
-x_{\mathrm{GFM}}&=[\,\delta_{\mathrm{VSG}},\omega_{\mathrm{VSG}},E,
-\xi_{Vd},\xi_{Vq},\xi_{Id},\xi_{Iq}\,].
-\end{align}
-plant ร่วมคือ $(i_d,i_q,V_{dc})$ และ source-current state $I_{dc}$ ถูก append
-เป็นพิกัดที่ 17 สร้าง fixed superset 17 state
-\begin{equation}
-x_{\mathrm{IBR}}\in\mathbb{R}^{17},\qquad
-\mathcal{A}_{\mathrm{GFL}}=\{1{:}9,17\},\quad
-\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,10{:}16,17\}.
-\end{equation}
-ดังนั้น active count เป็น 10 หรือ 11 ไม่ใช่ 17 พร้อมกัน
-
-\paragraph{GFL}
-PLL ขับ $v_q$ เป็นศูนย์และใช้ $\omega_{\mathrm{PLL}}$ เป็น frame frequency
-outer $P/Q$ loops สร้าง current reference ส่วน inner loops แก้ filter current
-ที่ equilibrium $P$ และ $Q$ ตรง setpoint จาก source
-
-\paragraph{GFM no-PLL}
-VSG ให้
-\begin{equation}
-M\dot{\omega}_{\mathrm{VSG}}=\kappa P_{\mathrm{ref}}-P_{\mathrm{inv}}
--D_v(\omega_{\mathrm{VSG}}-1),\qquad
-\dot{\delta}_{\mathrm{VSG}}=\omega_b(\omega_{\mathrm{VSG}}-1).
-\end{equation}
-ไม่มี $\delta_{\mathrm{PLL}}$ หรือ PLL integrator แฝง มุมจึงเกิดจาก state
-ของ VSG เท่านั้น
-
-\paragraph{State transfer}
-เมื่อ mode เปลี่ยน จะ carry $(i_d,i_q,V_{dc})$, map frequency ที่ physical
-frame และ initialize controller block ใหม่จาก $(V,P,Q)$ ของ accepted state
-จากนั้นตรวจ current continuity และแก้ algebraic right-limit ใหม่ วิธีนี้
-เปลี่ยน parameterisation ได้ แต่ไม่สร้าง current impulse ให้ network
-
-\paragraph{ข้อสังเกตเรื่อง 17 state}
-17 คือขนาด container ที่คงที่เพื่อ ABI และ mapping ไม่ใช่จำนวน differential
-state ที่ integrate พร้อมกัน เมื่อรวม SG หก state และ IBR สี่ container จะมี
-74 แถวใน composite state vector ของกรณี IEEE-14 นี้
-
-\clearpage
-
-
-% ============================================================================
-% 12. SMIB topology and contract
-\reportsection{SMIB: topology และสัญญาของ GFL-RMS10/GFM-no-PLL}
-SMIB ใช้เป็น diagnostic oracle แยกจาก multi-bus production path เพื่อทดสอบ
-device equation, equilibrium, SSSA และ event-free TDS โดยไม่ปะปนกับการเลือก
-candidate ใน IEEE-14 ทั้งสองกรณีใช้ terminal $V=1\angle0\pu$,
-$P=0.40\pu$, $Q=0.10\pu$, system base 100 MVA และ line
-$Z_{\mathrm{line}}=0.02+\mathrm{j}0.20\pu$
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
-    minimum width=1.25in,minimum height=0.72in,align=center},
-  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
-]
-\node[box] (inf) {ideal infinite bus\\$E_\infty$};
-\node[box,right=0.30in of inf] (line) {external line\\$Z_{\mathrm{line}}$};
-\node[box,right=0.30in of line] (pcc) {IBR terminal\\$V=1\angle0$};
-\node[box,right=0.30in of pcc] (dev) {device\\GFL or GFM};
-\draw[arr] (inf)--(line)--(pcc)--(dev);
-\node[below=0.35in of pcc,align=center,text=teal] {KCL and $S=V I^*$\\checked at the same point};
-\end{tikzpicture}
-\caption{SMIB topology ที่ใช้ทดสอบสองกรณีแยกกัน ไม่ได้ผสม GFL และ GFM
-ใน device เดียวกัน}
-\end{figure}
-
-\begin{table}[H]
-\centering
-\caption{สัญญาสองกรณี SMIB}
-\begin{tabularx}{\textwidth}{@{}l X X@{}}
-\toprule
-หัวข้อ & GFL-RMS10 & GFM-no-PLL \\
-\midrule
-ตัวควบคุม & SRF-PLL, outer $P/Q$, filter current & VSG swing, $Q$--$V$, filter current \\
-จำนวน state & 10 & 4 \\
-frame angle & $\delta_{\mathrm{PLL}}$ & $\delta_{\mathrm{VSG}}$ จาก swing \\
-ข้อห้าม & ไม่ใช้ angle ของ infinite bus เป็น state & ไม่มี PLL, PLL gain หรือ PLL freeze \\
-บทบาท & current source ที่ต้องมี voltage reference & voltage-forming source \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-SMIB equilibrium ใช้ closed-form warm start แล้วแก้ local residual ด้วย
-Newton ใน oracle ผลของ SMIB จึงเป็น\linebreak
-\source{ASSUMED\_DIAGNOSTIC} ไม่ถูกใช้
-ป้อนกลับไปเปลี่ยน production IEEE-14
-
-\paragraph{เหตุผลที่ต้องแยกกรณี}
-GFL และ GFM มี state order, frame และ source contract คนละแบบ หากรวมเป็น
-กรณีเดียวจะไม่รู้ว่าการเปลี่ยน spectrum มาจาก controller หรือจาก topology
-รายงานจึงใช้ SMIB เป็นการพิสูจน์ local mechanism แล้วค่อยนำ dual-mode
-container ไปตรวจใน composite IEEE-14
-
-\clearpage
-
-
-% ============================================================================
-% 13. SMIB evidence
-\reportsection{หลักฐาน SMIB: equilibrium, Schur, FD, eigenpairs และ power identity}
-\begin{table}[H]
-\centering
-\caption{ผล SMIB oracle จากไฟล์ diagnostic ที่ commit ใน repository}
-\begin{tabularx}{\textwidth}{@{}l r r r r r X@{}}
-\toprule
-กรณี & $\|f_0\|_\infty$ & $\|g_0\|_\infty$ & rcond$(J_y)$ &
-จำนวน $\lambda$ & $\max\operatorname{Re}\lambda$ & ผล TS \\
-\midrule
-GFL-RMS10 & $\sci{2.790}{-13}$ & $\sci{1.110}{-16}$ & 0.8347 &
-10 & $-11.23383$ & drift $0$, error $\sci{7.700}{-6}$ \\
-GFM-no-PLL & $\sci{6.523}{-14}$ & $\sci{2.082}{-16}$ & 0.9216 &
-4 & $-0.5554663$ & drift $0$, error $\sci{2.866}{-5}$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Schur-versus-direct error ของ GFL คือ $\sci{2.605}{-14}$ และของ GFM คือ
-$\sci{8.095}{-11}$ จึงยืนยันว่า $A$ มาจาก elimination เดียวกับที่ระบุใน
-สมการ ไม่ใช่ matrix ที่พิมพ์แยกจาก solver GFL มี fast PLL pole ประมาณ
-$-\sci{3.371}{5}\ \mathrm{s}^{-1}$ และ GFM มี swing pair
-$-0.5555\pm\mathrm{j}9.356\ \mathrm{s}^{-1}$ พร้อม real filter modes
-$-100.9$ และ $-114.5\ \mathrm{s}^{-1}$
-
-\paragraph{FD และ eigenpairs}
-ทั้งสองกรณีให้ finite Jacobian และ eigenvalues ครบตามจำนวน state
-GFM perturbation-halving ratio เท่ากับ $\sci{1.433}{-5}$ และ GFL ratio
-เท่ากับ $\sci{2.489}{-9}$ จาก TDS oracle ตัวเลขนี้แสดง local linear
-consistency ของ implementation ไม่ได้ประกาศว่า nonlinear large-disturbance
-จะเป็นเชิงเส้น
-
-\paragraph{Nonlinear กับ linear}
-เมื่อ perturbation มีขนาด $10^{-3}$, ความต่าง nonlinear-vs-linear ของ
-GFM เท่ากับ $\sci{2.866}{-5}$ และของ GFL เท่ากับ $\sci{7.700}{-6}$
-การตรวจ power identity ให้ error GFM $\sci{6.523}{-16}\pu$ และ GFL
-เป็นศูนย์ภายใน precision ของ diagnostic
-
-\paragraph{ขอบเขตความหมาย}
-ผล GFL ที่มี PLL pole เร็วมากเป็นลักษณะของ local model ที่วัด ณ operating
-point นี้ ไม่ใช่เหตุให้ลบ eigenvalue หรือเปลี่ยน sign เพื่อให้ผ่าน ส่วน GFM
-ไม่มี PLL ตาม contract การที่ทั้งสองผลเป็นคนละกรณีจึงสำคัญกว่าการจัดอันดับว่า
-กรณีใด "ดีกว่า"
-
-\clearpage
-
-
-% ============================================================================
-% 14. IEEE-14 system
-\reportsection{ระบบ IEEE-14: inventory, state count และ event schedule}
-กรณีหลักประกอบด้วย SG ที่ bus 1 และ IBR สี่ตัวที่ bus 2, 3, 6, 8
-อุปกรณ์ถูก map ด้วย external bus ID แล้วค่อยสร้าง internal coordinate
-เครื่อง SG ใช้ EMF6 operational model โดย state ที่ integrate อยู่บน singular
-limit ของ $E_d'$ จึงมี 5 active state จาก 6 coordinate ที่เก็บ
-
-\begin{table}[H]
-\centering
-\caption{inventory ของอุปกรณ์และการ map state}
-\begin{tabularx}{\textwidth}{@{}l l l X@{}}
-\toprule
-ทรัพยากร & bus & branch & จำนวน active state \\
-\midrule
-SG1 & 1 & EMF6 & 5 (จาก 6 coordinate) \\
-IBR1 & 2 & GFL/GFM dual-mode & 10 หรือ 11 จาก container 17 \\
-IBR2 & 3 & GFL/GFM dual-mode & 10 หรือ 11 จาก container 17 \\
-IBR3 & 6 & GFL/GFM dual-mode & 10 หรือ 11 จาก container 17 \\
-IBR4 & 8 & GFL/GFM dual-mode & 10 หรือ 11 จาก container 17 \\
-\midrule
-\multicolumn{3}{r}{composite container dimension} & $6+4\times17=74$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\begin{table}[H]
-\centering
-\caption{เหตุการณ์ตาม case และผลจาก accepted event log}
-\begin{tabularx}{\textwidth}{@{}l l X@{}}
-\toprule
-เวลา & ประเภท & ความหมาย \\
-\midrule
-$20.000\second$ & SG trip & เปิด breaker, SG หยุดฉีดเข้าสู่ network \\
-$50.000\second$ & load step & เพิ่ม $P,Q$ load ตาม case \\
-$85.000\second$ & fault on & fault ที่ bus 9 \\
-$85.150\second$ & fault clear & คืน topology หลังช่วง fault \\
-$110.000\second$ & line trip & เปิดสาย 6--13 \\
-$145.000\second$ & restore request & เริ่ม workflow คืน SG reference \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-เหตุการณ์ห้ารายการแรกเป็น \source{CASE\_DEFINED}; เวลา reclose และเวลา
-release เป็น \result{PROJECT\_RESULT} จาก event log ไม่ hard-code ใน solver
-หลัง SG trip อย่างน้อยหนึ่ง GFM ต้องทำหน้าที่ voltage-forming เพื่อ fix
-reference angle หากไม่มีจะ refuse ก่อนเรียก Newton
-
-\paragraph{การ map ที่ต้องไม่สลับ}
-ลำดับ resource ของ IBR คือ $[1,2,3,4]$ และ bus ที่สอดคล้องคือ
-$[2,3,6,8]$ ตัวสร้างรูปตรวจ mapping นี้ในทุก arm ก่อน export เพราะการ
-เรียง device ผิดจะทำให้เส้นของ converter หนึ่งถูกอ่านเป็นอีก converter โดย
-ไม่เปลี่ยนค่า numerical
-
-\clearpage
-
-
-% ============================================================================
-% 15. Candidate selection and switching contract
-\reportsection{Candidate selection และ switching contract}
-หลัง SG offline ตัวเลือก GFM เป็น subset ของ IBR สี่ตัวทั้งหมด
-จึงมี $\CandTotal$ candidates การประเมินแต่ละชุดแก้ equilibrium และ
-linearise ใหม่บน network เดียวกัน ไม่ reuse eigenvalue จากชุดอื่น
-
-\begin{table}[H]
-\centering
-\caption{ผลการคัดเลือกจาก candidate table}
-\begin{tabularx}{\textwidth}{@{}l r r l X@{}}
-\toprule
-จำนวน GFM & จำนวนที่ตรวจ & จำนวนพร้อมใช้ & หลักฐานสำคัญ \\
-\midrule
-1 & $\CandTotalNOne$ & $\CandReadyNOne$ & ต้องมี source และผ่าน damping-ratio gate \\
-2 & $\CandTotalNTwo$ & $\CandReadyNTwo$ & best set อยู่ในกลุ่มนี้ \\
-3 & $\CandTotalNThree$ & $\CandReadyNThree$ & ไม่มีชุดที่ผ่านใน snapshot \\
-4 & $\CandTotalNFour$ & $\CandReadyNFour$ & ผ่าน linear screen แต่ไม่พอรับประกัน TS \\
-\midrule
-รวม & \CandTotal & \CandReady & admissibility ไม่ monotone ตามจำนวน \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-best set ที่รายงานเป็น \CandBestSet\ โดย $\Omega=\CandBestOmega$ ขณะที่
-best single มี $\Omega=\CandBestSingleOmega$ และ full set มี
-$\Omega=\CandFullOmega$ ค่า $\Omega$ เป็น damping margin ของ equilibrium
-ของชุดนั้นเอง ไม่ใช่ margin ของ trajectory ที่กำลังสลับ
-
-\paragraph{ความหมายของ [3 4]}
-เมื่อ log เขียน candidate เป็น \([3\ 4]\) นั่นคือ resource indices ในลำดับ
-IBR ไม่ใช่ bus IDs ดังนั้น map ที่ใช้จริงคือ resource 3 $\to$ bus 6 และ
-resource 4 $\to$ bus 8 หรือ bus set \([6\ 8]\) การระบุสองแบบนี้พร้อมกัน
-ป้องกันความสับสนระหว่าง index ภายในกับ external ID
-
-\paragraph{สัญญาการ commit}
-candidate ต้องผ่าน equilibrium convergence, physical KCL, finite state,
-conditioning, damping-ratio threshold และ authenticated fingerprint
-ก่อน mode transaction ถ้าไม่ผ่านจะไม่แก้ด้วยการเลือก candidate ถัดไปแบบ
-เงียบ ๆ การ commit เป็น atomic: map controller, solve right-limit, ตรวจ
-continuity แล้วจึงเขียน accepted state
-
-\paragraph{linear ไม่เท่ากับ nonlinear}
-full four-GFM เป็นตัวอย่างที่ผ่าน linear screen แต่เมื่อ pin ตั้งแต่ SG trip
-กลับหยุดที่ \ArmPinnedgfmFourHorizon\ วินาที ขณะที่ adaptive ค่อย ๆ เพิ่ม
-support ผ่าน transition certificate จึงไปต่อได้ การคัดเลือกเป็น necessary
-condition ไม่ใช่ sufficient condition
-
-\clearpage
-% ============================================================================
-% 16. Chronology and supervisor
-\reportsection{Chronology 250 วินาทีและผลของ supervisor}
-การทดลอง flagship ใช้ event schedule ที่ตรึงไว้ล่วงหน้าและให้ accepted state
-เป็นเจ้าของการตัดสินใจทุกครั้ง ตารางนี้แยก event ที่เป็น \source{CASE\_DEFINED}
-ออกจากผลที่เป็น \result{PROJECT\_RESULT}
-
-\begin{table}[H]
-\centering
-\caption{ลำดับเหตุการณ์และผลของ adaptive arm}
-\begin{tabularx}{\textwidth}{@{}r l X@{}}
-\toprule
-เวลา (s) & ชนิด & เหตุการณ์และผลที่ตรวจได้ \\
-\midrule
-20.000 & CASE\_DEFINED & SG bus 1 trip; เริ่ม islanding และต้องมี voltage-forming source \\
-22.089, 51.340, 53.379 & PROJECT\_RESULT & augment ตามลำดับเพื่อเพิ่ม GFM support \\
-25.303 & PROJECT\_RESULT & release แรกหลัง transition certificate ผ่าน \\
-50.000 & CASE\_DEFINED & load เพิ่ม 20\% \\
-85.000--85.150 & CASE\_DEFINED & bus 9 fault แล้ว clear บน grid ที่ลงตรง event \\
-110.000 & CASE\_DEFINED & line 6--13 trip \\
-145.000 & CASE\_DEFINED & restore request; right-limit solve ก่อน commit \\
-146.278, 148.281, 152.402 & PROJECT\_RESULT & release/augment/release ในช่วง restore \\
-159.252 & PROJECT\_RESULT & reclose สำเร็จตาม summary; mode transaction ยังถูกตรวจต่อ \\
-173.1271 & PROJECT\_RESULT & mode return หลัง handback และ reselection guard \\
-250.000 & PROJECT\_RESULT & horizon สิ้นสุดด้วย terminal frequency 60.000001 Hz \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-ลำดับบน timeline คือ SG trip 20.000 s, load step 50.000 s, fault
-85.000--85.150 s, line trip 110.000 s และ restore request 145.000 s
-ก่อน reclose \NewRunReclose\ s และ mode return
-\NewRunModeReselectionTime\ s ตาม summary
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=6.20in]{figures/final_report_th/fig_supervisor.png}
-\caption{severity, mode และ owner จาก raw adaptive trajectory; สีเป็นเพียงการจัดหมวด}
-\end{figure}
-
-\clearpage
-% ============================================================================
-% 17. Electrical response
-\reportsection{ผลตอบสนองไฟฟ้าจาก raw adaptive trajectory}
-รูปนี้อ่านจาก trajectory ที่เก็บจริงโดยไม่เติม noise, smoothing, filtering หรือ
-การ extrapolate แขนที่หยุดก่อน horizon เส้น event เป็น marker ของเวลาใน schedule
-ไม่ใช่การปรับ trajectory ให้เรียบ
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=6.20in]{figures/final_report_th/fig_electrical.png}
-\caption{กำลัง active/reactive, ความถี่ COI และแรงดันต่ำสุดของ bus ที่ติดตาม}
-\end{figure}
-
-\begin{table}[H]
-\centering
-\caption{ค่าสูงสุด/ต่ำสุดและค่าปลายทางจาก adaptive arm}
-\begin{tabularx}{\textwidth}{@{}l r l@{}}
-\toprule
-ตัวชี้วัด & ค่า & ความหมาย \\
-\midrule
-$V_{\min}$ ทั้ง trajectory & \NewRunVMin\pu & peak metric \\
-$V_{\max}$ ทั้ง trajectory & \NewRunVMax\pu & peak metric \\
-$f_{\min}$ ทั้ง trajectory & \NewRunFMin\hz & peak metric \\
-$f_{\max}$ ทั้ง trajectory & \NewRunFMax\hz & peak metric \\
-$V_{\min},V_{\max}$ ที่ปลายทาง & \NewRunTerminalVMin\pu,\ \NewRunTerminalVMax\pu & settled metric \\
-$f$ ที่ปลายทาง & \NewRunTerminalF\hz & settled metric \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-ช่วง peak สะท้อน disturbance ทั้งหมด ขณะที่ settled metrics อ่านเฉพาะ accepted
-sample สุดท้าย จึงไม่ควรนำสองกลุ่มนี้ไปปะปนกัน ค่า residual ของ run คือ
-\NewRunResidual\ และไม่มี subdivision เพิ่มใน summary
-
-\clearpage
-
-% ============================================================================
-% 18. Six-arm comparison
-\reportsection{ตาราง six-arm และการเปรียบเทียบนโยบาย}
-แขนทั้งหกอ่านจาก cache ชุดเดียวและผ่าน hash check ก่อนสร้างตาราง จึงแยก
-\source{PROJECT\_RESULT} ของแต่ละ policy ออกจากสมมติฐานของตัว solver ได้
-ชัดเจน แขนที่หยุดก่อน 250 วินาทีไม่ถูก extrapolate ให้ครบ horizon
-
-\begin{table}[H]
-\centering
-\caption{ผลการรันหกแขนจาก snapshot เดียว}
-\begin{tabularx}{\textwidth}{@{}l r l r r r X@{}}
-\toprule
-แขน & horizon (s) & สถานะ & reclose (s) & GFM สูงสุด & samples & หมายเหตุ \\
-\midrule
-\ArmAdaptiveLabel & \ArmAdaptiveHorizon & สำเร็จ & \ArmAdaptiveReclose &
-\ArmAdaptiveGfmMax & \ArmAdaptiveSamples & adaptive policy \\
-\ArmPinnedgfmOneLabel & \ArmPinnedgfmOneHorizon & สำเร็จ & \ArmPinnedgfmOneReclose &
-\ArmPinnedgfmOneGfmMax & \ArmPinnedgfmOneSamples & pin หนึ่งตัว \\
-\ArmPinnedgfmTwoLabel & \ArmPinnedgfmTwoHorizon & สำเร็จ & \ArmPinnedgfmTwoReclose &
-\ArmPinnedgfmTwoGfmMax & \ArmPinnedgfmTwoSamples & pin สองตัว \\
-\ArmPinnedgfmFourLabel & \ArmPinnedgfmFourHorizon & หยุดก่อน horizon & -- &
-\ArmPinnedgfmFourGfmMax & \ArmPinnedgfmFourSamples & minimum-step failure \\
-\ArmLockedgflLabel & \ArmLockedgflHorizon & หยุดเมื่อ source หาย & -- &
-\ArmLockedgflGfmMax & \ArmLockedgflSamples & ไม่มี voltage-forming source \\
-\ArmNoadaptationLabel & \ArmNoadaptationHorizon & สำเร็จ & \ArmNoadaptationReclose &
-\ArmNoadaptationGfmMax & \ArmNoadaptationSamples & ไม่มี adaptive stepper \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\paragraph{Peak กับ settled}
-สำหรับ adaptive arm peak voltage range คือ
-$[\NewRunVMin,\NewRunVMax]\pu$ และ peak frequency range คือ
-$[\NewRunFMin,\NewRunFMax]\hz$ ตลอด trajectory
-ค่าปลายทางคือ voltage range
-$[\NewRunTerminalVMin,\NewRunTerminalVMax]\pu$ และ
-frequency \NewRunTerminalF\hz\ การรายงานสอง envelope แยกกันป้องกัน
-การตีความว่า transient peak เป็น operating point สุดท้าย
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=6.20in]{figures/final_report_th/fig_policy.png}
-\caption{ความถี่ COI ของแต่ละ policy บนช่วงที่มีข้อมูลจริง; สีแยก policy เท่านั้น}
-\end{figure}
-
-ช่วง common window คือ $[0,\CommonWindowSplit)$ วินาที และ
-\CommonWindowAllBitIdentical\ หมายถึงทุกแขนที่มีข้อมูลในช่วงนี้ bit-identical
-กับ reference; pairwise check แต่ละแขนใช้ \CommonWindowPinnedgfmOneSamples\
-ตัวอย่าง ไม่มีการยืดช่วงของแขนที่ล้มเหลว
-
-\clearpage
-% ============================================================================
-% 19. Limitations, conclusion and references
-\reportsection{ข้อจำกัด ความพร้อม ข้อสรุป และเอกสารอ้างอิง}
-\paragraph{ข้อจำกัดของข้ออ้าง}
-ผลนี้เป็น numerical evidence ของ PF--SSSA--TS และการสลับ mode ใน balanced
-RMS model ไม่ใช่การรับรอง EMT, unbalanced protection, hardware controller,
-grid-code compliance หรือการใช้งานภาคสนาม ค่าความต่างกับ Padiyar สูงสุดราว
-$\sci{4.3}{-2}$ เป็น diagnostic ที่ยังไม่ทราบสาเหตุและไม่ใช่ gate ส่วน PGAz
-มี execution artifact แต่ comparison gate ไม่ผ่าน จึงไม่ถูกใช้เป็นหลักฐาน
-primary
-
-\paragraph{ความพร้อมของ implementation}
-production ใช้สมการและ state order ภายในโครงการ รวมถึง implicit trapezoidal
-TS และ Schur solve ด้วย backslash; external programs เป็น oracle เท่านั้น
-การเปลี่ยน mode ต้องผ่าน finite-state, KCL, conditioning, continuity และ
-authenticated provenance gate การไม่มี voltage-forming source หรือ Newton
-right-limit ที่ไม่ผ่านจะหยุดแบบ fail-closed
-
-\paragraph{สิ่งที่ยังไม่อ้าง}
-ตัวนับ rejected trial ใน search path ถูกตัดออกจากรายงานเพราะ defect record
-ยังเปิดอยู่ จึงไม่ใช้ตัวเลขนั้นสนับสนุน readiness หรือ performance ใด ๆ
-นอกจากนี้ผล six-arm เป็น snapshot ที่ commit \texttt{c56ff9f} และรูป/ตาราง
-สร้างด้วย generator ที่ตรวจ hash; หาก cache เปลี่ยนต้องสร้างรายงานใหม่ทั้งชุด
-
-\paragraph{ข้อสรุป}
-สายงานที่เชื่อม PF, equilibrium, SSSA, TS และ supervisor ด้วย residual กับ
-state mapping เดียวกันสามารถตรวจสอบย้อนกลับได้ ผล IEEE-14 แสดงว่า adaptive
-arm เดินครบ \NewRunEnd\ วินาที, reclose สำเร็จที่ \NewRunReclose\ วินาที และ
-กลับ mode ที่ \NewRunModeReselectionTime\ วินาที ขณะที่ pinned และ locked
-arms แสดงขอบเขต failure อย่างซื่อสัตย์ ตาราง six-arm จึงใช้บอก trade-off
-ของ policy ไม่ได้ใช้เป็นคำรับรองความมั่นคงเชิงปฏิบัติการ
-
-\paragraph{เอกสารอ้างอิงใน repository}
+\templateheading{วัตถุประสงค์ของโครงงาน}
 \begin{enumerate}
-\item โครงการ, \textit{Project contracts and numerical integrity},
-      \texttt{AGENTS.md}, revision ที่ใช้กับรายงานนี้
-\item โครงการ, \textit{IBR reduced-6 EECON49 manifest},
-      \texttt{docs/project/IBR\_REDUCED6\_EECON49\_MANIFEST.md}
-\item โครงการ, \textit{SSSA validation artifact},
-      \texttt{output/validation/artifacts/sssa\_validation.md}
-\item โครงการ, \textit{IEEE-14 three-way TS comparison},
-      \path{docs/source/figures/case14_ts/case14_ts_compare_three_way.md}
-\item โครงการ, \textit{SMIB GFL-RMS10 and GFM-no-PLL diagnostics},
-      \texttt{output/diagnostics/smib/}
-\item โครงการ, \textit{PF, SSSA, TS and IBR source implementations},
-      \texttt{+pfsolver/}, \texttt{+stability/}, \texttt{+ibr/}
+\item ศึกษาและพัฒนาสายงานคำนวณระบบไฟฟ้ากำลังที่เชื่อมโยงการไหลของกำลัง (Power Flow: PF) การวิเคราะห์เสถียรภาพสัญญาณขนาดเล็ก (Small-Signal Stability Analysis: SSSA) และการจำลองโดเมนเวลา (Time-Domain Simulation: TS) ภายใต้แบบจำลองเดียวกัน
+\item พัฒนาแบบจำลองทรัพยากรที่เชื่อมต่อผ่านอินเวอร์เตอร์ (Inverter-Based Resources: IBR) ที่สามารถทำงานได้ทั้งโหมด Grid-Following (GFL) และ Grid-Forming (GFM)
+\item พัฒนากลไก supervisor สำหรับสลับโหมด GFL/GFM อัตโนมัติตามสภาวะของระบบ โดยรักษาความต่อเนื่องของ state และกระแสที่จุดเชื่อมต่อ
+\item ทดสอบกรอบการทำงานบนระบบ IEEE 14-bus ภายใต้เหตุการณ์รบกวนหลายชนิด และเปรียบเทียบผลกับนโยบายการควบคุมแบบอื่น
 \end{enumerate}
 
-\begin{center}
-\fcolorbox{navy}{lightblue}{\begin{minipage}{0.91\textwidth}
-รายงานฉบับนี้แสดงตัวเลขจาก artifact ที่ตรวจ provenance ได้ แยก
-CASE\_DEFINED, PROJECT\_RESULT และ ASSUMED\_DIAGNOSTIC และไม่อ้างค่าที่
-ยังอยู่ใน defect state เปิด
-\end{minipage}}
-\end{center}
+\clearpage
+\templateheading{ความสำคัญ และที่มาของปัญหาที่ทำโครงงาน}
+ระบบไฟฟ้ากำลังในปัจจุบันมีสัดส่วนแหล่งพลังงานที่เชื่อมต่อผ่านอินเวอร์เตอร์เพิ่มขึ้นอย่างต่อเนื่อง เช่น ระบบผลิตไฟฟ้าจากพลังงานหมุนเวียนและระบบกักเก็บพลังงาน อุปกรณ์เหล่านี้มีพฤติกรรมแตกต่างจากเครื่องกำเนิดไฟฟ้าซิงโครนัส (Synchronous Generator: SG) ซึ่งเดิมเป็นแหล่งกำหนดแรงดัน ความถี่ และมุมอ้างอิงให้กับโครงข่าย
+
+IBR แบบ GFL ทำงานโดยอาศัยแรงดันของโครงข่ายเป็นสัญญาณอ้างอิงผ่านวงจร Phase-Locked Loop (PLL) จึงเหมาะกับระบบที่มีแหล่งสร้างกริดอยู่แล้ว ในทางตรงกันข้าม GFM สามารถสร้างมุมและแรงดันอ้างอิงของตนเองได้ และจึงมีบทบาทสำคัญเมื่อระบบสูญเสีย SG หรือเข้าสู่สภาวะกริดอ่อน อย่างไรก็ตาม การกำหนดให้ IBR ทุกตัวทำงานเป็น GFM ตลอดเวลาไม่จำเป็นต้องให้ผลดีที่สุด และอาจเพิ่มความซับซ้อนของการควบคุมหรือทำให้การจำลองไม่ผ่านในบางสภาวะ
+โครงงานนี้จึงเสนอกรอบการทำงานที่ให้ IBR เปลี่ยนบทบาทระหว่าง GFL และ GFM ตามความจำเป็นของระบบ โดยใช้ผลจาก PF, equilibrium, SSSA และสถานะที่ยอมรับแล้วจาก TS เป็นพื้นฐานในการตัดสินใจ การทดสอบหลักใช้ระบบ IEEE 14-bus ซึ่งประกอบด้วย SG ที่บัส 1 และ IBR จำนวน 4 ตัวที่บัส 2, 3, 6 และ 8 ดังรูปที่~\ref{fig:network}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.64\textwidth]{123313.png}
+\caption{ระบบ IEEE 14-bus ที่ใช้เป็นกรณีศึกษา โดยมี SG และ IBR แบบ GFL/GFM}
+\label{fig:network}
+\end{figure}
+
+กรณีศึกษาถูกออกแบบให้เกิดการสูญเสีย SG การเปลี่ยนโหลด fault การปลดสายส่ง และการคืน SG เพื่อให้เห็นความจำเป็นของการเปลี่ยนบทบาทของ IBR อย่างชัดเจน หากไม่มีแหล่ง voltage-forming หลัง SG ถูกปลด ระบบจะไม่มีผู้ถือมุมอ้างอิงและตัวแก้สมการจะต้องหยุดแบบ fail-closed แทนการบังคับให้ผลลัพธ์ผ่าน
+
+\clearpage
+\templateheading{การดำเนินงานและผลงานที่ได้รับจากโครงงาน (โดยสังเขป) พร้อมภาพประกอบ}
+\templatesubheading{1. ขอบเขตของงาน ที่มาของข้อมูล และการจำแนกชั้นข้อมูล}
+ระบบที่ศึกษาคือเครือข่าย IEEE 14-bus ที่มี SG หนึ่งเครื่องที่บัสอ้างอิงและ IBR สี่ตัวที่บัส 2, 3, 6 และ 8 ทั้งระบบถูกประกอบเป็นระบบสมการเชิงอนุพันธ์--พีชคณิต (differential--algebraic equations: DAE) \emph{ชุดเดียว} ที่บังคับกฎกระแสของ Kirchhoff (KCL) ที่ทุกบัส ไม่มีการยุบบัสใดทิ้ง ไม่มีการแทนอุปกรณ์ด้วยแหล่งจ่ายอุดมคติ และไม่มีการแยกแก้ทีละอุปกรณ์ ฐานที่ใช้ตลอดรายงานคือ $S_{\mathrm{base}}=100$ MVA และความถี่ฐาน $f_0=60$ Hz
+
+\paragraph{ที่มาของข้อมูลนำเข้า}
+ข้อมูลเครือข่าย พิกัดสายส่ง หม้อแปลงที่มีแท็ป และตารางโหลดใช้กรณีทดสอบ IEEE 14-bus ในรูปแบบ IEEE Common Data Format ตามที่เผยแพร่ในชุด MATPOWER~\ref{ref:matpower} พลวัตของ SG ใช้ค่าจากรายงานทางเทคนิคของ Kodsi และ Ca\~{n}izares~\ref{ref:kodsi} โดยแปลงฐานจากฐานเครื่องมาเป็นฐานระบบ ส่วนโครงสร้างและเกนของ IBR สองโหมดสืบจากงาน EECON49~\ref{ref:eecon49} ซึ่งวงควบคุมกระแสและ PLL อ้างได้ถึง Yazdani และ Iravani~\ref{ref:yazdani} กับ Teodorescu และคณะ~\ref{ref:teodorescu} วงกำลังชั้นนอกอ้างถึง Bacha และคณะ~\ref{ref:bacha} และโครงสร้างเครื่องซิงโครนัสเสมือนแบบไม่มี PLL อ้างถึง Sakimoto และคณะ~\ref{ref:sakimoto}
+
+\paragraph{การจำแนกชั้นของการตัดสินใจ}
+สมการฝั่ง AC และฟลักซ์ของ SG กับสมการฝั่ง AC และตัวควบคุมของ IBR เป็นชั้น \class{ถอดจากแหล่งอ้างอิง} (source-mapped) คือถอดจากแหล่งอ้างอิงที่ระบุไว้ข้างต้น ส่วนเวกเตอร์ state รวม 17 ตัวของ IBR แผนที่ถ่ายโอน GFL$\leftrightarrow$GFM และการปิดสมการของแหล่งจ่าย DC เป็นชั้น \class{โครงงานอนุมานเอง} (project-derived) คือโครงงานอนุมานขึ้นเองพร้อมประกาศที่มา พารามิเตอร์ของเครื่องและคอนเวอร์เตอร์ ฐานต่อหน่วย และเวลาเหตุการณ์เป็นชั้น \class{กำหนดโดยกรณีศึกษา} (case-defined) คือกำหนดไว้ล่วงหน้าก่อนดูผล ส่วนตัวทำนายขั้นเวลา นโยบายการแบ่งขั้นเวลาย่อย และเกณฑ์ควบคุมความคลาดเคลื่อนเป็นชั้น \class{วิธีเชิงตัวเลข} (numerical-method) ความสำคัญของการแยกชั้นนี้คือ ข้ออ้างเชิงกายภาพต้องพิงชั้นที่ถอดจากแหล่งอ้างอิงหรือชั้นที่กรณีศึกษากำหนดเท่านั้น สมมติฐานเชิงวินิจฉัยไม่สามารถใช้สนับสนุนข้อสรุปเรื่องความพร้อมใช้งานได้
+
+\paragraph{ที่มาของรูปผลลัพธ์}
+รูปผลตอบสนองทุกรูปในรายงานนี้วาดจากวิถีที่ตัวแก้สมการยอมรับแล้วของการรัน 250 วินาที ชุดเดียวกับที่ตารางทุกตารางอ้างถึง ทุกจุดที่พล็อตเป็นค่าดิบ ไม่มีการทำให้เรียบ กรอง ลดจำนวนจุด ตัดยอด เลื่อนระดับ แทรกค่า หรือเติมสัญญาณรบกวนสังเคราะห์ใด ๆ การกำหนดหน้าต่างแสดงผลเป็นการจำกัดช่วงแกนเท่านั้น ไม่มีจุดใดถูกแก้ค่าหรือถูกตัดออก
+
+ตารางที่~\ref{tab:notation} รวบรวมสัญลักษณ์หลักไว้ที่เดียวเพื่อให้ผู้อ่านย้อนกลับมาดูได้โดยไม่ต้องค้นทั้งเล่ม
+\begin{table}[H]
+\centering
+\caption{สัญลักษณ์หลักที่ใช้ตลอดรายงาน}
+\label{tab:notation}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}l X@{}}
+\toprule
+\tableheader สัญลักษณ์ & ความหมาย \\
+\midrule
+$Y_{\mathrm{net}}$, $V$ & แอดมิตแตนซ์ของเครือข่าย และเวกเตอร์แรงดันบัสเชิงซ้อน \\
+$I_{\mathrm{bus}}(x,V)$ & กระแสรวมที่อุปกรณ์ทุกตัวอัดเข้าบัส \\
+$x$, $y$, $u$ & differential state, algebraic variable, input และคำสั่ง \\
+$S_{\mathrm{base}}$, $f_0$, $\omega_b$ & ฐานกำลังระบบ, ความถี่ฐาน, $\omega_b=2\pi f_0$ \\
+$\kappa$ & อัตราส่วนฐาน $S_{\mathrm{base}}/M_{\mathrm{base}}$ ระหว่างฐานระบบกับฐานอุปกรณ์ \\
+$h$, $r(z)$, $J$ & ขั้นเวลา, residual ของขั้นนั้น, Jacobian ของ residual \\
+$\lambda=\sigma\pm j\omega_d$ & eigenvalue ของเมทริกซ์ state ที่ลดรูปแล้ว \\
+$f_m$, $\zeta$ & ความถี่ modal และ damping ratio \\
+$\Omega$ & อัตราการสลายของรากที่ช้าที่สุดของชุด candidate นั้น \\
+$J_V$, $J_f$, $S(t)$ & ดัชนีย่อยแรงดัน, ดัชนีย่อยความถี่, ดัชนีความรุนแรงรวม \\
+$\Gamma_{on}$, $\Gamma_{off}$ & ระดับกระตุ้นเข้าสู่ GFM และระดับปลดกลับสู่ GFL \\
+$T_{d,on}$, $T_{d,off}$ & เวลาหน่วงคงสถานะขาเข้า และขาออก \\
+$\delta$, $\omega$ & มุมโรเตอร์ และความเบี่ยงเบนความเร็วต่อหน่วยของ SG \\
+$E'_q,E'_d,E''_q,E''_d$ & แรงเคลื่อนไฟฟ้าชั่วครู่และชั่วครู่ย่อยของ SG \\
+$i_d$, $i_q$ & กระแสตัวกรองแกน $d$, $q$ ของ IBR (ใช้ร่วมทั้งสองโหมด) \\
+$V_{dc}$, $I_{dc}$ & แรงดันบัส DC และกระแสของแหล่งจ่าย DC (state ร่วม) \\
+$\delta_{PLL}$, $\xi_{PLL}$ & มุม PLL และตัวอินทิเกรตของ PLL (มีเฉพาะ GFL) \\
+$\delta_{VSG}$, $\omega_{VSG}$, $E$ & มุม ความถี่ และแอมพลิจูดแรงดันของ VSG (มีเฉพาะ GFM) \\
+$\Pi_I(\cdot;I_{max})$ & ตัวจำกัดกระแสอ้างอิงแบบวงกลม \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\templatesubheading{2. โครงสร้างระบบศึกษาและสายงาน PF--DAE--SSSA--TS}
+โครงงานพัฒนาสายงานคำนวณแบบต่อเนื่องโดยใช้ข้อมูลเครือข่าย จุดทำงาน และแบบจำลองอุปกรณ์ชุดเดียวกันตลอดทั้ง Power Flow (PF), DAE equilibrium, Small-Signal Stability Analysis (SSSA) และ Time-Domain Simulation (TS) จุดประสงค์สำคัญคือไม่ให้แต่ละขั้นตอนใช้สมมติฐานหรือ state ที่ไม่ตรงกัน จึงย้อนตรวจได้ว่าผล SSSA และ TS เริ่มจาก operating point เดียวกับที่ PF คำนวณได้จริง
+\begin{equation}
+\dot{x}=f(x,y,u),\qquad 0=g(x,y,u)=Y_{\mathrm{net}}V-I_{\mathrm{bus}}(x,V)
+\label{eq:dae_summary}
+\end{equation}
+โดย $x$ คือ differential states ของ SG และ IBR ทุกตัว, $y$ คือ algebraic bus voltages ในรูปส่วนจริงและส่วนจินตภาพ, $u$ คือ set-point และข้อมูล event ส่วน $Y_{\mathrm{net}}$ สร้างจากข้อมูลสายส่ง หม้อแปลงที่มี tap และ shunt ของ IEEE 14-bus ทั้งหมด สมการที่สองของ~\eqref{eq:dae_summary} คือข้อบังคับว่า ณ ทุกบัสและทุกขั้นเวลา กระแสที่ไหลออกทางเครือข่ายต้องเท่ากับกระแสที่อุปกรณ์อัดเข้ามาพอดี convention ที่ใช้ตลอดทั้งสายงานคือกระแสบวกหมายถึงการฉีดเข้าสู่โครงข่าย และกำลังเชิงซ้อน $S=VI^{*}$
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=black,rounded corners=2pt,minimum width=1.35in,minimum height=0.55in,align=center,fill=lightblue},
+  arr/.style={-{Latex[length=2.2mm]},thick}]
+\node[box] (pf) {Power Flow\\$V,\theta,P,Q$};
+\node[box,right=0.18in of pf] (eq) {DAE equilibrium\\$f=0,\ g=0$};
+\node[box,right=0.18in of eq] (sssa) {SSSA\\$A_{red},\lambda$};
+\node[box,right=0.18in of sssa] (ts) {TS\\implicit trapezoid};
+\node[box,below=0.32in of ts,fill=lightgreen] (sup) {Supervisor\\GFL/GFM};
+\draw[arr] (pf)--(eq)--(sssa)--(ts);
+\draw[arr] (ts)--(sup);
+\draw[arr] (sup.west) -| (eq.south);
+\end{tikzpicture}
+\caption{สายงานคำนวณหลักของโครงงาน ตั้งแต่ PF ถึงการสลับโหมดใน TS}
+\label{fig:pipeline}
+\end{figure}
+
+\templatesubheading{3. Power Flow และการสร้าง operating point ของ IEEE 14-bus}
+Power Flow ใช้หาขนาดแรงดันและมุมของทุกบัสก่อนเริ่มการวิเคราะห์เชิงพลวัต สำหรับบัส $i$ กำลังสุทธิที่ฉีดเข้าโครงข่ายเขียนได้เป็น
+\begin{equation}
+P_i+jQ_i=V_i\left(\sum_{j=1}^{N}Y_{ij}V_j\right)^{*}.
+\label{eq:pfpower}
+\end{equation}
+บัสถูกแบ่งเป็น REF, PV และ PQ ตามตัวแปรที่กำหนดและตัวแปรที่ต้องแก้ โดยบัส REF กำหนด $|V|$ และ $\theta$, บัส PV กำหนด $P$ และ $|V|$, ส่วนบัส PQ กำหนด $P$ และ $Q$ ตัวแก้แบบ Newton--Raphson สร้างค่าคลาดเคลื่อน $\Delta P,\Delta Q$ แล้วแก้ระบบเชิงเส้น
+\begin{equation}
+\begin{bmatrix}\Delta P\\ \Delta Q\end{bmatrix}=
+\begin{bmatrix}J_{P\theta}&J_{PV}\\J_{Q\theta}&J_{QV}\end{bmatrix}
+\begin{bmatrix}\Delta\theta\\\Delta |V|\end{bmatrix},
+\label{eq:pfnewton}
+\end{equation}
+ซ้ำจนค่าคลาดเคลื่อนอยู่ในเกณฑ์ที่กำหนด จากนั้นผลแรงดันเชิงซ้อน $V_i=|V_i|e^{j\theta_i}$ ถูกส่งต่อให้ตัวสร้าง state ของ SG และ IBR โดยตรง โครงงานนี้ \emph{ไม่} สร้าง operating point ชุดใหม่สำหรับ SSSA หรือ TS ซึ่งเป็นเหตุผลที่ผลทั้งสามขั้นตอนสอดคล้องกันโดยตรวจสอบย้อนได้
+
+ผล Power Flow ของกรณีที่ SG ยังเชื่อมต่ออยู่แสดงในตารางที่~\ref{tab:pf_key} SG ที่บัส 1 เป็น reference source ในช่วงเริ่มต้น และ IBR อยู่ที่บัส 2, 3, 6 และ 8
+\begin{table}[H]
+\centering
+\caption{ผล Power Flow ของบัสทั้งหมดในระบบ IEEE 14-bus ก่อนเกิด disturbance}
+\label{tab:pf_key}
+\rowcolors{2}{tablerow}{white}
+\begin{tabular}{@{}c c r r@{}}
+\toprule
+\tableheader Bus & Type & $|V|$ (pu) & $\theta$ (deg) \\
+\midrule
+1  & REF & 1.0000 &  0.0000 \\
+2  & GFL & 0.9914 & -3.2585 \\
+3  & GFL & 0.9667 & -8.6921 \\
+4  & PQ  & 0.9832 & -6.7064 \\
+5  & PQ  & 0.9858 & -5.5221 \\
+6  & GFL & 1.0575 & -6.7136 \\
+7  & PQ  & 1.0253 & -6.9205 \\
+8  & GFL & 1.0494 & -4.4090 \\
+9  & PQ  & 1.0219 & -8.6416 \\
+10 & PQ  & 1.0202 & -8.5886 \\
+11 & PQ  & 1.0347 & -7.7782 \\
+12 & PQ  & 1.0411 & -7.6862 \\
+13 & PQ  & 1.0342 & -7.8345 \\
+14 & PQ  & 1.0087 & -9.3374 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\resultbox{Power Flow ลู่เข้าโดยใช้บัส 1 เป็น REF; IBR อยู่ที่บัส 2, 3, 6 และ 8 และค่ากำลังฉีดของทุกอุปกรณ์ถูกส่งต่อไปสร้าง DAE equilibrium โดยไม่สร้าง operating point ชุดใหม่}
+การตรวจสอบผล Power Flow ไม่ได้ดูเพียงว่าตัวแก้รายงานว่าลู่เข้า แต่ตรวจสมดุลกำลังของทุกบัส การไหลและกำลังสูญเสียของทุกกิ่ง และค่ากระแสที่คำนวณย้อนกลับจาก $S=VI^{*}$ จากนั้นเมื่อแปลงผล Power Flow ไปเป็น DAE equilibrium จะคง KCL ของทุกบัสไว้ครบ ไม่ตัด KCL ของบัส REF ออกเพื่อทำให้ระบบสมการเป็นสี่เหลี่ยมจัตุรัส แต่ใช้การตรึงพิกัดอ้างอิงและแก้ค่าคำสั่งควบคุมที่เหมาะสมแทน เหตุผลของการเลือกวิธีนี้คือ การตัด KCL หนึ่งแถวทำให้ reduced residual มีค่าเล็กได้แม้ KCL ทางกายภาพยังไม่สมดุล ซึ่งเป็นความผิดพลาดที่ตรวจไม่พบจากค่า residual เพียงอย่างเดียว
+
+\templatesubheading{4. DAE equilibrium และแบบจำลอง Synchronous Generator}
+หลัง PF ได้แรงดันและกำลังของแต่ละอุปกรณ์ จะสร้าง state เริ่มต้นและแก้สมการ $f=0$ ร่วมกับ KCL $g=0$ อีกครั้ง จุดสมดุลนี้เป็นจุดเริ่มต้นร่วมของ SSSA และ TS สำหรับ SG ที่บัส 1 ใช้แบบจำลอง round-rotor sixth-order โดย state ที่เก็บคือ
+\begin{equation}
+x_{SG}=[\delta,\omega,E'_q,E'_d,E''_q,E''_d]^T,
+\end{equation}
+และแกนกลใช้ swing equation
+\begin{equation}
+\dot{\delta}=\omega_0\Delta\omega,\qquad
+2H\dot{\Delta\omega}=T_m-T_e-D\Delta\omega.
+\label{eq:swing_summary}
+\end{equation}
+ส่วน transient/subtransient EMF ใช้ time constants และ reactances ของโปรไฟล์ IEEE 14-bus ในโปรเจกต์ กรณีนี้ $T'_{q0}=0$ จึงเป็น singular limit และ state $E'_d$ ถูกตรึงที่ค่าพีชคณิตก่อน equilibrium/SSSA ทำให้ SG มี active dynamic states จริง 5 ตัว ไม่ใช่การเพิ่ม time constant เล็ก ๆ เพื่อหลบ singularity
+
+เมื่อ SG breaker เปิด SG จะหยุดฉีดกระแสเข้าระบบ แต่ state ทางกลและ flux ยังถูก integrate ต่อในเส้นทาง breaker-open coast จึงสามารถตรวจ synchronism ก่อน reclose ได้ โดยไม่ reset มุมหรือความเร็วของ SG ให้เท่ากับบัสแบบบังคับ
+\templatesubheading{5. การวิเคราะห์เสถียรภาพสัญญาณขนาดเล็ก (SSSA)}
+SSSA ใช้ตรวจพฤติกรรมของระบบเมื่อถูกรบกวนขนาดเล็กรอบ equilibrium โดย linearize สมการ DAE ชุดเดียวกับที่ใช้ใน TS
+\begin{equation}
+\begin{bmatrix}\Delta\dot{x}\\0\end{bmatrix}=
+\begin{bmatrix}f_x&f_y\\g_x&g_y\end{bmatrix}
+\begin{bmatrix}\Delta x\\\Delta y\end{bmatrix}.
+\label{eq:sssa_full}
+\end{equation}
+เมื่อ $g_y$ ไม่เอกฐาน สามารถกำจัด algebraic perturbation ด้วย Schur complement ได้
+\begin{equation}
+A_{\mathrm{red}}=f_x-f_y g_y^{-1}g_x,
+\qquad \Delta\dot{x}=A_{\mathrm{red}}\Delta x.
+\label{eq:sssa_schur}
+\end{equation}
+Eigenvalue $\lambda=\sigma\pm j\omega_d$ ใช้บอกอัตราการสลายและความถี่การแกว่งของแต่ละ mode โดย
+\begin{equation}
+f_m=\frac{|\omega_d|}{2\pi},\qquad
+\zeta=-\frac{\sigma}{\sqrt{\sigma^2+\omega_d^2}}.
+\label{eq:modalmetrics}
+\end{equation}
+หาก eigenvalue ที่เป็น physical decision roots ทั้งหมดมีส่วนจริงเป็นลบ ระบบที่จุดนั้นมีเสถียรภาพสัญญาณขนาดเล็ก อย่างไรก็ตาม SSSA ให้ผลเชิงเส้นเฉพาะที่รอบจุดสมดุลเท่านั้น จึงไม่ใช้แทนการจำลองไม่เชิงเส้น
+
+การจัดการ reference angle เป็นส่วนสำคัญของ SSSA เนื่องจากระบบมีอิสระของมุมร่วมหนึ่งค่า โครงงานจัดการ gauge ก่อนคำนวณ eigenvalue ด้วยการฉายลงพิกัดที่ active และพิกัดอ้างอิงตาม configuration จริง ไม่ใช้วิธีคำนวณ eigenvalue ก่อนแล้วค่อยลบ zero root ออกภายหลัง และยังเก็บ KCL ทางกายภาพทุกแถวไว้ครบ วิธีนี้ทำให้จำนวน root ที่ใช้ตัดสินใจสอดคล้องกับจำนวนองศาอิสระที่แท้จริงของระบบ
+
+สำหรับ configuration ตัวแทนหลัง SG offline ที่ IBR บัส 2 เป็น GFM และ IBR บัส 3, 6, 8 เป็น GFL spectrum อยู่ในระนาบครึ่งซ้ายทั้งหมด mode ที่อยู่ขวาสุดคือ
+\begin{equation}
+\lambda=-0.328014\pm j0.448860\ \mathrm{s}^{-1},
+\quad f_m=0.071438\ \mathrm{Hz},\quad \zeta=0.590017.
+\end{equation}
+ในกลุ่ม PLL mode พบคู่ $-0.566771\pm j2.132137$ s$^{-1}$ ที่ $f_m=0.33934$ Hz และ $\zeta=0.256901$ ส่วน DC link ของ IBR ทั้งสี่ตัวให้คู่ mode ใกล้ $15.18$--$15.66$ Hz และ $\zeta\approx0.707$ ซึ่งตรงกับค่า damping ratio เป้าหมายของวงจร DC ที่กำหนดไว้ก่อนคำนวณ spectrum จึงใช้เป็นการตรวจความสอดคล้องของแบบจำลองได้
+
+\begin{table}[H]
+\centering
+\caption{ผล SSSA ของ configuration ตัวแทนเมื่อ SG offline: IBR2 เป็น GFM และ IBR3/6/8 เป็น GFL}
+\label{tab:sssa_modes}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}c r r r r X@{}}
+\toprule
+\tableheader Mode & $\Re\{\lambda\}$ & $\Im\{\lambda\}$ & $f$ (Hz) & $\zeta$ & Dominant state \\
+\midrule
+30 & -0.3280 & $\pm0.4489$ & 0.0714 & 0.5900 & IBR2:$\xi_{Vd}^{GFM}$ \\
+29 & -0.5668 & $\pm2.1321$ & 0.3393 & 0.2569 & IBR3:$\delta_{PLL}^{GFL}$ \\
+28 & -0.5889 & $\pm2.1717$ & 0.3456 & 0.2617 & IBR6:$\delta_{PLL}^{GFL}$ \\
+27 & -1.1855 & $\pm2.9807$ & 0.4744 & 0.3696 & IBR2:$\xi_{Vd}^{GFM}$ \\
+10 & -98.4062 & $\pm98.3803$ & 15.6577 & 0.7072 & IBR2:$I_{dc}$ \\
+11 & -96.4556 & $\pm96.3252$ & 15.3306 & 0.7076 & IBR8:$V_{dc}$ \\
+12 & -96.3465 & $\pm96.2079$ & 15.3120 & 0.7076 & IBR3:$V_{dc}$ \\
+13 & -95.5555 & $\pm95.3486$ & 15.1752 & 0.7079 & IBR6:$V_{dc}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{spectrum ทางกายภาพของ configuration นี้อยู่ในระนาบครึ่งซ้ายทั้งหมด โดย mode ที่อยู่ขวาสุดคือ $-0.328014\pm j0.448860$ s$^{-1}$ และคู่ mode ของ DC link มี damping ratio ใกล้ $0.707$ ตามค่าเป้าหมายที่ออกแบบไว้}
+
+เมื่อ SG offline ชุดย่อยของ IBR ที่เป็นไปได้ทั้งหมดมี $2^4-1=15$ ชุด ระบบแก้จุดสมดุลและ SSSA ของทุกชุดจากเครือข่ายจริงของชุดนั้น ไม่ประมาณจากจำนวน GFM เพียงอย่างเดียว ผลที่ได้คือผ่านเกณฑ์ 7 จาก 15 ชุด โดยชุดที่ให้ damping margin ดีที่สุดคือชุดสองตัวที่บัส 3 และบัส 6 ซึ่งมี $\Omega=-0.56814$ s$^{-1}$ ในขณะที่การให้ทั้งสี่ตัวเป็น GFM ให้ $\Omega=-0.48291$ s$^{-1}$ และชุดตัวเดียวที่ดีที่สุดให้ $\Omega=-0.32801$ s$^{-1}$ ผลนี้แสดงว่าการเพิ่มจำนวน GFM ไม่ได้ทำให้ damping margin ดีขึ้นแบบทางเดียว ซึ่งเป็นเหตุผลที่ตารางชุด candidate ต้องคำนวณจริงทุกชุด ไม่สามารถอนุมานจากจำนวนอุปกรณ์ได้
+
+\begin{table}[H]
+\centering
+\caption{สรุปการคัดกรองชุด candidate ของ GFM ทั้ง 15 ชุดเมื่อ SG offline}
+\label{tab:candidate}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}c c c X@{}}
+\toprule
+\tableheader จำนวน GFM & จำนวนชุด & ผ่าน & ข้อสังเกต \\
+\midrule
+1 & 4 & 4 & ทุกชุดตัวเดียวผ่านการคัดกรองเชิงเส้น; ชุดที่ดีที่สุดคือบัส 2 ($\Omega=-0.32801$) \\
+2 & 6 & 2 & ชุดบัส 2+6 และบัส 3+6 ผ่าน; ชุดหลังให้ margin ดีที่สุดของตารางทั้งหมด \\
+3 & 4 & 0 & ไม่มีชุดใดหา equilibrium ได้ภายใต้ข้อจำกัดของอุปกรณ์ \\
+4 & 1 & 1 & ผ่าน SSSA แต่ยังต้องทดสอบว่าวิถีไม่เชิงเส้นไปถึงชุดนี้ได้จริงหรือไม่ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{ชุดที่ผ่านเกณฑ์ไม่เป็นฟังก์ชันทางเดียวของจำนวน GFM: ชุดสามตัวไม่มีชุดใดผ่านเลย ในขณะที่ชุดสองตัวและชุดสี่ตัวผ่าน ผลนี้ทำให้การแจงนับทุกชุดเป็นสิ่งจำเป็น ไม่ใช่ทางเลือก}
+
+\templatesubheading{6. การจำลองในโดเมนเวลา (TS) และตัวแก้สมการเชิงตัวเลข}
+TS ใช้สมการ DAE เดียวกับ~\eqref{eq:dae_summary} แล้ว discretize differential states ด้วย implicit trapezoidal method
+\begin{equation}
+\begin{aligned}
+x_{k+1}-x_k-\frac{h}{2}\bigl[f(x_k,y_k,u_k)&+f(x_{k+1},y_{k+1},u_{k+1})\bigr]=0,\\
+g(x_{k+1},y_{k+1},u_{k+1})&=0.
+\end{aligned}
+\label{eq:trap_summary}
+\end{equation}
+Unknown ของแต่ละ step จึงประกอบด้วย differential และ algebraic variables พร้อมกัน ตัวแก้ใช้ Newton แบบมีการหน่วง
+\begin{equation}
+J(z^{(m)})\Delta z=-r(z^{(m)}),\qquad
+z^{(m+1)}=z^{(m)}+\alpha\Delta z,\quad 0<\alpha\le1,
+\end{equation}
+และรับ step เมื่อ residual ไม่เชิงเส้นผ่านเกณฑ์ที่กำหนดไว้ก่อน สำหรับผลหลักในรายงานนี้ ทุก step ที่ยอมรับมี $\|r\|_{\infty}<10^{-8}$
+
+เส้นทาง adaptive ใช้แนวคิด step-doubling ของ trapezoidal method: ทดลองหนึ่ง full step และสอง half steps แล้วประเมิน local error จากความต่างของคำตอบลำดับสอง
+\begin{equation}
+e_{LTE}\approx\frac{z_{h/2,h/2}-z_h}{2^2-1}=\frac{z_{h/2,h/2}-z_h}{3}.
+\label{eq:lte_summary}
+\end{equation}
+หาก Newton ไม่ลู่เข้า, state ออกนอกขอบเขตทางกายภาพที่อุปกรณ์ประกาศไว้ หรือค่าความคลาดเคลื่อนเฉพาะที่สูงเกินเกณฑ์ step นั้นจะถูกปฏิเสธและย้อนกลับไปยัง state ที่ยอมรับแล้วก่อนลด $h$ ใหม่ ดังนั้นวิถีที่นำไปพล็อตจึงไม่มี trial ที่ถูกปฏิเสธปะปนอยู่เลย
+
+อีกจุดหนึ่งที่สำคัญคือการลงจุดเหตุการณ์อย่างแม่นยำ เมื่อมีการปลด SG เพิ่มโหลด เกิด fault เคลียร์ fault ปลดสายส่ง หรือสลับโหมด ตัวอินทิเกรตจะตัด step ให้ปลาย step ตรงกับเวลาเหตุการณ์ก่อน จากนั้นจึงเปลี่ยนโครงสร้างเครือข่ายหรือโหมด แล้วแก้สมการพีชคณิตของลิมิตขวาใหม่ วิธีนี้ป้องกันการที่สมการก่อนและหลังเหตุการณ์อยู่ใน trapezoidal step เดียวกัน ซึ่งจะทำให้ผลของขั้นนั้นไม่มีความหมายทางกายภาพ
+
+การทดสอบ regression ของเส้นทาง solver แยกชัดระหว่างโหมดขั้นเวลาคงที่และโหมดปรับขั้นเวลาอัตโนมัติ โดยกรณี IEEE 14-bus ที่ไม่ได้เปิดตัวเลือกปรับขั้นเวลาให้ผลตรงกับการระบุขั้นเวลาคงที่อย่างชัดแจ้งแบบ bit-identical ทั้ง $t$, $x$, $y$, ประวัติ input และบันทึกเหตุการณ์ ผลนี้ยืนยันว่าการเพิ่มตัวควบคุมขั้นเวลาไม่ได้เปลี่ยนผลของเส้นทางเดิมโดยไม่ตั้งใจ
+\templatesubheading{7. แบบจำลอง IBR แบบสองโหมด GFL/GFM ขนาด 17 state}
+IBR ที่ใช้ในกรณีหลักเป็นแบบจำลอง source-mapped จากโครงสร้าง EECON49 แล้วจัดให้อยู่ใน fixed-layout device เดียว เพื่อให้เปลี่ยนโหมดระหว่าง GFL และ GFM ได้โดยไม่เปลี่ยนขนาด state vector กลางการจำลอง แต่ละ IBR มี 17 coordinates และสามารถแบ่ง state ได้เป็นสามกลุ่ม
+\begin{equation}
+ x_{IBR}=\begin{bmatrix}x_{com}^{T}&x_{GFL}^{T}&x_{GFM}^{T}\end{bmatrix}^{T},
+\label{eq:ibr_partition}
+\end{equation}
+โดย
+\begin{align}
+x_{com}&=[i_d,\ i_q,\ V_{dc},\ I_{dc}]^T,\\
+x_{GFL}&=[\delta_{PLL},\ \xi_{PLL},\ \xi_P,\ \xi_Q,\ \xi_{Id}^{GFL},\ \xi_{Iq}^{GFL}]^T,\\
+x_{GFM}&=[\delta_{VSG},\ \omega_{VSG},\ E,\ \xi_{Vd},\ \xi_{Vq},\ \xi_{Id}^{GFM},\ \xi_{Iq}^{GFM}]^T.
+\label{eq:ibr_groups}
+\end{align}
+เมื่อนำทั้งสามกลุ่มมาเรียงใน fixed layout จะได้
+\begin{equation}
+\begin{aligned}
+x_{IBR}=[&i_d,i_q,V_{dc},\;\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{Id}^{GFL},\xi_{Iq}^{GFL},\\
+&\delta_{VSG},\omega_{VSG},E,\xi_{Vd},\xi_{Vq},\xi_{Id}^{GFM},\xi_{Iq}^{GFM},I_{dc}]^T.
+\end{aligned}
+\label{eq:ibr17}
+\end{equation}
+กลุ่ม $x_{com}$ เป็น physical plant states ที่ใช้ร่วมกันในทั้งสองโหมดและ evolve ตลอดเวลา ส่วน $x_{GFL}$ และ $x_{GFM}$ เป็น controller states คนละ branch และ \textbf{ไม่ถูกใช้งานพร้อมกัน}. เมื่ออุปกรณ์อยู่ในโหมด GFL จะ active เฉพาะ $x_{com}$ และ $x_{GFL}$ ขณะที่ $x_{GFM}$ ถูก hold ด้วย $\dot x_{GFM}=0$; เมื่อสลับเป็น GFM จะ active เฉพาะ $x_{com}$ และ $x_{GFM}$ ขณะที่ $x_{GFL}$ ถูก hold ด้วย $\dot x_{GFL}=0$. ดังนั้นโครงสร้างนี้เป็น \emph{mode-switched controller} ไม่ใช่การนำ GFL และ GFM มาควบคุม converter พร้อมกัน
+
+ใน index ของ fixed 17-state layout โหมด GFL ใช้ active states $\{1{:}9,17\}$ รวม 10 ตัว และโหมด GFM ใช้ $\{1{:}3,10{:}17\}$ รวม 11 ตัว โดย state ของ branch ที่ไม่ active ถูกเก็บไว้เป็น memory/anchor สำหรับ state-transfer ตอนสลับโหมด ไม่สร้าง artificial decay pole เพื่อบังคับ state กลับเอง
+
+\begin{table}[H]
+\centering
+\caption{การแบ่ง state ownership ของ IBR แบบ dual-mode}
+\label{tab:ibr_state_ownership}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.98\textwidth}{@{}l p{0.30\textwidth} c c X@{}}
+\toprule
+\tableheader กลุ่ม & State & GFL mode & GFM mode & หน้าที่ \\
+\midrule
+Common & $i_d,i_q,V_{dc},I_{dc}$ & Active & Active & physical AC/DC plant; ใช้ร่วมกันและ evolve ต่อเนื่อง \\
+GFL branch & \begin{tabular}[t]{@{}l@{}}$\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,$\\$\xi_{Id}^{GFL},\xi_{Iq}^{GFL}$\end{tabular} & Active & Hold & PLL, $P/Q$ control และ current-control integrators ของ GFL \\
+GFM branch & \begin{tabular}[t]{@{}l@{}}$\delta_{VSG},\omega_{VSG},E,$\\$\xi_{Vd},\xi_{Vq},\xi_{Id}^{GFM},\xi_{Iq}^{GFM}$\end{tabular} & Hold & Active & VSG, voltage-forming และ current-control integrators ของ GFM \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{ในหนึ่ง IBR ณ เวลาใดเวลาหนึ่ง controller branch ที่ active มีได้เพียงหนึ่งชุด: GFL \textbf{หรือ} GFM. Common plant states ทำงานตลอด ส่วน branch ที่ไม่ active จะถูก hold และใช้เป็น state memory สำหรับการสลับครั้งถัดไป}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  blk/.style={draw,rounded corners=2pt,align=center,minimum height=0.62in,text width=1.55in},
+  sel/.style={draw,rounded corners=2pt,align=center,minimum height=1.48in,text width=1.45in,fill=lightblue},
+  arr/.style={-{Latex[length=2.2mm]},thick}]
+\node[blk,fill=lightgray] (gfl) at (0,0.62) {GFL branch\\PLL + $P/Q$ PI};
+\node[blk,fill=lightgreen] (gfm) at (0,-0.62) {GFM branch\\VSG + $Q$--$V$};
+\node[sel] (mode) at (4.25,0) {Exclusive mode selector\\GFL $\oplus$ GFM\\current-reference limiter};
+\node[blk] (inner) at (8.25,0) {Inner current PI\\$v_{cd},v_{cq}$};
+\node[blk,fill=yellow!15] (plant) at (12.25,0) {Common plant\\$i_d,i_q,V_{dc},I_{dc}$};
+\draw[arr] (gfl.east)--(mode.west |- gfl.east);
+\draw[arr] (gfm.east)--(mode.west |- gfm.east);
+\draw[arr] (mode.east)--(inner.west);
+\draw[arr] (inner.east)--(plant.west);
+\draw[arr] (plant.east)--++(0.75,0) node[midway,above]{$I$};
+\end{tikzpicture}
+\caption{โครงสร้าง IBR แบบ dual-mode: GFL และ GFM ใช้ controller คนละ branch แต่ใช้ AC/DC plant ร่วมกัน}
+\label{fig:dualibr}
+\end{figure}
+
+\noindent\textbf{Common AC filter.} ทั้งสองโหมดใช้กระแส filter และ DC link ร่วมกัน โดยใน synchronous $dq$ frame
+\begin{align}
+\dot i_d&=\frac{\omega_b}{L_f}\left(v_{cd}-v_d-R_fi_d+\omega_{pu}L_fi_q\right),\\
+\dot i_q&=\frac{\omega_b}{L_f}\left(v_{cq}-v_q-R_fi_q-\omega_{pu}L_fi_d\right).
+\label{eq:filter_dq}
+\end{align}
+กระแส physical $i_d,i_q$ เป็น differential states จริง ตัว current limiter จำกัด current reference ที่ controller สั่ง ไม่ได้ clip state ของ filter แบบพีชคณิต เพราะการ clip state จะเปลี่ยน terminal KCL โดยตรง
+
+\noindent\textbf{DC-link และแหล่ง DC แบบไม่อุดมคติ.} สมการพลังงานของ DC link ต้องรู้กฎของ $I_{dc}$ ด้วย โครงงานจึงใช้ Thevenin source ที่มี internal resistance และ source-current state
+\begin{align}
+C_{dc}\dot V_{dc}&=I_{dc}-\frac{P_{ac}}{V_{dc}}-\frac{\max(0,V_{dc}-V_{dc}^{max})}{R_{ch}},\\
+\tau_s\dot I_{dc}&=\frac{E_{dc}-V_{dc}}{R_{dc}}-I_{dc},
+\label{eq:dc_summary}
+\end{align}
+โดย $P_{ac}=v_{cd}i_d+v_{cq}i_q$. ค่า $E_{dc}$ ถูกคำนวณจากเงื่อนไขให้ dispatched point เป็น equilibrium จึงไม่ปรับเพื่อทำให้ผล TS ดูดีขึ้น ส่วน $\tau_s$ ถูกเลือกจาก damping criterion ของวงจร DC และตรวจว่าคู่ eigenvalue อยู่ฝั่งซ้ายของระนาบเชิงซ้อนก่อนนำไปใช้
+
+\noindent\textbf{การลด command-delay states.} แบบจำลองต้นทางมี actuation delay สองแกน แต่ delay เชิงกายภาพจาก digital control ประมาณ $T_d=1.5/f_{sw}\approx0.3$ ms ที่ $f_{sw}=5$ kHz ซึ่งเล็กกว่า phasor time step หลายร้อยเท่า จึงใช้ singular-perturbation reduction $v_{del}=v_{cmd}$ เพื่อตัด fast states ที่ RMS model ไม่สามารถ resolve ได้ การลดนี้คง equilibrium และ retained-state equations เดิม แต่ลด superset จากโครงสร้างเก่า 20 states เหลือ 16 ก่อนเพิ่ม $I_{dc}$ เป็น state ที่ 17
+
+\templatesubheading{8. โหมด Grid-Following: PLL วงกำลัง $P/Q$ และวงกระแสชั้นใน}
+GFL ทำงานเป็น current-controlled resource และต้องอาศัยแรงดันของโครงข่ายเพื่อกำหนดมุมอ้างอิง PLL แปลงแรงดันบัสเข้าสู่กรอบของตนเองด้วย $V_{dq}=Ve^{-j\delta_{PLL}}$ แล้วใช้ $v_q$ เป็น phase error
+\begin{equation}
+\dot\delta_{PLL}=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},\qquad
+\dot\xi_{PLL}=v_q.
+\label{eq:gflpll}
+\end{equation}
+กำลังที่วัดได้คำนวณจาก terminal current จริง จากนั้น outer P/Q PI สร้าง current reference
+\begin{align}
+e_P&=\kappa P_{ref}-P_{inv},& i_{d,raw}^{*}&=k_{pP}e_P+k_{iP}\xi_P,\\
+e_Q&=\kappa Q_{ref}-Q_{inv},& i_{q,raw}^{*}&=-\left(k_{pQ}e_Q+k_{iQ}\xi_Q\right).
+\end{align}
+เครื่องหมายลบของ $i_q^{*}$ มาจาก generator-injection convention ของโปรเจกต์ จากนั้น circular limiter $\Pi_I$ จำกัดขนาด reference ไม่ให้เกิน $I_{max}$ และ inner PI สร้าง $v_{cd},v_{cq}$ เพื่อขับ filter current ใน~\eqref{eq:filter_dq}. เมื่อ limiter ทำงาน outer integrator ใช้ conditional anti-windup: ถ้า error กำลังผลักคำสั่งออกนอกขอบเขตจะ hold integrator แต่ถ้า error ช่วยดึงกลับเข้าขอบเขตจะปล่อยให้ integrate ต่อ
+
+จุดสำคัญของ GFL คือ PLL มีหน้าที่ \emph{ตาม} มุมของโครงข่าย ดังนั้นหาก SG ถูกปลดและ IBR ทุกตัวยังเป็น GFL ระบบจะไม่มีแหล่ง voltage-forming เหลืออยู่ กรณีตรึง GFL ทั้งหมดจึงถูกปฏิเสธที่ $t=20$ s ด้วยเหตุผลว่าไม่มีแหล่ง voltage-forming ในโครงข่ายที่ยังจ่ายไฟ แทนที่จะให้ Newton เดินต่อบนระบบที่ไม่มีมุมอ้างอิง การปฏิเสธนี้เป็นผลลัพธ์ที่ถูกต้องของกรณีศึกษา ไม่ใช่ความล้มเหลวของตัวแก้สมการ
+
+\templatesubheading{9. โหมด Grid-Forming: เครื่องซิงโครนัสเสมือนและวง $Q$--$V$}
+GFM ไม่ใช้ PLL ใน active branch แต่สร้างมุมจาก virtual synchronous generator (VSG) ของตัวเอง
+\begin{align}
+M\dot\omega_{VSG}&=\kappa P_{ref}-P_{inv}-D_v(\omega_{VSG}-1),\\
+\dot\delta_{VSG}&=\omega_b(\omega_{VSG}-1),\\
+\dot E&=\frac{k_Q(\kappa Q_{ref}-Q_{inv})-k_E(E-E_{ref})}{\tau_E}.
+\label{eq:gfmcore}
+\end{align}
+state $E$ เป็น voltage-forming reference ของ d-axis โดยกำหนด $v_{d,ref}=E$ และ $v_{q,ref}=0$. Voltage PI แปลง voltage error เป็น current reference แล้วผ่าน current limiter เดียวกับ GFL ก่อนเข้า inner current PI ดังนั้น GFM สามารถสร้างมุมและแรงดันให้ island ได้ด้วยตัวเอง แต่ยังคงข้อจำกัดกระแสของ converter
+
+\begin{table}[H]
+\centering
+\caption{ความแตกต่างหลักระหว่าง GFL และ GFM ที่ใช้ในโครงงาน}
+\begin{tabularx}{0.96\textwidth}{@{}l X X@{}}
+\toprule
+หัวข้อ & GFL & GFM \\
+\midrule
+มุมอ้างอิง & PLL ติดตามแรงดันบัส & VSG สร้างมุมจาก $\omega_{VSG}$ \\
+ลักษณะหลัก & current-following & voltage-forming \\
+outer control & $P/Q$ PI สร้าง $i_d^*,i_q^*$ & VSG + $Q$--$V$ + voltage PI \\
+ใช้เมื่อ SG หาย & อยู่ลำพังไม่ได้ & สามารถเป็น reference ของ island \\
+common plant & $i_d,i_q,V_{dc},I_{dc}$ & $i_d,i_q,V_{dc},I_{dc}$ \\
+active states & 10 & 11 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\templatesubheading{10. การถ่ายโอนโหมด GFL$\leftrightarrow$GFM และเกตความต่อเนื่อง}
+การเปลี่ยนโหมดไม่ใช้วิธี cold restart controller ทั้งหมด เพราะจะทำให้ terminal current กระโดด ขั้นตอน transfer ของโครงงานรักษา common plant states $i_d,i_q,V_{dc},I_{dc}$ ไว้ แล้ว initialize เฉพาะ controller branch ปลายทางจากแรงดันและกำลังที่ terminal เดิม
+\begin{equation}
+S^- =V\left(I^-\right)^*=P^-+jQ^-,\qquad
+x_{target}^{+}=\mathrm{Init}(V,P^-,Q^-).
+\end{equation}
+หลังสร้าง state ขวามือแล้วจะคำนวณกระแสใหม่และตรวจ
+\begin{equation}
+|I^{+}-I^{-}|\le 10^{-10},\qquad
+P^{+}\approx P^{-},\quad Q^{+}\approx Q^{-}.
+\label{eq:transfergate}
+\end{equation}
+หากไม่ผ่าน gate transaction จะถูก reject ก่อน commit state เข้าสู่ trajectory นอกจากนี้การ GFL$\to$GFM จะ carry ความถี่ที่ PLL วัดได้ไปตั้งต้น $\omega_{VSG}$ และการ GFM$\to$GFL จะ carry ความถี่ VSG ไปยัง PLL integrator เพื่อให้ frequency coordinate ต่อเนื่องมากที่สุด ขณะที่ inactive branch ถูกเก็บไว้เป็น anchor และไม่ evolve
+
+การพิสูจน์ transfer ใช้ falsification tests ที่คำนวณ $I,P,Q$ ก่อนและหลังจาก production current-injection function โดยตรง รวมถึง rigid-frame rotation test: เมื่อหมุนแรงดันทั้งระบบและมุมภายในด้วยมุมเดียวกัน phasor current ต้องหมุนตาม แต่ $P,Q$ ต้องคงเดิม ผลที่ผ่านเงื่อนไขนี้ช่วยยืนยันว่า state map ไม่ผูกกับ absolute network angle แบบผิดพลาด
+
+\templatesubheading{11. ตัวกำกับอัตโนมัติและดัชนีความรุนแรง}
+Supervisor ใช้ค่าความเบี่ยงเบนแรงดันของ IBR และความถี่เฉลี่ยของระบบเพื่อสร้างสอง sub-indices
+\begin{equation}
+J_V=\frac{\big||V_i|-V_i^{\star}\big|}{0.10},\qquad
+J_f=\frac{|f_{coi}-60|}{0.50},
+\end{equation}
+และรวมเป็น severity index
+\begin{equation}
+S(t)=\mathrm{sat}_{[0,1]}\left(0.5J_V+0.5J_f\right).
+\label{eq:severity_summary}
+\end{equation}
+ใช้ hysteresis และ dwell เพื่อลดการ chatter
+\begin{align}
+\mathrm{GFL}\to\mathrm{GFM}:&\quad S\ge0.65\ \text{ต่อเนื่องอย่างน้อย }0.10\ \mathrm{s},\\
+\mathrm{GFM}\to\mathrm{GFL}:&\quad S\le0.35\ \text{ต่อเนื่องอย่างน้อย }1.00\ \mathrm{s}.
+\label{eq:hysteresis_summary}
+\end{align}
+เมื่อจำเป็นต้องเพิ่ม forming support ระบบไม่เลือกจากดัชนีเพียงอย่างเดียว แต่ค้นหา candidate ที่เป็น strict superset ของชุด GFM ปัจจุบันและผ่าน authenticated equilibrium/SSSA table โดยเริ่มจากจำนวนอุปกรณ์ที่เพิ่มน้อยที่สุดก่อน หากต้องลด support จะเลือก strict nonempty subset ที่ยังรักษา reference ได้ในช่วง SG offline
+
+ก่อน SG trip ยังมี reference-loss guard ตรวจว่า event จะทำให้ island ไม่มี SG/GFM หรือไม่ หากใช่ event จะถูก refuse ก่อนเรียก Newton ส่วน support transition ที่ผ่าน selector แล้วยังสามารถถูกตรวจด้วย short forward certificate เพื่อปฏิเสธ state ที่มี relative-angle separation หรือ nonlinear nonconvergence รุนแรง แม้ candidate นั้นจะผ่าน SSSA แล้วก็ตาม หลักการนี้เป็นเหตุผลที่ adaptive arm สามารถค่อย ๆ เพิ่ม GFM เป็นลำดับแทนการกระโดดไป configuration ใหญ่ทันที
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=7.10in]{fig_supervisor.png}
+\caption{Severity index, สถานะ GFL/GFM และผู้ถือ reference angle ของ adaptive trajectory}
+\label{fig:supervisor}
+\end{figure}
+
+\templatesubheading{12. การตรวจสอบความถูกต้องเทียบกับโปรแกรมอ้างอิงภายนอก}
+การตรวจสอบความถูกต้องของสายงานคำนวณใช้การเปรียบเทียบกับโปรแกรมอ้างอิงภายนอกบนข้อมูลนำเข้าชุดเดียวกัน โดยโปรแกรมอ้างอิงทำหน้าที่เป็นเครื่องมือเปรียบเทียบเท่านั้น ไม่มีค่าใดจากโปรแกรมเหล่านั้นไหลกลับเข้าสู่การคำนวณของโครงงาน เกณฑ์ยอมรับทุกตัวถูกประกาศไว้ก่อนดูผล
+
+โปรแกรมอ้างอิงหลักคือ PSAT รุ่น 2.1.11~\ref{ref:psat} ซึ่งใช้ตัวแก้ Newton สำหรับ Power Flow และวิธีสี่เหลี่ยมคางหมูที่มี corrector ลู่เข้าสำหรับโดเมนเวลา และโปรแกรมอ้างอิงที่สองคือ PGAz รุ่น 1.1.1 ซึ่งเป็นโปรแกรมเสถียรภาพแบบคลาสสิกอันดับสอง ผลการเปรียบเทียบสามทางแสดงในตารางที่~\ref{tab:validation_ext}
+% SOURCE: output/validation/artifacts/psat_pgaz_validation_2026-07-11_160014.md
+% (validated source commit b75e37a, MATLAB R2026a Update 3, 2026-07-11)
+\begin{table}[H]
+\centering
+\caption{การเปรียบเทียบผล Power Flow และผลโดเมนเวลากับ PSAT บนข้อมูลนำเข้าชุดเดียวกัน}
+\label{tab:validation_ext}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}l r r X@{}}
+\toprule
+\tableheader ปริมาณที่เทียบ & IEEE 14-bus & IEEE RTS-24 & เกณฑ์ที่ประกาศก่อน \\
+\midrule
+$\max|\Delta|V||$ (pu) & $6.661\times10^{-16}$ & $4.441\times10^{-16}$ & $<10^{-6}$ \\
+$\max|\Delta\theta|$ (deg) & $3.553\times10^{-14}$ & $6.750\times10^{-14}$ & $<10^{-4}$ \\
+$\max|\Delta Y_{\mathrm{net}}|$ & $3.972\times10^{-15}$ & $2.842\times10^{-14}$ & ต้องเป็นเครือข่ายเดียวกัน \\
+$\Delta\delta_{\mathrm{COI}}$ (deg) & $0.0096$ & $0.0068$ & $<0.05$ \\
+$\Delta\omega$ (pu) & $3.816\times10^{-6}$ & $4.620\times10^{-6}$ & $<10^{-4}$ \\
+$\Delta P_e$ (MW) & $0.0422$ & $0.0827$ & $<0.1$ \\
+$\max|\Delta|V||$ ระหว่างเกิด fault (pu) & $3.179\times10^{-5}$ & $5.354\times10^{-6}$ & $<10^{-3}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{ผล Power Flow ตรงกับ PSAT ที่ระดับความละเอียดของเครื่อง และผลโดเมนเวลาผ่านทุกเกณฑ์ที่ประกาศไว้ก่อน โดยไม่มีการปรับพารามิเตอร์ ตัวแก้ หรือค่า tolerance ใดเพื่อให้ผลตรงกัน}
+
+การเปรียบเทียบกับ PGAz \textbf{ไม่ผ่าน} เกณฑ์เดียวกันอย่างตรงไปตรงมา โดยมุม COI ต่างกันประมาณ $0.6$ องศาสำหรับ IEEE 14-bus และ $0.3$ องศาสำหรับ RTS-24 ซึ่งเกินเกณฑ์ $0.05$ องศา งานนี้ตรวจสอบสมมติฐานว่าความต่างเกิดจากจำนวนรอบ corrector ที่ตรึงไว้ แล้ว \emph{หักล้างสมมติฐานนั้นได้} คือเมื่อเพิ่มจำนวนรอบเป็น 3, 8 และ 12 รอบ ค่าความต่างยังคงอยู่ที่ระดับเดิม ในขณะที่ $Y_{\mathrm{net}}$ ของเครือข่าย admittance ของ fault และการจับคู่หมายเลขบัสตรงกันทั้งหมด ความต่างที่เหลือจึงเป็นลักษณะของสูตรการอินทิเกรตของ PGAz เอง ไม่ใช่ของสายงานคำนวณในโครงงานนี้ ผลนี้ถูกรายงานเป็น FAIL ตามที่วัดได้ ไม่มีการผ่อนเกณฑ์เพื่อให้ผ่าน และไม่มีการแก้ไขโปรแกรมอ้างอิง
+
+การตรวจสอบ SSSA ใช้แนวทางยึดสัญญาของสมการ ไม่ใช้ค่าจากวรรณกรรมเป็นเป้าหมายการยอมรับ
+% SOURCE: output/validation/artifacts/sssa_validation.md (validated source commit e23185a)
+residual ของ equilibrium ทุกกรณีต่ำกว่า $10^{-10}$ การประกอบคืน Schur complement ให้ความคลาดเคลื่อนเท่ากับศูนย์พอดี และการศึกษาการลู่เข้าของ Jacobian แบบผลต่างจำกัดให้ที่ราบ (plateau) ระหว่างขั้น $h=10^{-5}$ และ $10^{-6}$ ที่ระดับ $1.686\times10^{-7}$, $5.799\times10^{-9}$ และ $1.078\times10^{-7}$ สำหรับสามแบบจำลองที่ตรวจ ทั้งหมดต่ำกว่าเกณฑ์ที่ประกาศไว้ก่อนคือ $10^{-3}$ หลายอันดับ ขั้นผลต่างจำกัดที่ใช้ในการผลิตจึงอยู่บนที่ราบนี้ ไม่ได้ถูกเลือกเพื่อให้ค่า eigenvalue ดูดี
+
+การเทียบกับตารางที่ 9.5 ของ Padiyar~\ref{ref:padiyar} เป็นการตรวจสอบเชิงวินิจฉัยเท่านั้น ไม่ใช่เกณฑ์ยอมรับ ผลที่วัดได้คือระยะห่างสูงสุดของคู่ eigenvalue ที่จับคู่กันได้ประมาณ $4.3\times10^{-2}$ เนื่องจากการศึกษาที่ราบข้างต้นแสดงว่า eigenvalue เปลี่ยนเพียงระดับ $10^{-7}$ เมื่อเปลี่ยนขั้นผลต่างจำกัด ความต่าง $4\times10^{-2}$ นี้จึงไม่สามารถอธิบายด้วยสัญญาณรบกวนของผลต่างจำกัดได้ สาเหตุที่แท้จริงยังไม่ได้ข้อสรุป และอาจมาจากความต่างของแบบจำลอง ข้อมูล convention ของสัญลักษณ์ การกำหนดค่าเริ่มต้น หรือความละเอียดของค่าที่ตีพิมพ์ ไม่มีพารามิเตอร์ ค่าคงตัวเวลา ตัวคูณ แบบจำลองโหลด ขั้นผลต่างจำกัด หรือค่า tolerance ของตัวแก้ใดถูกปรับเพื่อลดความต่างนี้
+
+\templatesubheading{13. การทดสอบแบบจำลอง IBR บนระบบ SMIB}
+ก่อนนำ IBR ไปประกอบในระบบ IEEE 14-bus แบบจำลองแต่ละโหมดถูกทดสอบแยกบนระบบ single-machine infinite-bus (SMIB) ซึ่งมีคำตอบวงจรอนุกรมในรูปปิดใช้เทียบได้ จุดทำงานที่ใช้คือแรงดันปลายทาง $V=1.0\angle0^{\circ}$ pu, $P=0.40$ pu, $Q=0.10$ pu และอิมพีแดนซ์สายส่ง $Z_{line}=0.02+j0.20$ pu บนฐาน 100 MVA โดยกรณี GFL และกรณี GFM \emph{เป็นสองกรณีแยกกัน} ไม่ได้ทำงานพร้อมกันในระบบเดียว
+% SOURCE: output/diagnostics/smib/gfl_rms10_smib.txt และ gfm_no_pll_smib.txt
+\begin{table}[H]
+\centering
+\caption{ผลการตรวจสอบแบบจำลอง IBR บนระบบ SMIB (สองกรณีแยกกัน)}
+\label{tab:smib}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}X r r@{}}
+\toprule
+\tableheader ปริมาณที่ตรวจ & GFL (10 state) & GFM ไม่มี PLL (4 state) \\
+\midrule
+residual ของสมการเชิงอนุพันธ์ $\|f_0\|$ & $2.790\times10^{-13}$ & $6.523\times10^{-14}$ \\
+residual ของ KCL ที่ equilibrium $\|g_0\|$ & $1.110\times10^{-16}$ & $2.082\times10^{-16}$ \\
+$\mathrm{rcond}(g_y)$ & $0.8347$ & $0.9216$ \\
+ความคลาดเคลื่อนการประกอบคืน Schur & $2.605\times10^{-14}$ & $8.095\times10^{-11}$ \\
+$\max\Re\{\lambda\}$ (s$^{-1}$) & $-11.23383$ & $-0.554663$ \\
+ความคลาดเคลื่อนเอกลักษณ์กำลัง (pu) & $0.000$ & $6.523\times10^{-16}$ \\
+ความต่างระหว่างผลไม่เชิงเส้นกับเชิงเส้น & $7.700\times10^{-6}$ & $2.866\times10^{-5}$ \\
+อัตราส่วนเมื่อลดขนาดการรบกวนครึ่งหนึ่ง & $2.489\times10^{-9}$ & $1.433\times10^{-5}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+ผลที่ต้องอ่านเป็นสาระเชิงกายภาพคือ GFM แบบไม่มี PLL ให้คู่ mode แกว่งของ VSG ที่ $\lambda=-0.5555\pm j9.356$ s$^{-1}$ ซึ่งเท่ากับ $f_m=1.489$ Hz และ $\zeta=0.05926$ ตรงกับที่ทฤษฎีของสมการแกว่งคาดไว้ว่าโครงสร้างนี้ต้องมี mode แกว่ง ในขณะที่ GFL ให้เฉพาะรากจริงที่เร็วกว่าและไม่มีสมการแกว่งของตนเอง ความคลาดเคลื่อนเอกลักษณ์กำลังของ GFL เท่ากับศูนย์พอดีเทียบกับเกณฑ์ $10^{-10}$ ที่ประกาศไว้ก่อน ซึ่งยืนยันว่ากำลังที่คำนวณจาก state ภายในและกำลังที่คำนวณจากพอร์ตปลายทางเป็นปริมาณเดียวกัน ไม่ใช่สองการคำนวณที่ให้ค่าใกล้เคียงกัน
+
+\templatesubheading{14. วิธีตรวจสอบและหลักฐานที่ใช้ยืนยันแบบจำลอง}
+โครงงานใช้แนวทาง ``สมการเดียวกัน--หลายการตรวจสอบ'' คือไม่สร้าง simplified model แยกขึ้นมาเพื่อทำให้ผล validation ผ่าน ตารางที่~\ref{tab:validation} สรุปสิ่งที่ตรวจและเหตุผลของแต่ละ gate โดยผลทั้งหมดในรายงานนี้อ้างเฉพาะกรณี IEEE 14-bus และแบบจำลองที่ประกอบอยู่ในกรณีดังกล่าว
+\begin{table}[H]
+\centering
+\caption{สรุปการตรวจสอบที่ใช้กับกรอบ IEEE 14-bus}
+\label{tab:validation}
+\begin{tabularx}{0.98\textwidth}{@{}p{0.20\textwidth} p{0.34\textwidth} X@{}}
+\toprule
+ส่วนที่ตรวจ & วิธีตรวจ & เกณฑ์/หลักฐานสำคัญ \\
+\midrule
+Power Flow & Newton mismatch, bus/branch power balance & operating point ต้องลู่เข้าและกำลังที่คำนวณกลับจาก $V,I$ ต้องสอดคล้อง \\
+DAE equilibrium & แก้ $f=0$ พร้อม KCL ทุกแถว & ไม่ตัด physical KCL ของ REF bus; state และ input ชุดนี้ถูก reuse ใน SSSA/TS \\
+SSSA & linearize full-KCL DAE และจัดการ gauge ก่อน eig & physical eigenvalues finite; candidate ต้องมี damping margin ตามเกณฑ์ที่ freeze ไว้ \\
+IBR model & equilibrium residual, mode ownership, frame covariance & GFM branch ไม่มี PLL; GFL PLL ต้องตอบสนองต่อ $v_q$; inactive state ต้อง hold \\
+DC source & equilibrium, stable DC pair, capacitance sensitivity & $V_{dc},I_{dc}$ เป็น equilibrium ที่ dispatch และคู่ DC eigenvalue อยู่ left-half plane \\
+Mode transfer & คำนวณ terminal port ก่อน/หลัง & $|I^+-I^-|\le10^{-10}$ และ $P,Q,V_{dc},I_{dc}$ ต่อเนื่องตาม contract \\
+TS solver & implicit residual + rejected-step rollback & accepted residual ต่ำกว่า $10^{-8}$; rejected trial ไม่ถูกบันทึกเป็น trajectory \\
+Event handling & exact event landing + right-limit solve & ไม่ให้ time step คร่อม topology/mode สองชุด \\
+Supervisor & reference guard + authenticated candidate + certificate & ไม่มีช่วง energized island ที่ไร้ voltage-forming source และไม่ commit candidate ที่ nonlinear trial ไม่ผ่าน \\
+Regression & fixed default เทียบ explicit fixed บน IEEE14 & $t,x,y,u$ และ event log ตรงกันแบบ bit-identical \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\templatesubheading{15. เหตุการณ์ทดสอบและผลการจำลองในโดเมนเวลา}
+กรณีหลักจำลองเป็นเวลา 250 วินาที เพื่อให้ครอบคลุมทั้งการสูญเสีย SG การเปลี่ยนกำลังโหลด fault การเปลี่ยนโครงสร้างเครือข่าย และการคืนระบบ ดังตารางที่~\ref{tab:events} ตารางนี้แยกสองประเภทของเวลาให้ชัดเจน คือเวลาที่กรณีศึกษากำหนดไว้ล่วงหน้า และเวลาที่เป็นผลลัพธ์จากการคำนวณของระบบเอง การแยกนี้สำคัญเพราะเวลาประเภทหลังเป็นสิ่งที่การจำลองผลิตขึ้น ไม่ใช่สิ่งที่ป้อนเข้าไป
+\begin{table}[H]
+\centering
+\caption{ลำดับเหตุการณ์ของกรณี IEEE 14-bus แยกตามประเภทของเวลา}
+\label{tab:events}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}r l X@{}}
+\toprule
+\tableheader เวลา (s) & ประเภท & เหตุการณ์และรายละเอียด \\
+\midrule
+20.000 & กำหนดไว้ & ปลด SG ที่บัส 1 ระบบเข้าสู่ช่วงที่ IBR ต้องถือมุมอ้างอิง \\
+22.089 & ผลคำนวณ & เพิ่ม GFM ตัวแรกตามดัชนีความรุนแรง \\
+25.303 & ผลคำนวณ & ลด GFM ลงหนึ่งตัวเมื่อดัชนีกลับต่ำกว่าเกณฑ์ \\
+50.000 & กำหนดไว้ & เพิ่มโหลดร้อยละ 20 เพื่อทดสอบการรองรับกำลังจริง \\
+51.340, 53.379 & ผลคำนวณ & เพิ่ม GFM อีกสองครั้งตามลำดับ \\
+85.000--85.150 & กำหนดไว้ & fault ที่บัส 9 ด้วย $Z_f=0.01+j0.01$ pu แล้วเคลียร์หลัง $0.15$ s \\
+110.000 & กำหนดไว้ & ปลดสายส่งระหว่างบัส 6 และ 13 ทำให้ $Y_{\mathrm{net}}$ เปลี่ยน \\
+145.000 & กำหนดไว้ & เริ่มกระบวนการคืน SG และตรวจ synchronism \\
+146.278, 152.402 & ผลคำนวณ & ลด GFM สองครั้งเมื่อระบบเริ่มฟื้นตัว \\
+148.281 & ผลคำนวณ & เพิ่ม GFM หนึ่งครั้งระหว่างช่วงคืนระบบ \\
+159.252 & ผลคำนวณ & ปิดเบรกเกอร์ SG สำเร็จ ($\Delta V=0.008785$ pu, $\Delta\theta=5.015^{\circ}$) \\
+173.127 & ผลคำนวณ & IBR ตัวสุดท้ายคืนจาก GFM สู่ GFL ใช้เวลา $13.875$ s หลังปิดเบรกเกอร์ \\
+250.000 & กำหนดไว้ & จบขอบเขตเวลาของการจำลอง \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+วิถีของนโยบายสลับเดินครบ 250 วินาที มีจุดตัวอย่างที่ยอมรับแล้ว 3679 จุด และมีขั้นเวลาที่ตัวควบคุมปฏิเสธ 161 ครั้ง การมีขั้นที่ถูกปฏิเสธไม่ใช่ความล้มเหลวของผล เพราะขั้นเหล่านั้นถูกย้อนกลับและลดขนาดขั้นเวลาใหม่ก่อนรับคำตอบ ค่าที่ยืนยันคุณภาพของการรันคือ residual สูงสุดของทุกขั้นที่ยอมรับเท่ากับ $9.9721\times10^{-9}$ ซึ่งต่ำกว่าเกณฑ์ $10^{-8}$ ที่ประกาศไว้ก่อน และความลึกของการแบ่งขั้นเวลาย่อยเท่ากับศูนย์ กล่าวคือไม่มีขั้นใดต้องอาศัยการแบ่งย่อยเพื่อผ่านไปได้
+\begin{table}[H]
+\centering
+\caption{ผลสรุปเชิงปริมาณของวิถีนโยบายสลับ}
+\label{tab:runsummary}
+\rowcolors{2}{tablerow}{white}
+\begin{tabularx}{0.99\textwidth}{@{}l l X@{}}
+\toprule
+\tableheader ปริมาณ & ค่า & ความหมาย \\
+\midrule
+ขอบเขตเวลาที่เดินถึง & 250.000 s & เดินครบโดยไม่มีการประมาณค่าออกนอกช่วง \\
+ช่วงแรงดันขณะเกิดเหตุการณ์ & 0.036855--1.523199 pu & ค่าสุดขีดระหว่าง fault และการสลับ ไม่ใช่พิกัดใช้งาน \\
+ช่วงความถี่เฉลี่ยระบบ & 58.839081--61.138547 Hz & ค่าสุดขีดของเหตุการณ์ทั้งหมดในขอบเขตเวลา \\
+ความถี่เฉลี่ยที่ปลายการรัน & 60.000001 Hz & กลับเข้าใกล้ค่าพิกัดเมื่อจบการจำลอง \\
+ช่วงแรงดันที่ปลายการรัน & 0.9667--1.0575 pu & ช่วงแรงดันของทุกบัสที่ $t=250$ s \\
+residual สูงสุดที่ยอมรับ & $9.9721\times10^{-9}$ & ผ่านเกณฑ์ $10^{-8}$ ที่ประกาศไว้ก่อน \\
+ความลึกของการแบ่งขั้นย่อย & 0 & ไม่มีขั้นใดต้องแบ่งย่อยเพื่อผ่าน \\
+จำนวนขั้นที่ถูกปฏิเสธ & 161 & ถูกย้อนกลับทั้งหมด ไม่ปรากฏในวิถีที่พล็อต \\
+จำนวน GFM สูงสุดพร้อมกัน & 4 & เพิ่มเป็นลำดับสี่ครั้ง ไม่ได้สั่งพร้อมกันทั้งหมด \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\begin{figure}[H]
+\centering
+\includegraphics[width=7.10in]{fig_electrical.png}
+\caption{ผลตอบสนองทางไฟฟ้าของแขนงสลับโหมดตลอดลำดับเหตุการณ์ 250 วินาที: กำลังจริงและกำลังรีแอกทีฟรายอุปกรณ์ ความถี่เฉลี่ยระบบ และแรงดันต่ำสุดของเครือข่าย}
+\label{fig:electrical}
+\end{figure}
+
+จากบันทึกเหตุการณ์ ตัวกำกับเพิ่ม GFM ที่ $22.089$, $51.340$, $53.379$ และ $148.281$ วินาที และลดลงที่ $25.303$, $146.278$ และ $152.402$ วินาที ก่อนคืน IBR ตัวสุดท้ายสู่ GFL ที่ $173.127$ วินาทีหลัง SG กลับมา การเพิ่มเป็นลำดับนี้เกิดจากดัชนีความรุนแรงร่วมกับเวลาหน่วงคงสถานะ และการเลือกชุด candidate จากตารางที่ผ่านการรับรอง จำนวน GFM จึงไม่ได้ถูกผูกกับเวลาเหตุการณ์ไว้ล่วงหน้า
+
+\templatesubheading{16. การเปรียบเทียบนโยบายควบคุมและสิ่งที่สรุปได้จากผล}
+เพื่อแยกผลของ ``การสลับโหมดตามสภาวะ'' ออกจากผลของ ``การมี GFM อยู่เฉย ๆ'' งานนี้ทดลองนโยบายควบคุมหกแบบบนเครือข่าย ชุดจ่ายโหลด ตารางเหตุการณ์ ตัวแก้สมการ และตัวควบคุมขั้นเวลาชุดเดียวกัน ความต่างเพียงอย่างเดียวระหว่างแขนงคือนโยบายการควบคุมคอนเวอร์เตอร์ ดังนั้นความต่างของผลที่วัดได้จึงอธิบายได้ด้วยนโยบายเท่านั้น ตัวเลขที่ยืนยันเงื่อนไขนี้คือทุกคู่แขนงให้ผลตรงกันทุกบิตบนช่วง $[0,20)$ วินาที รวม 42 จุดตัวอย่าง ซึ่งเป็นช่วงก่อนเหตุการณ์แรก ผลสรุปแสดงในตารางที่~\ref{tab:policy}
+\begin{table}[H]
+\centering
+\caption{การเปรียบเทียบนโยบายควบคุมหกแบบบนกรณีศึกษา IEEE 14-bus ชุดเดียวกัน}
+\label{tab:policy}
+\begin{tabularx}{0.99\textwidth}{@{}l r r X@{}}
+\toprule
+\tableheader นโยบาย & ถึงเวลา (s) & ปิดเบรกเกอร์ (s) & ผลและข้อสังเกต \\
+\midrule
+สลับแบบทยอย & 250.000 & 159.252 & สำเร็จ; เพิ่มและลดจำนวน GFM ตามดัชนีความรุนแรง แล้วคืนมุมอ้างอิงสู่ SG \\
+ตรึง 1 GFM & 250.000 & 151.132 & สำเร็จ; ถึงขอบเขตเวลาและปิดเบรกเกอร์ได้โดยไม่ต้องปรับโหมด \\
+ตรึง 2 GFM & 250.000 & 154.024 & สำเร็จ; เป็นชุดที่มี damping margin ดีที่สุดในตารางเชิงเส้น \\
+ตรึง 4 GFM & 25.485 & -- & หยุดที่ขั้นเวลาต่ำสุด; ผ่านการคัดกรองเชิงเส้นแต่วิถีไม่เชิงเส้นไปไม่ถึงชุดนี้อย่างเสถียร \\
+ตรึง GFL ทั้งหมด & 20.000 & -- & ถูกปฏิเสธที่เหตุการณ์ปลด SG เพราะไม่มีแหล่ง voltage-forming เหลืออยู่ \\
+ปิดการปรับโหมด & 250.000 & 151.132 & สำเร็จ; คอมมิท GFM หนึ่งตัวครั้งเดียวแล้วไม่เพิ่มเมื่อการรบกวนรุนแรงขึ้น \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{แขนงที่ถึงขอบเขตเวลา 250 วินาทีมีสี่แขนง แขนงตรึง GFL ทั้งหมดถูกปฏิเสธที่ $t=20$ s และแขนงตรึง 4 GFM หยุดที่ $t=25.485$ s เครื่องหมาย -- หมายถึงปริมาณนั้นไม่นิยามสำหรับแขนงนั้น ไม่ใช่ค่าศูนย์}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=7.10in]{fig_policy.png}
+\caption{ผลเปรียบเทียบความถี่เฉลี่ยระบบระหว่างนโยบายควบคุมที่ถึงขอบเขตเวลา 250 วินาที}
+\label{fig:policy}
+\end{figure}
+
+เมื่อเปรียบเทียบเชิงปริมาณต้องแยกตัวชี้วัดสองชนิดให้ชัด คือค่าเบี่ยงเบนความถี่ \emph{สูงสุด} ขณะเกิดเหตุการณ์ กับค่าเบี่ยงเบนความถี่ที่ \emph{เข้าที่แล้ว} หลังเหตุการณ์นั้น ตารางที่~\ref{tab:df} แสดงทั้งสองค่าของนโยบายสลับแบบทยอยเทียบกับนโยบายตรึงหนึ่งตัว
+\begin{table}[H]
+\centering
+\caption{ค่าเบี่ยงเบนความถี่สูงสุดและที่เข้าที่แล้วของแต่ละหน้าต่างเหตุการณ์ (หน่วย Hz)}
+\label{tab:df}
+\begin{tabularx}{0.99\textwidth}{@{}X r r r r@{}}
+\toprule
+\tableheader หน้าต่างเหตุการณ์ & \multicolumn{2}{c}{สลับแบบทยอย} & \multicolumn{2}{c}{ตรึง 1 GFM} \\
+\tableheader & สูงสุด & เข้าที่ & สูงสุด & เข้าที่ \\
+\midrule
+ปลด SG & 0.7599 & 0.0043 & \textbf{0.5311} & 0.0100 \\
+เพิ่มโหลด & \textbf{1.0034} & \textbf{0.3753} & 1.4478 & 1.2219 \\
+เกิดและเคลียร์ fault & \textbf{1.1385} & \textbf{0.3753} & 1.4978 & 1.2296 \\
+ปลดสายส่ง & \textbf{0.3764} & \textbf{0.3503} & 1.2325 & 1.1426 \\
+คืนระบบและปิดเบรกเกอร์ & \textbf{1.1609} & \textbf{0.0134} & 1.1736 & 0.0197 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\resultbox{บนค่าเบี่ยงเบนที่เข้าที่แล้ว นโยบายสลับแบบทยอยดีที่สุดในทุกหน้าต่าง โดยที่หน้าต่าง fault ดีกว่าถึง 3.28 เท่า ($0.3753$ เทียบกับ $1.2296$ Hz) แต่บนค่าสูงสุดขณะปลด SG นโยบายตรึงหนึ่งตัวดีกว่า ($0.5311$ เทียบกับ $0.7599$ Hz) รายงานนี้ระบุผลตามที่วัดได้ทั้งสองด้าน}
+
+ผลนี้ให้ข้อสรุปสำคัญสามประการ ประการแรก หลังสูญเสีย SG ระบบต้องมีแหล่ง voltage-forming อย่างน้อยหนึ่งตัว มิฉะนั้นปัญหาไม่ใช่เพียงว่าความถี่แย่ลง แต่เป็นว่าระบบไม่มีมุมอ้างอิงและสมการไม่ควรถูกแก้ต่อ การปฏิเสธของแขนงตรึง GFL ทั้งหมดที่ $t=20$ วินาทีจึงเป็นผลลัพธ์ที่ถูกต้อง ไม่ใช่ความล้มเหลว ประการที่สอง ชุด candidate ที่ผ่านการคัดกรองด้วย SSSA ไม่ได้รับประกันว่าระบบจะเดินทางจาก state ปัจจุบันไปถึงชุดนั้นได้ในการจำลองไม่เชิงเส้น ดังที่เห็นจากแขนงตรึง 4 GFM ซึ่งผ่านการคัดกรองเชิงเส้นแต่หยุดที่ $t=25.485$ วินาที ผลนี้แสดงว่าการวิเคราะห์เชิงเส้นเป็นเงื่อนไขจำเป็นแต่ไม่เพียงพอ ประการที่สาม ประโยชน์ของนโยบายสลับมาจาก \emph{ลำดับของการเปลี่ยนโหมด} ไม่ใช่เพียงชุด GFM สุดท้าย เพราะระบบเพิ่ม voltage-forming support ทีละขั้นและตรวจการเปลี่ยนผ่านก่อน commit ทุกครั้ง
+
+\templatesubheading{17. สรุปผลงานที่พัฒนาได้จริงในโครงงาน}
+จากการดำเนินงานสามารถสรุปสิ่งที่พัฒนาและทดสอบได้ดังนี้
+\begin{enumerate}
+\item พัฒนา Power Flow ของ IEEE 14-bus และการส่งต่อผลไปสร้าง DAE equilibrium โดยใช้ convention ของแรงดัน กระแส กำลัง และ per-unit base ชุดเดียวกันตลอดสายงาน
+\item พัฒนาการวิเคราะห์เสถียรภาพสัญญาณขนาดเล็กบนระบบ DAE ประกบที่คง KCL ทุกแถว พร้อมการลดรูปด้วย Schur complement การจัดการมุมอ้างอิง และการแจงนับชุด candidate ของ GFM ครบทั้ง 15 ชุด
+\item พัฒนาการจำลองโดเมนเวลาแบบสี่เหลี่ยมคางหมูอิมพลิซิตที่รองรับการแก้ Newton แบบไม่เชิงเส้น การปรับขั้นเวลาอัตโนมัติ การย้อนกลับขั้นที่ถูกปฏิเสธ และการลงจุดเหตุการณ์อย่างแม่นยำ
+\item รวม SG และ IBR หลายตัวไว้ในระบบ DAE ประกบชุดเดียว โดยอุปกรณ์ทุกตัวส่งกระแสอัดผ่านอินเทอร์เฟซเดียวกัน
+\item พัฒนาแบบจำลอง IBR สองโหมดขนาด 17 state ที่มีภาคกำลัง AC/DC ร่วมกัน สาขา GFL ที่ใช้ PLL และสาขา GFM ที่ใช้ VSG พร้อม current limiter และ anti-windup
+\item พัฒนาแผนที่ถ่ายโอนเชิงกายภาพระหว่างสองโหมดที่รักษากระแสปลายทาง กำลัง $P/Q$, $V_{dc}$ และ $I_{dc}$ ภายในค่าความคลาดเคลื่อนที่ประกาศไว้ก่อนคอมมิท
+\item พัฒนาตัวกำกับอัตโนมัติที่ใช้ดัชนีความรุนแรงของแรงดันและความถี่ ฮิสเทอรีซิส เวลาหน่วงคงสถานะ การป้องกันการสูญเสียมุมอ้างอิง ตารางชุด candidate ที่ผ่านการรับรอง และใบรับรองการเปลี่ยนผ่านแบบไม่เชิงเส้น
+\item ทดสอบแบบครบวงจรบน IEEE 14-bus ด้วยการปลด SG การเพิ่มโหลด fault การปลดสายส่ง และการคืน SG จนวิถีของนโยบายสลับเดินครบ 250 วินาทีและคืนระบบกลับสู่สภาพ GFL ทั้งหมดหลังปิดเบรกเกอร์
+\end{enumerate}
+
+\templatesubheading{18. ข้อจำกัดของผลและสิ่งที่ยังไม่อ้าง}
+เพื่อให้ผลในรายงานนี้ถูกนำไปใช้ต่อได้อย่างถูกต้อง หัวข้อนี้ระบุขอบเขตของข้ออ้างอย่างชัดเจน สิ่งที่ \emph{พิสูจน์แล้ว} คือกรอบการทำงานที่ประกอบขึ้นสามารถเดินครบขอบเขตเวลา 250 วินาทีของกรณีศึกษา IEEE 14-bus ที่กำหนดไว้ พร้อมคืนมุมอ้างอิงกลับสู่ SG หลังเบรกเกอร์ปิด โดยทุกขั้นเวลาที่ยอมรับผ่านเกณฑ์ residual ที่ประกาศไว้ก่อน และผล Power Flow กับผลโดเมนเวลาตรงกับโปรแกรมอ้างอิง PSAT ภายในเกณฑ์ที่ประกาศไว้ก่อน
+
+สิ่งที่ \emph{ยังไม่อ้าง} มีดังนี้ ประการแรก แบบจำลองเป็นแบบสมดุลสามเฟสในกรอบ RMS phasor จึงไม่ครอบคลุมพฤติกรรมทางแม่เหล็กไฟฟ้าในช่วงเวลาที่เร็วกว่าขั้นเวลาของ phasor และไม่ครอบคลุมกรณีไม่สมดุล ประการที่สอง รายงานนี้ \emph{ไม่ได้อ้าง} ความสอดคล้องกับข้อกำหนดการเชื่อมต่อ (grid code) ใด ๆ เนื่องจากยังไม่ได้จำลองระบบป้องกัน การทนแรงดันตก (fault ride-through) และข้อจำกัดพิกัดอุปกรณ์อย่างครบถ้วน ประการที่สาม ผลทั้งหมดผูกกับกรณีศึกษา ชุดจ่ายโหลด และตารางเหตุการณ์ชุดเดียวนี้ การขยายไปสู่ระบบขนาดใหญ่หรือจำนวน IBR ที่มากกว่านี้ยังไม่ได้ประเมิน ประการที่สี่ ค่าจากตารางที่ 9.5 ของ Padiyar~\ref{ref:padiyar} ยังมีความต่างระดับ $4.3\times10^{-2}$ ที่ยังไม่ได้ข้อสรุปเรื่องสาเหตุ และถูกรายงานไว้ตามที่วัดได้โดยไม่ปรับพารามิเตอร์ใด ประการที่ห้า การเปรียบเทียบกับ PGAz ไม่ผ่านเกณฑ์และถูกรายงานเป็น FAIL ตามจริง โดยได้แสดงหลักฐานว่าความต่างอยู่ที่สูตรการอินทิเกรตของโปรแกรมอ้างอิงนั้น ไม่ใช่ที่สายงานคำนวณของโครงงาน
+
+ข้อจำกัดเชิงการเปรียบเทียบที่ต้องระบุให้ตรงตามที่วัดได้คือ นโยบายสลับแบบทยอยไม่ได้ชนะทุกตัวชี้วัดในทุกหน้าต่างเวลา บนตัวชี้วัดค่าเบี่ยงเบนที่เข้าที่แล้วนโยบายนี้ดีที่สุดในทุกหน้าต่างหลังเหตุการณ์แรก แต่บนตัวชี้วัดค่าเบี่ยงเบนสูงสุดขณะเกิดเหตุการณ์ปลด SG นโยบายตรึงหนึ่งตัวให้ค่าที่ต่ำกว่า ($0.5311$ Hz เทียบกับ $0.7599$ Hz) ข้อสรุปของรายงานนี้จึงระบุขอบเขตของตัวชี้วัดและหน้าต่างเวลาไว้ทุกครั้ง
+\clearpage
+\templateheading{ประโยชน์ที่ได้รับจากโครงงาน}
+\templatesubheading{ประโยชน์ด้านวิชาการและการพัฒนาแบบจำลอง}
+\begin{enumerate}
+\item ได้กรอบการจำลองระบบไฟฟ้ากำลังที่ใช้สมการและการส่งต่อ state ชุดเดียวกันตั้งแต่ Power Flow, DAE equilibrium, SSSA จนถึง TS จึงตรวจสอบความสอดคล้องของผลระหว่างขั้นตอนได้โดยตรง
+\item ได้แบบจำลอง IBR ที่สลับบทบาทระหว่าง GFL และ GFM ได้ภายในอุปกรณ์เดียว โดยรักษา state ทางกายภาพที่สำคัญไว้ครบเมื่อเปลี่ยนโหมด
+\item ได้แนวทางการใช้การคัดกรองสัญญาณขนาดเล็กร่วมกับการยืนยันด้วยการจำลองไม่เชิงเส้น ซึ่งป้องกันการสรุปผลเกินขอบเขตจาก eigenvalue เพียงอย่างเดียว
+\item ได้ชุดกรณีศึกษา IEEE 14-bus ที่มีเหตุการณ์รบกวนหลายชนิดบนขอบเขตเวลา 250 วินาที พร้อมชุดผลอ้างอิงที่ตรวจสอบแล้ว สำหรับใช้เป็นฐานเปรียบเทียบงานด้าน IBR ในอนาคต
+\end{enumerate}
+
+\templatesubheading{ประโยชน์ด้านการประยุกต์ใช้งาน}
+\begin{enumerate}
+\item แนวคิดตัวกำกับอัตโนมัติใช้เป็นพื้นฐานในการศึกษาการจัดสรรบทบาท GFM เฉพาะช่วงที่ระบบต้องการ voltage-forming support แทนการกำหนดให้คอนเวอร์เตอร์ทุกตัวทำงานในโหมดเดียวตลอดเวลา
+\item กรอบการทำงานช่วยศึกษาการถ่ายโอนผู้ถือมุมอ้างอิงระหว่าง SG และ IBR ในช่วงที่ระบบแยกเกาะและช่วงคืนระบบ ซึ่งเป็นสถานการณ์ที่เกิดขึ้นจริงในระบบที่มีสัดส่วนอินเวอร์เตอร์สูง
+\item ผลการเปรียบเทียบนโยบายแสดงการแลกเปลี่ยนระหว่างความมั่นคงของระบบ จำนวน IBR ที่ต้องทำหน้าที่ GFM และความซับซ้อนของการควบคุม ซึ่งเป็นข้อมูลประกอบการตัดสินใจเชิงวางแผน
+\end{enumerate}
+
+\templateheading{ปัญหาและอุปสรรคที่เกิดขึ้น}
+\begin{enumerate}
+\item หลังปลด SG ระบบไม่สามารถแก้สมการต่อได้หากไม่มี IBR อย่างน้อยหนึ่งตัวทำหน้าที่สร้างแรงดัน เนื่องจากไม่มีแหล่งกำหนดมุมอ้างอิงของโครงข่าย ปัญหานี้ไม่ใช่ปัญหาเชิงตัวเลขแต่เป็นข้อจำกัดเชิงกายภาพของระบบ
+\item การสลับโหมดทำให้บทบาทของ controller state เปลี่ยนไป หากแผนที่ถ่ายโอน state ไม่ถูกต้องจะเกิดการกระโดดของกระแสที่จุดเชื่อมต่อ และทำให้ตัวแก้ Newton ในขั้นเวลาถัดไปไม่ลู่เข้า
+\item ชุด candidate ที่ผ่านการวิเคราะห์สัญญาณขนาดเล็กไม่ได้ผ่านการจำลองไม่เชิงเส้นทุกกรณี ตัวอย่างชัดเจนคือชุดที่ตรึง GFM ทั้งสี่ตัวซึ่งผ่านการคัดกรองเชิงเส้นแต่หยุดที่ $t=25.485$ วินาที
+\item การจำลองแบบอิมพลิซิตพร้อมการปรับขั้นเวลาอัตโนมัติใช้เวลาคำนวณสูง โดยเฉพาะช่วงเกิด fault และช่วงที่โครงสร้างเครือข่ายเปลี่ยน ซึ่งต้องแก้สมการไม่เชิงเส้นซ้ำหลายครั้งต่อหนึ่งขั้นเวลา
+\item แบบจำลอง IBR ต้นทางให้สมการฝั่ง AC และตัวควบคุมไว้ครบ แต่ไม่ได้กำหนดกฎของแหล่งจ่ายฝั่ง DC หากปิดสมการด้วยแหล่งจ่ายอุดมคติ $V_{dc}$ จะแทบไม่ตอบสนองและค่าคาปาซิแตนซ์ $C_{dc}$ จะหายออกจากพลวัตทั้งหมด
+\end{enumerate}
+
+\templateheading{แนวทางการแก้ไขปัญหาและอุปสรรคที่เกิดขึ้น}
+\begin{enumerate}
+\item กำหนดการป้องกันการสูญเสียมุมอ้างอิงให้ตรวจก่อนทุกครั้งว่ามี SG หรือ GFM อย่างน้อยหนึ่งแหล่งในเกาะที่ยังจ่ายไฟ หากไม่มีให้ปฏิเสธเหตุการณ์นั้นแบบ fail-closed ก่อนเรียกตัวแก้สมการ แทนการฝืนคำนวณต่อบนระบบที่ไม่มีมุมอ้างอิง
+\item ใช้เวกเตอร์ state แบบ superset ที่มีขนาดคงที่สำหรับ IBR และกำหนดขั้นตอนถ่ายโอนที่ชัดเจน คือคง state ของภาคกำลังไว้ กำหนดค่าเริ่มต้นให้สาขาปลายทางจากพอร์ตปลายทางเดิม และตรวจความต่อเนื่องของกระแสก่อน commit
+\item ใช้การวิเคราะห์สัญญาณขนาดเล็กเป็นเพียงการคัดกรองขั้นแรก และยืนยันชุดที่เลือกด้วยการจำลองไม่เชิงเส้นทุกครั้ง เพื่อไม่ให้ผลเชิงเส้นถูกตีความเกินขอบเขตที่พิสูจน์ได้
+\item ใช้ตัวแก้แบบสี่เหลี่ยมคางหมูอิมพลิซิตร่วมกับการควบคุมขั้นเวลา การลงจุดเหตุการณ์อย่างแม่นยำ และการย้อนกลับขั้นที่ถูกปฏิเสธ ซึ่งลดปัญหาการลู่เข้าในช่วงที่การรบกวนรุนแรงโดยไม่ต้องผ่อนเกณฑ์ใด
+\item แทนการปิดสมการ DC แบบอุดมคติด้วยแหล่งจ่ายแบบเทเวนินที่มีความต้านทานภายใน กระแสแหล่งจ่ายเป็น state และ chopper กันแรงดันเกิน จากนั้นตรวจ equilibrium, ตำแหน่ง eigenvalue ของคู่ DC, ขอบเขตของโหลดกำลังคงที่ และความไวต่อค่า $C_{dc}$ ก่อนนำไปใช้กับกรณี IEEE 14-bus
+\end{enumerate}
+
+\clearpage
+\templateheading{โครงงานที่คาดว่าจะดำเนินการต่อไป}
+\begin{enumerate}
+\item ขยายจากแบบจำลองสมดุลในกรอบ RMS phasor ไปสู่เครือข่ายไม่สมดุลและการวิเคราะห์ทรานเชียนต์เชิงแม่เหล็กไฟฟ้า (electromagnetic transient) เพื่อศึกษาพฤติกรรมของคอนเวอร์เตอร์และระบบป้องกันในช่วงเวลาที่เร็วกว่าที่แบบจำลองปัจจุบันแยกแยะได้
+\item เพิ่มแบบจำลองระบบป้องกัน การจำกัดกระแสในสภาวะผิดพร่อง การทนแรงดันตก และข้อกำหนดการเชื่อมต่อ เพื่อให้กรณีศึกษาสะท้อนข้อจำกัดของอุปกรณ์จริง และเพื่อให้สามารถอ้างความสอดคล้องกับข้อกำหนดได้ในอนาคต
+\item ทดสอบกรอบการคัดเลือกชุด GFM บนระบบที่ใหญ่กว่า IEEE 14-bus และมีจำนวน IBR มากกว่าสี่ตัว เพื่อประเมินความสามารถในการขยายขนาดของการแจงนับชุด candidate ซึ่งเติบโตแบบเลขชี้กำลังตามจำนวนอุปกรณ์
+\item พัฒนาเกณฑ์คัดเลือกชุด candidate ให้พิจารณาร่วมกันทั้ง damping ratio, การรองรับแรงดัน ระดับการใช้งานของคอนเวอร์เตอร์ พลังงานสำรอง และต้นทุนของการสลับโหมด แทนการใช้ damping margin เพียงตัวเดียว
+\item เชื่อมต่อแบบจำลองกับการทดสอบแบบ hardware-in-the-loop หรือต้นแบบตัวควบคุม เพื่อทดสอบการสลับโหมดและการคืนโหมดภายใต้ข้อจำกัดของระบบควบคุมจริง เช่น เวลาสุ่มสัญญาณ ความหน่วงของการสื่อสาร และความละเอียดของการวัด
+\end{enumerate}
+
+\clearpage
+\templateheading{เอกสารอ้างอิง}
+\begin{enumerate}[label={[\arabic*]},leftmargin=2.6em]
+\item\label{ref:kundur} P. Kundur, \emph{Power System Stability and Control}. New York: McGraw-Hill, 1994.
+\item\label{ref:sauerpai} P. W. Sauer and M. A. Pai, \emph{Power System Dynamics and Stability}. Upper Saddle River, NJ: Prentice Hall, 1998.
+\item\label{ref:padiyar} K. R. Padiyar, \emph{Power System Dynamics: Stability and Control}, 2nd ed., Chapter 9, Section 9.6.1.
+\item\label{ref:ieee1110} IEEE Std 1110-2002, \emph{IEEE Guide for Synchronous Generator Modeling Practices and Applications in Power System Stability Analyses}.
+\item\label{ref:kodsi} S. K. M. Kodsi and C. A. Ca\~{n}izares, ``Modeling and simulation of IEEE 14 bus system with FACTS controllers,'' University of Waterloo Technical Report 2003-3, 2003.
+\item\label{ref:matpower} MATPOWER case \emph{case14}, IEEE 14-bus test case converted from the IEEE Common Data Format, as distributed with the MATPOWER package.
+\item\label{ref:psat} F. Milano, \emph{Power System Modelling and Scripting}. Springer, 2010; PSAT version 2.1.11 time-domain simulation documentation.
+\item\label{ref:yazdani} A. Yazdani and R. Iravani, \emph{Voltage-Sourced Converters in Power Systems: Modeling, Control, and Applications}. Hoboken, NJ: Wiley/IEEE Press, 2010.
+\item\label{ref:teodorescu} R. Teodorescu, M. Liserre, and P. Rodr\'{i}guez, \emph{Grid Converters for Photovoltaic and Wind Power Systems}. Chichester, UK: Wiley/IEEE Press, 2011.
+\item\label{ref:bacha} S. Bacha, I. Munteanu, and A. I. Bratcu, \emph{Power Electronic Converters Modeling and Control}. London: Springer, 2014.
+\item\label{ref:pogaku} N. Pogaku, M. Prodanovi\'{c}, and T. C. Green, ``Modeling, analysis and testing of autonomous operation of an inverter-based microgrid,'' \emph{IEEE Trans. Power Electronics}, vol. 22, no. 2, pp. 613--625, 2007.
+\item\label{ref:sakimoto} K. Sakimoto, Y. Miura, and T. Ise, ``Virtual synchronous generator without phase locked loop based on current controlled inverter and its parameter design,'' \emph{IEEJ Trans. Power and Energy}, vol. 135, no. 7, pp. 462--470, 2015.
+\item\label{ref:avila} G. Avila-Martinez et al., ``Impact on transient stability of self-synchronisation control strategies in grid-forming VSC-based generators,'' arXiv:2509.04388v1, 2025.
+\item\label{ref:regfmb1} National Renewable Energy Laboratory, \emph{REGFM\_B1: An Electromagnetic Transient Model for Grid-Forming Inverters}, NREL/TP-5D00-90260, 2024.
+\item\label{ref:cui} G. Cui, Z. Chu, and F. Teng, ``Control-mode as a grid service in software-defined power grids: GFL vs GFM,'' \emph{IEEE Trans. Power Systems}, vol. 40, no. 1, pp. 314--326, Jan. 2025.
+\item\label{ref:ding} H. Ding, R. Kar, Z. Miao, and L. Fan, ``A novel design for switchable grid-following and grid-forming control,'' \emph{IEEE Trans. Sustainable Energy}, vol. 16, no. 2, pp. 1301--1314, Apr. 2025.
+\item\label{ref:eecon49} P. Jueajan, P. Phadungdaen, S. Jaingeawkham, T. Surinkaew, and I. Ngamroo, ``A Bayesian optimization-based GFL/GFM mode switching strategy for dynamic stability enhancement in low-inertia power systems,'' EECON49 (submitted), KMITL, 2026.
+\end{enumerate}
 
 \end{document}

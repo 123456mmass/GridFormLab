@@ -236,6 +236,22 @@ end
 if isfield(opt,'post_reclose_mode_reselection') && ~isempty(opt.post_reclose_mode_reselection)
     ts_opt_base.post_reclose_mode_reselection = opt.post_reclose_mode_reselection;
 end
+% Diagnostic-only suspension of the no-voltage-forming refusal at the SG trip
+% (allow_no_vf_island, default absent = false). Forwarded only when set, so a
+% run that omits it is byte-identical. The refusal remains the production
+% behavior; the option exists for labeled diagnostic continuations only.
+if isfield(opt,'allow_no_vf_island') && ~isempty(opt.allow_no_vf_island)
+    ts_opt_base.allow_no_vf_island = opt.allow_no_vf_island;
+end
+% Opt-in phase-gauge pinning (angle_gauge_bus / angle_gauge_after,
+% ASSUMED_DIAGNOSTIC): slack-gauge fix for sourceless all-GFL islands.
+% Forwarded only when set; absent (the default) is byte-identical.
+if isfield(opt,'angle_gauge_bus') && ~isempty(opt.angle_gauge_bus)
+    ts_opt_base.angle_gauge_bus = opt.angle_gauge_bus;
+end
+if isfield(opt,'angle_gauge_after') && ~isempty(opt.angle_gauge_after)
+    ts_opt_base.angle_gauge_after = opt.angle_gauge_after;
+end
 ts_devices = devices;
 if isfield(eq,'reference') && isstruct(eq.reference) && ...
         isfield(eq.reference,'physical_kcl_enforced') && ...

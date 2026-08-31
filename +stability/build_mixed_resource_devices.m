@@ -141,7 +141,18 @@ for k = 1:nr
             % dual_mode_ibr_model expects mode in {"gfl","GFM","tripped"}.
             ibr_mode = mode;
             if strcmp(ibr_mode, "gfm"), ibr_mode = "GFM"; end
-            if strcmp(mid,'eecon49_dual')
+            % Opt-in diagnostic factory override (ASSUMED_DIAGNOSTIC): when
+            % scenario_opt.ibr_factory_override.(rid) declares a factory, that
+            % factory builds the resource instead of the model_id dispatch.
+            % Absent (the default) every production build is byte-identical.
+            if isfield(scenario_opt,'ibr_factory_override') && ...
+                    isstruct(scenario_opt.ibr_factory_override) && ...
+                    isfield(scenario_opt.ibr_factory_override,char(rid)) && ...
+                    ~isempty(scenario_opt.ibr_factory_override.(char(rid)))
+                factory_fn = scenario_opt.ibr_factory_override.(char(rid));
+                dev = factory_fn(string(rid), bus, bp, bus_ids(:)', ...
+                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+            elseif strcmp(mid,'eecon49_dual')
                 dev = ibr.eecon49_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
                     V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
             elseif strcmp(mid,'decoupled_dual')

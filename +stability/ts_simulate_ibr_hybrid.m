@@ -1395,6 +1395,32 @@ for k=1:numel(required)
     end
 end
 dae=stability.composite_dae(case_data,devices,struct('load_model',option(opt,'load_model','cz_p_cz_q')));
+% Opt-in phase-gauge pinning for sourceless islands (angle_gauge_bus,
+% ASSUMED_DIAGNOSTIC). With the SG breaker open and every converter
+% grid-following, NO differential equation references an absolute network
+% angle: rotating the entire solution (V and the PLL angles) by theta(t)
+% maps solutions to solutions, so the coupled trapezoidal Newton Jacobian
+% loses exactly one rank and Newton diverges at any step size (observed wall
+% at t=22.08 s on the locked_gfl diagnostic arm, identical across
+% steppers/predictors and independent of the DC closure). When
+% angle_gauge_bus=b is declared, the imag-part KCL row of bus b is REPLACED
+% by imag(V_b)=0 for t >= angle_gauge_after -- the standard slack-bus gauge
+% fix, selecting the one member of the solution family with theta_b=0 (bus 1
+% is the delivered reference bus, theta_1=0). The replaced KCL row holds
+% identically on that member, so no physical equation is discarded. The pin
+% activates only after the SG trip; before it the synchronous machine pins
+% the gauge and every KCL row is independent. Default absent: byte-identical.
+if isfield(opt,'angle_gauge_bus') && ~isempty(opt.angle_gauge_bus) && ...
+        opt.angle_gauge_bus>0
+    gauge_bus = double(opt.angle_gauge_bus);
+    gauge_after = -Inf;
+    if isfield(opt,'angle_gauge_after') && ~isempty(opt.angle_gauge_after)
+        gauge_after = double(opt.angle_gauge_after);
+    end
+    inner_g = dae.dae_g;
+    dae.dae_g = @(t,x,y,Y,u,ec) gauge_pinned_g(inner_g,t,x,y,Y,u,ec, ...
+        gauge_bus,gauge_after);
+end
 if numel(x0)~=numel(dae.x0) || numel(y0)~=numel(dae.y0)
     error('ts_simulate_ibr_hybrid:badStateSize','x0/y0 dimensions do not match the composite DAE.');
 end
@@ -2046,7 +2072,17 @@ else
         'candidate_committed', false, 'candidate_sg_online', false, ...
         'candidate_modes', hs_candidate.device_modes, 'failing_island_ids', [], ...
         'n_failing_islands', 0);
-    if ~has_vf
+    % Diagnostic-only suspension of the no-voltage-forming refusal
+    % (allow_no_vf_island, default false). When the option is set, the F2
+    % transaction proceeds to the ordinary right-limit solve even when the
+    % island lacks a voltage-forming source, so a labeled diagnostic run can
+    % show how the all-GFL island actually behaves past the SG trip. The
+    % refusal above stays the PRODUCTION behavior: with the option absent or
+    % false this branch is byte-identical to the delivered contract, and the
+    % event log of a suspended run carries the marker below.
+    allow_no_vf_diag = isfield(opt,'allow_no_vf_island') && ...
+        ~isempty(opt.allow_no_vf_island) && logical(opt.allow_no_vf_island);
+    if ~has_vf && ~allow_no_vf_diag
         % Fail closed: one or more islands lack a voltage source.
         stage='noVoltageFormingSource';
         reason='noVoltageFormingSource: per-island checks: island has no VF.';
@@ -2072,7 +2108,14 @@ else
     if ok
         active=stability.ts_dynamic_state_indices(dae,ecr);
         handler_log.applied=true;
-        handler_log.details=sprintf('SG %s breaker opened (no firmware); voltage-forming source retained.',sched.sg_id);
+        if ~has_vf
+            handler_log.details=sprintf(['SG %s breaker opened (no firmware); ' ...
+                'per-island voltage-forming check SUSPENDED by diagnostic option ' ...
+                'allow_no_vf_island (no VF source present); continuing as a ' ...
+                'labeled diagnostic run.'],sched.sg_id);
+        else
+            handler_log.details=sprintf('SG %s breaker opened (no firmware); voltage-forming source retained.',sched.sg_id);
+        end
     end
 end
 end
@@ -4083,5 +4126,16 @@ for k=1:numel(dae.devices)
             isstruct(out.gfm) && isfield(out.gfm,'omega_m') && isfinite(out.gfm.omega_m)
         w=out.gfm.omega_m; return;
     end
+end
+end
+
+function g = gauge_pinned_g(gin,t,x,y,Y,u,ec,b,t_after)
+%GAUGE_PINNED_G  Replace bus b's imag-part KCL row with imag(V_b)=0 (the
+% slack-bus gauge fix); active only for t >= t_after. Row convention from
+% composite_g: g(2*end-bus-index) interleaving puts bus b's imag row at 2*b.
+% See the opt-in note at the dae construction site.
+g = gin(t,x,y,Y,u,ec);
+if t >= t_after
+    g(2*b) = y(2*b);
 end
 end

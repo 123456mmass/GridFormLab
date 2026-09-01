@@ -1,0 +1,235 @@
+% Speaking script for presentation_pf_sssa_ts_gfm_en_v11.tex (16 slides).
+%
+% 15 pages: page 1 covers the title and contents slides together, then one page
+% per remaining deck slide.  THREE OR FOUR LINES PER PAGE, at \large, so a page
+% is taken in at a glance rather than read.  Budgets total 8:35, which is the
+% point: the slot is fifteen minutes, so a slow delivery still fits and there is
+% room for questions.
+%
+% RULE FOLLOWED THROUGHOUT: every fact spoken here is VISIBLE on the slide it
+% belongs to.  A number readable only off a figure axis is spoken as "about".
+\documentclass{beamer}
+\usepackage{fontspec}
+\setsansfont[Path=C:/Users/User/AppData/Local/Microsoft/Windows/Fonts/,UprightFont=Helvetica.ttf,BoldFont=Helvetica-Bold.ttf,ItalicFont=Helvetica-Oblique.ttf,BoldItalicFont=Helvetica-BoldOblique.ttf]{Helvetica.ttf}
+\usetheme{Berlin}
+\usefonttheme[onlymath]{serif}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{bm}
+\definecolor{myblue}{rgb}{0.0,0.0,0.7}
+\definecolor{pnavy}{HTML}{0F2A4A}
+\definecolor{pblue}{HTML}{1D5288}
+\setbeamercolor{frametitle}{bg=myblue!82!black,fg=white}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{background}{}
+\setbeamertemplate{headline}{}
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.86\paperwidth,ht=2.6ex,dp=1.1ex,leftskip=1.2em]{author in head/foot}%
+    \scriptsize Speaking script --- An Automatic Following/Forming Framework for Inverter-Based Resources%
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.14\paperwidth,ht=2.6ex,dp=1.1ex,center]{date in head/foot}%
+    \scriptsize \insertframenumber/\inserttotalframenumber
+  \end{beamercolorbox}}%
+}
+\newcommand{\budget}[2]{%
+  \vspace{-0.30cm}%
+  \begin{flushright}\tiny\color{pnavy}%
+  \textbf{#1}\quad$\vert$\quad total \textbf{#2}%
+  \end{flushright}%
+  \vspace{0.55cm}}
+% \par first: without it the \vspace lands in horizontal mode and the cue runs
+% on from the last sentence instead of standing on its own line.
+\newcommand{\cue}[1]{%
+  \par\vspace{0.55cm}{\scriptsize\color{pblue}\textit{Point at:} #1\par}}
+% Beamer zeroes \parskip, which would run these short paragraphs together.
+\setlength{\parskip}{0.55em}
+
+\begin{document}
+\begin{frame}{Script 1 --- Slides 1--2: Title and Contents}
+\budget{0:25}{0:25}
+\large
+Good morning. I am Phichitchai Jueajan, with Pakkapol Phdungdan.
+
+Our project is an automatic following and forming framework for inverter-based
+resources.
+
+In fifteen minutes: the problem, three methods, the switching law, four results.
+\cue{the section list.}
+\end{frame}
+
+\begin{frame}{Script 2 --- Slide 3: Introduction}
+\budget{0:30}{0:55}
+\large
+Left: grid-following needs an external voltage-angle reference.
+
+Right: grid-forming makes its own angle, and can replace the reference lost when
+the generator disconnects.
+
+So neither mode is right all the time.
+\cue{the last bullet on the right.}
+\end{frame}
+
+\begin{frame}{Script 3 --- Slide 4: Project Objectives}
+\budget{0:30}{1:25}
+\large
+One in-house chain: power flow, small-signal stability, simulation. Four
+converters with selectable branches.
+
+Third objective is the heart of it: decide the allowed grid-forming sets from the
+network condition, not by fixing the number in advance.
+\cue{objective three.}
+\end{frame}
+
+\begin{frame}{Script 4 --- Slide 5: Overall Workflow}
+\budget{0:35}{2:00}
+\large
+Top row: power flow, then equilibrium, then screening, then integration --- all
+on one operating point.
+
+Bottom row back: check severity, then make the transaction.
+
+The rule: commit only after current continuity and network convergence.
+\cue{the arrow back to the transaction box.}
+\end{frame}
+
+\begin{frame}{Script 5 --- Slide 6: Case Study}
+\budget{0:25}{2:25}
+\large
+IEEE 14-bus: one generator, four dual-mode converters.
+
+$\mathrm{SG}_1$ at bus one; $\mathrm{IBR}_1$ to $\mathrm{IBR}_4$ at buses two,
+three, six and eight.
+
+Every later figure is labelled by resource, not by bus.
+\cue{the resource table.}
+\end{frame}
+
+\begin{frame}{Script 6 --- Slide 7: Power Flow Formulation}
+\budget{0:35}{3:00}
+\large
+Net complex power at a bus: the voltage times the conjugate of the network
+current. In polar form, the two real equations for $P$ and $Q$.
+
+The table gives what each bus type fixes.
+
+Below: Newton--Raphson --- mismatches, solve the boxed system, update, repeat.
+\cue{the boxed Jacobian system.}
+\end{frame}
+
+\begin{frame}{Script 7 --- Slide 8: Small-Signal Stability}
+\budget{0:35}{3:35}
+\large
+We linearise the same equations the simulator uses.
+
+Since $\bm g_y$ is invertible, a Schur complement gives the boxed reduced matrix
+$\bm A_{red}$.
+
+Its eigenvalues give frequency and damping. Every physical root must have a
+negative real part.
+\cue{the two boxed equations.}
+\end{frame}
+
+\begin{frame}{Script 8 --- Slide 9: Time-Domain Simulation}
+\budget{0:30}{4:05}
+\large
+Implicit trapezoidal for the states, with the network enforced at the new time
+point --- solved together.
+
+The list on the right is what makes an event trustworthy: land exactly on it,
+apply the change atomically, require convergence after, roll back if it fails.
+\cue{the event-handling block.}
+\end{frame}
+
+\begin{frame}{Script 9 --- Slide 10: Dual-Mode IBR Model}
+\budget{0:35}{4:40}
+\large
+Each converter carries a fixed seventeen coordinates: shared plant, a
+grid-following branch, a grid-forming branch.
+
+The inactive branch is held, not reset --- that is why the mode can change
+mid-run.
+
+Right: the PLL, and the virtual synchronous machine.
+\cue{the two active-set expressions.}
+\end{frame}
+
+\begin{frame}{Script 10 --- Slide 11: Switching Law}
+\budget{0:40}{5:20}
+\large
+Severity $S$ is the average of a voltage index and a frequency index, saturated
+to zero-to-one.
+
+The command is deliberately asymmetric: into forming at $0.65$ held $0.10$
+seconds --- fast; back to following below $0.35$ held a full second --- slow.
+
+And a gate: the current must match to $10^{-10}$ per unit.
+\cue{the two dwell arrows.}
+\end{frame}
+
+\begin{frame}{Script 11 --- Slide 12: Result 1, Candidate Screening}
+\budget{0:40}{6:00}
+\large
+Any single converter passes. Two pairs pass, and a pair gives the best margin.
+Every triple is rejected. All four together passes again.
+
+Three fails and four passes --- admissibility is non-monotonic in the count.
+
+So every candidate must be computed, not inferred.
+\cue{the three-converter row, then the four-converter row.}
+\end{frame}
+
+\begin{frame}{Script 12 --- Slide 13: Result 2, Disturbance Scenario}
+\budget{0:35}{6:35}
+\large
+Six periods over $250$ seconds: the generator trips at $20$, load steps at $50$,
+fault at $85$, line trip at $110$, reclose commanded at $145$.
+
+The two times under period six are results, read from the event log --- not
+settings.
+\cue{the two result times under period six.}
+\end{frame}
+
+\begin{frame}{Script 13 --- Slide 14: Result 3, Electrical Response}
+\budget{0:40}{7:15}
+\large
+Panels (a) and (b): the converters pick up the island after $20$ seconds, then
+hand it back.
+
+Panel (c): each disturbance drives severity above $\Gamma_{on}$, and between
+events it falls below $\Gamma_{off}$ --- so this is measurement, not a timetable.
+
+Panel (d): the reference moves to $\mathrm{IBR}_1$, then back.
+\cue{a peak in (c), then the matching step in (d).}
+\end{frame}
+
+\begin{frame}{Script 14 --- Slide 15: Result 4, Bus 9 Comparison}
+\budget{0:40}{7:55}
+\large
+Blue is adaptive, grey is fixed following. Bus nine carries load but no device,
+so it shows what the island delivers.
+
+In (a) to (c) blue holds near one per unit; grey sags to about two-thirds and
+delivers less.
+
+In (d), the honest trade-off: grey holds a narrower frequency band.
+\cue{the gap in (a), then the band in (d).}
+\end{frame}
+
+\begin{frame}{Script 15 --- Slide 16: Conclusion}
+\budget{0:40}{8:35}
+\large
+Three findings: after the generator disconnects at least one forming converter is
+required; admissibility is non-monotonic; staged switching reaches $250$ seconds
+and hands everything back.
+
+The box compares the arms --- locked following stops at $20$ seconds, four pinned
+units fail at $25.485$.
+
+Thank you --- we welcome questions.
+\cue{the comparative-outcome box.}
+\end{frame}
+
+
+\end{document}

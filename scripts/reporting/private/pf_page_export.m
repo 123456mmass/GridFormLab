@@ -15,6 +15,13 @@ function pf_page_export(f,path,dpi,save_fig)
 % colours) without re-running the generator. The .fig is a convenience copy of
 % the SAME figure the PNG came from -- the PNG remains the artifact the report
 % includes, and nothing about the plotted values depends on it.
+%
+% Visible is flipped ON before savefig. pf_page_figure builds the canvas with
+% Visible='off' so a batch run does not raise windows, and savefig stores that
+% property verbatim: a .fig written from the hidden figure reopens hidden, so
+% openfig loads the axes and lines into memory but draws no window and the user
+% sees nothing. The flip happens AFTER print, so the exported PNG is unaffected,
+% and the figure is closed immediately below, so nothing is left on screen.
 
 arguments
     f (1,1) matlab.ui.Figure
@@ -30,7 +37,10 @@ print(f,p,'-dpng',sprintf('-r%d',round(dpi)));
 if save_fig
     [dd,bb] = fileparts(p);
     figpath = fullfile(dd,[bb '.fig']);
+    was_visible = f.Visible;
+    f.Visible = 'on';      % so the reopened .fig actually draws a window
     savefig(f,figpath);
+    f.Visible = was_visible;
     fprintf('wrote %s\n',figpath);
 end
 close(f);

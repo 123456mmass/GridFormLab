@@ -1,0 +1,31 @@
+Word build of the Thai project-summary report
+=============================================
+
+source .tex   : docs/source/report_power_system_project_final_th_v2.tex
+numbering from: docs/source/report_power_system_project_final_th_v2.aux
+base form     : docs/text/แบบฟอร์ม เอกสารสรุปวิชาโครงงาน.docx
+output        : docs/source/report_power_system_project_final_th_v2.docx
+
+body font     : TH Sarabun New 16.0 pt (the form's own size)
+line spacing  : 16.0 pt exact
+heading space : x0.50 of nominal
+figure scale  : x1.00 of the column-fit width
+caption/table : 13.0 pt
+bibliography  : 2 column(s)
+page count    : 23 (Word ComputeStatistics, target 22-23)
+figures       : 7
+tables        : 10
+equations     : 530 emitted, 530 counted by Word
+last eq number: 34
+
+layout ladder walked (step, line spacing pt, pages):
+  4  16.0  23
+
+Body type size, wording, headings, tables and figures are fixed.
+Only the space around content and the raster scale were adjusted to
+reach the page target; nothing was cut.
+The two TikZ diagrams are rendered from the report source with
+xelatex, so their Thai lettering and macro values match the PDF.
+Raster figures are the PNGs the MATLAB generator produced, scaled to
+the form's text column and otherwise unmodified.
+No numeric value was recomputed, rounded or reformatted here.

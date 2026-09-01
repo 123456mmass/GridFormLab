@@ -285,8 +285,19 @@ chronology, and it contributes the following.
 \section{Scope, sources and reproduction}\label{sec:scope}
 %=============================================================================
 The study system is the IEEE-14 bus network with one modelled SG at the
-reference bus and four modelled IBRs at buses 2, 3, 6 and 8. The whole system is
-assembled as a single all-KCL composite differential--algebraic system
+reference bus and four modelled IBRs at buses 2, 3, 6 and 8. Figure~\ref{fig:ieee14-network}
+shows the network used throughout this report.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/123313.png}
+\caption{IEEE 14-bus study network used for the SG--IBR switching analysis. The
+modelled IBR locations are buses 2, 3, 6 and 8; the synchronous generator at
+bus 1 provides the initial slack/reference source.}
+\label{fig:ieee14-network}
+\end{figure}
+
+The whole system is assembled as a single all-KCL composite differential--algebraic system
 \begin{equation}
   g(x,V)\;=\;Y_{\mathrm{net}}\,V \;-\; I_{\mathrm{bus}}(x,V)\;=\;0,
   \label{eq:kcl}
@@ -623,7 +634,7 @@ algebraic form} in which such a machine is coded in industry tools descends from
 separate line of work on machine-model equivalence and is not an IEEE~1110 object;
 the two are not interchangeable and are not treated as such here. IEEE~Std~1110
 also does not itself supply the swing equation: for that it defers to the standard
-textbook treatments~\cite{kundur1994,sauerpai1998}, which is the form
+textbook treatment~\cite{kundur1994}, which is the form
 used in~\eqref{eq:sg1}--\eqref{eq:sg2}. No page number is quoted from the
 standard, because two byte-distinct copies of it circulate and their pagination
 differs; a page citation that cannot be reproduced is worse than none.
@@ -1877,9 +1888,6 @@ Modeling Practices and Applications in Power System Stability Analyses}.
 
 \bibitem{kundur1994} P.~Kundur, \emph{Power System Stability and Control}. New
 York: McGraw-Hill, 1994.
-
-\bibitem{sauerpai1998} P.~W.~Sauer and M.~A.~Pai, \emph{Power System Dynamics and
-Stability}. Upper Saddle River, NJ: Prentice Hall, 1998.
 
 \bibitem{kodsi2003} S.~K.~M.~Kodsi and C.~A.~Ca\~{n}izares, ``Modeling and
 simulation of IEEE 14 bus system with FACTS controllers,'' Univ.\ of Waterloo

@@ -1,0 +1,450 @@
+\documentclass{beamer}
+\usetheme{Berlin}
+\usefonttheme[onlymath]{serif}
+\setbeamertemplate{footline}[frame number]
+
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{bm}
+\setcounter{MaxMatrixCols}{20}
+\usepackage{booktabs,array,multicol}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes}
+
+\definecolor{myblue}{rgb}{0.0,0.0,0.7}
+\setbeamercolor{item}{fg=myblue}
+\setbeamercolor{block title}{bg=myblue,fg=white}
+\setbeamercolor{block body}{bg=blue!7,fg=black}
+\setbeamercolor{itemize item}{fg=myblue}
+\setbeamercolor{custom top bar}{bg=black,fg=white}
+\setbeamercolor{custom sub bar}{bg=myblue,fg=white}
+\setbeamertemplate{navigation symbols}{}
+\setbeamercolor{frametitle}{bg=myblue!82!black,fg=white}
+\setbeamertemplate{section in toc}[sections numbered]
+
+\setbeamertemplate{background}{}
+\setbeamertemplate{headline}{}
+
+\title{\large\textbf{Automatic GFL/GFM Mode Switching}}
+\author{Mr. Phichitchai Jueajan (66010569)\\Mr. Pakkapol Phdungdan (66010612)\\[0.2cm]
+Advisor: Dr. Tossaporn Surinkaew}
+\institute{Department of Electrical Engineering, Faculty of Engineering\\
+King Mongkut's Institute of Technology Ladkrabang (KMITL)}
+\date{}
+\titlegraphic{\includegraphics[width=0.95in]{figures/images.png}}
+\newcommand{\pu}{\,\mathrm{p.u.}}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+\begin{frame}{Table of Contents}
+  \begin{multicols}{2}
+    \tableofcontents
+  \end{multicols}
+\end{frame}
+\section{Introduction}
+\begin{frame}{Introduction}
+\begin{columns}[c,onlytextwidth]
+\column{0.48\textwidth}
+\small
+\begin{block}{Grid-following (GFL)}
+\begin{itemize}
+  \item PLL-synchronized current control
+  \item Requires an external voltage-angle reference
+  \item Effective while a strong grid reference exists
+\end{itemize}
+\end{block}
+\column{0.48\textwidth}
+\small
+\begin{block}{Grid-forming (GFM)}
+\begin{itemize}
+  \item Establishes voltage angle and frequency
+  \item Supports weak-grid and islanded operation
+  \item Can replace the lost reference after SG disconnection
+\end{itemize}
+\end{block}
+\end{columns}
+\vspace{0.35cm}
+\begin{alertblock}{Research problem}
+Automatically assign only the required GFM support after loss of the synchronous reference, then return converters to GFL operation after SG recovery.
+\end{alertblock}
+\end{frame}
+
+\section{Objectives}
+\begin{frame}{Project Objectives}
+\small
+\begin{enumerate}
+  \item Develop one in-house analysis chain for \textbf{Power Flow}, \textbf{SSSA}, and \textbf{Time-Domain Simulation}.
+  \item Model four converter resources with a common plant and selectable \textbf{GFL/GFM} controller branches.
+  \item Determine admissible GFM configurations from the network condition instead of fixing the number of forming units in advance.
+  \item Verify automatic mode transitions, island support, and SG reconnection under one disturbance chronology.
+\end{enumerate}
+\vspace{0.35cm}
+\begin{block}{Scope}
+IEEE 14-bus test system, one synchronous generator, four dual-mode IBRs, automatic reference support, and event-driven nonlinear simulation.
+\end{block}
+\end{frame}
+
+\section{System Workflow}
+\begin{frame}{Overall Analysis and Switching Workflow}
+\centering
+\begin{tikzpicture}[>=Latex,node distance=7mm and 9mm,
+  flowbox/.style={draw,rounded corners,minimum width=2.55cm,minimum height=0.72cm,align=center,fill=blue!6},
+  decision/.style={draw,diamond,aspect=2.0,align=center,fill=yellow!10,inner sep=1.5pt},
+  trans/.style={draw,rounded corners,minimum width=2.8cm,minimum height=0.72cm,align=center,fill=green!9}]
+\node[flowbox] (pf) {Power Flow\\operating point};
+\node[flowbox,right=of pf] (eq) {Mixed SG/IBR\\equilibrium};
+\node[flowbox,right=of eq] (sssa) {SSSA + candidate\\screening};
+\node[flowbox,below=12mm of pf] (ts) {Time-domain\\integration};
+\node[decision,right=of ts] (event) {Event or\\severity trigger?};
+\node[trans,right=of event] (switch) {Mode/reference\\transaction};
+\draw[->,thick] (pf)--(eq); \draw[->,thick] (eq)--(sssa);
+\draw[->,thick] (sssa.south) |- (ts.north);
+\draw[->,thick] (ts)--(event);
+\draw[->,thick] (event)--node[above]{yes}(switch);
+\draw[->,thick] (switch.south) |- ++(0,-0.55) -| (ts.south);
+\draw[->,thick] (event.south) -- ++(0,-0.45) -| node[pos=0.2,below]{no} (ts.south);
+\node[below=6mm of switch,align=center,font=\footnotesize] {current continuity\\+ right-limit KCL};
+\end{tikzpicture}
+\vspace{0.35cm}
+\footnotesize
+\textbf{Key principle:} every mode change is checked against a certified operating point and committed only if the post-transition network equations remain solvable.
+\end{frame}
+
+
+\section{Study System}
+\begin{frame}{Case Study: IEEE 14-Bus with 1 SG + 4 Dual-Mode IBRs}
+\begin{columns}[c,onlytextwidth]
+\column{0.34\textwidth}
+\footnotesize
+\begin{block}{Resource mapping}
+\begin{tabular}{lc}
+\toprule
+Resource & Connection \\
+\midrule
+SG1  & 1 \\
+IBR1 & 2 \\
+IBR2 & 3 \\
+IBR3 & 6 \\
+IBR4 & 8 \\
+\bottomrule
+\end{tabular}
+\end{block}
+\begin{itemize}
+  \item SG1: normal synchronous reference
+  \item IBR1--IBR4: dual-mode GFL/GFM converters
+\end{itemize}
+\column{0.62\textwidth}
+\centering
+\includegraphics[width=0.93\linewidth]{figures/ieee14_dual_mode_ibr_diagram.pdf}
+\end{columns}
+\vspace{0.12cm}
+\footnotesize
+\textbf{Study question:} Which IBRs should form the grid after SG1 is lost, and when can that support be released after SG1 returns?
+\end{frame}
+
+\section{Power Flow}
+\begin{frame}{Power Flow Formulation}
+\begin{columns}[c,onlytextwidth]
+\column{0.56\textwidth}
+\small
+For network node $i$,
+\begin{align*}
+P_i &= V_i\sum_{k=1}^{n}V_k\left(G_{ik}\cos\theta_{ik}+B_{ik}\sin\theta_{ik}\right),\\
+Q_i &= V_i\sum_{k=1}^{n}V_k\left(G_{ik}\sin\theta_{ik}-B_{ik}\cos\theta_{ik}\right).
+\end{align*}
+\textbf{Newton--Raphson update}
+\[
+\boxed{\bm{J}_{PF}(\bm{z}^{(r)})\Delta\bm{z}^{(r)}=-\bm{F}_{PF}(\bm{z}^{(r)})}
+\]
+\[
+\bm{z}^{(r+1)}=\bm{z}^{(r)}+\Delta\bm{z}^{(r)}
+\]
+\column{0.40\textwidth}
+\footnotesize
+\begin{block}{Network constraints}
+\begin{tabular}{lll}
+\toprule
+Type & Specified & Solved \\
+\midrule
+REF & $|V|,\theta$ & $P,Q$ \\
+PV  & $P,|V|$ & $Q,\theta$ \\
+PQ  & $P,Q$ & $|V|,\theta$ \\
+\bottomrule
+\end{tabular}
+\end{block}
+\vspace{0.15cm}
+\begin{tikzpicture}[node distance=3.5mm,>=Latex]
+\node[draw,rounded corners,fill=blue!6,minimum width=2.75cm] (a) {Initialize $\bm z$};
+\node[draw,rounded corners,fill=blue!6,below=of a,minimum width=2.75cm] (b) {Evaluate $\bm F_{PF}$};
+\node[draw,rounded corners,fill=blue!6,below=of b,minimum width=2.75cm] (c) {Solve $\bm J_{PF}\Delta\bm z=-\bm F_{PF}$};
+\node[draw,rounded corners,fill=blue!6,below=of c,minimum width=2.75cm] (d) {Update and test convergence};
+\draw[->] (a)--(b); \draw[->] (b)--(c); \draw[->] (c)--(d);
+\end{tikzpicture}
+\end{columns}
+\end{frame}
+\section{Small-Signal Stability}
+\begin{frame}{Small-Signal Stability Analysis (SSSA)}
+\begin{columns}[c,onlytextwidth]
+\column{0.55\textwidth}
+\small
+Nonlinear DAE:
+\[
+\dot{\bm{x}}=\bm{f}(\bm{x},\bm{y}),\qquad
+\bm{0}=\bm{g}(\bm{x},\bm{y})
+\]
+Linearization around $(\bm{x}_0,\bm{y}_0)$:
+\[
+\begin{bmatrix}\Delta\dot{\bm{x}}\\\bm{0}\end{bmatrix}=
+\begin{bmatrix}\bm{f}_x&\bm{f}_y\\\bm{g}_x&\bm{g}_y\end{bmatrix}
+\begin{bmatrix}\Delta\bm{x}\\\Delta\bm{y}\end{bmatrix}
+\]
+Eliminating algebraic variables:
+\[
+\boxed{\bm{A}=\bm{f}_x-\bm{f}_y(\bm{g}_y\backslash\bm{g}_x)}
+\]
+\column{0.42\textwidth}
+\small
+\[
+\boxed{\bm{A}\bm{v}=\lambda\bm{v}}
+\]
+\[
+f=\frac{|\operatorname{Im}\lambda|}{2\pi},\qquad
+\zeta=-\frac{\operatorname{Re}\lambda}{|\lambda|}
+\]
+\begin{block}{Stability criterion}
+$\operatorname{Re}(\lambda)<0$ for all physical modes; the selector also checks the declared damping-ratio floor.
+\end{block}
+\end{columns}
+\end{frame}
+\section{Time-Domain Simulation}
+\begin{frame}{Time-Domain Simulation (TS)}
+\begin{columns}[c,onlytextwidth]
+\column{0.56\textwidth}
+\small
+\[ \dot{\bm{x}}=\bm{f}(\bm{x},\bm{y}),\qquad \bm{0}=\bm{g}(\bm{x},\bm{y}) \]
+\textbf{Implicit trapezoidal step}
+\begin{align*}
+\bm{R}_x &= \bm{x}_{n+1}-\bm{x}_{n}-\frac{h}{2}(\bm{f}_{n}+\bm{f}_{n+1})=\bm{0},\\
+\bm{R}_y &= \bm{g}(\bm{x}_{n+1},\bm{y}_{n+1})=\bm{0},\\
+\boxed{\bm{J}_R\Delta\bm{z}}&=\boxed{-\bm{R}},\qquad \bm{z}=[\bm{x};\bm{y}].
+\end{align*}
+\column{0.41\textwidth}
+\small
+\begin{block}{Event handling}
+\begin{itemize}
+  \item Exact landing on event times
+  \item Preserve the left-limit state
+  \item Atomic mode/topology transaction
+  \item Right-limit KCL must converge
+  \item Roll back a rejected transaction
+\end{itemize}
+\end{block}
+\end{columns}
+\end{frame}
+\section{IBR Dynamic Model}
+\begin{frame}{Dual-Mode IBR Dynamic Model}
+\begin{columns}[t,onlytextwidth]
+\column{0.53\textwidth}
+\footnotesize
+\textbf{Fixed 17-coordinate switching superset}
+\[
+\bm{x}_{IBR}=\begin{bmatrix}\bm{x}_{p}^{T}&\bm{x}_{GFL}^{T}&\bm{x}_{GFM}^{T}&I_{dc}\end{bmatrix}^{T}
+\]
+\begin{align*}
+\bm{x}_{p}&=[i_d\;i_q\;V_{dc}]^T,\\
+\bm{x}_{GFL}&=[\delta_{PLL}\;\xi_{PLL}\;\xi_P\;\xi_Q\;\xi_{Id}\;\xi_{Iq}]^T,\\
+\bm{x}_{GFM}&=[\delta_{VSG}\;\omega_{VSG}\;E\;\xi_{Vd}\;\xi_{Vq}\;\xi_{Id}^{GFM}\;\xi_{Iq}^{GFM}]^T.
+\end{align*}
+\[
+\mathcal{A}_{GFL}=\{1{:}9,17\},\qquad
+\mathcal{A}_{GFM}=\{1{:}3,10{:}17\}.
+\]
+\textit{Inactive controller coordinates are held during each mode.}
+\column{0.44\textwidth}
+\scriptsize
+\begin{block}{GFL: PLL-synchronized}
+\begin{align*}
+\dot\delta_{PLL}&=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},\\
+e_P&=\kappa P^\star-P,\\
+i_d^\star&=k_{pP}e_P+k_{iP}\xi_P.
+\end{align*}
+\end{block}
+\begin{block}{GFM: voltage-forming VSG}
+\begin{align*}
+M\dot\omega&=\kappa P^\star-P-D_v(\omega-1),\\
+\dot\delta_{VSG}&=\omega_b(\omega-1),\\
+\tau_E\dot E&=k_Q(\kappa Q^\star-Q)-k_E(E-E^\star).
+\end{align*}
+\end{block}
+\end{columns}
+\end{frame}
+\section{IBR Mode Switching}
+\begin{frame}{Automatic GFL/GFM Switching Law}
+\begin{columns}[c,onlytextwidth]
+\column{0.50\textwidth}
+\footnotesize
+\textbf{Severity index}
+\begin{align*}
+J_V&=\frac{\bigl||V_i|-V_i^{\star}\bigr|}{0.10\pu},\\
+J_f&=\frac{|f_{COI}-60|}{0.50\,\mathrm{Hz}},\\
+S&=\operatorname{sat}_{[0,1]}\!\left(0.5J_V+0.5J_f\right).
+\end{align*}
+\textbf{Hysteretic mode command}
+\[
+q^+=\begin{cases}
+\mathrm{GFM},&S\ge0.65\quad(0.10\,\mathrm{s}),\\
+\mathrm{GFL},&S<0.35\quad(1.00\,\mathrm{s}),\\
+q,&\text{otherwise}.
+\end{cases}
+\]
+\vspace{0.05cm}
+\[
+\left\|I^{+}-I^{-}\right\|_{\infty}\le10^{-10}\pu
+\]
+\column{0.47\textwidth}
+\centering
+\begin{tikzpicture}[x=0.66cm,y=3.7cm,>=Latex]
+\draw[->] (0,0) -- (6.15,0) node[right,font=\scriptsize] {$t$};
+\draw[->] (0,0) -- (0,1.04) node[above,font=\scriptsize] {$S$};
+\draw[dashed,thick] (0,0.65) -- (6,0.65);
+\draw[dashed,thick] (0,0.35) -- (6,0.35);
+\node[left,font=\scriptsize] at (0,0.65) {$0.65$};
+\node[left,font=\scriptsize] at (0,0.35) {$0.35$};
+\draw[very thick,myblue] plot coordinates {(0,0.18) (1.0,0.22) (1.5,0.72) (2.4,0.78) (3.0,0.53) (3.6,0.31) (4.8,0.28) (5.5,0.22)};
+\draw[<->,green!50!black,thick] (1.5,0.82) -- (2.25,0.82);
+\node[above,font=\scriptsize,align=center] at (1.88,0.82) {GFL $\rightarrow$ GFM\\after $0.10$ s};
+\draw[<->,orange!80!black,thick] (3.6,0.14) -- (5.0,0.14);
+\node[below,font=\scriptsize,align=center] at (4.3,0.14) {GFM $\rightarrow$ GFL\\after $1.00$ s};
+\node[font=\scriptsize,anchor=west] at (4.95,0.68) {$\Gamma_{on}$};
+\node[font=\scriptsize,anchor=west] at (4.95,0.38) {$\Gamma_{off}$};
+\end{tikzpicture}
+\vspace{0.20cm}
+\scriptsize
+Candidate equilibrium/SSSA checks and the right-limit KCL solve are completed before a transition is committed.
+\end{columns}
+\end{frame}
+
+\IfFileExists{figures/switch_ieee14_decision/run_summary_v2.tex}{\input{figures/switch_ieee14_decision/run_summary_v2.tex}}{}
+\IfFileExists{figures/switch_ieee14_decision/comparison_macros.tex}{\input{figures/switch_ieee14_decision/comparison_macros.tex}}{}
+\section{Results}
+\begin{frame}{Result 1: GFM Candidate Screening}
+\begin{columns}[c,onlytextwidth]
+\column{0.56\textwidth}
+\scriptsize
+\begin{tabular}{cll}
+\toprule
+GFM count & Candidate & Outcome \\
+\midrule
+1 & any single IBR & admissible \\
+2 & IBR1 + IBR3 & admissible \\
+2 & \textbf{IBR2 + IBR3} & \textbf{best margin} \\
+2 & other pairs & rejected \\
+3 & any triple & rejected \\
+4 & all four IBRs & admissible \\
+\bottomrule
+\end{tabular}
+\vspace{0.32cm}
+\begin{block}{Observed property}
+Admissibility is \textbf{non-monotonic} in the number of grid-forming converters.
+\end{block}
+\column{0.40\textwidth}
+\centering
+\begin{tikzpicture}[node distance=3.6mm,>=Latex]
+\node[draw,rounded corners,fill=blue!6,minimum width=2.55cm] (a) {Topology};
+\node[draw,rounded corners,fill=blue!6,below=of a,minimum width=2.55cm] (b) {SCR screen};
+\node[draw,rounded corners,fill=blue!6,below=of b,minimum width=2.55cm] (c) {Equilibrium};
+\node[draw,rounded corners,fill=blue!6,below=of c,minimum width=2.55cm] (d) {Full-KCL SSSA};
+\node[draw,rounded corners,fill=green!10,below=of d,minimum width=2.55cm] (e) {Authenticated candidate};
+\draw[->] (a)--(b); \draw[->] (b)--(c); \draw[->] (c)--(d); \draw[->] (d)--(e);
+\end{tikzpicture}
+\vspace{0.18cm}
+\footnotesize
+The GFM set is computed from the current network condition; converter count alone does not determine admissibility.
+\end{columns}
+\end{frame}
+\begin{frame}{Result 2: Supervisor and Mode Switching}
+\begin{columns}[c,onlytextwidth]
+\column{0.31\textwidth}
+\footnotesize
+\begin{itemize}
+  \item SG trip: $20$ s
+  \item Load step: $50$ s
+  \item Bus-9 fault: $85$--$85.15$ s
+  \item Line 6--13 trip: $110$ s
+  \item Restore / SG reclose request: $145$ s
+\end{itemize}
+\vspace{0.2cm}
+\textbf{Policy:} add GFM support during severe conditions and release it after recovery.
+\column{0.66\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/presentation_pf_sssa_ts_gfm/slide_supervisor_v3.png}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 3: Electrical Response}
+\begin{columns}[c,onlytextwidth]
+\column{0.34\textwidth}
+\small
+\begin{itemize}
+  \item IBRs support the island after the SG trip.
+  \item Frequency and voltage respond to each scheduled disturbance.
+  \item The SG is reconnected only after the synchronism conditions are satisfied.
+  \item The accepted run reaches the full $250$ s horizon.
+\end{itemize}
+\column{0.63\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/presentation_pf_sssa_ts_gfm/slide_electrical_v3.png}
+\end{columns}
+\end{frame}
+\begin{frame}{Result 4: Converter Response under Different Policies}
+\begin{columns}[c,onlytextwidth]
+\column{0.34\textwidth}
+\small
+\begin{itemize}
+  \item Staged switching: solid lines
+  \item One pinned GFM: dashed lines
+  \item Two pinned GFMs: dash-dot lines
+\end{itemize}
+\vspace{0.25cm}
+\begin{block}{Main observation}
+The power-sharing trajectory depends strongly on which converters are forming the grid and on when each mode transition occurs.
+\end{block}
+\column{0.63\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/presentation_pf_sssa_ts_gfm/slide_per_converter_v3.png}
+\end{columns}
+\end{frame}
+
+\section{Conclusion}
+\begin{frame}{Conclusion and Key Findings}
+\begin{columns}[c,onlytextwidth]
+\column{0.56\textwidth}
+\footnotesize
+\begin{itemize}
+  \item PF, SSSA, and TS are linked through one nonlinear SG/IBR network model.
+  \item After SG1 is disconnected, at least one voltage-forming IBR is required for the islanded trajectory to continue.
+  \item GFM admissibility is configuration-dependent and non-monotonic in converter count.
+  \item Staged switching reaches the full $250$ s chronology and returns all IBRs to GFL operation after SG recovery.
+\end{itemize}
+\column{0.40\textwidth}
+\footnotesize
+\begin{block}{Comparative outcome}
+\begin{itemize}
+  \item \textbf{Locked GFL:} stops at $20$ s; no forming source.
+  \item \textbf{1--2 pinned GFMs:} reach $250$ s; reclose succeeds.
+  \item \textbf{4 pinned GFMs:} nonlinear failure at $25.485$ s.
+  \item \textbf{Staged switching:} $250$ s with full hand-back.
+\end{itemize}
+\end{block}
+\end{columns}
+\vspace{0.12cm}
+\footnotesize
+\textbf{Scope of claim:} the staged policy is not claimed to minimize every transient peak; its benefit here is adaptive reference support across the complete disturbance chronology.
+\end{frame}
+
+\end{document}

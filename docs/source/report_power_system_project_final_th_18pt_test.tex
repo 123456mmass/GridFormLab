@@ -1,0 +1,1012 @@
+﻿\documentclass[12pt,a4paper]{article}
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[
+  Path={fonts/TH Sarabun PSK V-1/},
+  Extension=.ttf,
+  UprightFont={*},
+  BoldFont={* Bold},
+  ItalicFont={* Italic},
+  BoldItalicFont={* BoldItalic}
+]{THSarabun}
+\setmonofont{Latin Modern Mono}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{unicode-math}
+\setmathfont[
+  Path={C:/Program Files/MiKTeX/fonts/opentype/public/lm-math/},
+  Extension=.otf
+]{latinmodern-math}
+\usepackage{graphicx,float,caption,xcolor}
+\usepackage{geometry,booktabs,tabularx,array,longtable}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\geometry{top=0.52in,bottom=0.52in,left=0.58in,right=0.58in}
+\setlength{\headheight}{20pt}
+\setlength{\parindent}{1.2em}
+\setlength{\parskip}{0pt}
+\linespread{0.94}
+\emergencystretch=2em
+\renewcommand{\arraystretch}{1.12}
+\captionsetup{font=normalsize,labelfont=bf}
+\setlength{\tabcolsep}{4pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{à¸£à¸²à¸¢à¸‡à¸²à¸™à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¸£à¸°à¸šà¸šà¹„à¸Ÿà¸Ÿà¹‰à¸²à¸à¸³à¸¥à¸±à¸‡: PF--SSSA--TS--IBR}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\figurename}{à¸£à¸¹à¸›à¸—à¸µà¹ˆ}
+\renewcommand{\tablename}{à¸•à¸²à¸£à¸²à¸‡à¸—à¸µà¹ˆ}
+\renewcommand{\abstractname}{à¸šà¸—à¸„à¸±à¸”à¸¢à¹ˆà¸­}
+\definecolor{navy}{RGB}{24,54,93}
+\definecolor{teal}{RGB}{0,110,112}
+\definecolor{redp}{RGB}{165,45,45}
+\definecolor{greenp}{RGB}{35,125,67}
+\definecolor{goldp}{RGB}{180,139,24}
+\definecolor{lightblue}{RGB}{235,244,250}
+\definecolor{lightgreen}{RGB}{236,247,239}
+\DeclareMathOperator{\sat}{sat}
+\newcommand{\pu}{\ensuremath{\,\mathrm{pu}}}
+\newcommand{\second}{\ensuremath{\,\mathrm{s}}}
+\newcommand{\hz}{\ensuremath{\,\mathrm{Hz}}}
+\newcommand{\sci}[2]{\ensuremath{#1\times10^{#2}}}
+\newcommand{\reportsection}[1]{\par\addvspace{5pt}{\fontsize{20}{22}\selectfont\bfseries #1\par}\vspace{2pt}}
+\newcommand{\source}[1]{\textbf{#1}}
+\newcommand{\result}[1]{\textit{#1}}
+\input{figures/switch_ieee14_decision/comparison_macros.tex}
+\input{figures/switch_ieee14_decision/run_summary_v2.tex}
+\graphicspath{{figures/}{figures/final_report_th/}}
+
+\begin{document}`r`n\makeatletter`r`n\renewcommand\normalsize{\fontsize{18}{19.2}\selectfont}`r`n\makeatother`r`n\normalsize
+
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{center}
+\vspace*{0.55in}
+\includegraphics[width=1.08in]{figures/images.png}\\[0.35in]
+{\color{navy}\fontsize{25}{31}\selectfont\bfseries
+à¸£à¸²à¸¢à¸‡à¸²à¸™à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¸£à¸°à¸šà¸šà¹„à¸Ÿà¸Ÿà¹‰à¸²à¸à¸³à¸¥à¸±à¸‡\par}
+\vspace{0.10in}
+{\color{teal}\fontsize{20}{25}\selectfont\bfseries
+à¸à¸²à¸£à¹„à¸«à¸¥à¸‚à¸­à¸‡à¸à¸³à¸¥à¸±à¸‡ à¸à¸²à¸£à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¹€à¸ªà¸–à¸µà¸¢à¸£à¸ à¸²à¸ž à¹à¸¥à¸°à¸à¸²à¸£à¸ªà¸¥à¸±à¸šà¹‚à¸«à¸¡à¸” GFL/GFM à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´\par}
+\vspace{0.12in}
+{\color{navy}\fontsize{16}{20}\selectfont
+à¸à¸£à¸“à¸µà¸¨à¸¶à¸à¸©à¸² IEEE 14-bus: PF, SSSA, TS à¹à¸¥à¸° IBR à¹à¸šà¸šà¸œà¸ªà¸¡\par}
+\vspace{0.50in}
+\rule{4.7in}{0.8pt}\\[0.30in]
+{\fontsize{15}{19}\selectfont
+Mr. Phichitchai Jueajan (66010569)\\
+Mr. Pakkapol Phdungdan (66010612)\par}
+\vspace{0.22in}
+{\fontsize{14}{18}\selectfont
+à¸­à¸²à¸ˆà¸²à¸£à¸¢à¹Œà¸—à¸µà¹ˆà¸›à¸£à¸¶à¸à¸©à¸²: Dr.\ Tossaporn Surinkaew\\
+à¸­à¸²à¸ˆà¸²à¸£à¸¢à¹Œà¸—à¸µà¹ˆà¸›à¸£à¸¶à¸à¸©à¸²à¸£à¹ˆà¸§à¸¡: Prof.\ Dr.\ Issarachai Ngamroo\par}
+\vfill
+{\fontsize{13}{17}\selectfont
+à¸ à¸²à¸„à¸§à¸´à¸Šà¸²à¸§à¸´à¸¨à¸§à¸à¸£à¸£à¸¡à¹„à¸Ÿà¸Ÿà¹‰à¸² à¸„à¸“à¸°à¸§à¸´à¸¨à¸§à¸à¸£à¸£à¸¡à¸¨à¸²à¸ªà¸•à¸£à¹Œ\\
+à¸ªà¸–à¸²à¸šà¸±à¸™à¹€à¸—à¸„à¹‚à¸™à¹‚à¸¥à¸¢à¸µà¸žà¸£à¸°à¸ˆà¸­à¸¡à¹€à¸à¸¥à¹‰à¸²à¹€à¸ˆà¹‰à¸²à¸„à¸¸à¸“à¸—à¸«à¸²à¸£à¸¥à¸²à¸”à¸à¸£à¸°à¸šà¸±à¸‡\par}
+\vspace{0.32in}
+{\fontsize{12}{15}\selectfont à¸ªà¸´à¸‡à¸«à¸²à¸„à¸¡ à¸ž.à¸¨. 2569\par}
+\end{center}
+\end{titlepage}
+
+\reportsection{à¸šà¸—à¸„à¸±à¸”à¸¢à¹ˆà¸­ à¸§à¸±à¸•à¸–à¸¸à¸›à¸£à¸°à¸ªà¸‡à¸„à¹Œ à¹à¸¥à¸°à¸‚à¸­à¸šà¹€à¸‚à¸•à¸‚à¹‰à¸­à¸­à¹‰à¸²à¸‡}
+\begin{abstract}
+à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¸™à¸µà¹‰à¸žà¸±à¸’à¸™à¸²à¸ªà¸²à¸¢à¸‡à¸²à¸™à¸„à¸³à¸™à¸§à¸“à¸£à¸°à¸šà¸šà¹„à¸Ÿà¸Ÿà¹‰à¸²à¸à¸³à¸¥à¸±à¸‡à¸ à¸²à¸¢à¹ƒà¸™à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¹€à¸”à¸µà¸¢à¸§ à¸•à¸±à¹‰à¸‡à¹à¸•à¹ˆà¸à¸²à¸£à¹à¸à¹‰
+à¸ªà¸¡à¸à¸²à¸£à¸à¸²à¸£à¹„à¸«à¸¥à¸‚à¸­à¸‡à¸à¸³à¸¥à¸±à¸‡ (PF) à¹„à¸›à¸¢à¸±à¸‡à¸ˆà¸¸à¸”à¸ªà¸¡à¸”à¸¸à¸¥à¸‚à¸­à¸‡à¸£à¸°à¸šà¸šà¸ªà¸¡à¸à¸²à¸£à¹€à¸Šà¸´à¸‡à¸­à¸™à¸¸à¸žà¸±à¸™à¸˜à¹Œ--à¸žà¸µà¸Šà¸„à¸“à¸´à¸•
+(DAE) à¸à¸²à¸£à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¹€à¸ªà¸–à¸µà¸¢à¸£à¸ à¸²à¸žà¸ªà¸±à¸à¸à¸²à¸“à¸‚à¸™à¸²à¸”à¹€à¸¥à¹‡à¸ (SSSA) à¹à¸¥à¸°à¸à¸²à¸£à¸ˆà¸³à¸¥à¸­à¸‡à¹‚à¸”à¹€à¸¡à¸™à¹€à¸§à¸¥à¸² (TS)
+à¸”à¹‰à¸§à¸¢à¸•à¸±à¸§à¹à¸à¹‰à¸ªà¸¡à¸à¸²à¸£ MATLAB à¹à¸šà¸šà¸à¸²à¸™à¸¥à¹‰à¸§à¸™à¸‚à¸­à¸‡à¹‚à¸„à¸£à¸‡à¸à¸²à¸£ à¸ˆà¸²à¸à¸™à¸±à¹‰à¸™à¸™à¸³ DAE à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™à¹„à¸›à¸—à¸”à¸ªà¸­à¸š
+à¹€à¸„à¸£à¸·à¸­à¸‚à¹ˆà¸²à¸¢ IEEE-14 à¸—à¸µà¹ˆà¸¡à¸µ synchronous generator (SG) à¸«à¸™à¸¶à¹ˆà¸‡à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¹à¸¥à¸°
+inverter-based resource (IBR) à¸ªà¸µà¹ˆà¸•à¸±à¸§ à¸‹à¸¶à¹ˆà¸‡à¸ªà¸¥à¸±à¸šà¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡ grid-following (GFL)
+à¹à¸¥à¸° grid-forming (GFM) à¹‚à¸”à¸¢ supervisor à¸—à¸µà¹ˆà¸¡à¸µ hysteresis, dwell à¹à¸¥à¸° guard
+à¸ªà¸³à¸«à¸£à¸±à¸šà¹€à¸ˆà¹‰à¸²à¸‚à¸­à¸‡à¸¡à¸¸à¸¡à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡
+
+à¸œà¸¥à¸«à¸¥à¸±à¸à¸¡à¸²à¸ˆà¸²à¸ cache à¸«à¸à¹à¸‚à¸™à¸Šà¸¸à¸”à¹€à¸”à¸µà¸¢à¸§à¸—à¸µà¹ˆ commit \texttt{c56ff9f} à¹à¸¥à¸°à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸¹à¸›à¹ƒà¸«à¸¡à¹ˆ
+à¸”à¹‰à¸§à¸¢à¸•à¸±à¸§à¸­à¹ˆà¸²à¸™ cache à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆ hash à¸à¹ˆà¸­à¸™à¹à¸¥à¸°à¸«à¸¥à¸±à¸‡à¸­à¹ˆà¸²à¸™ à¸„à¹ˆà¸²à¹ƒà¸™à¸•à¸²à¸£à¸²à¸‡à¹à¸¥à¸°à¸£à¸¹à¸›à¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™à¸„à¹ˆà¸²à¸—à¸µà¹ˆ
+à¸•à¸±à¸§à¹à¸à¹‰à¸¢à¸­à¸¡à¸£à¸±à¸šà¸ˆà¸£à¸´à¸‡ à¹„à¸¡à¹ˆà¸¡à¸µà¸à¸²à¸£à¸—à¸³à¹ƒà¸«à¹‰à¹€à¸£à¸µà¸¢à¸š à¸à¸²à¸£à¹€à¸•à¸´à¸¡à¸ªà¸±à¸à¸à¸²à¸“ à¸«à¸£à¸·à¸­à¸à¸²à¸£à¸•à¸±à¸”à¸‚à¹‰à¸­à¸¡à¸¹à¸¥ à¸à¸²à¸£à¸£à¸±à¸™
+adaptive à¹„à¸›à¸–à¸¶à¸‡ \ArmAdaptiveHorizon\ à¸§à¸´à¸™à¸²à¸—à¸µ à¸›à¸´à¸” SG à¹„à¸”à¹‰à¹à¸¥à¸° reclose à¸—à¸µà¹ˆ
+\ArmAdaptiveReclose\ à¸§à¸´à¸™à¸²à¸—à¸µ à¸‚à¸“à¸°à¸—à¸µà¹ˆà¹à¸‚à¸™à¸—à¸µà¹ˆà¸•à¸£à¸¶à¸‡ GFM à¸ªà¸µà¹ˆà¸•à¸±à¸§à¸•à¸±à¹‰à¸‡à¹à¸•à¹ˆà¸•à¹‰à¸™à¸«à¸¢à¸¸à¸”à¸—à¸µà¹ˆ
+\ArmPinnedgfmFourHorizon\ à¸§à¸´à¸™à¸²à¸—à¸µ à¸•à¸±à¸§à¹€à¸¥à¸‚à¹€à¸«à¸¥à¹ˆà¸²à¸™à¸µà¹‰à¹€à¸›à¹‡à¸™ \result{PROJECT\_RESULT}
+à¸‚à¸­à¸‡à¹à¸šà¸šà¸ˆà¸³à¸¥à¸­à¸‡ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸à¸²à¸£à¸£à¸±à¸šà¸£à¸­à¸‡à¸à¸²à¸£à¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¸ à¸²à¸„à¸ªà¸™à¸²à¸¡
+\end{abstract}
+
+\paragraph{à¸§à¸±à¸•à¸–à¸¸à¸›à¸£à¸°à¸ªà¸‡à¸„à¹Œ}
+(1) à¸—à¸³à¹ƒà¸«à¹‰à¸ªà¸¡à¸à¸²à¸£ PF--SSSA--TS à¹ƒà¸Šà¹‰ residual à¹à¸¥à¸°à¸¥à¸³à¸”à¸±à¸šà¸•à¸±à¸§à¹à¸›à¸£à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™
+(2) à¹à¸ªà¸”à¸‡à¸«à¸¥à¸±à¸à¸à¸²à¸™ independent à¸‚à¸­à¸‡ equilibrium, Schur complement à¹à¸¥à¸°
+finite-difference (FD) Jacobian
+(3) à¸•à¸£à¸§à¸ˆà¸ªà¸±à¸à¸à¸² IBR GFL/GFM à¹à¸¥à¸°à¸à¸²à¸£à¸–à¹ˆà¸²à¸¢à¹‚à¸­à¸™ state à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¹ƒà¸«à¹‰à¸à¸£à¸°à¹à¸ªà¸à¸£à¸°à¹‚à¸”à¸”
+à¹à¸¥à¸° (4) à¸£à¸²à¸¢à¸‡à¸²à¸™à¸œà¸¥ chronology 250 à¸§à¸´à¸™à¸²à¸—à¸µà¸žà¸£à¹‰à¸­à¸¡à¸à¸²à¸£à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸šà¸™à¹‚à¸¢à¸šà¸²à¸¢à¸«à¸à¹à¸‚à¸™à¸­à¸¢à¹ˆà¸²à¸‡
+à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸”à¹‰
+
+\paragraph{à¸‚à¸­à¸šà¹€à¸‚à¸•à¸‚à¹‰à¸­à¸­à¹‰à¸²à¸‡}
+à¸‚à¹‰à¸­à¸¡à¸¹à¸¥ network à¹à¸¥à¸°à¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¸—à¸µà¹ˆà¸£à¸°à¸šà¸¸à¸§à¹ˆà¸² \source{SOURCE\_DEFINED} à¸«à¸£à¸·à¸­
+\source{CASE\_DEFINED} à¸–à¸¹à¸à¹ƒà¸Šà¹‰à¸•à¸²à¸¡à¸•à¹‰à¸™à¸—à¸²à¸‡ à¸œà¸¥à¸‚à¸­à¸‡à¸•à¸±à¸§à¹à¸à¹‰à¹€à¸›à¹‡à¸™
+\result{PROJECT\_RESULT} à¹à¸¥à¸°à¸ªà¸¡à¸à¸²à¸£/à¸à¸²à¸£à¸›à¸´à¸”à¸—à¸µà¹ˆà¹€à¸ˆà¹‰à¸²à¸‚à¸­à¸‡à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¸à¸³à¸«à¸™à¸”à¸–à¸¹à¸à¸£à¸°à¸šà¸¸à¹€à¸›à¹‡à¸™
+\source{PROJECT\_DERIVED} à¸«à¸£à¸·à¸­ \source{NUMERICAL\_METHOD} à¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰à¹„à¸¡à¹ˆà¸­à¹‰à¸²à¸‡
+grid-code compliance, protection coordination, EMT accuracy à¸«à¸£à¸·à¸­ readiness
+à¸ªà¸³à¸«à¸£à¸±à¸šà¸à¸²à¸£à¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¸ˆà¸£à¸´à¸‡
+
+\paragraph{à¸à¸²à¸£à¸—à¸³à¸‹à¹‰à¸³}
+à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ à¸²à¸©à¸²à¹„à¸—à¸¢à¸­à¹ˆà¸²à¸™ macro à¸—à¸µà¹ˆà¸ªà¸£à¹‰à¸²à¸‡à¸ˆà¸²à¸ cache à¹‚à¸”à¸¢à¸•à¸£à¸‡à¹à¸¥à¸°à¸­à¹ˆà¸²à¸™ PNG à¸—à¸µà¹ˆà¸•à¸±à¸§à¸ªà¸£à¹‰à¸²à¸‡
+à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ªà¸£à¹‰à¸²à¸‡à¸‚à¸¶à¹‰à¸™à¹ƒà¸«à¸¡à¹ˆ à¸—à¸¸à¸à¸„à¹ˆà¸²à¹ƒà¸™à¸«à¸™à¹‰à¸²à¸•à¹ˆà¸­à¹„à¸›à¸ˆà¸¶à¸‡à¸œà¸¹à¸à¸à¸±à¸š provenance à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ
+à¸à¸²à¸£à¸„à¸±à¸”à¸•à¸±à¸§à¹€à¸¥à¸‚à¸ˆà¸²à¸à¸£à¸²à¸¢à¸‡à¸²à¸™à¸‰à¸šà¸±à¸šà¸à¹ˆà¸­à¸™
+
+\par\vspace{5pt}
+
+\reportsection{à¸ˆà¸¸à¸”à¹€à¸£à¸´à¹ˆà¸¡à¸•à¹‰à¸™à¸‚à¸­à¸‡à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¹à¸¥à¸° milestone à¸ªà¸³à¸„à¸±à¸}
+à¸ˆà¸¸à¸”à¹€à¸£à¸´à¹ˆà¸¡à¸•à¹‰à¸™à¸„à¸·à¸­à¸›à¸±à¸à¸«à¸²à¸—à¸µà¹ˆà¸à¸²à¸£à¸ªà¸¹à¸à¹€à¸ªà¸µà¸¢ SG à¸—à¸³à¹ƒà¸«à¹‰à¹‚à¸„à¸£à¸‡à¸‚à¹ˆà¸²à¸¢à¹„à¸¡à¹ˆà¸¡à¸µà¹à¸«à¸¥à¹ˆà¸‡à¸à¸³à¸«à¸™à¸”à¹à¸£à¸‡à¸”à¸±à¸™
+à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡ GFL à¸•à¹‰à¸­à¸‡à¸­à¸²à¸¨à¸±à¸¢ PLL à¸ªà¹ˆà¸§à¸™ GFM à¸ªà¸£à¹‰à¸²à¸‡à¸¡à¸¸à¸¡à¹à¸¥à¸°à¹à¸£à¸‡à¸”à¸±à¸™à¸‚à¸­à¸‡à¸•à¸™à¹€à¸­à¸‡ à¹‚à¸„à¸£à¸‡à¸à¸²à¸£à¸ˆà¸¶à¸‡
+à¸§à¸²à¸‡à¸ªà¸²à¸¢à¸‡à¸²à¸™à¹à¸šà¸šà¸¥à¸³à¸”à¸±à¸šà¸Šà¸±à¹‰à¸™: PF à¸ªà¸£à¹‰à¸²à¸‡ operating point, equilibrium à¸›à¸´à¸” KCL à¹à¸¥à¸°
+à¸ªà¸¡à¸à¸²à¸£ device, SSSA à¸•à¸£à¸§à¸ˆà¸à¸²à¸£à¸£à¸šà¸à¸§à¸™à¹€à¸¥à¹‡à¸, TS à¸•à¸£à¸§à¸ˆà¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¸‚à¸™à¸²à¸”à¹ƒà¸«à¸à¹ˆ à¹à¸¥à¸° supervisor
+à¸•à¸±à¸”à¸ªà¸´à¸™à¹ƒà¸ˆ mode à¸ˆà¸²à¸ state à¸—à¸µà¹ˆà¸¢à¸­à¸¡à¸£à¸±à¸šà¹à¸¥à¹‰à¸§
+
+\begin{table}[H]
+\centering
+\caption{à¸¥à¸³à¸”à¸±à¸šà¸žà¸±à¸’à¸™à¸²à¸à¸²à¸£à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™à¸«à¸¥à¸±à¸à¸à¸²à¸™à¹ƒà¸™à¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰}
+\begin{tabularx}{\textwidth}{@{}c p{0.25\textwidth} X@{}}
+\toprule
+à¸¥à¸³à¸”à¸±à¸š & milestone & à¸«à¸¥à¸±à¸à¸à¸²à¸™à¹à¸¥à¸°à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢ \\
+\midrule
+1 & à¸ªà¸±à¸à¸à¸² base à¹à¸¥à¸° bus type & power-case 1.0, bus 12 à¸„à¸­à¸¥à¸±à¸¡à¸™à¹Œ, REF/PV/PQ à¹€à¸›à¹‡à¸™ 1/2/3 \\
+2 & Ybus à¹à¸¥à¸° PF Newton & residual $[P,Q]$ à¸¡à¸µ mapping à¹à¸¥à¸° limit à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆà¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸”à¹‰ \\
+3 & shared DAE & equilibrium, SSSA à¹à¸¥à¸° TS à¹€à¸£à¸µà¸¢à¸ residual à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ \\
+4 & SSSA Schur & à¸à¸³à¸ˆà¸±à¸”à¸•à¸±à¸§à¹à¸›à¸£ algebraic à¸”à¹‰à¸§à¸¢ backslash à¹à¸¥à¸°à¸•à¸£à¸§à¸ˆ conditioning \\
+5 & FD/eigenpair gates & à¸•à¸£à¸§à¸ˆ plateau, conjugate pair, gauge à¹à¸¥à¸° participation \\
+6 & implicit trapezoidal TS & corrector à¹à¸à¹‰ differential à¹à¸¥à¸° KCL à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™ \\
+7 & event landing & à¹à¸•à¹ˆà¸¥à¸° event à¸¥à¸‡à¸•à¸£à¸‡ grid à¹à¸¥à¸°à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ topology à¹à¸šà¸š right-limit \\
+8 & GFL-RMS10 SMIB & à¸›à¸´à¸” nonlinear PLL, current plant à¹à¸¥à¸° power identity à¹à¸¢à¸à¸à¸£à¸“à¸µ \\
+9 & GFM no-PLL SMIB & à¸›à¸´à¸” VSG angle à¹à¸¥à¸° voltage law à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¸¡à¸µ PLL à¹à¸à¸‡ \\
+10 & dual-mode 17-state & plant à¸£à¹ˆà¸§à¸¡à¹à¸¥à¸° controller block à¸—à¸µà¹ˆ active à¹„à¸”à¹‰à¸—à¸µà¸¥à¸° branch \\
+11 & IEEE-14 integration & SG bus 1 à¸à¸±à¸š IBR bus 2, 3, 6, 8 à¹ƒà¸™ composite DAE \\
+12 & six-arm snapshot & à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸š adaptive, pinned à¹à¸¥à¸° no-adaptation à¸ˆà¸²à¸ cache à¹€à¸”à¸µà¸¢à¸§ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{à¸«à¸¥à¸±à¸à¸§à¸´à¸™à¸±à¸¢à¸‚à¹‰à¸­à¸¡à¸¹à¸¥}
+external PSAT, PGAz à¹à¸¥à¸°à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™ oracle à¸«à¸£à¸·à¸­ comparison à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+à¹„à¸¡à¹ˆà¸–à¸¹à¸à¹€à¸£à¸µà¸¢à¸à¸ˆà¸²à¸ production path à¹à¸¥à¸°à¸œà¸¥à¸ˆà¸²à¸à¸ à¸²à¸¢à¸™à¸­à¸à¹„à¸¡à¹ˆà¸–à¸¹à¸à¸›à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸›à¹€à¸¥à¸·à¸­à¸ state,
+parameter, correction à¸«à¸£à¸·à¸­ gate à¸à¸²à¸£à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¹à¸›à¸¥à¸‡à¸‚à¸­à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰à¸ˆà¸³à¸à¸±à¸”à¸­à¸¢à¸¹à¹ˆà¸—à¸µà¹ˆ
+report-only generator à¹à¸¥à¸°à¹€à¸­à¸à¸ªà¸²à¸£ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ numerical contract
+
+\paragraph{à¸ˆà¸¸à¸”à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸™à¸³à¸¡à¸²à¸­à¹‰à¸²à¸‡}
+à¸•à¸±à¸§à¸™à¸±à¸š trial à¸—à¸µà¹ˆà¸–à¸¹à¸à¸›à¸à¸´à¹€à¸ªà¸˜à¹ƒà¸™ search path à¸¡à¸µ defect record à¹€à¸›à¸´à¸”à¸­à¸¢à¸¹à¹ˆ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸™à¸³
+à¸•à¸±à¸§à¹€à¸¥à¸‚à¸”à¸±à¸‡à¸à¸¥à¹ˆà¸²à¸§à¸¡à¸²à¸ªà¸™à¸±à¸šà¸ªà¸™à¸¸à¸™à¸‚à¹‰à¸­à¸­à¹‰à¸²à¸‡à¹ƒà¸”à¹ƒà¸™à¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰ à¸à¸²à¸£à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸šà¹ƒà¸Šà¹‰ accepted
+samples, horizon, residual à¹à¸¥à¸°à¸ªà¸–à¸²à¸™à¸° convergence à¸‹à¸¶à¹ˆà¸‡à¹€à¸›à¹‡à¸™à¸„à¹ˆà¸²à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆà¸‹à¹‰à¸³à¹„à¸”à¹‰
+
+\par\vspace{5pt}
+
+% ============================================================================
+% 4. Architecture and numerical integrity
+\reportsection{à¸ªà¸–à¸²à¸›à¸±à¸•à¸¢à¸à¸£à¸£à¸¡ PF à¸–à¸¶à¸‡à¸à¸²à¸£à¸ªà¸¥à¸±à¸šà¹‚à¸«à¸¡à¸” à¹à¸¥à¸°à¸«à¸¥à¸±à¸ numerical integrity}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.18in and 0.12in,
+  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
+    minimum width=1.18in,minimum height=0.65in,align=center},
+  gate/.style={draw=teal,fill=lightgreen,rounded corners=2pt,
+    minimum width=1.30in,minimum height=0.65in,align=center},
+  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
+]
+\node[box] (data) {case data\\à¹à¸¥à¸°à¸à¸²à¸™à¸«à¸™à¹ˆà¸§à¸¢};
+\node[box,right=of data] (pf) {PF Newton\\$P,Q$ residual};
+\node[box,right=of pf] (eq) {equilibrium\\$f=0,\;g=0$};
+\node[box,right=of eq] (ssa) {SSSA\\Schur + eigenpairs};
+\node[box,right=of ssa] (ts) {TS\\trapezoidal + KCL};
+\node[gate,below=0.45in of ts] (switch) {supervisor\\GFL/GFM + guard};
+\node[gate,left=of switch] (events) {events\\right-limit};
+\node[gate,left=of events] (qa) {accepted state\\provenance};
+\draw[arr] (data)--(pf)--(eq)--(ssa)--(ts);
+\draw[arr] (ts)--(switch);
+\draw[arr] (switch)--(events);
+\draw[arr] (events)--(qa);
+\draw[arr] (qa) |- (eq.south);
+\node[below=0.17in of pf,align=center,text=navy] {one in-house\\residual owner};
+\node[below=0.17in of eq,align=center,text=navy] {same state order\\for SSSA/TS};
+\end{tikzpicture}
+\caption{à¸ªà¸–à¸²à¸›à¸±à¸•à¸¢à¸à¸£à¸£à¸¡à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸ˆà¸£à¸´à¸‡: PF à¸ªà¸£à¹‰à¸²à¸‡à¸ˆà¸¸à¸”à¸•à¸±à¹‰à¸‡à¸•à¹‰à¸™, equilibrium à¸›à¸´à¸” DAE,
+SSSA à¹à¸¥à¸° TS à¹ƒà¸Šà¹‰à¸ªà¸¡à¸à¸²à¸£à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¹à¸¥à¸° supervisor à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ mode à¹€à¸‰à¸žà¸²à¸°à¸—à¸µà¹ˆ accepted
+right-limit}
+\end{figure}
+
+\paragraph{à¸•à¸±à¸§à¹à¸›à¸£à¹à¸¥à¸°à¸ªà¸±à¸à¸à¸²}
+à¹ƒà¸«à¹‰ $x$ à¹€à¸›à¹‡à¸™ differential state, $y$ à¹€à¸›à¹‡à¸™ rectangular bus-voltage state
+à¹€à¸£à¸µà¸¢à¸‡à¹€à¸›à¹‡à¸™ $[\operatorname{Re}V_1,\operatorname{Im}V_1,\ldots]$ à¹à¸¥à¸° $u$ à¹€à¸›à¹‡à¸™
+input à¸‚à¸­à¸‡ device à¸£à¸°à¸šà¸šà¹à¸à¹‰
+\begin{equation}
+\dot{x}=f(x,y,u),\qquad 0=g(x,y,u).
+\end{equation}
+à¸à¸£à¸°à¹à¸ªà¸‚à¸­à¸‡ device à¹€à¸›à¹‡à¸™à¸šà¸§à¸à¹€à¸¡à¸·à¹ˆà¸­à¸‰à¸µà¸”à¹€à¸‚à¹‰à¸²à¸ªà¸¹à¹ˆ network à¹à¸¥à¸°
+$S=V I^{*}=P+\mathrm{j}Q$ à¸šà¸™ system base à¸ªà¸±à¸à¸à¸²à¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¹€à¸¡à¸·à¹ˆà¸­à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™
+à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸¡à¸·à¸­ comparison
+
+\paragraph{à¸à¸²à¸£à¸›à¸´à¸”à¹à¸šà¸š fail-closed}
+à¸—à¸¸à¸ stage à¸•à¸£à¸§à¸ˆ finite state, residual, rank/conditioning à¹à¸¥à¸° mapping à¸à¹ˆà¸­à¸™
+commit à¸«à¸²à¸à¹€à¸‡à¸·à¹ˆà¸­à¸™à¹„à¸‚à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™à¸ˆà¸°à¸«à¸¢à¸¸à¸”à¹à¸¥à¸°à¹€à¸à¹‡à¸š failure status à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡à¸ªà¸³à¸„à¸±à¸à¸„à¸·à¸­
+à¸à¸²à¸£à¹„à¸¡à¹ˆà¸¡à¸µ voltage-forming source à¸«à¸¥à¸±à¸‡ SG trip à¹à¸¥à¸°à¸à¸²à¸£à¸—à¸µà¹ˆ Newton step à¸¥à¸‡ domain
+à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸£à¸±à¸šà¸à¸²à¸£à¹à¸à¹‰à¸”à¹‰à¸§à¸¢à¸à¸²à¸£à¸œà¹ˆà¸­à¸™ gate
+
+\paragraph{à¸à¸²à¸£à¸ˆà¸³à¹à¸™à¸à¸„à¹ˆà¸²}
+\source{SOURCE\_DEFINED} à¹ƒà¸Šà¹‰à¹€à¸¡à¸·à¹ˆà¸­à¹à¸«à¸¥à¹ˆà¸‡à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¸£à¸°à¸šà¸¸à¸ªà¸¡à¸à¸²à¸£à¸«à¸£à¸·à¸­à¸„à¹ˆà¸²à¹‚à¸”à¸¢à¸•à¸£à¸‡
+\source{CASE\_DEFINED} à¹ƒà¸Šà¹‰à¸à¸±à¸š case à¹à¸¥à¸° event
+\source{PROJECT\_DERIVED} à¹ƒà¸Šà¹‰à¸à¸±à¸š closure à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œà¸”à¹‰à¸§à¸¢à¸ªà¸¡à¸à¸²à¸£
+\source{NUMERICAL\_METHOD} à¹ƒà¸Šà¹‰à¸à¸±à¸šà¸§à¸´à¸˜à¸µà¹à¸à¹‰à¹à¸¥à¸° tolerance
+à¹à¸¥à¸° \source{ASSUMED\_DIAGNOSTIC} à¹ƒà¸Šà¹‰à¸à¸±à¸šà¸”à¸±à¸Šà¸™à¸µà¸—à¸µà¹ˆà¹à¸ªà¸”à¸‡à¹€à¸žà¸·à¹ˆà¸­à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 5. PF method
+\reportsection{à¸§à¸´à¸˜à¸µà¹à¸à¹‰ Power Flow: à¸ªà¸¡à¸à¸²à¸£ à¸•à¸±à¸§à¹à¸›à¸£ à¹à¸¥à¸°à¹€à¸à¸“à¸‘à¹Œà¸«à¸¢à¸¸à¸”}
+à¸ªà¸³à¸«à¸£à¸±à¸š bus $i$ à¹ƒà¸«à¹‰ $V_i=|V_i|e^{\mathrm{j}\theta_i}$ à¹à¸¥à¸°
+$Y=G+\mathrm{j}B$ à¸ªà¸¡à¸à¸²à¸£à¸à¸³à¸¥à¸±à¸‡à¸—à¸µà¹ˆ production à¹ƒà¸Šà¹‰à¸„à¸·à¸­
+\begin{align}
+P_i&=\sum_k |V_i||V_k|
+ (G_{ik}\cos\theta_{ik}+B_{ik}\sin\theta_{ik}),\\
+Q_i&=\sum_k |V_i||V_k|
+ (G_{ik}\sin\theta_{ik}-B_{ik}\cos\theta_{ik}),
+\end{align}
+à¹‚à¸”à¸¢ $\theta_{ik}=\theta_i-\theta_k$ à¹à¸¥à¸°
+$P_i^{\mathrm{spec}}=P_{G,i}-P_{L,i}$,
+$Q_i^{\mathrm{spec}}=Q_{G,i}-Q_{L,i}$
+
+\begin{table}[H]
+\centering
+\caption{à¸šà¸—à¸šà¸²à¸—à¸‚à¸­à¸‡ bus à¹à¸¥à¸° unknown à¹ƒà¸™ Newton--Raphson}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+à¸›à¸£à¸°à¹€à¸ à¸— & à¸„à¹ˆà¸²à¸—à¸µà¹ˆà¸à¸³à¸«à¸™à¸” & à¸„à¹ˆà¸²à¸—à¸µà¹ˆà¹à¸à¹‰à¸«à¸£à¸·à¸­à¸£à¸²à¸¢à¸‡à¸²à¸™ \\
+\midrule
+REF & $|V|,\theta$ & $P,Q$ à¹€à¸›à¹‡à¸™à¸œà¸¥à¸¥à¸±à¸žà¸˜à¹Œà¸‚à¸­à¸‡ balance \\
+PV & $P,|V|$ & $\theta$ à¹à¸à¹‰; $Q$ à¸£à¸²à¸¢à¸‡à¸²à¸™à¹à¸¥à¸°à¸•à¸£à¸§à¸ˆ limit \\
+PQ & $P,Q$ & $\theta,|V|$ à¹à¸à¹‰ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Mismatch vector à¹€à¸£à¸µà¸¢à¸‡à¹€à¸‰à¸žà¸²à¸°à¸„à¹ˆà¸²à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸–à¸¹à¸à¸à¸³à¸«à¸™à¸”:
+\begin{equation}
+r_{\mathrm{PF}}=
+\begin{bmatrix}P^{\mathrm{spec}}-P^{\mathrm{calc}}\\
+Q^{\mathrm{spec}}-Q^{\mathrm{calc}}\end{bmatrix},
+\qquad
+J=
+\begin{bmatrix}H&N\\M&L\end{bmatrix}
+=\frac{\partial r_{\mathrm{PF}}}{\partial[\theta\;\;|V|]}.
+\end{equation}
+à¹à¸•à¹ˆà¸¥à¸°à¸£à¸­à¸šà¹à¸à¹‰ $J\Delta z=r_{\mathrm{PF}}$ à¸”à¹‰à¸§à¸¢ backslash à¹à¸¥à¹‰à¸§à¸­à¸±à¸›à¹€à¸”à¸•
+$z\leftarrow z+\Delta z$ à¸ˆà¸™ $\|r_{\mathrm{PF}}\|_\infty$ à¸•à¹ˆà¸³à¸à¸§à¹ˆà¸² tolerance
+à¸—à¸µà¹ˆà¸›à¸£à¸°à¸à¸²à¸¨à¹„à¸§à¹‰
+
+\paragraph{Limits à¹à¸¥à¸°à¸à¸²à¸£à¸«à¸¢à¸¸à¸”}
+à¹€à¸¡à¸·à¹ˆà¸­ reactive generation à¸‚à¸­à¸‡ PV à¸­à¸­à¸à¸™à¸­à¸ $[Q_{\min},Q_{\max}]$ à¸„à¹ˆà¸² $Q$ à¸ˆà¸°à¸–à¸¹à¸
+à¸•à¸£à¸¶à¸‡à¸—à¸µà¹ˆ limit à¹à¸¥à¸° bus à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¹€à¸›à¹‡à¸™ PQ à¸à¹ˆà¸­à¸™à¹à¸à¹‰à¸•à¹ˆà¸­ REF à¹„à¸¡à¹ˆà¸–à¸¹à¸à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™ unknown
+à¹à¸£à¸‡à¸”à¸±à¸™à¹à¸¥à¸°à¸¡à¸¸à¸¡à¸—à¸µà¹ˆà¹„à¸”à¹‰à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¹€à¸›à¹‡à¸™ output à¸‚à¸­à¸‡à¸ªà¸¡à¸à¸²à¸£ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸„à¹ˆà¸²à¸—à¸µà¹ˆà¸›à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¸ˆà¸²à¸ oracle
+à¸à¸²à¸£à¸›à¸£à¸°à¸à¸­à¸š $Y$ à¸£à¸§à¸¡ series admittance, shunt, line charging à¹à¸¥à¸° transformer tap
+à¸•à¸²à¸¡ case data à¹à¸¥à¸°à¸•à¸£à¸§à¸ˆ power balance
+$P_{\mathrm{gen}}=P_{\mathrm{load}}+P_{\mathrm{loss}}$
+
+\paragraph{à¸«à¸™à¹ˆà¸§à¸¢}
+à¸„à¹ˆà¸²à¸à¸³à¸¥à¸±à¸‡à¹ƒà¸Šà¹‰ pu à¸šà¸™à¸à¸²à¸™ 100 MVA à¸‚à¸­à¸‡ case; à¹à¸£à¸‡à¸”à¸±à¸™à¹à¸¥à¸°à¸à¸£à¸°à¹à¸ªà¹ƒà¸Šà¹‰ pu; à¸¡à¸¸à¸¡à¹à¸ªà¸”à¸‡à¹€à¸›à¹‡à¸™
+à¸­à¸‡à¸¨à¸²à¹à¸•à¹ˆà¸ªà¸¡à¸à¸²à¸£à¹ƒà¸Šà¹‰à¹€à¸£à¹€à¸”à¸µà¸¢à¸™ à¸„à¸§à¸²à¸¡à¹à¸•à¸à¸•à¹ˆà¸²à¸‡à¸‚à¸­à¸‡ frame à¸«à¸£à¸·à¸­ sign à¸ˆà¸¶à¸‡à¸–à¸¹à¸à¸•à¸£à¸§à¸ˆà¸—à¸µà¹ˆ residual
+à¸à¹ˆà¸­à¸™à¸ˆà¸°à¸™à¸³à¹„à¸› SSSA à¸«à¸£à¸·à¸­ TS
+
+\paragraph{à¸«à¸¥à¸±à¸à¸à¸²à¸™ independent}
+PF production à¹€à¸›à¹‡à¸™ Newton à¸ à¸²à¸¢à¹ƒà¸™à¹‚à¸„à¸£à¸‡à¸à¸²à¸£ à¸ªà¹ˆà¸§à¸™ PSAT/MATPOWER/PGAz à¸–à¸¹à¸à¹ƒà¸Šà¹‰à¹€à¸žà¸·à¹ˆà¸­
+à¸­à¹ˆà¸²à¸™à¸«à¸£à¸·à¸­à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸šà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¸à¸²à¸£à¸•à¸£à¸‡à¸à¸±à¸™à¸‚à¸­à¸‡à¸„à¹ˆà¸²à¸ à¸²à¸¢à¸™à¸­à¸à¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™ diagnostic
+à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ source à¸‚à¸­à¸‡ correction
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 6. PF evidence
+\reportsection{à¸«à¸¥à¸±à¸à¸à¸²à¸™ PF: IEEE-14, RTS-24 à¹à¸¥à¸° comparison à¸—à¸µà¹ˆà¸£à¸²à¸¢à¸‡à¸²à¸™à¸•à¸²à¸¡à¸ˆà¸£à¸´à¸‡}
+\begin{table}[H]
+\centering
+\caption{à¸œà¸¥ PF à¸ˆà¸²à¸ artifact à¸—à¸µà¹ˆà¸ªà¸£à¹‰à¸²à¸‡à¸ªà¸”à¹à¸¥à¸° mapping à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸š production}
+\begin{tabularx}{\textwidth}{@{}l r r r r X@{}}
+\toprule
+à¸à¸£à¸“à¸µ & à¸ªà¸–à¸²à¸™à¸° & à¸£à¸­à¸š Newton & $\|r_{\mathrm{PF}}\|_\infty$ & $P_G$ (pu) & balance \\
+\midrule
+IEEE-14 & converged & 5 & $\sci{6.33521}{-15}$ & 2.72393 &
+$P_L=2.59000,\;P_{\mathrm{loss}}=0.133933$ \\
+RTS-24 & converged & 5 & $\sci{2.30926}{-12}$ & 29.0125 &
+$P_L=28.5000,\;P_{\mathrm{loss}}=0.512464$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{IEEE-14}
+à¹€à¸„à¸£à¸·à¸­à¸‚à¹ˆà¸²à¸¢à¸«à¸¥à¸±à¸à¹ƒà¸Šà¹‰ bus ID à¸ˆà¸²à¸ case14 à¹à¸¥à¸°à¸£à¸±à¸à¸©à¸² semantic à¸‚à¸­à¸‡ REF/PV/PQ à¸à¹ˆà¸­à¸™
+à¸ªà¹ˆà¸‡à¸œà¸¥à¹ƒà¸«à¹‰ equilibrium à¸‚à¸­à¸‡ SG bus 1 à¹à¸¥à¸° IBR bus 2, 3, 6, 8 à¸–à¸¹à¸à¸ªà¸£à¹‰à¸²à¸‡à¹ƒà¸™ coordinate
+à¸Šà¸¸à¸”à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸š composite DAE à¸„à¹ˆà¸² residual à¸—à¸µà¹ˆà¸•à¹ˆà¸³à¸à¸§à¹ˆà¸²
+$\sci{10}{-14}\pu$ à¹€à¸›à¹‡à¸™à¸«à¸¥à¸±à¸à¸à¸²à¸™ numerical convergence à¸‚à¸­à¸‡ operating point
+à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸«à¸¥à¸±à¸à¸à¸²à¸™à¸§à¹ˆà¸² parameter à¸‚à¸­à¸‡ SG à¹€à¸›à¹‡à¸™à¸„à¹ˆà¸²à¸ˆà¸²à¸à¹‚à¸£à¸‡à¸‡à¸²à¸™
+
+\paragraph{RTS-24}
+RTS-24 à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™à¸à¸£à¸“à¸µà¸‚à¹‰à¸²à¸¡à¸‚à¸™à¸²à¸”à¹€à¸žà¸·à¹ˆà¸­à¸ˆà¸±à¸š error à¹ƒà¸™ bus/branch mapping, power balance
+à¹à¸¥à¸°à¸à¸²à¸£à¹à¸¢à¸ state à¸­à¸­à¸à¸ˆà¸²à¸ algebraic variable à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹ƒà¸Šà¹‰à¸œà¸¥ RTS-24 à¹„à¸› tune
+IEEE-14 à¸à¸²à¸£à¹€à¸—à¸µà¸¢à¸šà¸‚à¹‰à¸²à¸¡à¸à¸£à¸“à¸µà¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™à¸à¸²à¸£à¸•à¸£à¸§à¸ˆ implementation contract
+
+\paragraph{à¸à¸²à¸£à¹€à¸—à¸µà¸¢à¸š PSAT à¹à¸¥à¸° PGAz}
+à¹ƒà¸™ fixed-grid IEEE-14 fault test à¸„à¹ˆà¸² PSAT--Ours à¸ªà¸¹à¸‡à¸ªà¸¸à¸”à¸„à¸·à¸­
+$\Delta\mathrm{COI}=\sci{9.5711}{-3}$ à¸­à¸‡à¸¨à¸²,
+$\Delta\omega=\sci{3.8160}{-6}\pu$,
+$\Delta P_e=0.042171$ MW à¹à¸¥à¸°
+$\Delta V=\sci{3.1793}{-5}\pu$ à¸‹à¸¶à¹ˆà¸‡à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™ primary tolerance à¸—à¸µà¹ˆà¸›à¸£à¸°à¸à¸²à¸¨
+PGAz à¸—à¸³à¸‡à¸²à¸™à¸ˆà¸šà¹à¸•à¹ˆà¸•à¹ˆà¸²à¸‡à¸¡à¸²à¸à¸à¸§à¹ˆà¸²: $\Delta\mathrm{COI}=0.616348$ à¸­à¸‡à¸¨à¸²à¹à¸¥à¸°
+$\Delta P_e=2.467655$ MW à¸ˆà¸¶à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¹€à¸›à¹‡à¸™ secondary diagnostic à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸‹à¹ˆà¸­à¸™
+à¸”à¹‰à¸§à¸¢à¸à¸²à¸£à¸œà¹ˆà¸­à¸™ tolerance
+
+\paragraph{PGAz FAIL à¸•à¸²à¸¡à¸ˆà¸£à¸´à¸‡}
+artifact à¸£à¸°à¸šà¸¸à¸§à¹ˆà¸² PGAz execution à¸œà¹ˆà¸²à¸™ à¹à¸•à¹ˆ corrector à¹„à¸¡à¹ˆà¸ªà¹ˆà¸‡ residual à¹à¸¥à¸° gate
+à¸‚à¸­à¸‡ trajectory comparison à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™ à¸à¸²à¸£à¹€à¸‚à¸µà¸¢à¸™à¸§à¹ˆà¸² "à¸œà¹ˆà¸²à¸™à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”" à¸ˆà¸°à¹€à¸à¸´à¸™
+à¸«à¸¥à¸±à¸à¸à¸²à¸™ à¸ˆà¸¶à¸‡à¹ƒà¸Šà¹‰à¸„à¸³à¸§à¹ˆà¸² comparison diagnostic à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 7. SSSA method
+\reportsection{à¸§à¸´à¸˜à¸µ SSSA: DAE, Schur complement, eigenpairs à¹à¸¥à¸° participation}
+à¸—à¸µà¹ˆ equilibrium $(x_0,y_0)$ à¸¡à¸µ $f(x_0,y_0)=0$ à¹à¸¥à¸° $g(x_0,y_0)=0$
+à¸à¸²à¸£à¸£à¸šà¸à¸§à¸™à¸­à¸±à¸™à¸”à¸±à¸šà¸«à¸™à¸¶à¹ˆà¸‡à¹ƒà¸«à¹‰
+\begin{equation}
+\begin{bmatrix}\Delta\dot{x}\\0\end{bmatrix}=
+\begin{bmatrix}J_{xx}&J_{xy}\\J_{yx}&J_{yy}\end{bmatrix}
+\begin{bmatrix}\Delta x\\\Delta y\end{bmatrix}.
+\end{equation}
+à¹€à¸¡à¸·à¹ˆà¸­ $J_{yy}$ à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™ free algebraic set, production à¸à¸³à¸ˆà¸±à¸” $\Delta y$ à¸”à¹‰à¸§à¸¢
+\begin{equation}
+A=J_{xx}-J_{xy}
+\left(J_{yy}\right)^{-1}J_{yx}
+\quad\Longrightarrow\quad
+A=J_{xx}-J_{xy}\left(J_{yy}\backslash J_{yx}\right)
+\end{equation}
+à¹‚à¸”à¸¢à¸£à¸¹à¸›à¸—à¸µà¹ˆà¸ªà¸­à¸‡à¸„à¸·à¸­à¸£à¸¹à¸›à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸ˆà¸£à¸´à¸‡à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸¡à¸µà¸à¸²à¸£à¸ªà¸£à¹‰à¸²à¸‡ explicit inverse
+
+\paragraph{FD Jacobian}
+à¹à¸•à¹ˆà¸¥à¸° block à¸‚à¸­à¸‡ $J$ à¹„à¸”à¹‰à¸ˆà¸²à¸ central FD à¸£à¸­à¸š equilibrium à¸”à¹‰à¸§à¸¢ step à¸—à¸µà¹ˆà¸•à¸£à¸¶à¸‡à¹„à¸§à¹‰
+à¸à¸²à¸£à¹€à¸¥à¸·à¸­à¸ step à¸­à¸²à¸¨à¸±à¸¢ plateau à¸‚à¸­à¸‡ eigenvalues à¸—à¸µà¹ˆà¸§à¸±à¸”à¹„à¸”à¹‰ à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸­à¸²à¸¨à¸±à¸¢à¸à¸²à¸£à¸›à¸£à¸±à¸šà¹ƒà¸«à¹‰
+à¸•à¸£à¸‡à¸à¸±à¸šà¸«à¸™à¸±à¸‡à¸ªà¸·à¸­à¸«à¸£à¸·à¸­à¹‚à¸›à¸£à¹à¸à¸£à¸¡à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡ Eigenpair residual, conjugate pairing,
+conditioning à¹à¸¥à¸° reference-angle structure à¹€à¸›à¹‡à¸™ gates à¹à¸¢à¸à¸à¸±à¸™
+
+\paragraph{Gauge à¹à¸¥à¸° reduction}
+à¸£à¸°à¸šà¸š autonomous à¸¡à¸µ rotational symmetry à¸ˆà¸¶à¸‡à¸¡à¸µ zero mode à¸‚à¸­à¸‡à¸à¸²à¸£à¹€à¸¥à¸·à¹ˆà¸­à¸™à¸¡à¸¸à¸¡à¸£à¹ˆà¸§à¸¡
+full matrix à¹€à¸à¹‡à¸š mode à¸™à¸µà¹‰ à¸ªà¹ˆà¸§à¸™ COI reduction à¹ƒà¸Šà¹‰à¹€à¸¡à¸·à¹ˆà¸­à¹‚à¸ˆà¸—à¸¢à¹Œà¸•à¹‰à¸­à¸‡à¸à¸²à¸£ modes
+à¸—à¸µà¹ˆà¸•à¸±à¸” common motion à¸à¸²à¸£à¸­à¹ˆà¸²à¸™ damping à¹ƒà¸Šà¹‰
+\begin{equation}
+\lambda=\sigma+\mathrm{j}\varpi,\qquad
+f_\lambda=\frac{|\varpi|}{2\pi},\qquad
+\zeta=-\frac{\sigma}{|\lambda|}.
+\end{equation}
+à¸–à¹‰à¸² $\operatorname{Re}\lambda<0$ mode à¸¥à¸”à¸¥à¸‡; à¸–à¹‰à¸²à¹„à¸¡à¹ˆ finite à¸«à¸£à¸·à¸­à¸­à¸¢à¸¹à¹ˆà¸­à¸µà¸à¸à¸±à¹ˆà¸‡
+à¸•à¹‰à¸­à¸‡ fail-closed à¹„à¸¡à¹ˆà¸•à¸µà¸„à¸§à¸²à¸¡à¹€à¸›à¹‡à¸™ stable
+
+\paragraph{Participation}
+left/right eigenvectors à¹ƒà¸Šà¹‰à¹€à¸žà¸·à¹ˆà¸­à¸ˆà¸±à¸”à¸­à¸±à¸™à¸”à¸±à¸š state à¸—à¸µà¹ˆà¹€à¸”à¹ˆà¸™à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¸«à¸²à¸ conditioning
+à¹„à¸¡à¹ˆà¸žà¸­à¸œà¸¥ participation à¸ˆà¸°à¸–à¸¹à¸à¸—à¸³à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸«à¸¡à¸²à¸¢ unavailable à¸à¸²à¸£à¸ˆà¸±à¸”à¸­à¸±à¸™à¸”à¸±à¸šà¸™à¸µà¹‰à¹„à¸¡à¹ˆ
+à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ eigenvalue, candidate set à¸«à¸£à¸·à¸­ solver state
+
+\paragraph{à¸«à¸¥à¸±à¸à¸à¸²à¸™à¸ˆà¸²à¸ shared path}
+SSSA à¹€à¸£à¸µà¸¢à¸ DAE à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸š TS à¸šà¸™à¸¥à¸³à¸”à¸±à¸š $(x,y)$ à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¸”à¸±à¸‡à¸™à¸±à¹‰à¸™ residual à¸—à¸µà¹ˆà¸–à¸¹à¸
+à¸•à¸£à¸§à¸ˆà¹ƒà¸™ SSSA à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ residual à¸—à¸µà¹ˆà¸ªà¸£à¹‰à¸²à¸‡à¸‚à¸¶à¹‰à¸™à¹€à¸žà¸·à¹ˆà¸­à¸£à¸²à¸¢à¸‡à¸²à¸™ à¸«à¸¥à¸±à¸‡à¸ˆà¸²à¸ SSSA à¸œà¹ˆà¸²à¸™à¸ˆà¸¶à¸‡à¸™à¸³
+equilibrium à¹€à¸”à¸´à¸¡à¹„à¸›à¹€à¸£à¸´à¹ˆà¸¡ TS à¹‚à¸”à¸¢à¹„à¸¡à¹ˆ copy à¸„à¹ˆà¸² eigenvalue à¸«à¸£à¸·à¸­ reference table
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 8. SSSA evidence
+\reportsection{à¸«à¸¥à¸±à¸à¸à¸²à¸™ SSSA: residual, FD plateau, gates à¹à¸¥à¸° Padiyar discrepancy}
+\begin{table}[H]
+\centering
+\caption{à¸„à¹ˆà¸²à¸«à¸¥à¸±à¸à¸ˆà¸²à¸ SSSA validation artifact}
+\begin{tabularx}{\textwidth}{@{}l r r r r X@{}}
+\toprule
+à¹à¸šà¸šà¸ˆà¸³à¸¥à¸­à¸‡ & $\max|f_0|$ & $\max|g_0|$ & à¸ˆà¸³à¸™à¸§à¸™ state & à¸ˆà¸³à¸™à¸§à¸™ eigenvalue & FD plateau \\
+\midrule
+Padiyar manual & $\sci{1.249}{-15}$ & $\sci{5.684}{-14}$ & 16 & 16 &
+$\sci{1.686}{-7}$ \\
+Padiyar AVR & $\sci{9.215}{-13}$ & $\sci{5.684}{-14}$ & 20 & 20 &
+$\sci{5.799}{-9}$ \\
+EMF6 & $\sci{1.665}{-15}$ & $\sci{2.132}{-14}$ & 24 & 24 &
+$\sci{1.078}{-7}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+à¸„à¹ˆà¸²à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¸•à¹ˆà¸³à¸à¸§à¹ˆà¸² $\sci{10}{-10}$ à¸—à¸µà¹ˆ equilibrium à¹à¸¥à¸° eigenvalues finite
+à¸—à¸¸à¸à¸•à¸±à¸§ Schur reconstruction à¸‚à¸­à¸‡ Padiyar AVR à¹ƒà¸«à¹‰à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡à¹€à¸Šà¸´à¸‡à¸•à¸±à¸§à¹€à¸¥à¸‚à¹€à¸›à¹‡à¸™à¸¨à¸¹à¸™à¸¢à¹Œ
+à¹à¸¥à¸° $J_{yy}$ à¸¡à¸µ rcond à¸›à¸£à¸°à¸¡à¸²à¸“ $\sci{9.74}{-3}$ à¸ªà¸³à¸«à¸£à¸±à¸š Padiyar à¸à¸±à¸š
+$\sci{1.11}{-2}$ à¸ªà¸³à¸«à¸£à¸±à¸š EMF6 à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸à¸²à¸£à¹à¸à¹‰à¸£à¸°à¸šà¸šà¸—à¸µà¹ˆà¹€à¸à¸·à¸­à¸š singular
+
+\paragraph{FD plateau}
+à¸à¸²à¸£à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸š $h=10^{-5}$ à¸à¸±à¸š $h=10^{-6}$ à¹ƒà¸«à¹‰à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡ physical modes
+à¸•à¸²à¸¡à¸•à¸²à¸£à¸²à¸‡ à¹‚à¸”à¸¢à¸„à¹ˆà¸²à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¸•à¹ˆà¸³à¸à¸§à¹ˆà¸² $\sci{10}{-3}$ à¸—à¸µà¹ˆà¸›à¸£à¸°à¸à¸²à¸¨à¹„à¸§à¹‰ default step
+à¸‚à¸­à¸‡ production à¸­à¸¢à¸¹à¹ˆà¸šà¸™ plateau à¸™à¸µà¹‰
+
+\paragraph{Gate matrix}
+à¸£à¸²à¸¢à¸à¸²à¸£ gate à¸‚à¸­à¸‡ SSSA validation artifact à¸œà¹ˆà¸²à¸™à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸” à¸„à¸£à¸­à¸šà¸„à¸¥à¸¸à¸¡ shared DAE,
+state order/count, FD convergence, default-on-plateau, Schur solve,
+à¹„à¸¡à¹ˆà¸¡à¸µ explicit inverse, gauge, conjugate pair, modal metrics,
+reference independence, provenance à¹à¸¥à¸° no external solver à¸à¸²à¸£à¸—à¸”à¸ªà¸­à¸šà¸—à¸µà¹ˆ
+à¸šà¸±à¸™à¸—à¸¶à¸à¹„à¸§à¹‰à¸„à¸·à¸­ targeted 62 à¸œà¹ˆà¸²à¸™, 0 à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™, 0 incomplete; à¸•à¸±à¸§à¹€à¸¥à¸‚à¸™à¸µà¹‰à¹€à¸›à¹‡à¸™
+evidence à¸‚à¸­à¸‡ code path à¹€à¸”à¸´à¸¡ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸à¸²à¸£à¸£à¸±à¸™à¸‹à¹‰à¸³à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰à¸£à¸²à¸¢à¸‡à¸²à¸™à¸œà¹ˆà¸²à¸™
+
+\paragraph{Padiyar discrepancy}
+à¸à¸²à¸£à¸ˆà¸±à¸šà¸„à¸¹à¹ˆ Table 9.5 à¸‚à¸­à¸‡ Padiyar à¹€à¸›à¹‡à¸™ \source{ASSUMED\_DIAGNOSTIC} à¹à¸šà¸š
+greedy one-to-one à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¸¡à¸µ 18 physical roots à¹à¸¥à¸°à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡à¸ªà¸¹à¸‡à¸ªà¸¸à¸”à¸›à¸£à¸°à¸¡à¸²à¸“
+$\sci{4.3}{-2}$ à¸à¸²à¸£à¸•à¸£à¸§à¸ˆ FD plateau à¸­à¸¢à¸¹à¹ˆà¸£à¸°à¸”à¸±à¸š $\sci{10}{-7}$ à¸ˆà¸¶à¸‡à¸­à¸˜à¸´à¸šà¸²à¸¢
+à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡ $\sci{4.3}{-2}$ à¸”à¹‰à¸§à¸¢ FD noise à¹„à¸¡à¹ˆà¹„à¸”à¹‰ à¸ªà¸²à¹€à¸«à¸•à¸¸à¸—à¸µà¹ˆà¹à¸—à¹‰à¸ˆà¸£à¸´à¸‡à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸›à¸´à¸”
+à¸­à¸²à¸ˆà¹€à¸à¸µà¹ˆà¸¢à¸§à¸à¸±à¸š model, data, convention à¸«à¸£à¸·à¸­ precision à¸‚à¸­à¸‡à¸ªà¸´à¹ˆà¸‡à¸žà¸´à¸¡à¸žà¹Œ à¸£à¸²à¸¢à¸‡à¸²à¸™
+à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡à¸™à¸µà¹‰à¸•à¸£à¸‡ à¹† à¹à¸¥à¸°à¹„à¸¡à¹ˆà¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™ acceptance gate
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 9. TS method
+\reportsection{à¸§à¸´à¸˜à¸µ TS: implicit trapezoidal, corrector, event landing à¹à¸¥à¸° COI}
+à¸ªà¸³à¸«à¸£à¸±à¸šà¸Šà¹ˆà¸§à¸‡à¸—à¸µà¹ˆ topology à¸„à¸‡à¸—à¸µà¹ˆ production à¹ƒà¸Šà¹‰ implicit trapezoidal:
+\begin{equation}
+R_x=x_{n+1}-x_n-\frac{h}{2}
+\left[f(t_n,x_n,y_n)+f(t_{n+1},x_{n+1},y_{n+1})\right]=0,
+\qquad
+R_g=g(t_{n+1},x_{n+1},y_{n+1})=0.
+\end{equation}
+Newton corrector à¹à¸à¹‰ $[R_x;R_g]$ à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™à¸ˆà¸™ update à¹à¸¥à¸° residual à¸œà¹ˆà¸²à¸™
+à¸•à¸±à¸§à¹à¸à¹‰ EMF6 à¹ƒà¸Šà¹‰ corrector iteration à¸„à¸‡à¸—à¸µà¹ˆà¸ªà¸²à¸¡à¸£à¸­à¸šà¸•à¸²à¸¡ contract à¸ªà¹ˆà¸§à¸™ adaptive
+stepper à¹ƒà¸Šà¹‰ step-doubling à¹€à¸žà¸·à¹ˆà¸­à¸›à¸£à¸°à¸¡à¸²à¸“ local error à¹à¸¥à¸°à¸¢à¸­à¸¡à¸£à¸±à¸š fine solution
+à¹€à¸¡à¸·à¹ˆà¸­ weighted error à¹à¸¥à¸° KCL residual à¸œà¹ˆà¸²à¸™
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
+    minimum width=1.68in,minimum height=0.70in,align=center},
+  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
+]
+\node[box] (left) {$t_n$\\left topology\\accepted $(x_n,y_n)$};
+\node[box,right=0.65in of left] (step) {predict + Newton\\solve $R_x,R_g$};
+\node[box,right=0.65in of step] (right) {$t_{n+1}$\\accepted right limit};
+\node[box,below=0.45in of step] (event) {à¸–à¹‰à¸² $t_{n+1}=t_e$\\apply event transaction};
+\draw[arr] (left)--(step)--(right);
+\draw[arr] (step)--(event);
+\draw[arr] (event)--(right);
+\end{tikzpicture}
+\caption{à¹à¸•à¹ˆà¸¥à¸° step à¹à¸à¹‰ DAE à¸šà¸™ topology à¹€à¸”à¸µà¸¢à¸§; event à¸—à¸µà¹ˆà¸¥à¸‡ grid à¹ƒà¸Šà¹‰
+left topology à¸ªà¸³à¸«à¸£à¸±à¸š arrival à¹à¸¥à¸° re-solve right topology à¹à¸šà¸š atomic}
+\end{figure}
+
+\paragraph{Exact event landing}
+à¸–à¹‰à¸² event à¸­à¸¢à¸¹à¹ˆà¸à¹ˆà¸­à¸™à¸›à¸¥à¸²à¸¢ step à¸ˆà¸°à¸¥à¸” $h$ à¹ƒà¸«à¹‰à¸¥à¸‡à¸•à¸£à¸‡ event à¹€à¸ªà¸¡à¸­ à¸«à¹‰à¸²à¸¡ step à¹€à¸”à¸µà¸¢à¸§
+à¸„à¸£à¹ˆà¸­à¸¡à¸ªà¸­à¸‡ topology à¹€à¸¡à¸·à¹ˆà¸­à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ mode à¸ˆà¸° carry plant state, initialize
+controller block à¸‚à¸­à¸‡à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡ à¹à¸¥à¸°à¸•à¸£à¸§à¸ˆ terminal-current continuity
+\begin{equation}
+|I^{+}-I^{-}|\le \sci{10}{-10}\pu.
+\end{equation}
+à¸–à¹‰à¸² right-limit Newton à¸«à¸£à¸·à¸­ continuity gate à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™ transaction à¸–à¸¹à¸ rollback
+à¸—à¸±à¹‰à¸‡à¸Šà¸¸à¸”
+
+\paragraph{COI metrics}
+à¸ªà¸³à¸«à¸£à¸±à¸šà¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡à¸—à¸µà¹ˆà¸¡à¸µ inertia $H_i$ à¹ƒà¸Šà¹‰
+$\delta_{\mathrm{COI}}=\sum_iH_i\delta_i/\sum_iH_i$ à¹à¸¥à¸°
+$f_{\mathrm{COI}}$ à¹€à¸›à¹‡à¸™ frequency metric à¸‚à¸­à¸‡à¸£à¸°à¸šà¸š à¸à¸²à¸£à¸¥à¸š common motion à¸™à¸µà¹‰
+à¹ƒà¸Šà¹‰à¸à¸±à¸š comparison à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ state à¸—à¸µà¹ˆà¸•à¸±à¸§à¹à¸à¹‰ integrate
+
+\paragraph{Adaptive policy}
+à¸•à¸±à¸§à¸„à¸§à¸šà¸„à¸¸à¸¡à¹€à¸§à¸¥à¸²à¹€à¸¥à¸·à¸­à¸ $h_{\mathrm{new}}$ à¸ˆà¸²à¸ error à¸—à¸µà¹ˆ normalize à¸”à¹‰à¸§à¸¢
+$\mathrm{atol}+\mathrm{rtol}\max|x|$ à¹à¸¥à¸°à¸ˆà¸³à¸à¸±à¸”à¸­à¸±à¸•à¸£à¸²à¸‚à¸¢à¸²à¸¢/à¸«à¸”à¸•à¸²à¸¡à¸„à¹ˆà¸²à¸—à¸µà¹ˆà¸›à¸£à¸°à¸à¸²à¸¨
+à¹€à¸¡à¸·à¹ˆà¸­ reject à¸ˆà¸°à¹„à¸¡à¹ˆà¹€à¸‚à¸µà¸¢à¸™à¸—à¸±à¸š accepted state à¹„à¸¡à¹ˆà¸¡à¸µ extrapolation à¸‚à¸­à¸‡ arm à¸—à¸µà¹ˆà¸«à¸¢à¸¸à¸”
+à¸à¹ˆà¸­à¸™ horizon
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 10. TS evidence
+\reportsection{à¸«à¸¥à¸±à¸à¸à¸²à¸™ TS: common grid, IEEE-14 à¹à¸¥à¸° RTS-24}
+\begin{table}[H]
+\centering
+\caption{à¸œà¸¥ comparison à¸šà¸™ common grid à¸—à¸µà¹ˆà¹„à¸¡à¹ˆ extrapolate}
+\begin{tabularx}{\textwidth}{@{}l l r r r r@{}}
+\toprule
+à¸„à¸¹à¹ˆà¹€à¸—à¸µà¸¢à¸š & metric & $\max|\Delta\mathrm{COI}|$ (deg) &
+$\max|\Delta\omega|$ (pu) & $\max|\Delta P_e|$ (MW) &
+$\max|\Delta V|$ (pu) \\
+\midrule
+PSAT--Ours & IEEE-14 & 0.009571 & $\sci{3.816033}{-6}$ & 0.042171 &
+$\sci{3.179264}{-5}$ \\
+PGAz--Ours & IEEE-14 & 0.616348 & $\sci{2.916429}{-4}$ & 2.467655 &
+$\sci{2.264528}{-3}$ \\
+PSAT--Ours & RTS-24 & 0.0067685 & $\sci{4.6205}{-6}$ & 0.082705 &
+$\sci{5.3538}{-6}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{à¸§à¸´à¸˜à¸µà¸­à¹ˆà¸²à¸™à¸•à¸²à¸£à¸²à¸‡}
+à¸à¸£à¸´à¸”à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸šà¹ƒà¸Šà¹‰ event à¹à¸¥à¸° sample time à¸—à¸µà¹ˆà¸¡à¸µà¸­à¸¢à¸¹à¹ˆà¸ˆà¸£à¸´à¸‡à¸‚à¸­à¸‡à¹à¸•à¹ˆà¸¥à¸° solver
+à¸«à¹‰à¸²à¸¡ extrapolate à¸­à¸­à¸à¸™à¸­à¸à¸Šà¹ˆà¸§à¸‡à¸—à¸µà¹ˆ solver à¹ƒà¸«à¹‰à¸¡à¸² à¸„à¹ˆà¸² PSAT--Ours à¸‚à¸­à¸‡ IEEE-14
+à¸­à¸¢à¸¹à¹ˆà¹ƒà¸•à¹‰ tolerance à¸—à¸µà¹ˆà¸›à¸£à¸°à¸à¸²à¸¨ à¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™ primary comparison à¸ªà¹ˆà¸§à¸™ PGAz à¸¡à¸µ
+trajectory difference à¹ƒà¸«à¸à¹ˆà¸à¸§à¹ˆà¸²à¹à¸¥à¸° corrector residual à¹„à¸¡à¹ˆà¸žà¸£à¹‰à¸­à¸¡à¹ƒà¸«à¹‰à¸¢à¸·à¸™à¸¢à¸±à¸™
+à¸”à¸±à¸‡à¸™à¸±à¹‰à¸™à¹€à¸›à¹‡à¸™ diagnostic à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+
+\paragraph{RTS-24 à¹€à¸›à¹‡à¸™ held-out check}
+RTS-24 à¸•à¸£à¸§à¸ˆà¸§à¹ˆà¸²à¸à¸²à¸£à¸›à¸£à¸°à¸à¸­à¸š network, constant-impedance conversion à¸—à¸µà¹ˆ runtime,
+COI mapping à¹à¸¥à¸° event landing à¹„à¸¡à¹ˆà¸œà¸¹à¸à¸à¸±à¸šà¸ˆà¸³à¸™à¸§à¸™ bus à¸‚à¸­à¸‡ IEEE-14 à¸œà¸¥à¸—à¸µà¹ˆà¸•à¹ˆà¸²à¸‡à¸ˆà¸²à¸
+PSAT à¸–à¸¹à¸à¸žà¸´à¸¡à¸žà¹Œà¹€à¸›à¹‡à¸™ metric à¹„à¸¡à¹ˆà¸–à¸¹à¸à¹ƒà¸Šà¹‰à¹€à¸žà¸·à¹ˆà¸­à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ solver
+
+\paragraph{à¸ªà¸´à¹ˆà¸‡à¸—à¸µà¹ˆ TS à¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œà¹à¸¥à¸°à¹„à¸¡à¹ˆà¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œ}
+TS à¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œà¸§à¹ˆà¸² accepted DAE state à¸¡à¸µ residual à¹à¸¥à¸° event order à¸•à¸²à¸¡à¸ªà¸±à¸à¸à¸²
+à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œ hardware control, protection, unbalanced fault à¸«à¸£à¸·à¸­
+accuracy à¸‚à¸­à¸‡ switching waveform à¸£à¸°à¸”à¸±à¸š EMT à¸™à¸­à¸à¸ˆà¸²à¸à¸™à¸µà¹‰ fixed-step à¹à¸¥à¸° adaptive
+à¹€à¸›à¹‡à¸™ numerical routes à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸­à¹ˆà¸²à¸™à¹à¸¢à¸à¸à¸±à¸™ à¹„à¸¡à¹ˆà¸ªà¸£à¸¸à¸›à¸§à¹ˆà¸²à¸à¸²à¸£à¸£à¸±à¸™à¸ªà¸±à¹‰à¸™à¸£à¸±à¸šà¸£à¸­à¸‡ horizon à¸¢à¸²à¸§
+
+\begin{center}
+\fcolorbox{teal}{lightgreen}{\begin{minipage}{0.90\textwidth}
+\textbf{à¸‚à¹‰à¸­à¸ªà¸£à¸¸à¸›à¸«à¸™à¹‰à¸²à¸™à¸µà¹‰:} common-grid comparison à¸œà¹ˆà¸²à¸™à¹ƒà¸™à¸ªà¹ˆà¸§à¸™ PSAT primary
+à¸•à¸²à¸¡à¸•à¸±à¸§à¹€à¸¥à¸‚à¸—à¸µà¹ˆà¸§à¸±à¸”à¹„à¸”à¹‰ à¸ªà¹ˆà¸§à¸™ PGAz à¸–à¸¹à¸à¹€à¸à¹‡à¸šà¹„à¸§à¹‰à¹€à¸žà¸·à¹ˆà¸­à¸šà¸­à¸à¸‚à¸­à¸šà¹€à¸‚à¸•à¸‚à¸­à¸‡à¸„à¸§à¸²à¸¡à¸ªà¸­à¸”à¸„à¸¥à¹‰à¸­à¸‡ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ
+à¸–à¸¹à¸à¸¥à¸šà¸«à¸£à¸·à¸­à¸›à¸£à¸±à¸š tolerance à¹ƒà¸«à¹‰à¸”à¸¹à¸”à¸µ
+\end{minipage}}
+\end{center}
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 11. IBR development
+\reportsection{à¸žà¸±à¸’à¸™à¸²à¸à¸²à¸£ IBR: GFL+PLL, GFM no-PLL, 17-state superset}
+IBR à¹à¸•à¹ˆà¸¥à¸°à¸•à¸±à¸§à¸¡à¸µ plant à¸£à¹ˆà¸§à¸¡à¹à¸¥à¸° controller à¸ªà¸­à¸‡ branch à¹à¸•à¹ˆ integrate branch à¹€à¸”à¸µà¸¢à¸§
+à¹ƒà¸™à¹€à¸§à¸¥à¸²à¹ƒà¸”à¹€à¸§à¸¥à¸²à¸«à¸™à¸¶à¹ˆà¸‡ GFL à¹ƒà¸Šà¹‰ current control à¹à¸¥à¸° SRF-PLL à¸ªà¹ˆà¸§à¸™ GFM à¹ƒà¸Šà¹‰ VSG
+swing à¹à¸¥à¸° voltage-forming loop à¸à¸²à¸£à¹€à¸¥à¸·à¸­à¸ mode à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸«à¸¡à¸²à¸¢à¸„à¸§à¸²à¸¡à¸§à¹ˆà¸²à¸ªà¸­à¸‡ controller
+à¸—à¸³à¸‡à¸²à¸™à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™
+
+\begin{align}
+x_{\mathrm{GFL}}&=[\,\delta_{\mathrm{PLL}},\xi_{\mathrm{PLL}},
+\xi_P,\xi_Q,\xi_{Id},\xi_{Iq}\,],\\
+x_{\mathrm{GFM}}&=[\,\delta_{\mathrm{VSG}},\omega_{\mathrm{VSG}},E,
+\xi_{Vd},\xi_{Vq},\xi_{Id},\xi_{Iq}\,].
+\end{align}
+plant à¸£à¹ˆà¸§à¸¡à¸„à¸·à¸­ $(i_d,i_q,V_{dc})$ à¹à¸¥à¸° source-current state $I_{dc}$ à¸–à¸¹à¸ append
+à¹€à¸›à¹‡à¸™à¸žà¸´à¸à¸±à¸”à¸—à¸µà¹ˆ 17 à¸ªà¸£à¹‰à¸²à¸‡ fixed superset 17 state
+\begin{equation}
+x_{\mathrm{IBR}}\in\mathbb{R}^{17},\qquad
+\mathcal{A}_{\mathrm{GFL}}=\{1{:}9,17\},\quad
+\mathcal{A}_{\mathrm{GFM}}=\{1{:}3,10{:}16,17\}.
+\end{equation}
+à¸”à¸±à¸‡à¸™à¸±à¹‰à¸™ active count à¹€à¸›à¹‡à¸™ 10 à¸«à¸£à¸·à¸­ 11 à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ 17 à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™
+
+\paragraph{GFL}
+PLL à¸‚à¸±à¸š $v_q$ à¹€à¸›à¹‡à¸™à¸¨à¸¹à¸™à¸¢à¹Œà¹à¸¥à¸°à¹ƒà¸Šà¹‰ $\omega_{\mathrm{PLL}}$ à¹€à¸›à¹‡à¸™ frame frequency
+outer $P/Q$ loops à¸ªà¸£à¹‰à¸²à¸‡ current reference à¸ªà¹ˆà¸§à¸™ inner loops à¹à¸à¹‰ filter current
+à¸—à¸µà¹ˆ equilibrium $P$ à¹à¸¥à¸° $Q$ à¸•à¸£à¸‡ setpoint à¸ˆà¸²à¸ source
+
+\paragraph{GFM no-PLL}
+VSG à¹ƒà¸«à¹‰
+\begin{equation}
+M\dot{\omega}_{\mathrm{VSG}}=\kappa P_{\mathrm{ref}}-P_{\mathrm{inv}}
+-D_v(\omega_{\mathrm{VSG}}-1),\qquad
+\dot{\delta}_{\mathrm{VSG}}=\omega_b(\omega_{\mathrm{VSG}}-1).
+\end{equation}
+à¹„à¸¡à¹ˆà¸¡à¸µ $\delta_{\mathrm{PLL}}$ à¸«à¸£à¸·à¸­ PLL integrator à¹à¸à¸‡ à¸¡à¸¸à¸¡à¸ˆà¸¶à¸‡à¹€à¸à¸´à¸”à¸ˆà¸²à¸ state
+à¸‚à¸­à¸‡ VSG à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+
+\paragraph{State transfer}
+à¹€à¸¡à¸·à¹ˆà¸­ mode à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ à¸ˆà¸° carry $(i_d,i_q,V_{dc})$, map frequency à¸—à¸µà¹ˆ physical
+frame à¹à¸¥à¸° initialize controller block à¹ƒà¸«à¸¡à¹ˆà¸ˆà¸²à¸ $(V,P,Q)$ à¸‚à¸­à¸‡ accepted state
+à¸ˆà¸²à¸à¸™à¸±à¹‰à¸™à¸•à¸£à¸§à¸ˆ current continuity à¹à¸¥à¸°à¹à¸à¹‰ algebraic right-limit à¹ƒà¸«à¸¡à¹ˆ à¸§à¸´à¸˜à¸µà¸™à¸µà¹‰
+à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ parameterisation à¹„à¸”à¹‰ à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¸ªà¸£à¹‰à¸²à¸‡ current impulse à¹ƒà¸«à¹‰ network
+
+\paragraph{à¸‚à¹‰à¸­à¸ªà¸±à¸‡à¹€à¸à¸•à¹€à¸£à¸·à¹ˆà¸­à¸‡ 17 state}
+17 à¸„à¸·à¸­à¸‚à¸™à¸²à¸” container à¸—à¸µà¹ˆà¸„à¸‡à¸—à¸µà¹ˆà¹€à¸žà¸·à¹ˆà¸­ ABI à¹à¸¥à¸° mapping à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸ˆà¸³à¸™à¸§à¸™ differential
+state à¸—à¸µà¹ˆ integrate à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™ à¹€à¸¡à¸·à¹ˆà¸­à¸£à¸§à¸¡ SG à¸«à¸ state à¹à¸¥à¸° IBR à¸ªà¸µà¹ˆ container à¸ˆà¸°à¸¡à¸µ
+74 à¹à¸–à¸§à¹ƒà¸™ composite state vector à¸‚à¸­à¸‡à¸à¸£à¸“à¸µ IEEE-14 à¸™à¸µà¹‰
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 12. SMIB topology and contract
+\reportsection{SMIB: topology à¹à¸¥à¸°à¸ªà¸±à¸à¸à¸²à¸‚à¸­à¸‡ GFL-RMS10/GFM-no-PLL}
+SMIB à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™ diagnostic oracle à¹à¸¢à¸à¸ˆà¸²à¸ multi-bus production path à¹€à¸žà¸·à¹ˆà¸­à¸—à¸”à¸ªà¸­à¸š
+device equation, equilibrium, SSSA à¹à¸¥à¸° event-free TDS à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¸›à¸°à¸›à¸™à¸à¸±à¸šà¸à¸²à¸£à¹€à¸¥à¸·à¸­à¸
+candidate à¹ƒà¸™ IEEE-14 à¸—à¸±à¹‰à¸‡à¸ªà¸­à¸‡à¸à¸£à¸“à¸µà¹ƒà¸Šà¹‰ terminal $V=1\angle0\pu$,
+$P=0.40\pu$, $Q=0.10\pu$, system base 100 MVA à¹à¸¥à¸° line
+$Z_{\mathrm{line}}=0.02+\mathrm{j}0.20\pu$
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw=navy,fill=lightblue,rounded corners=2pt,
+    minimum width=1.25in,minimum height=0.72in,align=center},
+  arr/.style={-{Latex[length=2.5mm]},very thick,draw=navy}
+]
+\node[box] (inf) {ideal infinite bus\\$E_\infty$};
+\node[box,right=0.30in of inf] (line) {external line\\$Z_{\mathrm{line}}$};
+\node[box,right=0.30in of line] (pcc) {IBR terminal\\$V=1\angle0$};
+\node[box,right=0.30in of pcc] (dev) {device\\GFL or GFM};
+\draw[arr] (inf)--(line)--(pcc)--(dev);
+\node[below=0.35in of pcc,align=center,text=teal] {KCL and $S=V I^*$\\checked at the same point};
+\end{tikzpicture}
+\caption{SMIB topology à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸—à¸”à¸ªà¸­à¸šà¸ªà¸­à¸‡à¸à¸£à¸“à¸µà¹à¸¢à¸à¸à¸±à¸™ à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸œà¸ªà¸¡ GFL à¹à¸¥à¸° GFM
+à¹ƒà¸™ device à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{à¸ªà¸±à¸à¸à¸²à¸ªà¸­à¸‡à¸à¸£à¸“à¸µ SMIB}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+à¸«à¸±à¸§à¸‚à¹‰à¸­ & GFL-RMS10 & GFM-no-PLL \\
+\midrule
+à¸•à¸±à¸§à¸„à¸§à¸šà¸„à¸¸à¸¡ & SRF-PLL, outer $P/Q$, filter current & VSG swing, $Q$--$V$, filter current \\
+à¸ˆà¸³à¸™à¸§à¸™ state & 10 & 4 \\
+frame angle & $\delta_{\mathrm{PLL}}$ & $\delta_{\mathrm{VSG}}$ à¸ˆà¸²à¸ swing \\
+à¸‚à¹‰à¸­à¸«à¹‰à¸²à¸¡ & à¹„à¸¡à¹ˆà¹ƒà¸Šà¹‰ angle à¸‚à¸­à¸‡ infinite bus à¹€à¸›à¹‡à¸™ state & à¹„à¸¡à¹ˆà¸¡à¸µ PLL, PLL gain à¸«à¸£à¸·à¸­ PLL freeze \\
+à¸šà¸—à¸šà¸²à¸— & current source à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸¡à¸µ voltage reference & voltage-forming source \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+SMIB equilibrium à¹ƒà¸Šà¹‰ closed-form warm start à¹à¸¥à¹‰à¸§à¹à¸à¹‰ local residual à¸”à¹‰à¸§à¸¢
+Newton à¹ƒà¸™ oracle à¸œà¸¥à¸‚à¸­à¸‡ SMIB à¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™\linebreak
+\source{ASSUMED\_DIAGNOSTIC} à¹„à¸¡à¹ˆà¸–à¸¹à¸à¹ƒà¸Šà¹‰
+à¸›à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸›à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ production IEEE-14
+
+\paragraph{à¹€à¸«à¸•à¸¸à¸œà¸¥à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¹à¸¢à¸à¸à¸£à¸“à¸µ}
+GFL à¹à¸¥à¸° GFM à¸¡à¸µ state order, frame à¹à¸¥à¸° source contract à¸„à¸™à¸¥à¸°à¹à¸šà¸š à¸«à¸²à¸à¸£à¸§à¸¡à¹€à¸›à¹‡à¸™
+à¸à¸£à¸“à¸µà¹€à¸”à¸µà¸¢à¸§à¸ˆà¸°à¹„à¸¡à¹ˆà¸£à¸¹à¹‰à¸§à¹ˆà¸²à¸à¸²à¸£à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ spectrum à¸¡à¸²à¸ˆà¸²à¸ controller à¸«à¸£à¸·à¸­à¸ˆà¸²à¸ topology
+à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ˆà¸¶à¸‡à¹ƒà¸Šà¹‰ SMIB à¹€à¸›à¹‡à¸™à¸à¸²à¸£à¸žà¸´à¸ªà¸¹à¸ˆà¸™à¹Œ local mechanism à¹à¸¥à¹‰à¸§à¸„à¹ˆà¸­à¸¢à¸™à¸³ dual-mode
+container à¹„à¸›à¸•à¸£à¸§à¸ˆà¹ƒà¸™ composite IEEE-14
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 13. SMIB evidence
+\reportsection{à¸«à¸¥à¸±à¸à¸à¸²à¸™ SMIB: equilibrium, Schur, FD, eigenpairs à¹à¸¥à¸° power identity}
+\begin{table}[H]
+\centering
+\caption{à¸œà¸¥ SMIB oracle à¸ˆà¸²à¸à¹„à¸Ÿà¸¥à¹Œ diagnostic à¸—à¸µà¹ˆ commit à¹ƒà¸™ repository}
+\begin{tabularx}{\textwidth}{@{}l r r r r r X@{}}
+\toprule
+à¸à¸£à¸“à¸µ & $\|f_0\|_\infty$ & $\|g_0\|_\infty$ & rcond$(J_y)$ &
+à¸ˆà¸³à¸™à¸§à¸™ $\lambda$ & $\max\operatorname{Re}\lambda$ & à¸œà¸¥ TS \\
+\midrule
+GFL-RMS10 & $\sci{2.790}{-13}$ & $\sci{1.110}{-16}$ & 0.8347 &
+10 & $-11.23383$ & drift $0$, error $\sci{7.700}{-6}$ \\
+GFM-no-PLL & $\sci{6.523}{-14}$ & $\sci{2.082}{-16}$ & 0.9216 &
+4 & $-0.5554663$ & drift $0$, error $\sci{2.866}{-5}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Schur-versus-direct error à¸‚à¸­à¸‡ GFL à¸„à¸·à¸­ $\sci{2.605}{-14}$ à¹à¸¥à¸°à¸‚à¸­à¸‡ GFM à¸„à¸·à¸­
+$\sci{8.095}{-11}$ à¸ˆà¸¶à¸‡à¸¢à¸·à¸™à¸¢à¸±à¸™à¸§à¹ˆà¸² $A$ à¸¡à¸²à¸ˆà¸²à¸ elimination à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸šà¸—à¸µà¹ˆà¸£à¸°à¸šà¸¸à¹ƒà¸™
+à¸ªà¸¡à¸à¸²à¸£ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ matrix à¸—à¸µà¹ˆà¸žà¸´à¸¡à¸žà¹Œà¹à¸¢à¸à¸ˆà¸²à¸ solver GFL à¸¡à¸µ fast PLL pole à¸›à¸£à¸°à¸¡à¸²à¸“
+$-\sci{3.371}{5}\ \mathrm{s}^{-1}$ à¹à¸¥à¸° GFM à¸¡à¸µ swing pair
+$-0.5555\pm\mathrm{j}9.356\ \mathrm{s}^{-1}$ à¸žà¸£à¹‰à¸­à¸¡ real filter modes
+$-100.9$ à¹à¸¥à¸° $-114.5\ \mathrm{s}^{-1}$
+
+\paragraph{FD à¹à¸¥à¸° eigenpairs}
+à¸—à¸±à¹‰à¸‡à¸ªà¸­à¸‡à¸à¸£à¸“à¸µà¹ƒà¸«à¹‰ finite Jacobian à¹à¸¥à¸° eigenvalues à¸„à¸£à¸šà¸•à¸²à¸¡à¸ˆà¸³à¸™à¸§à¸™ state
+GFM perturbation-halving ratio à¹€à¸—à¹ˆà¸²à¸à¸±à¸š $\sci{1.433}{-5}$ à¹à¸¥à¸° GFL ratio
+à¹€à¸—à¹ˆà¸²à¸à¸±à¸š $\sci{2.489}{-9}$ à¸ˆà¸²à¸ TDS oracle à¸•à¸±à¸§à¹€à¸¥à¸‚à¸™à¸µà¹‰à¹à¸ªà¸”à¸‡ local linear
+consistency à¸‚à¸­à¸‡ implementation à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸›à¸£à¸°à¸à¸²à¸¨à¸§à¹ˆà¸² nonlinear large-disturbance
+à¸ˆà¸°à¹€à¸›à¹‡à¸™à¹€à¸Šà¸´à¸‡à¹€à¸ªà¹‰à¸™
+
+\paragraph{Nonlinear à¸à¸±à¸š linear}
+à¹€à¸¡à¸·à¹ˆà¸­ perturbation à¸¡à¸µà¸‚à¸™à¸²à¸” $10^{-3}$, à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡ nonlinear-vs-linear à¸‚à¸­à¸‡
+GFM à¹€à¸—à¹ˆà¸²à¸à¸±à¸š $\sci{2.866}{-5}$ à¹à¸¥à¸°à¸‚à¸­à¸‡ GFL à¹€à¸—à¹ˆà¸²à¸à¸±à¸š $\sci{7.700}{-6}$
+à¸à¸²à¸£à¸•à¸£à¸§à¸ˆ power identity à¹ƒà¸«à¹‰ error GFM $\sci{6.523}{-16}\pu$ à¹à¸¥à¸° GFL
+à¹€à¸›à¹‡à¸™à¸¨à¸¹à¸™à¸¢à¹Œà¸ à¸²à¸¢à¹ƒà¸™ precision à¸‚à¸­à¸‡ diagnostic
+
+\paragraph{à¸‚à¸­à¸šà¹€à¸‚à¸•à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢}
+à¸œà¸¥ GFL à¸—à¸µà¹ˆà¸¡à¸µ PLL pole à¹€à¸£à¹‡à¸§à¸¡à¸²à¸à¹€à¸›à¹‡à¸™à¸¥à¸±à¸à¸©à¸“à¸°à¸‚à¸­à¸‡ local model à¸—à¸µà¹ˆà¸§à¸±à¸” à¸“ operating
+point à¸™à¸µà¹‰ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¹€à¸«à¸•à¸¸à¹ƒà¸«à¹‰à¸¥à¸š eigenvalue à¸«à¸£à¸·à¸­à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ sign à¹€à¸žà¸·à¹ˆà¸­à¹ƒà¸«à¹‰à¸œà¹ˆà¸²à¸™ à¸ªà¹ˆà¸§à¸™ GFM
+à¹„à¸¡à¹ˆà¸¡à¸µ PLL à¸•à¸²à¸¡ contract à¸à¸²à¸£à¸—à¸µà¹ˆà¸—à¸±à¹‰à¸‡à¸ªà¸­à¸‡à¸œà¸¥à¹€à¸›à¹‡à¸™à¸„à¸™à¸¥à¸°à¸à¸£à¸“à¸µà¸ˆà¸¶à¸‡à¸ªà¸³à¸„à¸±à¸à¸à¸§à¹ˆà¸²à¸à¸²à¸£à¸ˆà¸±à¸”à¸­à¸±à¸™à¸”à¸±à¸šà¸§à¹ˆà¸²
+à¸à¸£à¸“à¸µà¹ƒà¸” "à¸”à¸µà¸à¸§à¹ˆà¸²"
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 14. IEEE-14 system
+\reportsection{à¸£à¸°à¸šà¸š IEEE-14: inventory, state count à¹à¸¥à¸° event schedule}
+à¸à¸£à¸“à¸µà¸«à¸¥à¸±à¸à¸›à¸£à¸°à¸à¸­à¸šà¸”à¹‰à¸§à¸¢ SG à¸—à¸µà¹ˆ bus 1 à¹à¸¥à¸° IBR à¸ªà¸µà¹ˆà¸•à¸±à¸§à¸—à¸µà¹ˆ bus 2, 3, 6, 8
+à¸­à¸¸à¸›à¸à¸£à¸“à¹Œà¸–à¸¹à¸ map à¸”à¹‰à¸§à¸¢ external bus ID à¹à¸¥à¹‰à¸§à¸„à¹ˆà¸­à¸¢à¸ªà¸£à¹‰à¸²à¸‡ internal coordinate
+à¹€à¸„à¸£à¸·à¹ˆà¸­à¸‡ SG à¹ƒà¸Šà¹‰ EMF6 operational model à¹‚à¸”à¸¢ state à¸—à¸µà¹ˆ integrate à¸­à¸¢à¸¹à¹ˆà¸šà¸™ singular
+limit à¸‚à¸­à¸‡ $E_d'$ à¸ˆà¸¶à¸‡à¸¡à¸µ 5 active state à¸ˆà¸²à¸ 6 coordinate à¸—à¸µà¹ˆà¹€à¸à¹‡à¸š
+
+\begin{table}[H]
+\centering
+\caption{inventory à¸‚à¸­à¸‡à¸­à¸¸à¸›à¸à¸£à¸“à¹Œà¹à¸¥à¸°à¸à¸²à¸£ map state}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+à¸—à¸£à¸±à¸žà¸¢à¸²à¸à¸£ & bus & branch & à¸ˆà¸³à¸™à¸§à¸™ active state \\
+\midrule
+SG1 & 1 & EMF6 & 5 (à¸ˆà¸²à¸ 6 coordinate) \\
+IBR1 & 2 & GFL/GFM dual-mode & 10 à¸«à¸£à¸·à¸­ 11 à¸ˆà¸²à¸ container 17 \\
+IBR2 & 3 & GFL/GFM dual-mode & 10 à¸«à¸£à¸·à¸­ 11 à¸ˆà¸²à¸ container 17 \\
+IBR3 & 6 & GFL/GFM dual-mode & 10 à¸«à¸£à¸·à¸­ 11 à¸ˆà¸²à¸ container 17 \\
+IBR4 & 8 & GFL/GFM dual-mode & 10 à¸«à¸£à¸·à¸­ 11 à¸ˆà¸²à¸ container 17 \\
+\midrule
+\multicolumn{3}{r}{composite container dimension} & $6+4\times17=74$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{à¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¸•à¸²à¸¡ case à¹à¸¥à¸°à¸œà¸¥à¸ˆà¸²à¸ accepted event log}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+à¹€à¸§à¸¥à¸² & à¸›à¸£à¸°à¹€à¸ à¸— & à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢ \\
+\midrule
+$20.000\second$ & SG trip & à¹€à¸›à¸´à¸” breaker, SG à¸«à¸¢à¸¸à¸”à¸‰à¸µà¸”à¹€à¸‚à¹‰à¸²à¸ªà¸¹à¹ˆ network \\
+$50.000\second$ & load step & à¹€à¸žà¸´à¹ˆà¸¡ $P,Q$ load à¸•à¸²à¸¡ case \\
+$85.000\second$ & fault on & fault à¸—à¸µà¹ˆ bus 9 \\
+$85.150\second$ & fault clear & à¸„à¸·à¸™ topology à¸«à¸¥à¸±à¸‡à¸Šà¹ˆà¸§à¸‡ fault \\
+$110.000\second$ & line trip & à¹€à¸›à¸´à¸”à¸ªà¸²à¸¢ 6--13 \\
+$145.000\second$ & restore request & à¹€à¸£à¸´à¹ˆà¸¡ workflow à¸„à¸·à¸™ SG reference \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+à¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¸«à¹‰à¸²à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸£à¸à¹€à¸›à¹‡à¸™ \source{CASE\_DEFINED}; à¹€à¸§à¸¥à¸² reclose à¹à¸¥à¸°à¹€à¸§à¸¥à¸²
+release à¹€à¸›à¹‡à¸™ \result{PROJECT\_RESULT} à¸ˆà¸²à¸ event log à¹„à¸¡à¹ˆ hard-code à¹ƒà¸™ solver
+à¸«à¸¥à¸±à¸‡ SG trip à¸­à¸¢à¹ˆà¸²à¸‡à¸™à¹‰à¸­à¸¢à¸«à¸™à¸¶à¹ˆà¸‡ GFM à¸•à¹‰à¸­à¸‡à¸—à¸³à¸«à¸™à¹‰à¸²à¸—à¸µà¹ˆ voltage-forming à¹€à¸žà¸·à¹ˆà¸­ fix
+reference angle à¸«à¸²à¸à¹„à¸¡à¹ˆà¸¡à¸µà¸ˆà¸° refuse à¸à¹ˆà¸­à¸™à¹€à¸£à¸µà¸¢à¸ Newton
+
+\paragraph{à¸à¸²à¸£ map à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¹„à¸¡à¹ˆà¸ªà¸¥à¸±à¸š}
+à¸¥à¸³à¸”à¸±à¸š resource à¸‚à¸­à¸‡ IBR à¸„à¸·à¸­ $[1,2,3,4]$ à¹à¸¥à¸° bus à¸—à¸µà¹ˆà¸ªà¸­à¸”à¸„à¸¥à¹‰à¸­à¸‡à¸„à¸·à¸­
+$[2,3,6,8]$ à¸•à¸±à¸§à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸¹à¸›à¸•à¸£à¸§à¸ˆ mapping à¸™à¸µà¹‰à¹ƒà¸™à¸—à¸¸à¸ arm à¸à¹ˆà¸­à¸™ export à¹€à¸žà¸£à¸²à¸°à¸à¸²à¸£
+à¹€à¸£à¸µà¸¢à¸‡ device à¸œà¸´à¸”à¸ˆà¸°à¸—à¸³à¹ƒà¸«à¹‰à¹€à¸ªà¹‰à¸™à¸‚à¸­à¸‡ converter à¸«à¸™à¸¶à¹ˆà¸‡à¸–à¸¹à¸à¸­à¹ˆà¸²à¸™à¹€à¸›à¹‡à¸™à¸­à¸µà¸ converter à¹‚à¸”à¸¢
+à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸„à¹ˆà¸² numerical
+
+\par\vspace{5pt}
+
+
+% ============================================================================
+% 15. Candidate selection and switching contract
+\reportsection{Candidate selection à¹à¸¥à¸° switching contract}
+à¸«à¸¥à¸±à¸‡ SG offline à¸•à¸±à¸§à¹€à¸¥à¸·à¸­à¸ GFM à¹€à¸›à¹‡à¸™ subset à¸‚à¸­à¸‡ IBR à¸ªà¸µà¹ˆà¸•à¸±à¸§à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
+à¸ˆà¸¶à¸‡à¸¡à¸µ $\CandTotal$ candidates à¸à¸²à¸£à¸›à¸£à¸°à¹€à¸¡à¸´à¸™à¹à¸•à¹ˆà¸¥à¸°à¸Šà¸¸à¸”à¹à¸à¹‰ equilibrium à¹à¸¥à¸°
+linearise à¹ƒà¸«à¸¡à¹ˆà¸šà¸™ network à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™ à¹„à¸¡à¹ˆ reuse eigenvalue à¸ˆà¸²à¸à¸Šà¸¸à¸”à¸­à¸·à¹ˆà¸™
+
+\begin{table}[H]
+\centering
+\caption{à¸œà¸¥à¸à¸²à¸£à¸„à¸±à¸”à¹€à¸¥à¸·à¸­à¸à¸ˆà¸²à¸ candidate table}
+\begin{tabularx}{\textwidth}{@{}l r r l X@{}}
+\toprule
+à¸ˆà¸³à¸™à¸§à¸™ GFM & à¸ˆà¸³à¸™à¸§à¸™à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆ & à¸ˆà¸³à¸™à¸§à¸™à¸žà¸£à¹‰à¸­à¸¡à¹ƒà¸Šà¹‰ & à¸«à¸¥à¸±à¸à¸à¸²à¸™à¸ªà¸³à¸„à¸±à¸ \\
+\midrule
+1 & $\CandTotalNOne$ & $\CandReadyNOne$ & à¸•à¹‰à¸­à¸‡à¸¡à¸µ source à¹à¸¥à¸°à¸œà¹ˆà¸²à¸™ damping-ratio gate \\
+2 & $\CandTotalNTwo$ & $\CandReadyNTwo$ & best set à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸à¸¥à¸¸à¹ˆà¸¡à¸™à¸µà¹‰ \\
+3 & $\CandTotalNThree$ & $\CandReadyNThree$ & à¹„à¸¡à¹ˆà¸¡à¸µà¸Šà¸¸à¸”à¸—à¸µà¹ˆà¸œà¹ˆà¸²à¸™à¹ƒà¸™ snapshot \\
+4 & $\CandTotalNFour$ & $\CandReadyNFour$ & à¸œà¹ˆà¸²à¸™ linear screen à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¸žà¸­à¸£à¸±à¸šà¸›à¸£à¸°à¸à¸±à¸™ TS \\
+\midrule
+à¸£à¸§à¸¡ & \CandTotal & \CandReady & admissibility à¹„à¸¡à¹ˆ monotone à¸•à¸²à¸¡à¸ˆà¸³à¸™à¸§à¸™ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+best set à¸—à¸µà¹ˆà¸£à¸²à¸¢à¸‡à¸²à¸™à¹€à¸›à¹‡à¸™ \CandBestSet\ à¹‚à¸”à¸¢ $\Omega=\CandBestOmega$ à¸‚à¸“à¸°à¸—à¸µà¹ˆ
+best single à¸¡à¸µ $\Omega=\CandBestSingleOmega$ à¹à¸¥à¸° full set à¸¡à¸µ
+$\Omega=\CandFullOmega$ à¸„à¹ˆà¸² $\Omega$ à¹€à¸›à¹‡à¸™ damping margin à¸‚à¸­à¸‡ equilibrium
+à¸‚à¸­à¸‡à¸Šà¸¸à¸”à¸™à¸±à¹‰à¸™à¹€à¸­à¸‡ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ margin à¸‚à¸­à¸‡ trajectory à¸—à¸µà¹ˆà¸à¸³à¸¥à¸±à¸‡à¸ªà¸¥à¸±à¸š
+
+\paragraph{à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢à¸‚à¸­à¸‡ [3 4]}
+à¹€à¸¡à¸·à¹ˆà¸­ log à¹€à¸‚à¸µà¸¢à¸™ candidate à¹€à¸›à¹‡à¸™ \([3\ 4]\) à¸™à¸±à¹ˆà¸™à¸„à¸·à¸­ resource indices à¹ƒà¸™à¸¥à¸³à¸”à¸±à¸š
+IBR à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ bus IDs à¸”à¸±à¸‡à¸™à¸±à¹‰à¸™ map à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸ˆà¸£à¸´à¸‡à¸„à¸·à¸­ resource 3 $\to$ bus 6 à¹à¸¥à¸°
+resource 4 $\to$ bus 8 à¸«à¸£à¸·à¸­ bus set \([6\ 8]\) à¸à¸²à¸£à¸£à¸°à¸šà¸¸à¸ªà¸­à¸‡à¹à¸šà¸šà¸™à¸µà¹‰à¸žà¸£à¹‰à¸­à¸¡à¸à¸±à¸™
+à¸›à¹‰à¸­à¸‡à¸à¸±à¸™à¸„à¸§à¸²à¸¡à¸ªà¸±à¸šà¸ªà¸™à¸£à¸°à¸«à¸§à¹ˆà¸²à¸‡ index à¸ à¸²à¸¢à¹ƒà¸™à¸à¸±à¸š external ID
+
+\paragraph{à¸ªà¸±à¸à¸à¸²à¸à¸²à¸£ commit}
+candidate à¸•à¹‰à¸­à¸‡à¸œà¹ˆà¸²à¸™ equilibrium convergence, physical KCL, finite state,
+conditioning, damping-ratio threshold à¹à¸¥à¸° authenticated fingerprint
+à¸à¹ˆà¸­à¸™ mode transaction à¸–à¹‰à¸²à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™à¸ˆà¸°à¹„à¸¡à¹ˆà¹à¸à¹‰à¸”à¹‰à¸§à¸¢à¸à¸²à¸£à¹€à¸¥à¸·à¸­à¸ candidate à¸–à¸±à¸”à¹„à¸›à¹à¸šà¸š
+à¹€à¸‡à¸µà¸¢à¸š à¹† à¸à¸²à¸£ commit à¹€à¸›à¹‡à¸™ atomic: map controller, solve right-limit, à¸•à¸£à¸§à¸ˆ
+continuity à¹à¸¥à¹‰à¸§à¸ˆà¸¶à¸‡à¹€à¸‚à¸µà¸¢à¸™ accepted state
+
+\paragraph{linear à¹„à¸¡à¹ˆà¹€à¸—à¹ˆà¸²à¸à¸±à¸š nonlinear}
+full four-GFM à¹€à¸›à¹‡à¸™à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡à¸—à¸µà¹ˆà¸œà¹ˆà¸²à¸™ linear screen à¹à¸•à¹ˆà¹€à¸¡à¸·à¹ˆà¸­ pin à¸•à¸±à¹‰à¸‡à¹à¸•à¹ˆ SG trip
+à¸à¸¥à¸±à¸šà¸«à¸¢à¸¸à¸”à¸—à¸µà¹ˆ \ArmPinnedgfmFourHorizon\ à¸§à¸´à¸™à¸²à¸—à¸µ à¸‚à¸“à¸°à¸—à¸µà¹ˆ adaptive à¸„à¹ˆà¸­à¸¢ à¹† à¹€à¸žà¸´à¹ˆà¸¡
+support à¸œà¹ˆà¸²à¸™ transition certificate à¸ˆà¸¶à¸‡à¹„à¸›à¸•à¹ˆà¸­à¹„à¸”à¹‰ à¸à¸²à¸£à¸„à¸±à¸”à¹€à¸¥à¸·à¸­à¸à¹€à¸›à¹‡à¸™ necessary
+condition à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ sufficient condition
+
+\par\vspace{5pt}
+% ============================================================================
+% 16. Chronology and supervisor
+\reportsection{Chronology 250 à¸§à¸´à¸™à¸²à¸—à¸µà¹à¸¥à¸°à¸œà¸¥à¸‚à¸­à¸‡ supervisor}
+à¸à¸²à¸£à¸—à¸”à¸¥à¸­à¸‡ flagship à¹ƒà¸Šà¹‰ event schedule à¸—à¸µà¹ˆà¸•à¸£à¸¶à¸‡à¹„à¸§à¹‰à¸¥à¹ˆà¸§à¸‡à¸«à¸™à¹‰à¸²à¹à¸¥à¸°à¹ƒà¸«à¹‰ accepted state
+à¹€à¸›à¹‡à¸™à¹€à¸ˆà¹‰à¸²à¸‚à¸­à¸‡à¸à¸²à¸£à¸•à¸±à¸”à¸ªà¸´à¸™à¹ƒà¸ˆà¸—à¸¸à¸à¸„à¸£à¸±à¹‰à¸‡ à¸•à¸²à¸£à¸²à¸‡à¸™à¸µà¹‰à¹à¸¢à¸ event à¸—à¸µà¹ˆà¹€à¸›à¹‡à¸™ \source{CASE\_DEFINED}
+à¸­à¸­à¸à¸ˆà¸²à¸à¸œà¸¥à¸—à¸µà¹ˆà¹€à¸›à¹‡à¸™ \result{PROJECT\_RESULT}
+
+\begin{table}[H]
+\centering
+\caption{à¸¥à¸³à¸”à¸±à¸šà¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¹à¸¥à¸°à¸œà¸¥à¸‚à¸­à¸‡ adaptive arm}
+\begin{tabularx}{\textwidth}{@{}r l X@{}}
+\toprule
+à¹€à¸§à¸¥à¸² (s) & à¸Šà¸™à¸´à¸” & à¹€à¸«à¸•à¸¸à¸à¸²à¸£à¸“à¹Œà¹à¸¥à¸°à¸œà¸¥à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆà¹„à¸”à¹‰ \\
+\midrule
+20.000 & CASE\_DEFINED & SG bus 1 trip; à¹€à¸£à¸´à¹ˆà¸¡ islanding à¹à¸¥à¸°à¸•à¹‰à¸­à¸‡à¸¡à¸µ voltage-forming source \\
+22.089, 51.340, 53.379 & PROJECT\_RESULT & augment à¸•à¸²à¸¡à¸¥à¸³à¸”à¸±à¸šà¹€à¸žà¸·à¹ˆà¸­à¹€à¸žà¸´à¹ˆà¸¡ GFM support \\
+25.303 & PROJECT\_RESULT & release à¹à¸£à¸à¸«à¸¥à¸±à¸‡ transition certificate à¸œà¹ˆà¸²à¸™ \\
+50.000 & CASE\_DEFINED & load à¹€à¸žà¸´à¹ˆà¸¡ 20\% \\
+85.000--85.150 & CASE\_DEFINED & bus 9 fault à¹à¸¥à¹‰à¸§ clear à¸šà¸™ grid à¸—à¸µà¹ˆà¸¥à¸‡à¸•à¸£à¸‡ event \\
+110.000 & CASE\_DEFINED & line 6--13 trip \\
+145.000 & CASE\_DEFINED & restore request; right-limit solve à¸à¹ˆà¸­à¸™ commit \\
+146.278, 148.281, 152.402 & PROJECT\_RESULT & release/augment/release à¹ƒà¸™à¸Šà¹ˆà¸§à¸‡ restore \\
+159.252 & PROJECT\_RESULT & reclose à¸ªà¸³à¹€à¸£à¹‡à¸ˆà¸•à¸²à¸¡ summary; mode transaction à¸¢à¸±à¸‡à¸–à¸¹à¸à¸•à¸£à¸§à¸ˆà¸•à¹ˆà¸­ \\
+173.1271 & PROJECT\_RESULT & mode return à¸«à¸¥à¸±à¸‡ handback à¹à¸¥à¸° reselection guard \\
+250.000 & PROJECT\_RESULT & horizon à¸ªà¸´à¹‰à¸™à¸ªà¸¸à¸”à¸”à¹‰à¸§à¸¢ terminal frequency 60.000001 Hz \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+à¸¥à¸³à¸”à¸±à¸šà¸šà¸™ timeline à¸„à¸·à¸­ SG trip 20.000 s, load step 50.000 s, fault
+85.000--85.150 s, line trip 110.000 s à¹à¸¥à¸° restore request 145.000 s
+à¸à¹ˆà¸­à¸™ reclose \NewRunReclose\ s à¹à¸¥à¸° mode return
+\NewRunModeReselectionTime\ s à¸•à¸²à¸¡ summary
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=6.20in]{figures/final_report_th/fig_supervisor.png}
+\caption{severity, mode à¹à¸¥à¸° owner à¸ˆà¸²à¸ raw adaptive trajectory; à¸ªà¸µà¹€à¸›à¹‡à¸™à¹€à¸žà¸µà¸¢à¸‡à¸à¸²à¸£à¸ˆà¸±à¸”à¸«à¸¡à¸§à¸”}
+\end{figure}
+
+\par\vspace{5pt}
+% ============================================================================
+% 17. Electrical response
+\reportsection{à¸œà¸¥à¸•à¸­à¸šà¸ªà¸™à¸­à¸‡à¹„à¸Ÿà¸Ÿà¹‰à¸²à¸ˆà¸²à¸ raw adaptive trajectory}
+à¸£à¸¹à¸›à¸™à¸µà¹‰à¸­à¹ˆà¸²à¸™à¸ˆà¸²à¸ trajectory à¸—à¸µà¹ˆà¹€à¸à¹‡à¸šà¸ˆà¸£à¸´à¸‡à¹‚à¸”à¸¢à¹„à¸¡à¹ˆà¹€à¸•à¸´à¸¡ noise, smoothing, filtering à¸«à¸£à¸·à¸­
+à¸à¸²à¸£ extrapolate à¹à¸‚à¸™à¸—à¸µà¹ˆà¸«à¸¢à¸¸à¸”à¸à¹ˆà¸­à¸™ horizon à¹€à¸ªà¹‰à¸™ event à¹€à¸›à¹‡à¸™ marker à¸‚à¸­à¸‡à¹€à¸§à¸¥à¸²à¹ƒà¸™ schedule
+à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸à¸²à¸£à¸›à¸£à¸±à¸š trajectory à¹ƒà¸«à¹‰à¹€à¸£à¸µà¸¢à¸š
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=6.20in]{figures/final_report_th/fig_electrical.png}
+\caption{à¸à¸³à¸¥à¸±à¸‡ active/reactive, à¸„à¸§à¸²à¸¡à¸–à¸µà¹ˆ COI à¹à¸¥à¸°à¹à¸£à¸‡à¸”à¸±à¸™à¸•à¹ˆà¸³à¸ªà¸¸à¸”à¸‚à¸­à¸‡ bus à¸—à¸µà¹ˆà¸•à¸´à¸”à¸•à¸²à¸¡}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{à¸„à¹ˆà¸²à¸ªà¸¹à¸‡à¸ªà¸¸à¸”/à¸•à¹ˆà¸³à¸ªà¸¸à¸”à¹à¸¥à¸°à¸„à¹ˆà¸²à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡à¸ˆà¸²à¸ adaptive arm}
+\begin{tabularx}{\textwidth}{@{}l r l@{}}
+\toprule
+à¸•à¸±à¸§à¸Šà¸µà¹‰à¸§à¸±à¸” & à¸„à¹ˆà¸² & à¸„à¸§à¸²à¸¡à¸«à¸¡à¸²à¸¢ \\
+\midrule
+$V_{\min}$ à¸—à¸±à¹‰à¸‡ trajectory & \NewRunVMin\pu & peak metric \\
+$V_{\max}$ à¸—à¸±à¹‰à¸‡ trajectory & \NewRunVMax\pu & peak metric \\
+$f_{\min}$ à¸—à¸±à¹‰à¸‡ trajectory & \NewRunFMin\hz & peak metric \\
+$f_{\max}$ à¸—à¸±à¹‰à¸‡ trajectory & \NewRunFMax\hz & peak metric \\
+$V_{\min},V_{\max}$ à¸—à¸µà¹ˆà¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡ & \NewRunTerminalVMin\pu,\ \NewRunTerminalVMax\pu & settled metric \\
+$f$ à¸—à¸µà¹ˆà¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡ & \NewRunTerminalF\hz & settled metric \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+à¸Šà¹ˆà¸§à¸‡ peak à¸ªà¸°à¸—à¹‰à¸­à¸™ disturbance à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸” à¸‚à¸“à¸°à¸—à¸µà¹ˆ settled metrics à¸­à¹ˆà¸²à¸™à¹€à¸‰à¸žà¸²à¸° accepted
+sample à¸ªà¸¸à¸”à¸—à¹‰à¸²à¸¢ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸„à¸§à¸£à¸™à¸³à¸ªà¸­à¸‡à¸à¸¥à¸¸à¹ˆà¸¡à¸™à¸µà¹‰à¹„à¸›à¸›à¸°à¸›à¸™à¸à¸±à¸™ à¸„à¹ˆà¸² residual à¸‚à¸­à¸‡ run à¸„à¸·à¸­
+\NewRunResidual\ à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸¡à¸µ subdivision à¹€à¸žà¸´à¹ˆà¸¡à¹ƒà¸™ summary
+
+\par\vspace{5pt}
+
+% ============================================================================
+% 18. Six-arm comparison
+\reportsection{à¸•à¸²à¸£à¸²à¸‡ six-arm à¹à¸¥à¸°à¸à¸²à¸£à¹€à¸›à¸£à¸µà¸¢à¸šà¹€à¸—à¸µà¸¢à¸šà¸™à¹‚à¸¢à¸šà¸²à¸¢}
+à¹à¸‚à¸™à¸—à¸±à¹‰à¸‡à¸«à¸à¸­à¹ˆà¸²à¸™à¸ˆà¸²à¸ cache à¸Šà¸¸à¸”à¹€à¸”à¸µà¸¢à¸§à¹à¸¥à¸°à¸œà¹ˆà¸²à¸™ hash check à¸à¹ˆà¸­à¸™à¸ªà¸£à¹‰à¸²à¸‡à¸•à¸²à¸£à¸²à¸‡ à¸ˆà¸¶à¸‡à¹à¸¢à¸
+\source{PROJECT\_RESULT} à¸‚à¸­à¸‡à¹à¸•à¹ˆà¸¥à¸° policy à¸­à¸­à¸à¸ˆà¸²à¸à¸ªà¸¡à¸¡à¸•à¸´à¸à¸²à¸™à¸‚à¸­à¸‡à¸•à¸±à¸§ solver à¹„à¸”à¹‰
+à¸Šà¸±à¸”à¹€à¸ˆà¸™ à¹à¸‚à¸™à¸—à¸µà¹ˆà¸«à¸¢à¸¸à¸”à¸à¹ˆà¸­à¸™ 250 à¸§à¸´à¸™à¸²à¸—à¸µà¹„à¸¡à¹ˆà¸–à¸¹à¸ extrapolate à¹ƒà¸«à¹‰à¸„à¸£à¸š horizon
+
+\begin{table}[H]
+\centering
+\caption{à¸œà¸¥à¸à¸²à¸£à¸£à¸±à¸™à¸«à¸à¹à¸‚à¸™à¸ˆà¸²à¸ snapshot à¹€à¸”à¸µà¸¢à¸§}
+\begin{tabularx}{\textwidth}{@{}l r l r r r X@{}}
+\toprule
+à¹à¸‚à¸™ & horizon (s) & à¸ªà¸–à¸²à¸™à¸° & reclose (s) & GFM à¸ªà¸¹à¸‡à¸ªà¸¸à¸” & samples & à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸ \\
+\midrule
+\ArmAdaptiveLabel & \ArmAdaptiveHorizon & à¸ªà¸³à¹€à¸£à¹‡à¸ˆ & \ArmAdaptiveReclose &
+\ArmAdaptiveGfmMax & \ArmAdaptiveSamples & adaptive policy \\
+\ArmPinnedgfmOneLabel & \ArmPinnedgfmOneHorizon & à¸ªà¸³à¹€à¸£à¹‡à¸ˆ & \ArmPinnedgfmOneReclose &
+\ArmPinnedgfmOneGfmMax & \ArmPinnedgfmOneSamples & pin à¸«à¸™à¸¶à¹ˆà¸‡à¸•à¸±à¸§ \\
+\ArmPinnedgfmTwoLabel & \ArmPinnedgfmTwoHorizon & à¸ªà¸³à¹€à¸£à¹‡à¸ˆ & \ArmPinnedgfmTwoReclose &
+\ArmPinnedgfmTwoGfmMax & \ArmPinnedgfmTwoSamples & pin à¸ªà¸­à¸‡à¸•à¸±à¸§ \\
+\ArmPinnedgfmFourLabel & \ArmPinnedgfmFourHorizon & à¸«à¸¢à¸¸à¸”à¸à¹ˆà¸­à¸™ horizon & -- &
+\ArmPinnedgfmFourGfmMax & \ArmPinnedgfmFourSamples & minimum-step failure \\
+\ArmLockedgflLabel & \ArmLockedgflHorizon & à¸«à¸¢à¸¸à¸”à¹€à¸¡à¸·à¹ˆà¸­ source à¸«à¸²à¸¢ & -- &
+\ArmLockedgflGfmMax & \ArmLockedgflSamples & à¹„à¸¡à¹ˆà¸¡à¸µ voltage-forming source \\
+\ArmNoadaptationLabel & \ArmNoadaptationHorizon & à¸ªà¸³à¹€à¸£à¹‡à¸ˆ & \ArmNoadaptationReclose &
+\ArmNoadaptationGfmMax & \ArmNoadaptationSamples & à¹„à¸¡à¹ˆà¸¡à¸µ adaptive stepper \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Peak à¸à¸±à¸š settled}
+à¸ªà¸³à¸«à¸£à¸±à¸š adaptive arm peak voltage range à¸„à¸·à¸­
+$[\NewRunVMin,\NewRunVMax]\pu$ à¹à¸¥à¸° peak frequency range à¸„à¸·à¸­
+$[\NewRunFMin,\NewRunFMax]\hz$ à¸•à¸¥à¸­à¸” trajectory
+à¸„à¹ˆà¸²à¸›à¸¥à¸²à¸¢à¸—à¸²à¸‡à¸„à¸·à¸­ voltage range
+$[\NewRunTerminalVMin,\NewRunTerminalVMax]\pu$ à¹à¸¥à¸°
+frequency \NewRunTerminalF\hz\ à¸à¸²à¸£à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ªà¸­à¸‡ envelope à¹à¸¢à¸à¸à¸±à¸™à¸›à¹‰à¸­à¸‡à¸à¸±à¸™
+à¸à¸²à¸£à¸•à¸µà¸„à¸§à¸²à¸¡à¸§à¹ˆà¸² transient peak à¹€à¸›à¹‡à¸™ operating point à¸ªà¸¸à¸”à¸—à¹‰à¸²à¸¢
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=6.20in]{figures/final_report_th/fig_policy.png}
+\caption{à¸„à¸§à¸²à¸¡à¸–à¸µà¹ˆ COI à¸‚à¸­à¸‡à¹à¸•à¹ˆà¸¥à¸° policy à¸šà¸™à¸Šà¹ˆà¸§à¸‡à¸—à¸µà¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ˆà¸£à¸´à¸‡; à¸ªà¸µà¹à¸¢à¸ policy à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™}
+\end{figure}
+
+à¸Šà¹ˆà¸§à¸‡ common window à¸„à¸·à¸­ $[0,\CommonWindowSplit)$ à¸§à¸´à¸™à¸²à¸—à¸µ à¹à¸¥à¸°
+\CommonWindowAllBitIdentical\ à¸«à¸¡à¸²à¸¢à¸–à¸¶à¸‡à¸—à¸¸à¸à¹à¸‚à¸™à¸—à¸µà¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹ƒà¸™à¸Šà¹ˆà¸§à¸‡à¸™à¸µà¹‰ bit-identical
+à¸à¸±à¸š reference; pairwise check à¹à¸•à¹ˆà¸¥à¸°à¹à¸‚à¸™à¹ƒà¸Šà¹‰ \CommonWindowPinnedgfmOneSamples\
+à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡ à¹„à¸¡à¹ˆà¸¡à¸µà¸à¸²à¸£à¸¢à¸·à¸”à¸Šà¹ˆà¸§à¸‡à¸‚à¸­à¸‡à¹à¸‚à¸™à¸—à¸µà¹ˆà¸¥à¹‰à¸¡à¹€à¸«à¸¥à¸§
+
+\par\vspace{5pt}
+% ============================================================================
+% 19. Limitations, conclusion and references
+\reportsection{à¸‚à¹‰à¸­à¸ˆà¸³à¸à¸±à¸” à¸„à¸§à¸²à¸¡à¸žà¸£à¹‰à¸­à¸¡ à¸‚à¹‰à¸­à¸ªà¸£à¸¸à¸› à¹à¸¥à¸°à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡}
+\paragraph{à¸‚à¹‰à¸­à¸ˆà¸³à¸à¸±à¸”à¸‚à¸­à¸‡à¸‚à¹‰à¸­à¸­à¹‰à¸²à¸‡}
+à¸œà¸¥à¸™à¸µà¹‰à¹€à¸›à¹‡à¸™ numerical evidence à¸‚à¸­à¸‡ PF--SSSA--TS à¹à¸¥à¸°à¸à¸²à¸£à¸ªà¸¥à¸±à¸š mode à¹ƒà¸™ balanced
+RMS model à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸à¸²à¸£à¸£à¸±à¸šà¸£à¸­à¸‡ EMT, unbalanced protection, hardware controller,
+grid-code compliance à¸«à¸£à¸·à¸­à¸à¸²à¸£à¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¸ à¸²à¸„à¸ªà¸™à¸²à¸¡ à¸„à¹ˆà¸²à¸„à¸§à¸²à¸¡à¸•à¹ˆà¸²à¸‡à¸à¸±à¸š Padiyar à¸ªà¸¹à¸‡à¸ªà¸¸à¸”à¸£à¸²à¸§
+$\sci{4.3}{-2}$ à¹€à¸›à¹‡à¸™ diagnostic à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸—à¸£à¸²à¸šà¸ªà¸²à¹€à¸«à¸•à¸¸à¹à¸¥à¸°à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆ gate à¸ªà¹ˆà¸§à¸™ PGAz
+à¸¡à¸µ execution artifact à¹à¸•à¹ˆ comparison gate à¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸–à¸¹à¸à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™à¸«à¸¥à¸±à¸à¸à¸²à¸™
+primary
+
+\paragraph{à¸„à¸§à¸²à¸¡à¸žà¸£à¹‰à¸­à¸¡à¸‚à¸­à¸‡ implementation}
+production à¹ƒà¸Šà¹‰à¸ªà¸¡à¸à¸²à¸£à¹à¸¥à¸° state order à¸ à¸²à¸¢à¹ƒà¸™à¹‚à¸„à¸£à¸‡à¸à¸²à¸£ à¸£à¸§à¸¡à¸–à¸¶à¸‡ implicit trapezoidal
+TS à¹à¸¥à¸° Schur solve à¸”à¹‰à¸§à¸¢ backslash; external programs à¹€à¸›à¹‡à¸™ oracle à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+à¸à¸²à¸£à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ mode à¸•à¹‰à¸­à¸‡à¸œà¹ˆà¸²à¸™ finite-state, KCL, conditioning, continuity à¹à¸¥à¸°
+authenticated provenance gate à¸à¸²à¸£à¹„à¸¡à¹ˆà¸¡à¸µ voltage-forming source à¸«à¸£à¸·à¸­ Newton
+right-limit à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸œà¹ˆà¸²à¸™à¸ˆà¸°à¸«à¸¢à¸¸à¸”à¹à¸šà¸š fail-closed
+
+\paragraph{à¸ªà¸´à¹ˆà¸‡à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸­à¹‰à¸²à¸‡}
+à¸•à¸±à¸§à¸™à¸±à¸š rejected trial à¹ƒà¸™ search path à¸–à¸¹à¸à¸•à¸±à¸”à¸­à¸­à¸à¸ˆà¸²à¸à¸£à¸²à¸¢à¸‡à¸²à¸™à¹€à¸žà¸£à¸²à¸° defect record
+à¸¢à¸±à¸‡à¹€à¸›à¸´à¸”à¸­à¸¢à¸¹à¹ˆ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¹ƒà¸Šà¹‰à¸•à¸±à¸§à¹€à¸¥à¸‚à¸™à¸±à¹‰à¸™à¸ªà¸™à¸±à¸šà¸ªà¸™à¸¸à¸™ readiness à¸«à¸£à¸·à¸­ performance à¹ƒà¸” à¹†
+à¸™à¸­à¸à¸ˆà¸²à¸à¸™à¸µà¹‰à¸œà¸¥ six-arm à¹€à¸›à¹‡à¸™ snapshot à¸—à¸µà¹ˆ commit \texttt{c56ff9f} à¹à¸¥à¸°à¸£à¸¹à¸›/à¸•à¸²à¸£à¸²à¸‡
+à¸ªà¸£à¹‰à¸²à¸‡à¸”à¹‰à¸§à¸¢ generator à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆ hash; à¸«à¸²à¸ cache à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸•à¹‰à¸­à¸‡à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¹ƒà¸«à¸¡à¹ˆà¸—à¸±à¹‰à¸‡à¸Šà¸¸à¸”
+
+\paragraph{à¸‚à¹‰à¸­à¸ªà¸£à¸¸à¸›}
+à¸ªà¸²à¸¢à¸‡à¸²à¸™à¸—à¸µà¹ˆà¹€à¸Šà¸·à¹ˆà¸­à¸¡ PF, equilibrium, SSSA, TS à¹à¸¥à¸° supervisor à¸”à¹‰à¸§à¸¢ residual à¸à¸±à¸š
+state mapping à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™à¸ªà¸²à¸¡à¸²à¸£à¸–à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸”à¹‰ à¸œà¸¥ IEEE-14 à¹à¸ªà¸”à¸‡à¸§à¹ˆà¸² adaptive
+arm à¹€à¸”à¸´à¸™à¸„à¸£à¸š \NewRunEnd\ à¸§à¸´à¸™à¸²à¸—à¸µ, reclose à¸ªà¸³à¹€à¸£à¹‡à¸ˆà¸—à¸µà¹ˆ \NewRunReclose\ à¸§à¸´à¸™à¸²à¸—à¸µ à¹à¸¥à¸°
+à¸à¸¥à¸±à¸š mode à¸—à¸µà¹ˆ \NewRunModeReselectionTime\ à¸§à¸´à¸™à¸²à¸—à¸µ à¸‚à¸“à¸°à¸—à¸µà¹ˆ pinned à¹à¸¥à¸° locked
+arms à¹à¸ªà¸”à¸‡à¸‚à¸­à¸šà¹€à¸‚à¸• failure à¸­à¸¢à¹ˆà¸²à¸‡à¸‹à¸·à¹ˆà¸­à¸ªà¸±à¸•à¸¢à¹Œ à¸•à¸²à¸£à¸²à¸‡ six-arm à¸ˆà¸¶à¸‡à¹ƒà¸Šà¹‰à¸šà¸­à¸ trade-off
+à¸‚à¸­à¸‡ policy à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹ƒà¸Šà¹‰à¹€à¸›à¹‡à¸™à¸„à¸³à¸£à¸±à¸šà¸£à¸­à¸‡à¸„à¸§à¸²à¸¡à¸¡à¸±à¹ˆà¸™à¸„à¸‡à¹€à¸Šà¸´à¸‡à¸›à¸à¸´à¸šà¸±à¸•à¸´à¸à¸²à¸£
+
+\paragraph{à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡à¹ƒà¸™ repository}
+\begin{enumerate}
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{Project contracts and numerical integrity},
+      \texttt{AGENTS.md}, revision à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸à¸±à¸šà¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{IBR reduced-6 EECON49 manifest},
+      \texttt{docs/project/IBR\_REDUCED6\_EECON49\_MANIFEST.md}
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{SSSA validation artifact},
+      \texttt{output/validation/artifacts/sssa\_validation.md}
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{IEEE-14 three-way TS comparison},
+      \path{docs/source/figures/case14_ts/case14_ts_compare_three_way.md}
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{SMIB GFL-RMS10 and GFM-no-PLL diagnostics},
+      \texttt{output/diagnostics/smib/}
+\item à¹‚à¸„à¸£à¸‡à¸à¸²à¸£, \textit{PF, SSSA, TS and IBR source implementations},
+      \texttt{+pfsolver/}, \texttt{+stability/}, \texttt{+ibr/}
+\end{enumerate}
+
+\begin{center}
+\fcolorbox{navy}{lightblue}{\begin{minipage}{0.91\textwidth}
+à¸£à¸²à¸¢à¸‡à¸²à¸™à¸‰à¸šà¸±à¸šà¸™à¸µà¹‰à¹à¸ªà¸”à¸‡à¸•à¸±à¸§à¹€à¸¥à¸‚à¸ˆà¸²à¸ artifact à¸—à¸µà¹ˆà¸•à¸£à¸§à¸ˆ provenance à¹„à¸”à¹‰ à¹à¸¢à¸
+CASE\_DEFINED, PROJECT\_RESULT à¹à¸¥à¸° ASSUMED\_DIAGNOSTIC à¹à¸¥à¸°à¹„à¸¡à¹ˆà¸­à¹‰à¸²à¸‡à¸„à¹ˆà¸²à¸—à¸µà¹ˆ
+à¸¢à¸±à¸‡à¸­à¸¢à¸¹à¹ˆà¹ƒà¸™ defect state à¹€à¸›à¸´à¸”
+\end{minipage}}
+\end{center}
+
+\end{document}
+

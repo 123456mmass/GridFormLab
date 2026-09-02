@@ -465,6 +465,7 @@ if reuse_completed && isfile(cache)
         if isfield(S,'elapsed'), elapsed = S.elapsed; end
         reused = true;
         fprintf('[%s] reusing %s\n',a.id,cache);
+        refresh_cached_arm(cache,a,S,a.id);
         return;
     end
     if isfield(S,'opt_signature')
@@ -479,11 +480,56 @@ fprintf('[%s] running %s ...\n',a.id,a.label);
 t0 = tic;
 r = stability.run_hybrid_case(scenario,op);
 elapsed = toc(t0);
-row = a;
-row.scenario_fn = func2str(a.scenario_fn);
-S = struct('result',r,'elapsed',elapsed,'arm',row,'opt_signature',sig);
+S = struct('result',r,'elapsed',elapsed,'arm',stored_arm(a),'opt_signature',sig);
 save(cache,'-struct','S','-v7.3');
 fprintf('[%s] wrote %s (%.1f s)\n',a.id,cache,elapsed);
+end
+
+% ==========================================================================
+function row = stored_arm(a)
+%STORED_ARM  The scenario declaration as it goes into the cache.
+%   The function handle is flattened because a handle saved in a .mat reloads
+%   bound to whatever that name means later, which is a silent provenance lie.
+row = a;
+row.scenario_fn = func2str(a.scenario_fn);
+end
+
+% ==========================================================================
+function refresh_cached_arm(cache,a,S,id)
+%REFRESH_CACHED_ARM  Keep a reused cache's DECLARATION current, not its result.
+%   generate_ieee14_scenario_suite_figures reads its page metadata from the arm
+%   stored in the cache, so a declaration that gained a field after the run was
+%   made leaves the figure manifest reporting less than the runner does -- and
+%   silently, because an absent field and an empty one look the same downstream.
+%
+%   Only the arm variable is rewritten, with -append: the trajectory, the timing
+%   and the option signature are untouched, so this cannot turn a stale RESULT
+%   into a fresh-looking one. That is the whole point of the split -- the option
+%   signature above still governs whether the result may be reused at all, and a
+%   declaration change that alters the RUN changes the signature and lands in the
+%   rejection path instead of here.
+want = stored_arm(a);
+if isfield(S,'arm') && isequaln(S.arm,want), return; end
+added = {};
+if isfield(S,'arm')
+    added = setdiff(fieldnames(want),fieldnames(S.arm));
+end
+arm = want; %#ok<NASGU> saved by name below
+try
+    save(cache,'arm','-append');
+catch me
+    warning('run_ieee14_scenario_suite:armRefreshFailed', ...
+        ['Could not refresh the stored declaration in %s (%s). The result is ' ...
+         'still valid; figure pages may report an older declaration.'], ...
+        cache,me.identifier);
+    return;
+end
+if isempty(added)
+    fprintf('[%s] refreshed the stored scenario declaration\n',id);
+else
+    fprintf('[%s] refreshed the stored scenario declaration (added %s)\n', ...
+        id,strjoin(added,', '));
+end
 end
 
 % ==========================================================================

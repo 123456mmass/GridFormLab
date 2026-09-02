@@ -93,6 +93,16 @@ for k = 1:numel(opts.scenarios)
     fprintf(['[%s] horizon %.6f of %.6f s | %d samples | %d severity ' ...
              'sample(s) masked offline\n'],id,page.t_last,page.t_end_requested, ...
         page.n_samples,page.n_severity_masked);
+    if ~isempty(page.defining_event) && ~page.defining_event_executed
+        fprintf(['[%s]   NOTE: %s never executed -- this page does NOT show ' ...
+            'the disturbance the scenario exists to exercise\n'],id, ...
+            page.defining_event);
+    end
+    if ~isempty(page.stale_arm_fields)
+        fprintf(['[%s]   NOTE: this cache predates the %s declaration, so the ' ...
+            'page cannot report it; re-run run_ieee14_scenario_suite to ' ...
+            'refresh\n'],id,strjoin(page.stale_arm_fields,', '));
+    end
 end
 
 write_provenance(odir,out);
@@ -124,6 +134,18 @@ C.file = f;
 C.r = S.result;
 C.arm = S.arm;
 C.sig = S.opt_signature;
+% A cache carries the scenario declaration AS IT WAS when the run was made, which
+% is the provenance this generator wants -- the page describes the run that
+% happened. The hazard is a declaration that has since GAINED a field: the page
+% then reports less than the current runner does, and silently, because a missing
+% field and a field deliberately left empty both read as "nothing to say". They
+% are distinguished here so the second stays quiet and the first is named.
+C.stale_arm_fields = {};
+for fld = {'defining_event'}
+    if ~isfield(C.arm,fld{1})
+        C.stale_arm_fields{end+1} = fld{1};
+    end
+end
 C.gamma_on = sig_num(C.sig,'severity_gamma_on');
 C.gamma_off = sig_num(C.sig,'severity_gamma_off');
 C.t_end_requested = sig_num(C.sig,'t_end');
@@ -360,6 +382,14 @@ page.owner_codes_seen = unique(code(:)).';
 page.failure_id = char_field(r,'failure_id');
 page.n_marks = numel(M.marks);
 page.marks = mark_table(M,MARK_FAMILIES);
+% Which SCHEDULED events the run carried out, from the same helper the runner
+% uses. A page can show a full-width axis and a red validity rule and still not
+% tell the reader that the disturbance the scenario exists to exercise never
+% happened -- "stopped at 50.08 s" and "the clearing at 50.15 s never occurred"
+% are different facts, and only the second one answers what the page is for.
+[page.events_executed,page.events_not_executed,page.defining_event, ...
+    page.defining_event_executed] = ieee14_event_execution(r,C.arm);
+page.stale_arm_fields = C.stale_arm_fields;
 end
 
 % ==========================================================================
@@ -462,6 +492,10 @@ s = '';
 if isfield(r,name) && ~isempty(r.(name)), s = char(string(r.(name))); end
 end
 
+function s = iif(c,a,b)
+if c, s = a; else, s = b; end
+end
+
 % ==========================================================================
 function write_provenance(odir,out)
 %WRITE_PROVENANCE  Plain-text manifest beside the pages.
@@ -529,6 +563,18 @@ for k = 1:numel(out.pages)
         g.t_last,g.t_end_requested,g.reached_horizon);
     if ~isempty(g.failure_id)
         fprintf(fid,'  failure    %s\n',g.failure_id);
+    end
+    if ~isempty(g.defining_event)
+        fprintf(fid,'  defining   %s -> %s\n',g.defining_event, ...
+            iif(g.defining_event_executed,'EXECUTED', ...
+                'NOT EXECUTED, the run stopped first'));
+    end
+    if ~isempty(g.events_not_executed)
+        fprintf(fid,'  unreached  %s\n',strjoin(g.events_not_executed,', '));
+    end
+    if ~isempty(g.stale_arm_fields)
+        fprintf(fid,['  stale      this cache predates the %s declaration; ' ...
+            're-run the suite to refresh\n'],strjoin(g.stale_arm_fields,', '));
     end
     fprintf(fid,'  thresholds Gamma_on=%.4f Gamma_off=%.4f\n',g.gamma_on,g.gamma_off);
     fprintf(fid,'  samples    %d over %d converter(s)\n',g.n_samples,g.n_devices);

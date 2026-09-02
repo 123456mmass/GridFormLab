@@ -245,3 +245,154 @@ reach their events.
 - `2026-08-13-dv20-post-line-nonsmooth-newton-wall.md`
 - `2026-08-14-all4-gfm-commit-outside-basin.md`
 - `output/diagnostics/ieee14_scenario_suite/provenance.txt`
+## Continuation - 2026-09-03 (one-former island vs the same fault with four formers)
+
+The previous section stops short of answering what the framework actually does
+in the faulted window. The question is whether the solver wall is the whole
+story or whether a different configuration would have carried `sg_fault_bus9`
+through the clearing. Five probes (`tmp/mt/probe_dt.m`, `probe_formers.m`,
+`probe_imax2.m`, `probe_dwell.m`, `probe_spacing.m`, and `probe_floor.m`) and a
+positive-control replay address it.
+
+### 7. Positive control: the framework RIDES the same fault on the same bus with the same Zf
+
+`output/diagnostics/ieee14_gfm_lock_compare_zeta/adaptive_250s.mat` (`zeta`
+comparison deliverable, committed earlier) contains the chronology. It
+faults **the same bus 9** with **the same Zf = 0.01+0.01i** at **t = 85 s**
+(originally the `combined` event profile: `sg_trip 20 -> load +20% 50 -> fault
+bus 9 85 -> line 6-13 trip 110 -> restore/reclose 145 -> 250 s`). That run
+CROSSES, produces 3679 samples through 250 s, and ends with `converged=1`,
+`reclose_status=SUCCESS`, `f_COI` settled at 60.000001 Hz. The topology
+labels visited across the fault window are identical
+(`pre -> fault -> fault_cleared -> post_fault -> line_open -> line_restored`).
+The solver configuration (`dt=0.05`, `stepper='adaptive'`, `reject_limit=20`,
+`max_step_subdivisions=12`, `selector_table=selector_table`) is the same.
+
+The only traced structural difference is the number of grid-forming
+converters AT the fault instant:
+
+```text
+chronology (4 formers at 85 s):
+  load_step at 50 s augments support twice -- 2 formers by 51.34 s,
+  4 formers by 53.38 s, held through the fault
+sg_fault_bus9 (1 former at 50 s):
+  no augmentation between sg_trip at 20 s and fault_on at 50 s
+```
+
+**Read** (`probe_formers.m`, case-insensitive compare on `device_modes`):
+the chronology carries 4 GFM across the entire pre-fault window;
+`sg_fault_bus9` carries 1. Same fault, same bus, same Zf, same solver, same
+case profile (`eecon49_figure4`), same selector fingerprint -- different
+island thickness, opposite outcome.
+
+### 8. The current-limiter surface is NOT the discriminator
+
+`TS-2026-09-03-01` finding 5 noted that the converters at the wall are ON the
+`current-reference` limiter surface. The chronology positive control shows
+that being ON the surface is not the obstruction: the chronology puts **4 of
+4 converters** ON the surface through the same fault and still crosses.
+
+```text
+| max |I|/Imax in the fault window (Zf=0.01+0.01i, same bus 9)
+device   chronology (4f, @85 s)   sg_fault_bus9 (1f, @50 s)
+IBR2     1.0068  (ON surface)     1.0045  (ON surface)
+IBR3     1.0059  (ON surface)     0.9216  (below)
+IBR6     1.0060  (ON surface)     1.0018  (ON surface)
+IBR8     1.0067  (ON surface)     1.0029  (ON surface)
+```
+
+(`probe_imax2.m`, corrected version: `device_current_limit_sys` is per-sample
+5 x nsamples, SG row excluded, otherwise identical; the previous version of
+this probe flattened the limit matrix and printed nonsense.)
+The chronology succeeds with every converter saturated; `sg_fault_bus9`
+stops with three of four saturated and one below. The surface is a regime
+both runs enter; it is not what separates crossing from stopping.
+
+### 9. The supervisor cannot act during the fault regardless
+
+Even setting the thick-island question aside, the framework is structurally
+unable to add a former during the bolted short. Three independent checks:
+
+- **`ts_simulate_ibr_hybrid:3262`** refuses a support-augmentation commit
+  while `topology == 'fault'`, with the explicit reason "no destination
+  equilibrium exists while the bolted fault is committed". This is a
+  permanent guard, not a transient one; the topology label at the wall is
+  still `'fault'`.
+- **`:2356`** refuses reference-recovery transitions during the fault for
+  the same reason.
+- **The severity up-dwell (`T_d_on = 0.10 s`)** requires severity to stay
+  above `gamma_on = 0.65` for 100 ms before an augmentation is commanded.
+  The wall lands 83.34 ms after the fault. Even with NO guard and a clear
+  severity signal, the controller is 17 ms short of its own decision
+  window. The dwell timer is therefore moot for the failing arm.
+
+`probe_dwell.m` confirms all three: in the window `50.000 .. 50.0833` (a)
+`dwell_timers` is empty at every checked sample, (b) `topology` is `'fault'`
+throughout, (c) `selector_log` carries zero entries in the window 49.9 .. end,
+i.e. the supervisor was never asked to make a decision. The wall is not
+"the supervisor tried to act and was blocked"; it is "the supervisor never
+got to the point of asking, and the guards would have refused anyway".
+
+### 10. Both runs hit the `dt_min` floor inside the fault window
+
+```text
+dt_min = 0.05 / 2^13 = 6.104e-6   (production floor, both runs)
+sample spacing INSIDE the fault window
+  chronology    min = 3.003e-3 s   median = 5.006e-3 s   n = 55
+                (closest the chronology got to the floor: 492x)
+  sg_fault_bus9 min = 5.005e-6 s   median = 5.027e-3 s   n = 26
+                (hit the floor at 2 of 784 accepted samples;
+                 both wall samples were at the floor)
+```
+
+(`probe_dt.m`, window `[fault_on, fault_clear]`, sample spacing just
+`diff(t)`.) Both runs reach `dt_min` in the fault window; the chronology
+recovers and `sg_fault_bus9` does not. **The wall is not a wall the
+chronology avoided** -- it is a wall the chronology hit and stepped out of
+on the same step size the thin island cannot. The controller's marginal
+step-size budget in the fault window is what separates the two runs.
+
+### 11. `dt_min = 1e-6` does not carry `sg_fault_bus9` through (non-monotonicity)
+
+The obvious remediation would be to lower `dt_min` by 6.25x to `1e-6`. It
+was tried (`probe_floor.m`, wall time 109 s, `adaptiveDtMin` still emitted):
+
+```text
+dt_min=1e-6    conv=0   t_end=50.083337 s   CROSSED=0
+               samples=791   rejected=89   floor_acc=0
+               max accepted KCL residual = 4.179e-8  (kcl_tol = 1e-6)
+               failure: ts_simulate_ibr_hybrid:adaptiveDtMin
+               applied: sg_trip@20.00 gfm_support_augment@22.09
+                        gfm_support_release@25.33 fault_on@50.00
+```
+
+The stop is at `t_end = 50.083337` -- within one sample-spacing of the
+default-floor stop (50.083340 s). Rejections go 83 -> 89. Samples go 789 ->
+791. The wall moved 3 ms EARLIER with a smaller floor, in the wrong
+direction. **Lowering `dt_min` does not help and the trajectory into the
+wall is not monotone in `dt_min`.** This is consistent with
+`TS-2026-08-13-03` finding 5 ("step size is not monotone for this wall
+class") and is the reason the wall cannot be removed by tightening floor
+alone.
+
+### Updated root-cause reading
+
+The `sg_fault_bus9` stop belongs to the regime of *one grid-forming
+converter attempting to ride a bolted fault on a network whose solver is
+already at its nonsmooth wall*. The same regime with 4 formers rides out
+(the chronology positive control), so the reading is "thin-island wall at
+a nonsmooth corner", not "the framework cannot ride this fault". Lowering
+the floor does not carry the thin island through; the relevant correction
+class is `TS-2026-08-13-03` (controller / anti-windup), none of whose
+findings is approved.
+
+## Updated delivery consequence
+
+The `defining_event_executed = false` report for `sg_fault_bus9` and
+`line_fault_9_14` still stands and is now reinforced: the thin-island wall
+has been shown to be independent of floor, of current-limiter surface,
+and of supervisor availability. The two scenarios remain honest negatives
+with respect to `line_fault_clear` and `fault_clear` execution.
+`sg_load_step30` reaches 120 s. `former_outage` commits the outage at 60 s
+and reports the ownership handoff (IBR2 -> IBR3) before stopping 0.7 s
+later in the same wall class.

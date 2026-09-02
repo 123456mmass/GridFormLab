@@ -1,0 +1,137 @@
+generator: scripts/reporting/generate_ieee14_scenario_suite_figures.m
+schema:    ieee14_scenario_suite_figures/1.0
+generated: 2026-09-02T17:58:37Z
+caches:    output\diagnostics\ieee14_scenario_suite
+style:     4.65 in x 2.95 in, Helvetica 10 pt, tex interpreter, dashed major and minor grid, box off, ticks out
+
+Pure cache reader. Nothing is simulated, re-solved, smoothed, filtered, decimated,
+  clipped, offset, interpolated or padded: every plotted sample is a raw accepted
+  value from the stored trajectory.
+
+Severity is MASKED to NaN wherever a converter is out of service. The engine forms
+  S = min(1,max(0,0.5*J_V+0.5*J_f)) and the overlay publishes J_V = J_f = NaN for an
+  offline device; because max(0,NaN) is 0 in MATLAB, an unmasked panel would draw a
+  tripped converter as the calmest device in the island. P and Q are NOT masked: a
+  converter out of service injects no current, so its zero is measured.
+
+The x axis spans the REQUESTED horizon on every page. A run that stopped early is
+  marked with a red validity rule at its last accepted sample instead of having the
+  axis cropped to its data.
+
+Gamma_on / Gamma_off are read per page from the option signature stored in the cache,
+  not defaulted in the generator: they are top-level run options and are not
+  republished inside the result.
+
+Vertical rules are unlabelled ON the page -- four tiles about 2.2 in wide leave no
+  room for event names without overprinting -- and are distinguished by line style:
+  dotted = scheduled disturbance, dash-dot = supervisor commitment (dotted grey when
+  refused), solid red = validity exit. Every rule is listed under its page below, with its
+  time, its name and the result field it was read from.
+
+sg_load_step30   SG trip, +30 % load step on the island, then SG reclose
+  question   Can the island absorb a load step half again larger than the chronology's, and can the machine be resynchronised under it?
+  cache      output\diagnostics\ieee14_scenario_suite\sg_load_step30.mat
+  cache_sha  0157c69cf90b2870310ffcecf53a4d995bc0df2a344a200aa43c5c89b42ae672
+  file       docs\source\figures\ieee14_scenario_suite\sg_load_step30.png
+    sha256   48244b037bc318a8a19c7544dab52c98c2300dca49f5eea67d08473f0148e45f
+    mtime    2026-09-03 00:58:50
+    bytes    148723
+  file       docs\source\figures\ieee14_scenario_suite\sg_load_step30.fig
+    sha256   618b3a90416492007c3215ddeb58302783060cfa0bed7a4720b72161706414a7
+    mtime    2026-09-03 00:58:51
+    bytes    383283
+  horizon    120.000000 s of 120.000000 s requested (reached=1)
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    2216 over 4 converter(s)
+  masked     0 severity sample(s) (device offline)
+  owner      codes seen [0 1] (0 = SG), 0 sample(s) with no owner
+  marks      9 (this table IS the legend for the page's vertical rules)
+       20.0000 s  disturbance SG trip                        r.sched.sg_trip
+       22.0887 s  supervisor  GFM+                           r.event_log(2).gfm_support_augment
+       25.3026 s  supervisor  GFM-                           r.event_log(3).gfm_support_release
+       50.0000 s  disturbance load +30%                      r.sched.load_step
+       51.3185 s  supervisor  GFM+ refused                   r.event_log(5).gfm_support_augment
+       53.3185 s  supervisor  GFM+                           r.event_log(6).gfm_support_augment
+       55.3185 s  supervisor  GFM+                           r.event_log(7).gfm_support_augment
+       80.0000 s  disturbance SG offer                       r.sched.sg_on
+       81.5000 s  disturbance SG close                       r.actual_reclose_time
+
+sg_fault_bus9    SG trip, bolted fault at bus 9 ridden through on the island, then SG reclose
+  question   Does the island ride a bolted fault through and still pass every synchronism gate afterwards?
+  cache      output\diagnostics\ieee14_scenario_suite\sg_fault_bus9.mat
+  cache_sha  b25937eba18809ca5d52f3d6ed1555092f84fcf178a3af70f2242f558fb7a53d
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_bus9.png
+    sha256   94d8a5f2606805b9975ab09da6406be0aa2b2aac8074255bdb5833bca702a2b1
+    mtime    2026-09-03 00:58:57
+    bytes    126608
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_bus9.fig
+    sha256   22ca5b27a4ec90893c385613757197e7db1c0c8622af4a003981403869884e6f
+    mtime    2026-09-03 00:58:58
+    bytes    167205
+  horizon    50.083340 s of 120.000000 s requested (reached=0)
+  failure    ts_simulate_ibr_hybrid:adaptiveDtMin
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    789 over 4 converter(s)
+  masked     0 severity sample(s) (device offline)
+  owner      codes seen [0 1] (0 = SG), 0 sample(s) with no owner
+  marks      7 (this table IS the legend for the page's vertical rules)
+       20.0000 s  disturbance SG trip                        r.sched.sg_trip
+       22.0887 s  supervisor  GFM+                           r.event_log(2).gfm_support_augment
+       25.3026 s  supervisor  GFM-                           r.event_log(3).gfm_support_release
+       50.0000 s  disturbance fault                          r.sched.fault_on
+       50.0833 s  validity    refused (adaptiveDtMin)        r.t(end)
+       50.1500 s  disturbance clear                          r.sched.fault_clear
+       80.0000 s  disturbance SG offer                       r.sched.sg_on
+
+line_fault_9_14  SG trip, fault on line 9-14 cleared by opening that line permanently, then SG reclose
+  question   With the faulted line gone for good, does the island adapt, and do the promoted converters still hand back after the machine returns?
+  cache      output\diagnostics\ieee14_scenario_suite\line_fault_9_14.mat
+  cache_sha  7d4ca3a6e2d7d931122cf6105fdf1fe23e5adaa77f9d2bfd976615a5f9fc35ca
+  file       docs\source\figures\ieee14_scenario_suite\line_fault_9_14.png
+    sha256   16607615e7e5b8ade39fbc48fe2291fa48cc5702d3903b32a66df855db595be4
+    mtime    2026-09-03 00:59:03
+    bytes    126451
+  file       docs\source\figures\ieee14_scenario_suite\line_fault_9_14.fig
+    sha256   f05bebf9f6f31d3c8e15ff0b056174109ba725b49066858735d211849a632f27
+    mtime    2026-09-03 00:59:04
+    bytes    167209
+  horizon    50.083340 s of 120.000000 s requested (reached=0)
+  failure    ts_simulate_ibr_hybrid:adaptiveDtMin
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    789 over 4 converter(s)
+  masked     0 severity sample(s) (device offline)
+  owner      codes seen [0 1] (0 = SG), 0 sample(s) with no owner
+  marks      7 (this table IS the legend for the page's vertical rules)
+       20.0000 s  disturbance SG trip                        r.sched.sg_trip
+       22.0887 s  supervisor  GFM+                           r.event_log(2).gfm_support_augment
+       25.3026 s  supervisor  GFM-                           r.event_log(3).gfm_support_release
+       50.0000 s  disturbance fault                          r.sched.fault_on
+       50.0833 s  validity    refused (adaptiveDtMin)        r.t(end)
+       50.1500 s  disturbance line 9-14 out (fault cleared)  r.sched.line_fault_clear
+       90.0000 s  disturbance SG offer                       r.sched.sg_on
+
+former_outage    SG trip, then outage of the converter that owns the island angle reference
+  question   When the converter holding the angle reference is lost, does the framework promote a survivor, or refuse fail-closed because no authenticated configuration survives?
+  cache      output\diagnostics\ieee14_scenario_suite\former_outage.mat
+  cache_sha  25081b614d2b243301fd444f22a034f78ee96d5a3f60fd76892e124227738621
+  file       docs\source\figures\ieee14_scenario_suite\former_outage.png
+    sha256   24d4b6f2d73c50bb4ab702597d684d23a57b20ab2ddc05e25cf184c7e9cd40c6
+    mtime    2026-09-03 00:59:09
+    bytes    115489
+  file       docs\source\figures\ieee14_scenario_suite\former_outage.fig
+    sha256   f05f99a4c2c9e27268a8c3af06a0f1c47971c1fad908b2da0a19c8feec2903ad
+    mtime    2026-09-03 00:59:10
+    bytes    191970
+  horizon    60.706647 s of 120.000000 s requested (reached=0)
+  failure    ts_simulate_ibr_hybrid:adaptiveDtMin
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    989 over 4 converter(s)
+  masked     56 severity sample(s) (device offline)
+  owner      codes seen [0 1 2] (0 = SG), 0 sample(s) with no owner
+  marks      5 (this table IS the legend for the page's vertical rules)
+       20.0000 s  disturbance SG trip                        r.sched.sg_trip
+       22.0889 s  supervisor  GFM+                           r.event_log(2).gfm_support_augment
+       25.3028 s  supervisor  GFM-                           r.event_log(3).gfm_support_release
+       60.0000 s  disturbance reference IBR outage           r.sched.ibr_trip
+       60.7066 s  validity    refused (adaptiveDtMin)        r.t(end)
+

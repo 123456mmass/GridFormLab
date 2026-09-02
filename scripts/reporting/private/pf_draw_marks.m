@@ -4,6 +4,7 @@ function pf_draw_marks(ax,M,opts)
 %   pf_draw_marks(ax, M)
 %   pf_draw_marks(ax, M, labels=true, families=["disturbance","supervisor"])
 %   pf_draw_marks(ax, M, labels=true, label_band=[0.62 0.98])
+%   pf_draw_marks(ax, M, labels=true, font_name="Helvetica")
 %
 % M is the struct returned by ieee14_switch_event_marks. Every panel of every
 % figure is given the SAME M, so marker identity across panels is structural.
@@ -33,9 +34,14 @@ arguments
     opts.line_width (1,1) double = 0.8
     opts.window (1,2) double = [-Inf Inf]
     opts.label_band (1,2) double = [NaN NaN]
+    % Marker-label typeface. Defaults to the report body font, so every page
+    % already delivered letters exactly as before. A page set in another
+    % typeface passes its own name: a marker label in a second font is a
+    % typographic defect on a figure whose axes are lettered in the first.
+    opts.font_name (1,1) string = "Times New Roman"
 end
 
-FN = 'Times New Roman';
+FN = char(opts.font_name);
 yl = ylim(ax);
 was_held = ishold(ax);
 hold(ax,'on');

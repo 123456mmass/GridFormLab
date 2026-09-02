@@ -16,7 +16,12 @@ function M = ieee14_switch_event_marks(r,opts)
 %                r.sched rather than r.event_log on purpose: r.sched holds the
 %                COMMANDED times and stays fully populated even on an arm that
 %                failed closed at the first event, so every arm of a comparison
-%                gets the same markers.
+%                gets the same markers. The set covered is every event any
+%                profile can arm -- sg_trip, load_step, fault_on, fault_clear,
+%                line_trip, line_fault_clear, ibr_trip, restore_time, sg_on --
+%                so a scenario built on a profile other than 'chronology' is
+%                marked from the same authority, and an event added to the
+%                schedule without a mark here shows up as an unexplained step.
 %   supervisor   The instants the severity supervisor actually committed or was
 %                refused a mode change: gfm_support_augment, gfm_support_release
 %                and sg_reselection entries in r.event_log. These are NOT the
@@ -72,8 +77,27 @@ marks = add(marks,num_or(sched,'fault_clear',NaN),'clear', ...
     'disturbance',':',COL_DIST,'r.sched.fault_clear');
 marks = add(marks,num_or(sched,'line_trip',NaN),line_label(sched), ...
     'disturbance',':',COL_DIST,'r.sched.line_trip');
+% line_fault_clear is ONE event: the breakers at both ends of the faulted line
+% open, so the line and the fault leave the network together. It therefore needs
+% its own mark -- the profile that arms it publishes no fault_clear at all, so
+% without this the instant the fault actually goes away would be unmarked.
+marks = add(marks,num_or(sched,'line_fault_clear',NaN),line_fault_label(sched), ...
+    'disturbance',':',COL_DIST,'r.sched.line_fault_clear');
+% ibr_trip: the outage of a converter. On the scenario built around it this is
+% the ONLY exogenous event after the machine trip, so a page without this mark
+% would show a step with nothing to attribute it to.
+marks = add(marks,num_or(sched,'ibr_trip',NaN),ibr_trip_label(sched), ...
+    'disturbance',':',COL_DIST,'r.sched.ibr_trip');
 marks = add(marks,num_or(sched,'restore_time',NaN),'restore', ...
     'disturbance',':',COL_DIST,'r.sched.restore_time');
+% sg_on is the instant the machine is OFFERED back; the reclose itself happens
+% later, after the synchronism dwell, and is marked separately below. It is
+% suppressed when a disturbance mark already sits on that exact instant, which
+% is the case on the delivered chronology (restore_time == sg_on == 145 s):
+% two rules at one instant is visual noise, and the count of delivered marks
+% must not move. Every profile that recloses WITHOUT a restore gets the mark.
+marks = add_unless_occupied(marks,num_or(sched,'sg_on',NaN),'SG offer', ...
+    'disturbance',':',COL_DIST,'r.sched.sg_on');
 marks = add(marks,num_or(r,'actual_reclose_time',NaN),'SG close', ...
     'disturbance',':',COL_DIST,'r.actual_reclose_time');
 
@@ -179,9 +203,16 @@ function R = fault_region(sched)
 R = empty_regions();
 a = num_or(sched,'fault_on',NaN);
 b = num_or(sched,'fault_clear',NaN);
+src = 'r.sched.fault_on..fault_clear';
+if ~isfinite(b)
+    % A relay-cleared line fault has no fault_clear: the fault is removed by the
+    % same event that opens the line. The shaded window must still close, or the
+    % page would show a fault starting and never ending.
+    b = num_or(sched,'line_fault_clear',NaN);
+    src = 'r.sched.fault_on..line_fault_clear';
+end
 if isfinite(a) && isfinite(b) && b > a
-    R(1) = struct('t0',a,'t1',b,'label','fault', ...
-        'source','r.sched.fault_on..fault_clear');
+    R(1) = struct('t0',a,'t1',b,'label','fault','source',src);
 end
 end
 
@@ -228,6 +259,42 @@ else
 end
 end
 
+function s = line_fault_label(sched)
+%LINE_FAULT_LABEL  The relay clearing names the line it opened.
+%   "clear" alone would read as the chronology's bus-shunt clearing, which is a
+%   different event: that one leaves the network intact, this one removes a
+%   branch permanently.
+a = num_or(sched,'line_from_bus',NaN);
+b = num_or(sched,'line_to_bus',NaN);
+if isfinite(a) && isfinite(b)
+    s = sprintf('line %d-%d out (fault cleared)',a,b);
+else
+    s = 'line out (fault cleared)';
+end
+end
+
+function s = ibr_trip_label(sched)
+%IBR_TRIP_LABEL  The converter outage names its target as COMMANDED.
+%   'reference_owner' is resolved at the event instant inside the kernel, so the
+%   commanded target is all this table can honestly show. Which converter that
+%   turned out to be is in the event log's details and in the owner panel; a
+%   label that named a device here would be inventing a fact the schedule does
+%   not carry.
+tgt = '';
+if isstruct(sched) && isfield(sched,'ibr_trip_target') && ...
+        ~isempty(sched.ibr_trip_target)
+    tgt = char(string(sched.ibr_trip_target));
+end
+switch tgt
+    case ''
+        s = 'IBR outage';
+    case 'reference_owner'
+        s = 'reference IBR outage';
+    otherwise
+        s = sprintf('IBR outage (%s)',tgt);
+end
+end
+
 function p = provenance(sched)
 p = struct( ...
     'disturbance_source','r.sched + r.actual_reclose_time', ...
@@ -240,6 +307,19 @@ end
 % ==========================================================================
 function marks = add(marks,t,label,family,style,color,source)
 if ~isfinite(t), return; end
+marks(end+1) = one_mark(t,label,family,style,color,source);
+end
+
+function marks = add_unless_occupied(marks,t,label,family,style,color,source)
+%ADD_UNLESS_OCCUPIED  Add a mark only if no mark already sits on that instant.
+%   Used for sg_on, which on the delivered chronology is scheduled at the SAME
+%   instant as restore_time. Drawing a second rule there would put two grey
+%   dashes on one pixel column and would change the mark count of pages already
+%   delivered. The comparison is EXACT, not within a tolerance: a nearby-but-
+%   distinct instant is a real second event and must get its own rule; the
+%   grouping stage below is what keeps its label from colliding.
+if ~isfinite(t), return; end
+if ~isempty(marks) && any([marks.t] == t), return; end
 marks(end+1) = one_mark(t,label,family,style,color,source);
 end
 

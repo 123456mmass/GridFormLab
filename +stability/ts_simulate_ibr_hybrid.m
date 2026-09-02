@@ -49,12 +49,33 @@ Ycurr = Ypre;
 Ybase_current = Ypre;
 Yload_delta = zeros(size(Ypre));
 Yline_stamp = zeros(size(Ypre));
-if sched.enabled && isfield(sched,'has_chronology') && sched.has_chronology
+% Admittance stamps are built PER ARMED EVENT, not per profile. Keying them off
+% has_chronology (as this did) meant a schedule that armed load_step or a line
+% opening under any other profile reached the loop with a ZERO stamp: the event
+% handler then solved an unchanged network, wrote applied=true, and the run
+% reported a disturbance that never happened. sched_flag() defaults a missing
+% capability to false, so a schedule built by an older caller behaves exactly as
+% before.
+want_load_step = sched.enabled && sched_flag(sched,'has_load_step', ...
+    sched_flag(sched,'has_chronology',false));
+want_line_stamp = sched.enabled && sched_flag(sched,'needs_line_stamp', ...
+    sched_flag(sched,'has_chronology',false));
+if want_load_step
     Vpf=dae.pf.bus_voltage(:);
     Sload=(case_data.mpc.bus(:,3)+1i*case_data.mpc.bus(:,4))/case_data.mpc.baseMVA;
     Yload_delta=sched.load_step_factor*diag(conj(Sload)./(abs(Vpf).^2+eps));
+end
+if want_line_stamp
+    % chronology_branch_stamp fails closed on a pair that names no online
+    % branch or a zero impedance, so an unbuildable stamp aborts here at setup
+    % rather than silently opening nothing at the event instant.
     Yline_stamp=chronology_branch_stamp(case_data.mpc,sched.line_from_bus, ...
         sched.line_to_bus,dae.bus_ids);
+    if ~any(Yline_stamp(:) ~= 0)
+        error('ts_simulate_ibr_hybrid:lineTripBranch', ...
+            ['Branch %g-%g produced an all-zero admittance stamp; opening it ' ...
+             'would change nothing.'],sched.line_from_bus,sched.line_to_bus);
+    end
 end
 topology = 'pre';
 % Live-network bookkeeping for the support-transaction destination
@@ -568,6 +589,43 @@ while t < settings.t_end-settings.event_tol
                 [converged,failure_id,failure_reason,log] = transition_failure( ...
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
             end
+        case 'line_fault_clear'
+            % PROTECTION CLEARS A LINE FAULT BY OPENING THAT LINE. Both
+            % breakers of the faulted branch open, so the branch and the fault
+            % leave the network in ONE atomic transaction; no fault shunt is
+            % left behind at the bus and the line does not come back.
+            %
+            % Why one subtraction is the whole operation: 'fault_on' adds the
+            % fault shunt to Ycurr ONLY and never touches Ybase_current
+            % (:562-570), so Ybase_current still holds the unfaulted network
+            % including the branch. Naming it here therefore drops the fault,
+            % and -Yline_stamp removes the branch. This is exactly
+            % 'fault_clear' (Ypost=Ybase_current) plus the branch term.
+            %
+            % The topology label is NOT 'fault': that string is the guard
+            % sg_off_support_transaction uses to refuse a support commit on a
+            % faulted network (:2845), and the supervisor must be free to act
+            % again once the fault is gone.
+            Ycandidate=Ybase_current-Yline_stamp;
+            [ok,y_new,reason,right_norm]=right_limit(x,y,Ycandidate,dae,u,ec,t,settings.kcl_tol);
+            log=new_event_log(ev.type,t); log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
+            if ok
+                y=y_new; Ybase_current=Ycandidate; Ycurr=Ycandidate;
+                topology='line_fault_cleared';
+                % The opened branch is permanent in this profile. The flag is
+                % what live_destination_candidate reads to rebuild the
+                % destination equilibrium on the REDUCED network (:2880), so a
+                % later support transaction is certified against the network
+                % that actually exists.
+                chronology_line_open=true;
+                log.applied=true;
+                log.details=sprintf(['Faulted branch %g-%g opened at both ' ...
+                    'ends; the line and the fault left the network together.'], ...
+                    sched.line_from_bus,sched.line_to_bus);
+            else
+                [converged,failure_id,failure_reason,log]=transition_failure( ...
+                    'ts_simulate_ibr_hybrid:rightLimit',reason,log);
+            end
         case 'load_step'
             Ycandidate=Ybase_current+Yload_delta;
             [ok,y_new,reason,right_norm]=right_limit(x,y,Ycandidate,dae,u,ec,t,settings.kcl_tol);
@@ -676,6 +734,58 @@ while t < settings.t_end-settings.event_tol
                     log.failing_island_ids = [];
                     log.n_failing_islands = 0;
                 end
+            end
+        case 'ibr_trip'
+            % CONVERTER OUTAGE. One converter leaves service mid-run. When the
+            % lost converter is the one that owns the island angle reference,
+            % the transaction must also hand ownership to a surviving
+            % converter -- or refuse, if no authenticated destination exists.
+            %
+            % This is a SCHEDULED event, so the surrounding group machinery
+            % already owns the transaction id (:555-563), the right-limit
+            % sample and the post-event restart (:812-818). It must not
+            % duplicate any of them, which is why this case mirrors 'sg_trip'
+            % rather than the free-standing support transaction.
+            [ok,x_new,y_new,u_new,ec_new,handler_log,reason,right_norm]= ...
+                ibr_trip_transaction(t,x,y,Ycurr,u,ec,dae,sched,case_data, ...
+                settings,opt,topology);
+            log=new_event_log(ev.type,t);
+            log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
+            log.input_before=u; log.input_after=u_new;
+            if isfield(handler_log,'selected_gfm_indices')
+                log.selected_gfm_indices=handler_log.selected_gfm_indices;
+            end
+            if isfield(handler_log,'reference_resource_index')
+                log.reference_resource_index=handler_log.reference_resource_index;
+            end
+            % The outage identity is copied whether or not the transaction was
+            % applied: a REFUSED outage must still record which converter was
+            % asked to leave, or the refusal cannot be attributed to a device.
+            for f_ibr = {'tripped_device_index','tripped_device_id', ...
+                    'owner_before','owner_after','reference_recovered'}
+                if isfield(handler_log,f_ibr{1})
+                    log.(f_ibr{1})=handler_log.(f_ibr{1});
+                end
+            end
+            if ok
+                x=x_new; y=y_new; u=u_new; ec=ec_new;
+                log.applied=true; log.details=handler_log.details;
+                % Force fresh severity evidence before the supervisor may act
+                % again: the outage invalidates dwell timers accumulated on a
+                % configuration that no longer exists, and arms the ordinary
+                % post-transaction lockout so a retry cannot be immediate.
+                support_up_since=NaN; support_down_since=NaN;
+                support_retry_after=t+settings.T_lockout;
+            else
+                converged=false;
+                if isfield(handler_log,'failure_id') && ~isempty(handler_log.failure_id)
+                    failure_id=handler_log.failure_id;
+                else
+                    failure_id='ts_simulate_ibr_hybrid:ibrTripTransaction';
+                end
+                failure_reason=reason;
+                log.failure_id=failure_id;
+                log.details=failure_reason;
             end
         case 'sg_on'
             pending_reclose = true;
@@ -2120,6 +2230,335 @@ else
 end
 end
 
+function [ok,x_right,y_right,u_right,ec_right,handler_log,reason,right_norm] = ...
+    ibr_trip_transaction(t,x,y,Y,u,ec,dae,sched,case_data,settings,opt,topology)
+%IBR_TRIP_TRANSACTION  Atomic converter outage, with reference recovery.
+%   One converter leaves service. The transaction is atomic in the same sense
+%   the SG trip and the support commit are: nothing is published unless the
+%   full-network Kirchhoff solve converges at the new operating point, and a
+%   refusal leaves the previously accepted state untouched.
+%
+%   Three things can happen, and all three are legitimate outcomes:
+%
+%   (a) The lost converter did NOT own the angle reference. The outage is
+%       committed on its own: the device goes offline and 'tripped', the
+%       remaining modes are untouched, ownership is unchanged.
+%
+%   (b) The lost converter DID own the reference. A surviving configuration
+%       must be found in the authenticated SG_OFF table
+%       (stability.select_post_outage_candidate) and committed together with
+%       the outage, in ONE transaction, so the network is never solved with
+%       ownership pointing at a device that is gone.
+%
+%   (c) No authenticated surviving configuration exists -- in particular when
+%       the lost converter was the only voltage-forming source, because the
+%       SG_OFF table is built with cmin=1 and therefore contains no zero-GFM
+%       row. The transaction REFUSES with a named identifier. That is the
+%       honest answer for this framework, not a failure of this function, and
+%       nothing here improvises a destination to avoid it.
+%
+%   The per-island voltage-forming check runs BEFORE any Newton solve, exactly
+%   as it does for the SG trip, with the outgoing converter excluded from the
+%   sources that can satisfy it.
+%
+%   Classification: PROJECT_DERIVED transaction over authenticated evidence.
+%   No equation, limit, threshold or acceptance gate is introduced or relaxed:
+%   the destination must be a table row that already passed equilibrium, SSSA
+%   and reference-ownership screening, and the commit gate is the same
+%   right-limit KCL solve every other transaction uses.
+ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
+reason=''; right_norm=Inf;
+handler_log=struct('details','','applied',false,'failure_id','', ...
+    'selected_gfm_indices',[],'reference_resource_index',[], ...
+    'tripped_device_index',[],'tripped_device_id','', ...
+    'owner_before',[],'owner_after',[],'reference_recovered',false, ...
+    'candidate_audit',struct());
+
+% --- Resolve the target -------------------------------------------------
+% 'reference_owner' can only be resolved HERE: which converter owns the
+% reference is a run-time outcome of the severity supervisor.
+spec=[];
+if isfield(sched,'ibr_trip_target'), spec=sched.ibr_trip_target; end
+owner_before=[];
+if isfield(ec,'hybrid_state') && isstruct(ec.hybrid_state) && ...
+        isfield(ec.hybrid_state,'reference_owner_indices')
+    owner_before=ec.hybrid_state.reference_owner_indices;
+end
+if ischar(spec) || isstring(spec)
+    if ~strcmp(char(spec),'reference_owner')
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripBadTarget';
+        reason=sprintf('Unknown ibr_trip_target "%s".',char(spec));
+        handler_log.details=reason; return;
+    end
+    if isempty(owner_before)
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripNoOwnerPublished';
+        reason=['ibr_trip_target=''reference_owner'' but no reference owner is ' ...
+            'published at the event instant; the schedule cannot name a device.'];
+        handler_log.details=reason; return;
+    end
+    target=owner_before(1);
+elseif isnumeric(spec) && isscalar(spec)
+    target=double(spec);
+else
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripBadTarget';
+    reason='ibr_trip_target must be ''reference_owner'' or one device index.';
+    handler_log.details=reason; return;
+end
+if ~isscalar(target) || ~isfinite(target) || target~=fix(target) || ...
+        target<1 || target>numel(dae.devices)
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripBadTarget';
+    reason=sprintf('Resolved ibr_trip target %s is not a valid device index.', ...
+        mat2str(target));
+    handler_log.details=reason; return;
+end
+dev_t=dae.devices(target);
+handler_log.tripped_device_index=target;
+handler_log.tripped_device_id=char(dev_t.device_id);
+handler_log.owner_before=owner_before;
+if ~is_ibr_device(dev_t)
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripNotIbr';
+    reason=sprintf(['Device %s is not an IBR; a synchronous machine leaves ' ...
+        'service through the SG breaker events.'],char(dev_t.device_id));
+    handler_log.details=reason; return;
+end
+if ~device_is_online(dev_t,ec)
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripAlreadyOffline';
+    reason=sprintf('Device %s is already out of service.',char(dev_t.device_id));
+    handler_log.details=reason; return;
+end
+% A 'tripped' target mode requires the device to declare it, like every other
+% mode transition in this kernel.
+if isfield(dev_t,'capabilities') && isstruct(dev_t.capabilities) && ...
+        isfield(dev_t.capabilities,'supported_modes') && ...
+        ~any(strcmpi(string(dev_t.capabilities.supported_modes),'tripped'))
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripUnsupported';
+    reason=sprintf('Device %s does not declare a "tripped" mode.', ...
+        char(dev_t.device_id));
+    handler_log.details=reason; return;
+end
+
+current_modes=current_mode_vector(dae,ec);
+current_gfm=find(strcmpi(current_modes,'gfm'));
+online_ibr=[];
+for k=1:numel(dae.devices)
+    if is_ibr_device(dae.devices(k)) && device_is_online(dae.devices(k),ec)
+        online_ibr(end+1)=k; %#ok<AGROW>
+    end
+end
+surviving_ibr=setdiff(online_ibr,target);
+owner_lost=~isempty(owner_before) && any(owner_before==target);
+% A reference RECOVERY on a faulted network is refused for the same reason
+% sg_off_support_transaction refuses a support commit there (:2964): the
+% authenticated destination was certified on an unfaulted network, and no
+% destination equilibrium exists while the fault shunt is in force. Losing a
+% converter that does NOT own the reference needs no destination and is allowed
+% during a fault, because it commits no new configuration.
+if owner_lost && strcmp(topology,'fault')
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripDuringFault';
+    reason=sprintf(['Converter %s owns the island angle reference and the ' ...
+        'network is faulted; no certified destination equilibrium exists ' ...
+        'during a fault, so the recovery is refused.'],char(dev_t.device_id));
+    handler_log.details=reason; return;
+end
+
+% --- Build the candidate hybrid state -----------------------------------
+% device_online=false AND device_modes='tripped' are BOTH written. Either one
+% alone leaves an inconsistent snapshot: the online flag is what
+% ts_dynamic_state_indices, per_island_vf_check, assemble_runtime_context and
+% the severity supervisor read, while the mode is what the device's own
+% callbacks read.
+hs=stability.ts_hybrid_state_snapshot(ec.hybrid_state);
+key_t=matlab.lang.makeValidName(char(dev_t.device_id),'ReplacementStyle','underscore');
+hs.device_online.(key_t)=false;
+hs.device_modes.(key_t)='tripped';
+
+target_modes=current_modes;
+target_modes{target}='tripped';
+selected_after=setdiff(current_gfm,target);
+ref_after=owner_before;
+candidate=struct();
+
+if owner_lost
+    % --- (b) the reference owner is leaving: a destination is required ----
+    if ~isfield(opt,'selector_table') || ~isstruct(opt.selector_table)
+        handler_log.failure_id='stability:gfm_selection:missingTable';
+        reason=['A converter outage that removes the reference owner requires ' ...
+            'opt.selector_table; no table was injected.'];
+        handler_log.details=reason; return;
+    end
+    [candidate,found,cand_audit]=stability.select_post_outage_candidate( ...
+        opt.selector_table,surviving_ibr,current_gfm);
+    handler_log.candidate_audit=cand_audit;
+    if ~found
+        % The expected outcome when the lost converter was the only former:
+        % the SG_OFF table has no zero-GFM row (cmin=1), so no destination
+        % exists. Refuse with a named identifier rather than inventing one.
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripNoSurvivingConfiguration';
+        reason=sprintf(['Converter %s owns the island angle reference and no ' ...
+            'authenticated SG_OFF configuration survives its outage ' ...
+            '(surviving IBRs %s, reason %s).'],char(dev_t.device_id), ...
+            mat2str(surviving_ibr),cand_audit.reason);
+        handler_log.details=reason; return;
+    end
+    selected_after=unique(candidate.selected_gfm_indices(:).','stable');
+    ref_after=candidate.reference_resource_index;
+    % The destination may not name the outgoing device in any role. The
+    % selector already enforces this; assert it here because publishing such a
+    % row would leave ownership pointing at a device that is gone.
+    if ismember(target,selected_after) || ref_after==target
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripCandidateNamesLostDevice';
+        reason=sprintf(['Selected destination names the outgoing converter %s ' ...
+            '(selected %s, reference %d).'],char(dev_t.device_id), ...
+            mat2str(selected_after),ref_after);
+        handler_log.details=reason; return;
+    end
+    for k=1:numel(dae.devices)
+        if k==target || ~is_ibr_device(dae.devices(k)), continue; end
+        if ~device_is_online(dae.devices(k),ec), continue; end
+        if ismember(k,selected_after)
+            target_modes{k}='gfm';
+        else
+            target_modes{k}='gfl';
+        end
+    end
+end
+
+% --- Per-island voltage-forming check, BEFORE any Newton solve ----------
+% Same gate the SG trip uses, with the outgoing converter excluded from the
+% sources that may satisfy it. An SG that is already breaker_open is excluded
+% by its own online flag, so it is not listed here.
+hs_probe=hs;
+for k=1:numel(dae.devices)
+    kk=matlab.lang.makeValidName(char(dae.devices(k).device_id), ...
+        'ReplacementStyle','underscore');
+    if isfield(hs_probe.device_modes,kk)
+        hs_probe.device_modes.(kk)=target_modes{k};
+    end
+end
+hs_probe.device_online.(key_t)=false;
+hs_probe.device_modes.(key_t)='tripped';
+[has_vf,failing_island_ids]=stability.per_island_vf_check( ...
+    Y,case_data.mpc,dae.devices,hs_probe,{char(dev_t.device_id)});
+if ~has_vf
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripNoVoltageFormingSource';
+    reason=sprintf(['Converter %s outage leaves energized island(s) %s with no ' ...
+        'online voltage-forming source.'],char(dev_t.device_id), ...
+        strjoin(string(failing_island_ids),', '));
+    handler_log.details=reason; return;
+end
+
+% --- Commit: transfers, then the right-limit KCL solve -------------------
+ec_right=ec;
+ec_right.hybrid_state=hs_probe;
+try
+    x_plain=apply_device_transfers(x,y,u,ec,ec_right,dae);
+catch me
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripTransfer';
+    reason=sprintf('transfer map failed: %s: %s',me.identifier,me.message);
+    handler_log.details=reason; return;
+end
+
+% The certified equilibrium input travels WITH the configuration, exactly as it
+% does for a support commit (RECLOSE-2026-08-13-01): a table row certifies the
+% PAIR (configuration, eq_u_eq), so committing the row while leaving the
+% previous configuration's operating point in force would publish a
+% configuration against an input for which nothing was certified.
+u_right=u;
+if owner_lost
+    if ~isfield(candidate,'eq_u_eq') || isempty(candidate.eq_u_eq)
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripUncertifiedInput';
+        reason=['Surviving destination carries no certified equilibrium input; ' ...
+            'refusing to commit an uncertified operating point.'];
+        handler_log.details=reason; return;
+    end
+    try
+        u_right=apply_authenticated_candidate_inputs(u,candidate.eq_u_eq,dae);
+    catch me
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripCertifiedInput';
+        reason=sprintf('Certified destination input rejected: %s: %s', ...
+            me.identifier,me.message);
+        handler_log.details=reason; return;
+    end
+end
+
+% Publish the committed selection/ownership metadata BEFORE the solve, so the
+% network is solved against the configuration that will be published and never
+% against ownership pointing at the device that just left.
+hs_out=ec_right.hybrid_state;
+if ~isfield(hs_out,'reference_island_ids') || numel(hs_out.reference_island_ids)~=1
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripIslandId';
+    reason='A converter outage requires one authenticated live island ID.';
+    handler_log.details=reason; return;
+end
+hs_out.selected_gfm_indices=selected_after;
+hs_out.n_gfm_required=numel(selected_after);
+if ~isempty(ref_after)
+    hs_out.reference_resource_index=ref_after;
+    hs_out.reference_owner_indices=ref_after;
+    hs_out.gfm_reference_resource_indices=ref_after;
+end
+version=0;
+if isfield(hs_out,'selector_table_version') && ...
+        isnumeric(hs_out.selector_table_version) && ...
+        isscalar(hs_out.selector_table_version) && ...
+        isfinite(hs_out.selector_table_version)
+    version=hs_out.selector_table_version;
+end
+hs_out.selector_table_version=version+1;
+hs_out.committed_config_fingerprint=sprintf( ...
+    'ibr_trip_%s|selected=%s|ref=%s|version=%d', ...
+    char(dev_t.device_id),mat2str(selected_after),mat2str(ref_after),version+1);
+ec_right.hybrid_state=hs_out;
+
+[ok,y_right,reason,right_norm]=right_limit( ...
+    x_plain,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+if ~ok
+    % Fail closed: no right sample is published and the caller keeps the
+    % accepted left state.
+    handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripRightLimit';
+    handler_log.details=reason;
+    x_right=x; y_right=y; u_right=u; ec_right=ec;
+    return;
+end
+x_right=x_plain;
+
+% The forward-simulation certificate applies to a reference recovery for the
+% same reason it applies to a support commit: the surviving converters arrive
+% at the destination carrying their own integrator history, which is the hazard
+% recorded in AGSI-2026-08-14-01. It stays OPT-IN through the same setting, so
+% a run with the certificate disabled behaves exactly as the plain transaction.
+handler_log.selected_gfm_indices=selected_after;
+handler_log.reference_resource_index=ref_after;
+handler_log.owner_after=ref_after;
+handler_log.reference_recovered=owner_lost;
+if owner_lost && settings.support_transition_certificate_enabled
+    [cert_ok,cert_reason]=stability.certify_support_transition( ...
+        t,x_right,y_right,u_right,ec_right,Y,dae,settings,candidate);
+    if ~cert_ok
+        handler_log.failure_id='ts_simulate_ibr_hybrid:ibrTripCertificateRefused';
+        reason=sprintf(['Reference recovery after the outage of %s was refused ' ...
+            'by the transition certificate: %s'],char(dev_t.device_id),cert_reason);
+        handler_log.details=reason;
+        ok=false;
+        x_right=x; y_right=y; u_right=u; ec_right=ec; return;
+    end
+end
+
+if owner_lost
+    handler_log.details=sprintf(['Converter %s (device %d) removed from ' ...
+        'service; it owned the island angle reference, so the authenticated ' ...
+        'surviving configuration selected=%s reference=%d was committed in the ' ...
+        'same transaction.'],char(dev_t.device_id),target, ...
+        mat2str(selected_after),ref_after);
+else
+    handler_log.details=sprintf(['Converter %s (device %d) removed from ' ...
+        'service; it did not own the island angle reference, so ownership and ' ...
+        'every other converter mode are unchanged (grid-forming set %s).'], ...
+        char(dev_t.device_id),target,mat2str(selected_after));
+end
+handler_log.applied=true;
+end
+
 function tf = is_voltage_forming_mode(dev, mode)
 tf = false;
 if isempty(mode), return; end
@@ -2616,6 +3055,15 @@ for k=1:numel(dae.devices)
         isfield(dev.capabilities,'resource_type') && ...
         strcmpi(char(dev.capabilities.resource_type),'ibr');
     if ~is_ibr, continue; end
+    % An OUT-OF-SERVICE converter keeps its mode verbatim. Without this the
+    % parity loop would name a tripped device in target_modes, find_mode_changes
+    % would see 'tripped'->'gfl' as a transition, and apply_device_transfers
+    % would run that device's equilibrium_initialize -- rewriting the held
+    % states of a converter that is not in the network and leaving the mode map
+    % claiming 'gfl' for it. The device would still inject nothing (its RHS and
+    % current return zero while offline), so this is a bookkeeping and
+    % state-integrity guard, not a power-flow one.
+    if ~device_is_online(dae.devices(k),ec), continue; end
     if ismember(k,selected), target_modes{k}='gfm'; else, target_modes{k}='gfl'; end
 end
 changing=find_mode_changes(current_modes,target_modes);
@@ -3553,6 +4001,30 @@ guard.passes=sync_pass && prospective.passes;
 eligible=guard.passes;
 end
 
+function tf=device_is_online(dev,ec)
+%DEVICE_IS_ONLINE  Committed online state of one device from the event context.
+%   Absent bookkeeping reads as ONLINE, matching ts_hybrid_state_init's default
+%   (initial_online defaults true) and every existing consumer.
+tf=true;
+key=matlab.lang.makeValidName(char(dev.device_id),'ReplacementStyle','underscore');
+if isfield(ec,'hybrid_state') && isstruct(ec.hybrid_state) && ...
+        isfield(ec.hybrid_state,'device_online') && ...
+        isfield(ec.hybrid_state.device_online,key)
+    tf=logical(ec.hybrid_state.device_online.(key));
+end
+end
+
+function tf=sched_flag(sched,name,default)
+%SCHED_FLAG  Read one schedule capability flag, defaulting when absent.
+%   A schedule built before the per-event capability flags existed carries only
+%   has_fault/has_sg_cycle/has_chronology. Reading a missing flag as the caller's
+%   declared default keeps those schedules behaving exactly as they did.
+tf=default;
+if isfield(sched,name) && ~isempty(sched.(name)) && isscalar(sched.(name))
+    tf=logical(sched.(name));
+end
+end
+
 function n=kcl_norm(dae,t,x,y,Y,u,ec)
 g=dae.dae_g(t,x,y,Y,u,ec); n=norm(g,inf);
 end
@@ -3595,7 +4067,14 @@ log=struct('type',type,'t',t,'applied',false,'failure_id','', ...
     'candidate_modes',struct(),'failing_island_ids',[], ...
     'n_failing_islands',0, ...
     'reclose_diag',struct(), ...
-    'handback_duration_s',NaN,'handback_status','');
+    'handback_duration_s',NaN,'handback_status','', ...
+    ... % Converter-outage record. Empty on every other event type, so the
+    ... % schema is uniform and a reader never has to test for the field. WHICH
+    ... % converter left and where the angle reference went are the two facts an
+    ... % ibr_trip is about, and 'reference_owner' resolves at the event instant,
+    ... % so neither is recoverable from the schedule afterwards.
+    'tripped_device_index',[],'tripped_device_id','', ...
+    'owner_before',[],'owner_after',[],'reference_recovered',false);
 end
 
 function [converged,id,reason,log]=transition_failure(id,reason,log)
@@ -3919,7 +4398,11 @@ c=struct('enabled',false,'active',false,'online',false,'sg_index',NaN,'x_delta',
     'history_phase_error',[],'history_grid_omega',[], ...
     'history_Efd',[],'history_Efd_command',[],'history_Vopen',[], ...
     'history_handback_alpha',[]);
-if ~sched.enabled || ~isfield(sched,'has_chronology') || ~sched.has_chronology
+% The offline-SG synchronizer is armed by an explicit schedule capability. It
+% defaults to has_chronology so a schedule built before that flag existed arms
+% it exactly where it always was armed.
+if ~sched.enabled || ~sched_flag(sched,'has_sync_controller', ...
+        sched_flag(sched,'has_chronology',false))
     return;
 end
 k=find(strcmp({dae.devices.device_id},sched.sg_id));

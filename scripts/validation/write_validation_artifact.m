@@ -123,7 +123,7 @@ add('');
 % --- Test audit ---
 add('## Test discovery audit (141 -> 139 -> 191)');
 add('');
-add('- a285184: 141 (140 pass + 1 PSAT-filtered). dd72907: 139 (consolidation of guard tests).');
+add('- cf4cb0a: 141 (140 pass + 1 PSAT-filtered). 9228ff2: 139 (consolidation of guard tests).');
 add('- This session: 191 (152 + 39 new physics/grid/COI/PGAz/gate/artifact tests; -1 removed literature-range test).');
 add('- The 141->139 drop was a CONSOLIDATION (6 granular guards -> 4 recursive-scan guards + path_bootstrap),');
 add('  not deletion. Coverage preserved/strengthened. fsolve-vs-Newton moved to legacy/ (reference-only).');

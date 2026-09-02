@@ -8,8 +8,8 @@ function tests = test_ts_classical_adaptive()
 % --- 1.0 deg threshold provenance (honest) -------------------------------
 % The 1.0 deg fixed-vs-adaptive threshold below is an ASSUMED_DIAGNOSTIC
 % regression guard, NOT an a-priori-justified production tolerance.
-%   - First appeared: this file, introduced in Phase 6 commit 0b890a4.
-%   - Commit 0b890a4 was authored AFTER adaptive results were already
+%   - First appeared: this file, introduced in Phase 6 commit c4fd2e8.
+%   - Commit c4fd2e8 was authored AFTER adaptive results were already
 %     observed (Phases 3-5); the threshold was chosen while viewing results.
 %   - No recorded executable selection study exists for it.
 %   - Therefore it CANNOT honestly be called "selected" or "a-priori

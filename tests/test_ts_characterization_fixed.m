@@ -19,7 +19,7 @@ function tests = test_ts_characterization_fixed()
 %   Phase 0 status: this test pins the CURRENT (pre-refactor) trajectory. The
 %   comparison half (old-vs-new) is activated in Phase 2 when the new strategy
 %   path exists. Until then, the recorded values below are the characterization
-%   reference produced FRESH on commit 0534132.
+%   reference produced FRESH on commit 5a6d9f3.
 
 tests = functiontests(localfunctions);
 end

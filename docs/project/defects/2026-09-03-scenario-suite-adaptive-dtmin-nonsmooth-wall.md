@@ -24,7 +24,10 @@ Three of the four scenarios added in `b4d312c` stop before their requested
 The suite reported these as `expectation_met = true` under the pre-existing
 `TRAJECTORY_THEN_ANY` token and left the cause unresolved between genuine
 physical collapse and the known wall of `TS-2026-08-13-03`. That is the question
-this record answers.
+this record answers. `a6ac6b7` separately made the "stopped before its own
+defining event" fact explicit in the runner, `summary.mat` and
+`provenance.txt`, so `expectation_met` can no longer be read as "the scenario
+answered its question".
 
 ## Method
 
@@ -44,8 +47,26 @@ former_outage   topology 'pre'    |g|inf = 1.805e-13
 ```
 
 Both are far inside `kcl_tol=1e-6`, so the rebuilt `(dae, Y, u, ec)` is the one
-the kernel was stepping. Probe: `tmp/mt/probe_wall.m`, `tmp/mt/probe_wall2.m`
-(diagnostic controls, not production evidence).
+the kernel was stepping.
+
+Probe: `scripts/diagnostics/probe_scenario_wall_solvability.m`, committed rather
+than left in a scratch directory, because the earlier records in this class cite
+`chk_*_tmp.m` files that no longer exist in the tree and their evidence is
+therefore no longer reproducible. It is a DIAGNOSTIC over recorded runs: it
+changes no production option, and the `domain_preserving_trials=false` row in it
+is a control, not a proposal.
+
+## Reproduction
+
+```matlab
+pf_init_paths;
+probe_scenario_wall_solvability();   % all three early-stopping scenarios
+probe_scenario_wall_solvability('scenarios',{'former_outage'});
+```
+
+The probe refuses to report a scenario whose rebuild fails the KCL self-check,
+and refuses a topology it cannot reconstruct, rather than printing numbers that
+describe a different system.
 
 ## Findings
 
@@ -94,9 +115,12 @@ legally take a step small enough to find it.
 The `former_outage` result is weaker and must be stated as such: at `h = 1e-7`
 the unchanged iterate already sits at `5.2e-9`, within one order of
 `newton_tol = 1e-8`, so that convergence is close to the regime where the
-trapezoidal equation is satisfied by `x1 ≈ x0` for trivial reasons. What is
-solid for `former_outage` is finding 2 — zero progress with an exhausted line
-search across four decades — not a clean solvability proof.
+trapezoidal equation is satisfied by `x1 ≈ x0` for trivial reasons. Against that,
+its `max|dx|` at the converging sizes scales exactly with `h` — `5.02e-5` at
+`h = 1e-7`, `5.02e-6` at `1e-8`, `5.02e-7` at `1e-9` — which is a real step of
+`|dx|/h ≈ 502` per unit time, not a null move. What is solid for `former_outage`
+is finding 2, zero progress with an exhausted line search across four decades;
+the solvability reading is supporting evidence, not a clean proof.
 
 ### 4. The worst residual row is a voltage-loop integrator, not a network row
 
@@ -144,16 +168,51 @@ better solver. Two separate claims, only one of which is supported:
 - **Supported:** the STOP is a solver wall at a nonsmooth corner. It is not a
   proof that the DAE has no solution at the accepted state, and for
   `sg_fault_bus9` a solution provably exists there.
-- **NOT supported:** that the trajectory INTO the wall is healthy. In
-  `former_outage` the three survivors pick up the lost converter's share and
-  more (`P = 0.446, 0.996, 0.755` pu against `0.29, 0.45, 0.29` before), one is
-  current-limited, and `f_COI` is falling at roughly `-0.5 Hz/s` through the last
-  0.34 s. A power-deficit collapse is entirely consistent with that trace. The
-  wall prevents the run from showing which it is.
+- **NOT supported, and no longer arguable from this evidence:** that the island
+  was collapsing when the wall arrived. The trajectory says the opposite. See
+  below.
 
-Distinguishing those two would need a solver that can cross the corner — which
-is a `TS-2026-08-13-03` correction class, none of which is approved — not a
-tolerance, `Imax`, `Dv`, event-time or gate change.
+### The trajectory into the wall is a RECOVERY, not a collapse
+
+An earlier reading of this evidence recorded that `former_outage` had `f_COI`
+"falling about 0.5 Hz/s" and that a power-deficit collapse was equally
+consistent. That was read off the last handful of accepted samples, which span a
+fraction of a second at the collapsed step size, and it is wrong. Reading the
+whole window from the event to the wall — 57 samples over 0.707 s — inverts it:
+
+```text
+former_outage, f_COI from the outage to the wall
+  t = 60.000   60.000 Hz   (the outage instant)
+  t = 60.021   58.684 Hz   <-- NADIR, 21 ms after the outage
+  t = 60.100   58.909 Hz
+  t = 60.219   59.334 Hz
+  t = 60.368   59.707 Hz
+  t = 60.707   59.529 Hz   (the wall)
+```
+
+The island dips 1.3 Hz, reaches its nadir 21 ms in, and then RECOVERS toward
+59.5 Hz. Bus voltages do the same: `Vmin` dips to 0.6997 pu at `t = 60.314` and
+is back to 0.7691 pu at the wall, with `Vmax` recovering from 0.8902 to 0.9588.
+Total served power falls from 2.6234 pu to 2.1969 pu, which is the load the
+network sheds through its voltage dependence, not a diverging deficit. `f_COI`
+is not monotone in either direction over the window.
+
+The same holds for `sg_fault_bus9`, once the physics of its window is read
+correctly. The fault takes `Vmin` to 0.055 pu and served power to 1.01 pu, so the
+island cannot deliver into a bolted short and goes OVER-frequency: `f_COI` rises
+to a maximum of 60.676 Hz at `t = 50.018` and is settling at 60.524 Hz when the
+wall arrives 83 ms into the fault. That is ordinary faulted-network behaviour,
+not a collapse.
+
+So the honest statement is stronger than the one first recorded here: at the
+moment each run stopped, the trajectory was settling, and the stop is attributable
+to the solver. What still cannot be claimed is the counterfactual — that a solver
+able to cross the corner would carry `sg_fault_bus9` through its clearing at
+50.15 s, or `former_outage` to 120 s. Nothing here simulates past the wall, and
+`AGSI-2026-08-14-01` is a live reason a later transaction could still refuse.
+
+Crossing the corner is a `TS-2026-08-13-03` correction class, none of which is
+approved, and not a tolerance, `Imax`, `Dv`, event-time or gate change.
 
 ## Delivery consequence
 
@@ -166,11 +225,14 @@ misfits the full, faulted-full and reduced-faulted networks by `>= 1e-3`.
 
 The suite's `expectation_met = true` on these three arms means "a trajectory was
 produced and the horizon it reached is the measurement", not "the scenario
-answered its question". Reporting must say which arm answered its question and
-which was stopped short. `sg_load_step30` answered its question;
-`former_outage` answered the ownership half of its question — the outage
-committed and the reference moved from IBR2 to IBR3 — and was stopped 0.7 s
-later; `sg_fault_bus9` and `line_fault_9_14` did not reach their events.
+answered its question". `a6ac6b7` makes that split machine-readable: each
+scenario declares its defining event, and the runner reports separately whether
+that event executed, in `summary.mat`
+(`defining_event_executed`, `events_not_executed`) and in `provenance.txt`.
+`sg_load_step30` answered its question; `former_outage` answered the ownership
+half of its question — the outage committed and the reference moved from IBR2 to
+IBR3 — and was stopped 0.7 s later; `sg_fault_bus9` and `line_fault_9_14` did not
+reach their events.
 
 ## Related files
 
@@ -178,6 +240,8 @@ later; `sg_fault_bus9` and `line_fault_9_14` did not reach their events.
 - `+stability/ts_step_composite.m`
 - `+stability/composite_newton.m`
 - `+ibr/gfm_eecon49_full_model.m`
+- `scripts/diagnostics/probe_scenario_wall_solvability.m`
+- `scripts/reporting/ieee14_event_execution.m`
 - `2026-08-13-dv20-post-line-nonsmooth-newton-wall.md`
 - `2026-08-14-all4-gfm-commit-outside-basin.md`
 - `output/diagnostics/ieee14_scenario_suite/provenance.txt`

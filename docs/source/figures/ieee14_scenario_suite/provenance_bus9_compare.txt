@@ -1,0 +1,65 @@
+generator: scripts/reporting/generate_bus9_adaptive_vs_fixed_160s.m
+schema:    bus9_adaptive_vs_fixed_160s/1.0
+generated: 2026-09-05T14:08:24Z
+style:     5.768 in x 3 in, Times New Roman 11 pt, latex interpreter, dashed major and minor grid, box off, ticks out
+
+2x2 comparison at bus 9 (the fault bus) on ONE 160 s schedule
+  sg_trip 20 -> fault_on 60 -> fault_clear 60.15 -> sg_on 100 -> 160 s:
+    (a) P_Bus9  (b) Q_Bus9  (c) |V_Bus9|  (d) f_Bus9
+  blue = delivered adaptive GFL/GFM switching policy (PROJECT_RESULT)
+  grey = same case with every converter locked grid-following
+         (ASSUMED_DIAGNOSTIC comparison-only continuation)
+
+Pure cache reader. No step is taken, no equation is solved, and
+nothing is smoothed, filtered, decimated, clipped, offset, interpolated
+or padded. Each arm is drawn on its OWN accepted-sample grid (2288 adaptive
+against 8007 fixed samples); nothing is resampled. No synthetic augmentation
+layer: the fixed-GFL arm swings 0.007..1.411 pu on V9 over the island
+window on its own, so there is nothing to add.
+
+adaptive arm : output\diagnostics\ieee14_scenario_suite\sg_fault_cycle160.mat
+  sha256 db83247c92f05b1a947578a8bfef32a50aaad4740277f0976421904b8b209970
+fixed arm    : output\diagnostics\ieee14_locked_gfl_diag\locked_gfl_diag_160s.mat
+  sha256 4a763e8d5c8f800c1fc302115d2f05e9bb5c1469d9b3c2ab370fb47ff7c55809
+fixed arm diagnostic opt-ins (this run only; production paths
+  untouched): allow_no_vf_island=true, angle_gauge_bus=1 after sg_trip+0.25 s,
+  comparison-only clone ibr.eecon49_dual_mode_ideal_dc for IBR2/3/6/8,
+  diagnostic PLL pair (KpPll, KiPll) = (0.2, 220) on the resource table only.
+Bus-9 signals: S_9(t) = |V_9(t)|^2 * conj(y_9 + chi_f(t)/Z_f),
+  chi_f = 1 on the fault topology and 0 elsewhere; y_9 = 0.282472867-0.158950833j pu
+  from the case load table at the PF operating point
+  (S_9 = 0.295000+0.166000j pu, |V_9| = 1.021934 pu). No load step on this schedule,
+  so the live multiplier is 1 everywhere. The t=0 identity gate requires
+  the reconstruction to reproduce those three values within 1e-9 pu on
+  BOTH arms; it passed.
+Panel (d) IS THE FREQUENCY AT BUS 9 ITSELF, not any device's:
+  bus 9 carries load but no device, so no frequency is a state there and
+  none is published for it. It is DERIVED from that bus's own voltage
+  angle, which IS a solved algebraic variable of the run:
+      f_9(t) = f_0 + (1/2pi) d(theta_9)/dt
+  as the secant slope of the UNWRAPPED angle across each accepted step,
+  carried at the step's MIDPOINT (so it is plotted on its own time
+  vector, not on the sample grid). BOTH arms are derived the same way
+  from their own solutions, which is what makes the panel a comparison.
+  Four gates hold before it draws: THE FRAME (before the first event both
+  arms are synchronous, so theta_9 must be stationary -- measured
+  f_9 = 60.000000000 Hz exactly), WRAPPING (unwrapped before differencing),
+  THE EVENT JUMP (an event publishes a left and a right sample at one
+  instant, dt = 0; those pairs are dropped rather than divided by), and
+  RESOLUTION (a secant can only express |f - f_0| <= 1/(2 dt), so a step
+  whose |d theta| reaches 1.5708 rad is NOT DRAWN).
+  A broken grey trace is therefore not a missing measurement: it is drawn
+  where that arm's own output grid determines the rate and gapped where it
+  does not, and the gaps are themselves a finding -- a fixed-GFL fleet
+  moves this bus's angle faster than the run recorded it.
+    adaptive 2287 step(s): 2279 determined, 0 undetermined (0.000 s of 160.000 s) | 8 zero-length event pair(s) | 3 raw wrap jump(s) | max |d theta| 0.1551 rad | grid bound >= 1.00 Hz | determined f_9 [49.8965 136.7214] Hz
+    fixed    8006 step(s): 4488 determined, 3514 undetermined (70.280 s of 160.000 s) | 4 zero-length event pair(s) | 4318 raw wrap jump(s) | max |d theta| 3.1416 rad | grid bound >= 25.00 Hz | determined f_9 [47.5314 72.4994] Hz
+Y windows are computed over the OPERATING band (run minus [60 60.2] s)
+  as the union of BOTH arms with 6 % headroom, so the two policies share
+  one scale per panel. Panel (d) additionally ignores +/-0.25 s around each
+  scheduled instant: the first short step after a transaction carries a
+  genuine but very large rate, which would set an axis that flattens the
+  comparison. Anything leaving the window is annotated AT THE FRAME with
+  its peak value; nothing is clipped silently.
+Event times (CASE_DEFINED, s): [20 60 60.15 100]
+Figure: docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_bus9_compare.png

@@ -1,0 +1,60 @@
+generator: scripts/reporting/generate_ieee14_agsi_mode_3d.m
+schema:    ieee14_agsi_mode_3d/1.0
+generated: 2026-09-04T14:40:37Z
+caches:    output\diagnostics\ieee14_scenario_suite
+style:     4.2 in x 1.38 in, Helvetica 10 pt, tex interpreter, dashed grid, box off, ticks out
+
+TWO PAGES per scenario, both three-dimensional with the converter axis to the left
+  and time to the right:
+    _agsi3d  S_i(t) per converter as a filled ribbon, with the two decision planes
+             Gamma_on and Gamma_off floating across the whole horizon
+    _mode3d  m_i(t) per converter: one solid slab per contiguous grid-forming interval
+
+Pure cache reader. Nothing is simulated, re-solved, smoothed, filtered, decimated,
+  clipped, offset, interpolated or padded: every plotted sample is a raw accepted
+  value from the stored trajectory.
+
+SYMBOLS. The reference layout letters the index AGSI_i with thresholds AGSI_up and
+  AGSI_down. These pages letter them S_i, Gamma_on and Gamma_off -- the names the deck
+  defines and the kernel uses (S is formed at ts_simulate_ibr_hybrid.m:2973; the two
+  thresholds are the run options severity_gamma_on/off). The form is the reference's;
+  the names are the ones already defined elsewhere in the deck.
+
+The MODE trace is MASKED to NaN wherever a converter is out of service.
+  device_modes_history holds "tripped" for such a device and a bare "is it gfm" test
+  reads that as 0, which on this axis is the GFL level -- an unmasked page would draw
+  a departed converter as one that is following the grid. A masked stretch carries no
+  slab at all, which is the honest picture; the masked count is per scenario below.
+
+The x axis spans the REQUESTED horizon, not the last accepted sample: cropping to
+  the data would draw a truncated run as a finished one.
+
+--------------------------------------------------------------
+sg_fault_cycle160
+  cache      output\diagnostics\ieee14_scenario_suite\sg_fault_cycle160.mat
+  cache_sha  c5e9b262cef8687f3c8690876febf8e95cd1df888d8305e004bbd1478c45e26a
+  page       agsi3d  switching index per converter, with the two decision planes
+    file     docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_agsi3d.png
+      sha256 dc374f49a393e17bfde815db7592a77637844bc4cf3e824beb1475f5a9702b90
+      mtime  2026-09-04 21:40:46
+      bytes  42330
+    file     docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_agsi3d.fig
+      sha256 2b78c4f986030459395762e6663a8522cfc5c4b7b94e992d5d6ca4c9664ef165
+      mtime  2026-09-04 21:40:46
+      bytes  241257
+  page       mode3d  GFL/GFM mode per converter
+    file     docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_mode3d.png
+      sha256 a0db16ee37370f17c229b8632426503ced8c983f72755d89503698eba94f7fe0
+      mtime  2026-09-04 21:40:46
+      bytes  40359
+    file     docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_mode3d.fig
+      sha256 df03e116ef46b59e981be095a17d1c46c58904641d600a58fe71b0e27315defc
+      mtime  2026-09-04 21:40:47
+      bytes  10026
+  horizon    160.000000 s of 160.000000 s requested
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  S range    [0.000000 1.000000] over 2288 sample(s)
+  GFM        2 contiguous interval(s) drawn
+  masked     0 mode sample(s) (converter offline)
+  labels     deck IBR_1, IBR_2, IBR_3, IBR_4 = code IBR2, IBR3, IBR6, IBR8
+

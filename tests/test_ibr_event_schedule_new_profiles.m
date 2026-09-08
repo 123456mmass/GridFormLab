@@ -143,14 +143,17 @@ end
 
 function test_former_outage_accepts_its_order_and_arms_the_converter_outage(tc)
 s = sched(tc,former_outage_events());
-tc.verifyEqual({s.events.type},{'sg_trip','ibr_trip'});
-tc.verifyEqual([s.events.t],[20 60],'AbsTol',0);
+tc.verifyEqual({s.events.type},{'sg_trip','ibr_trip','sg_on'});
+tc.verifyEqual([s.events.t],[20 60 90],'AbsTol',0);
 tc.verifyTrue(s.has_ibr_trip);
 tc.verifyTrue(s.has_sg_trip);
-% No reclose is scheduled: the question is whether the CONVERTERS recover the
-% reference, and offering the machine back would answer a different one.
-tc.verifyFalse(s.has_sg_reclose);
-tc.verifyTrue(isnan(s.sg_on));
+% The machine IS offered back, at 90 s. This arm asks two questions in sequence:
+% whether the converters recover the angle reference after the owner is lost, and
+% whether the machine can then resynchronise onto an island that has permanently
+% lost a converter. An arm that never recloses cannot show the hand-back, which is
+% the second half of the framework's claim.
+tc.verifyTrue(s.has_sg_reclose);
+tc.verifyEqual(s.sg_on,90,'AbsTol',0);
 tc.verifyFalse(s.has_fault);
 tc.verifyFalse(s.has_load_step);
 tc.verifyEqual(s.ibr_trip,60,'AbsTol',0);
@@ -165,11 +168,38 @@ ev = former_outage_events(); ev.ibr_trip = 10;
 tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
 end
 
+function test_former_outage_refuses_an_outage_after_the_reclose_offer(tc)
+% The outage must fall strictly BETWEEN the two breaker events. After sg_on the
+% island no longer needs a converter reference, so 'reference_owner' would have
+% nothing to resolve against and the arm would not be the scenario it declares.
+ev = former_outage_events(); ev.ibr_trip = 95;   % sg_on = 90
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_former_outage_refuses_an_outage_coincident_with_the_offer(tc)
+ev = former_outage_events(); ev.ibr_trip = 90;   % == sg_on
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
 function test_former_outage_refuses_an_outage_past_the_horizon(tc)
 % An event after t_end would be validated, reported in the schedule, and never
-% reached -- a run that silently answers nothing.
+% reached -- a run that silently answers nothing. Caught by the sg_on ordering
+% rule as well, since the offer follows the outage.
 ev = former_outage_events(); ev.ibr_trip = 130;   % t_end = 120
 tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_former_outage_refuses_a_reclose_past_the_horizon(tc)
+ev = former_outage_events(); ev.sg_on = 130;      % t_end = 120
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_former_outage_requires_the_reclose_time(tc)
+% has_sg_reclose is now set for this profile, so sg_on is a REQUIRED field. An
+% arm that omitted it used to validate; it must now fail closed rather than run
+% without the reclose the scenario declares.
+ev = former_outage_events(); ev = rmfield(ev,'sg_on');
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:missingField');
 end
 
 function test_former_outage_refuses_a_target_that_is_not_a_converter(tc)
@@ -485,11 +515,16 @@ ev.sg_on = 90;
 end
 
 function ev = former_outage_events()
+% The instants the scenario suite requests: island at 20 s, the reference-owning
+% converter lost at 60 s, the machine offered back at 90 s. The 30 s between the
+% outage and the offer let the post-outage island settle before the synchronism
+% gates are asked to pass.
 ev = base_events();
 ev.event_profile = 'sg_trip_then_former_outage';
 ev.sg_trip = 20;
 ev.ibr_trip = 60;
 ev.ibr_trip_target = 'reference_owner';
+ev.sg_on = 90;
 end
 
 function ev = chronology_events()

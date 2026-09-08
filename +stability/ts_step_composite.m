@@ -136,9 +136,43 @@ if state_predictor=="explicit_euler" || ...
     end
 end
 z0 = [x_guess;y_guess];
-residual_fn = @(z) coupled_residual(z,x0,f0,h,active_indices, ...
+% --- Limiter-regime freezing (opt-in) ------------------------------------
+% The IBR current limiter and its anti-windup are BRANCH SWITCHES that the
+% device RHS re-decides on every call. A coupled Newton solve therefore
+% evaluates a residual whose identity can change between the base point, the FD
+% perturbation points and the line-search trials: Jacobian columns are then
+% assembled across a branch boundary and the search direction is a Newton
+% direction for neither branch. Measured at the sg_fault_bus9 wall
+% (docs/project/defects/2026-09-03-scenario-suite-adaptive-dtmin-nonsmooth-wall.md):
+% 2 of 46 state perturbations and 1 of 28 algebraic perturbations flip IBR2's
+% two hold booleans at the last accepted state, and at no earlier state.
+%
+% When enabled this runs the active-set pattern stability.active_bound_run
+% already uses for the equilibrium solve: freeze each device's branch, solve to
+% convergence on that single smooth residual, reclassify at the solution, and
+% repeat while the classification keeps changing, up to a declared cap. Nothing
+% about newton_tol, kcl_tol, the LTE gate or the fail-closed policy changes --
+% the step is accepted or rejected by exactly the same authority. A solve that
+% never settles returns the LAST attempt's outcome, so the caller sees an
+% ordinary non-convergence and its halving/fail-closed path is untouched.
+% Default off: byte-identical to the historical single solve.
+limiter_freeze_enabled = logical(option_value(opt,'limiter_regime_freeze',false));
+limiter_freeze_max_outer = option_value(opt,'limiter_regime_max_outer',4);
+if ~isnumeric(limiter_freeze_max_outer) || ~isscalar(limiter_freeze_max_outer) || ...
+        ~isfinite(limiter_freeze_max_outer) || limiter_freeze_max_outer < 1 || ...
+        limiter_freeze_max_outer ~= fix(limiter_freeze_max_outer)
+    error('ts_step_composite:badLimiterMaxOuter', ...
+        'limiter_regime_max_outer must be a positive integer.');
+end
+limiter_freeze_enabled = limiter_freeze_enabled && ...
+    isfield(dae,'limiter_regime') && isa(dae.limiter_regime,'function_handle');
+% Residual builder parameterised by the event context, so a frozen-branch solve
+% reuses this EXACT construction with only the freeze added. The live-context
+% residual below is the historical one, expression for expression.
+make_residual = @(ec) @(z) coupled_residual(z,x0,f0,h,active_indices, ...
     frozen_indices,free_vars,free_rows,vcon_vars,vcon_ref,ny,dae,Ynet,u, ...
-    event_context,full_kcl,t_now+h,integration_method);
+    ec,full_kcl,t_now+h,integration_method);
+residual_fn = make_residual(event_context);
 if fd_grouping == "off"
     nz0 = numel(z0);
     fd_groups = num2cell(1:nz0);
@@ -153,24 +187,75 @@ else
 end
 if fd_perturbation == "absolute"
     % Scalar step: forward_fd takes the byte-for-byte historical path.
-    jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps,fd_groups,fd_rowsets, ...
+    make_jacobian = @(rfn) @(z) forward_fd(z,rfn,fd_eps,fd_groups,fd_rowsets, ...
         fd_structure_check);
 else
-    jacobian_fn=@(z) forward_fd(z,residual_fn,fd_eps*(1+abs(z)), ...
+    make_jacobian = @(rfn) @(z) forward_fd(z,rfn,fd_eps*(1+abs(z)), ...
         fd_groups,fd_rowsets,fd_structure_check);
 end
-newton_opt = struct();
-if domain_preserving
-    newton_opt.trial_exception_classifier = @trial_domain_classifier;
-    newton_opt.trial_exception_diagnostic = @(z_trial,me) ...
-        trial_domain_diagnostic(z_trial,me,active_indices,free_vars, ...
-        vcon_vars,vcon_ref,ny,dae,event_context);
+jacobian_fn = make_jacobian(residual_fn);
+make_newton_opt = @(ec) newton_options(domain_preserving,active_indices, ...
+    free_vars,vcon_vars,vcon_ref,ny,dae,ec);
+newton_opt = make_newton_opt(event_context);
+na = numel(active_indices);
+if ~limiter_freeze_enabled
+    [z_sol,niter,ok,residual_norm,rcond_val,~,newton_info] = ...
+        stability.composite_newton(z0,residual_fn,jacobian_fn,tol,max_iter, ...
+        verbose,newton_opt);
+    limiter_info = struct('enabled',false,'outer_iterations',0, ...
+        'settled',true,'regime_changes',0,'frozen_solves',0);
+else
+    % Outer active-set loop over the limiter branch. Each pass solves a single
+    % SMOOTH residual (the branch held fixed), then reclassifies at that
+    % solution on the LIVE branch. Settling means the solution's own branch is
+    % the one it was solved under -- at which point the frozen residual and the
+    % live residual are the same function at that point, so the reported
+    % convergence is convergence of the true switched residual, at the same
+    % newton_tol. Not settling is reported as non-convergence: the caller's
+    % halving and fail-closed policy then applies unchanged. No gate moves.
+    z_c = z0;
+    outer_iters = 0;
+    settled = false;
+    n_changes = 0;
+    n_solves = 0;
+    ok = false; residual_norm = inf; rcond_val = NaN;
+    newton_info = struct('domain_rejected_trials',0,'line_search_exhausted',false, ...
+        'residual_before_line_search',inf,'final_tested_alpha',NaN, ...
+        'minimum_trial_voltage',NaN,'final_domain_violation',[], ...
+        'minimum_voltage_violation',[]);
+    for outer = 1:limiter_freeze_max_outer
+        frz = freeze_from_regime(limiter_regime_at(dae,t_now+h,x0,z_c, ...
+            active_indices,vcon_vars,vcon_ref,free_vars,ny,u,event_context), ...
+            blend_from_context(event_context));
+        ec_frozen = event_context;
+        ec_frozen.limiter_freeze = frz;
+        rfn = make_residual(ec_frozen);
+        [z_new,ni,ok,residual_norm,rcond_val,~,newton_info] = ...
+            stability.composite_newton(z_c,rfn,make_jacobian(rfn),tol, ...
+            max_iter,verbose,make_newton_opt(ec_frozen));
+        outer_iters = outer_iters + ni;
+        n_solves = n_solves + 1;
+        z_c = z_new;
+        if ~ok, break; end
+        frz_at_solution = freeze_from_regime(limiter_regime_at(dae,t_now+h, ...
+            x0,z_c,active_indices,vcon_vars,vcon_ref,free_vars,ny,u, ...
+            event_context), blend_from_context(event_context));
+        if isequal(frz_at_solution,frz)
+            settled = true;
+            break;
+        end
+        n_changes = n_changes + 1;
+    end
+    z_sol = z_c;
+    niter = outer_iters;
+    % A converged frozen solve whose branch does not match its own solution has
+    % NOT solved the switched residual. Report it as non-convergence rather than
+    % accept a root of a different equation.
+    ok = ok && settled;
+    limiter_info = struct('enabled',true,'outer_iterations',outer_iters, ...
+        'settled',settled,'regime_changes',n_changes,'frozen_solves',n_solves);
 end
-[z_sol,niter,ok,residual_norm,rcond_val,~,newton_info] = ...
-    stability.composite_newton(z0,residual_fn,jacobian_fn,tol,max_iter, ...
-    verbose,newton_opt);
 terminal_residual=residual_fn(z_sol);
-na=numel(active_indices);
 candidate_x=x0;
 candidate_x(active_indices)=z_sol(1:na);
 candidate_y=zeros(ny,1);
@@ -195,11 +280,83 @@ step = struct('x_full',x1,'y_full',y1,'converged',ok, ...
 % Additive diagnostics (default-off path publishes zero/empty counters so
 % every caller sees a stable shape).
 step.newton_info = newton_info;
+step.limiter_regime_info = limiter_info;
 step.domain_rejected_trials = newton_info.domain_rejected_trials;
 step.fd_column_groups = fd_info;
 step.terminal_residual_vector=terminal_residual;
 step.terminal_candidate_x=candidate_x;
 step.terminal_candidate_y=candidate_y;
+end
+
+function opt_out = newton_options(domain_preserving,active_indices,free_vars, ...
+    vcon_vars,vcon_ref,ny,dae,event_context)
+%NEWTON_OPTIONS  The composite_newton option struct for one event context.
+%   Factored out so the frozen-branch solves build it exactly as the live solve
+%   does, with the domain diagnostics bound to the SAME context the residual
+%   uses. Default-off path is unchanged: an empty struct.
+opt_out = struct();
+if domain_preserving
+    opt_out.trial_exception_classifier = @trial_domain_classifier;
+    opt_out.trial_exception_diagnostic = @(z_trial,me) ...
+        trial_domain_diagnostic(z_trial,me,active_indices,free_vars, ...
+        vcon_vars,vcon_ref,ny,dae,event_context);
+end
+end
+
+function reg = limiter_regime_at(dae,t_next,x0,z,active,vcon_vars,vcon_ref, ...
+    free_vars,ny,u,event_context)
+%LIMITER_REGIME_AT  The live (unfrozen) limiter regime at the iterate Z.
+%   Reconstructs x/y from Z exactly as coupled_residual does, then asks the
+%   composite for each device's branch. The event context passed in is the
+%   caller's own, i.e. WITHOUT any freeze, so this always reports the true
+%   switched-system branch and can be used to test whether a frozen solution is
+%   self-consistent.
+na = numel(active);
+x1 = x0;
+x1(active) = z(1:na);
+y1 = zeros(ny,1);
+y1(vcon_vars) = vcon_ref;
+y1(free_vars) = z(na+1:end);
+reg = dae.limiter_regime(t_next,x1,y1,u,event_context);
+end
+
+function frz = freeze_from_regime(reg,blend)
+%FREEZE_FROM_REGIME  Reduce a regime report to the freeze the models consume.
+%   Keeps only the two hold booleans plus the controller branch that produced
+%   them, so a freeze is never silently applied to the other branch after a mode
+%   transfer. Devices whose report lacks the fields are omitted, which leaves
+%   them on their live branch. When the anti-windup BLEND is active the switch
+%   is continuous, so held-at-one has margin there is no sliding value to cross:
+%   partially-held rows are reported at their frozen blend fraction, and a freeze
+%   omits them (the live blend applies inside every solve).
+if nargin<2 || isempty(blend), blend=0; end
+frz = struct();
+if ~isstruct(reg) || ~isscalar(reg), return; end
+keys = fieldnames(reg);
+for k = 1:numel(keys)
+    c = reg.(keys{k});
+    if ~isstruct(c) || ~isscalar(c) || ...
+            ~isfield(c,'hold_d') || ~isfield(c,'hold_q'), continue; end
+    if blend>0
+        part_d = ismember(c.hold_d,[0,1]);
+        part_q = ismember(c.hold_q,[0,1]);
+        if ~part_d || ~part_q, continue; end
+    end
+    entry = struct('hold_d',logical(c.hold_d),'hold_q',logical(c.hold_q));
+    if isfield(c,'mode'), entry.mode = char(string(c.mode)); end
+    frz.(keys{k}) = entry;
+end
+end
+
+function blend = blend_from_context(event_context)
+%BLEND_FROM_CONTEXT  The declared anti-windup blend width, or 0.
+%   Mirrors the device models' reader so the freeze machinery uses exactly the
+%   same value the RHS uses. Absent (every historical caller) is 0.
+blend = 0;
+if isempty(event_context) || ~isstruct(event_context) || ...
+        ~isfield(event_context,'anti_windup_blend'), return; end
+v = event_context.anti_windup_blend;
+if isnumeric(v) && isscalar(v) && isfinite(v) && v>=0, blend = double(v); end
 end
 
 function r = coupled_residual(z,x0,f0,h,active,frozen,free_vars,free_rows, ...

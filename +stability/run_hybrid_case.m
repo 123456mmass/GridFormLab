@@ -201,6 +201,22 @@ end
 if isfield(opt,'fd_perturbation') && ~isempty(opt.fd_perturbation)
     ts_opt_base.fd_perturbation=opt.fd_perturbation;
 end
+% Limiter-regime freezing inside the coupled Newton solve (opt-in). Forwarded
+% only when the caller sets it, so an omitted option leaves the run
+% byte-identical. Derivation and failure semantics in
+% stability.ts_step_composite; the acceptance gates are untouched.
+if isfield(opt,'limiter_regime_freeze') && ~isempty(opt.limiter_regime_freeze)
+    ts_opt_base.limiter_regime_freeze=opt.limiter_regime_freeze;
+end
+if isfield(opt,'limiter_regime_max_outer') && ~isempty(opt.limiter_regime_max_outer)
+    ts_opt_base.limiter_regime_max_outer=opt.limiter_regime_max_outer;
+end
+% Anti-windup blend width (opt-in). Forwarded only when set, so an omitted
+% option leaves the run byte-identical: the models' reader returns 0 and the
+% hard switch is taken.
+if isfield(opt,'anti_windup_blend') && ~isempty(opt.anti_windup_blend)
+    ts_opt_base.anti_windup_blend=opt.anti_windup_blend;
+end
 % Post-reclose field-voltage command timescale (opt-in). 'mode' is the default
 % and historical behaviour; 'control' walks Efd over the declared actuator lags.
 if isfield(opt,'handback_efd_timescale') && ~isempty(opt.handback_efd_timescale)

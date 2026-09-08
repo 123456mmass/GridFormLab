@@ -1,0 +1,1359 @@
+PW-6916.docx all equation paragraphs: 220
+
+=== paragraph 62 ===
+BEFORE: นิยามตัวแปร
+PARAGRAPH: ωb
+EQ1: ωb
+AFTER: ωb=2πf0
+
+=== paragraph 63 ===
+BEFORE: ωb
+PARAGRAPH: ωb=2πf0
+EQ1: ωb=2πf0
+AFTER: Eq'​
+
+=== paragraph 64 ===
+BEFORE: ωb=2πf0
+PARAGRAPH: Eq'​
+EQ1: Eq'
+AFTER: แรงเคลื่อนไฟฟ้าชั่วครู่ของ SG
+
+=== paragraph 68 ===
+BEFORE: แรงเคลื่อนไฟฟ้าชั่วครู่ของ SG
+PARAGRAPH: Idc
+EQ1: Idc
+AFTER: กระแสของแหล่งจ่าย DC
+
+=== paragraph 70 ===
+BEFORE: กระแสของแหล่งจ่าย DC
+PARAGRAPH: JV
+EQ1: JV
+AFTER: ดัชนีย่อยV
+
+=== paragraph 72 ===
+BEFORE: ดัชนีย่อยV
+PARAGRAPH: Jf
+EQ1: Jf
+AFTER: ดัชนีย่อยความถี่
+
+=== paragraph 74 ===
+BEFORE: ดัชนีย่อยความถี่
+PARAGRAPH: Sbase
+EQ1: Sbase
+AFTER: ฐานกำลังระบบ
+
+=== paragraph 76 ===
+BEFORE: ฐานกำลังระบบ
+PARAGRAPH: Td,off
+EQ1: Td,off
+AFTER: เวลาหน่วงคงสถานะขาออก
+
+=== paragraph 78 ===
+BEFORE: เวลาหน่วงคงสถานะขาออก
+PARAGRAPH: Td,on
+EQ1: Td,on
+AFTER: เวลาหน่วงคงสถานะขาเข้า
+
+=== paragraph 80 ===
+BEFORE: เวลาหน่วงคงสถานะขาเข้า
+PARAGRAPH: Vdc,
+EQ1: Vdc
+AFTER: Vบัส DC
+
+=== paragraph 82 ===
+BEFORE: Vบัส DC
+PARAGRAPH: f0
+EQ1: f0
+AFTER: ความถี่ฐาน
+
+=== paragraph 84 ===
+BEFORE: ความถี่ฐาน
+PARAGRAPH: fm, ζ
+EQ1: fm
+EQ2: ζ
+AFTER: ความถี่ modal และ damping ratio
+
+=== paragraph 86 ===
+BEFORE: ความถี่ modal และ damping ratio
+PARAGRAPH: id,
+EQ1: id
+AFTER: กระแสตัวกรองแกน d
+
+=== paragraph 87 ===
+BEFORE: id,
+PARAGRAPH: กระแสตัวกรองแกน d
+EQ1: d
+AFTER: iq
+
+=== paragraph 88 ===
+BEFORE: กระแสตัวกรองแกน d
+PARAGRAPH: iq
+EQ1: iq
+AFTER: กระแสตัวกรองแกน  q ของ IBR
+
+=== paragraph 89 ===
+BEFORE: iq
+PARAGRAPH: กระแสตัวกรองแกน  q ของ IBR
+EQ1: q
+AFTER: Γoff
+
+=== paragraph 90 ===
+BEFORE: กระแสตัวกรองแกน  q ของ IBR
+PARAGRAPH: Γoff
+EQ1: Γoff
+AFTER: ระดับปลดกลับสู่ GFL
+
+=== paragraph 92 ===
+BEFORE: ระดับปลดกลับสู่ GFL
+PARAGRAPH: Γon
+EQ1: Γon
+AFTER: ระดับกระตุ้นเข้าสู่ GFM
+
+=== paragraph 94 ===
+BEFORE: ระดับกระตุ้นเข้าสู่ GFM
+PARAGRAPH: ΠI
+EQ1: ΠI
+AFTER: ตัวจำกัดขนาดกระแสอ้างอิงแบบวงกลม
+
+=== paragraph 96 ===
+BEFORE: ตัวจำกัดขนาดกระแสอ้างอิงแบบวงกลม
+PARAGRAPH: θPLL
+EQ1: θPLL
+AFTER: มุม PLL
+
+=== paragraph 98 ===
+BEFORE: มุม PLL
+PARAGRAPH: θVSG
+EQ1: θVSG
+AFTER: มุม
+
+=== paragraph 100 ===
+BEFORE: มุม
+PARAGRAPH: ξPLL
+EQ1: ξPLL
+AFTER: ตัวอินทิเกรตของ PLL
+
+=== paragraph 102 ===
+BEFORE: ตัวอินทิเกรตของ PLL
+PARAGRAPH: ωVSG
+EQ1: ωVSG
+AFTER: ความถี่ของ GFM
+
+=== paragraph 104 ===
+BEFORE: ความถี่ของ GFM
+PARAGRAPH: h
+EQ1: h
+AFTER: ขั้นเวลา
+
+=== paragraph 106 ===
+BEFORE: ขั้นเวลา
+PARAGRAPH: E
+EQ1: E
+AFTER: แอมพลิจูดVของ VSG
+
+=== paragraph 108 ===
+BEFORE: แอมพลิจูดVของ VSG
+PARAGRAPH: J
+EQ1: J
+AFTER: Jacobian ของ residual
+
+=== paragraph 110 ===
+BEFORE: Jacobian ของ residual
+PARAGRAPH: S(t)
+EQ1: S(t)
+AFTER: ดัชนีความรุนแรงรวม
+
+=== paragraph 112 ===
+BEFORE: ดัชนีความรุนแรงรวม
+PARAGRAPH: r(z)
+EQ1: r(z)
+AFTER: residual ของขั้นนั้น
+
+=== paragraph 114 ===
+BEFORE: residual ของขั้นนั้น
+PARAGRAPH: u
+EQ1: u
+AFTER: input
+
+=== paragraph 116 ===
+BEFORE: input
+PARAGRAPH: x
+EQ1: x
+AFTER: differential state
+
+=== paragraph 118 ===
+BEFORE: differential state
+PARAGRAPH: y
+EQ1: y
+AFTER: algebraic variable
+
+=== paragraph 120 ===
+BEFORE: algebraic variable
+PARAGRAPH: Ω​
+EQ1: Ω
+AFTER: อัตราการสลายของรากที่ช้าที่สุดของชุดอุปกรณ์ GFM นั้น
+
+=== paragraph 122 ===
+BEFORE: อัตราการสลายของรากที่ช้าที่สุดของชุดอุปกรณ์ GFM นั้น
+PARAGRAPH: δ
+EQ1: δ
+AFTER: มุมโรเตอร์
+
+=== paragraph 124 ===
+BEFORE: มุมโรเตอร์
+PARAGRAPH: κ​
+EQ1: κ
+AFTER: อัตราส่วนฐาน SbaseMbase ระหว่างฐานระบบกับฐานอุปกรณ์
+
+=== paragraph 125 ===
+BEFORE: κ​
+PARAGRAPH: อัตราส่วนฐาน SbaseMbase ระหว่างฐานระบบกับฐานอุปกรณ์
+EQ1: SbaseMbase
+AFTER: λ=σ±jωd​
+
+=== paragraph 126 ===
+BEFORE: อัตราส่วนฐาน SbaseMbase ระหว่างฐานระบบกับฐานอุปกรณ์
+PARAGRAPH: λ=σ±jωd​
+EQ1: λ=σ±jωd
+AFTER: eigenvalue ของเมทริกซ์ state ที่ลดรูปแล้ว
+
+=== paragraph 128 ===
+BEFORE: eigenvalue ของเมทริกซ์ state ที่ลดรูปแล้ว
+PARAGRAPH: ω
+EQ1: ω
+AFTER: ความเบี่ยงเบนความเร็วต่อหน่วยของ SG
+
+=== paragraph 138 ===
+BEFORE: เวกเตอร์ระบุโหมดการทำงาน
+PARAGRAPH: xp
+EQ1: xp
+AFTER: เป็นตัวแปรสถานะทางกายภาพที่ใช้ร่วมกันในทั้งสองโหมด
+
+=== paragraph 140 ===
+BEFORE: เป็นตัวแปรสถานะทางกายภาพที่ใช้ร่วมกันในทั้งสองโหมด
+PARAGRAPH: xGFL
+EQ1: xGFL
+AFTER: เป็นตัวแปรสถานะของตัวควบคุมแต่ละโหมดซึ่งไม่ทำงานพร้อมกัน
+
+=== paragraph 142 ===
+BEFORE: เป็นตัวแปรสถานะของตัวควบคุมแต่ละโหมดซึ่งไม่ทำงานพร้อมกัน
+PARAGRAPH: xGFM
+EQ1: xGFM
+AFTER: เป็นตัวแปรสถานะของตัวควบคุมแต่ละโหมดซึ่งไม่ทำงานพร้อมกัน
+
+=== paragraph 160 ===
+BEFORE: 1. ขอบเขตของงาน ที่มาของข้อมูล
+PARAGRAPH: ระบบที่ศึกษาคือเครือข่าย IEEE 14-bus ที่มี SG หนึ่งเครื่องที่บัสอ้างอิงและ IBR สี่ตัวที่บัส 2, 3, 6 และ 8 ทั้งระบบถูกประกอบเป็น DAE ชุดเดียว ที่บังคับ(KCL ที่ทุกบัส ไม่มีการยุบบัสใดทิ้ง ไม่มีการแทนอุปกรณ์ด้วยแหล่งจ่ายอุดมคติ และไม่มีการแยกแก้ทีละอุปกรณ์ ฐานที่ใช้ตลอดรายงานคือ Sbase=100 MVA และความถี่ฐาน f0=60 Hz
+EQ1: Sbase=100
+EQ2: f0=60
+AFTER: ที่มาของข้อมูลนำเข้า ข้อมูลเครือข่ายพิกัดสายส่งหม้อแปลงที่มีแท็ปและตารางโหลดใช้กรณีทดสอบ IEEE 14-bus ในรูปแบบ IEEE Common Data Format ตามที่เผยแพร่ในชุด [5] พลวัตของ SG ใช้ค่าจากรายงานทางเทคนิคของ  [6]โดยแปลงฐานจากฐานเครื่องมาเป็นฐานระบบส่วนโครงสร้างของ IBR สองโหมดประกอบขึ้นจากบล็อกมาตรฐานในเอกสารอ้างอิง คือวงควบคุมกระแสและ PLL ตาม [7] และ [8] วงกำลังชั้นนอกตาม [9] และเครื่องซิงโครนัสเสมือนแบบไม่มี PLL [10]
+
+=== paragraph 164 ===
+BEFORE: 2.1 การคำนวณ Power Flow และการกำหนดจุดทำงาน
+PARAGRAPH: PF ใช้หาขนาดVและมุมของทุกบัสก่อนเริ่มการวิเคราะห์เชิงพลวัต สำหรับบัส i กำลังสุทธิที่ฉีดเข้าโครงข่ายเขียนได้เป็น
+EQ1: i
+AFTER: ẋ = f(x,y)
+
+=== paragraph 166 ===
+BEFORE: PF ใช้หาขนาดVและมุมของทุกบัสก่อนเริ่มการวิเคราะห์เชิงพลวัต สำหรับบัส i กำลังสุทธิที่ฉีดเข้าโครงข่ายเขียนได้เป็น
+PARAGRAPH: ẋ = f(x,y)
+EQ1: ẋ = f(x,y)
+AFTER: (1)
+
+=== paragraph 170 ===
+BEFORE: (1)
+PARAGRAPH: Pi+jQi=Vij=1NYijVj*.
+EQ1: Pi+jQi=Vij=1NYijVj*.
+AFTER: (2)
+
+=== paragraph 174 ===
+BEFORE: บัสถูกแบ่งเป็น Slack, PV และ PQ ตามตัวแปรที่กำหนดและตัวแปรที่ต้องแก้ โดยบัส Slack กำหนด  และ , บัส PV กำหนด  และ , ส่วนบัส PQ กำหนด  และ  ตัวแก้แบบ NR สร้างค่าคลาดเคลื่อน  แล้วแก้ระบบเชิงเส้น
+PARAGRAPH: ΔPΔQ=JPθJPVJQθJQVΔθΔ|V|,
+EQ1: ΔPΔQ=JPθJPVJQθJQVΔθΔ|V|,
+AFTER: (3)
+
+=== paragraph 178 ===
+BEFORE: (3)
+PARAGRAPH: จุดทำงานที่ได้จาก PF ถูกใช้เป็นจุดทำงานเริ่มต้น สำหรับการจำลองในโดเมนเวลา TS และ ที่สภาวะเริ่มต้น ทั้งนี้ในระหว่างการจำลอง TS เมื่อเกิดเหตุการณ์รบกวนหรือมีการสลับโหมดควบคุม จุดทำงานของระบบจะเปลี่ยนแปลงตามเวลาและตามสถานะ mit ของอุปกรณ์
+EQ1: mit
+AFTER: ผล PF ของกรณีที่ SG ยังเชื่อมต่ออยู่แสดงในตารางที่ 2 SG ที่บัส 1 เป็น reference source ในช่วงเริ่มต้น และ IBR อยู่ที่บัส 2, 3, 6 และ 8
+
+=== paragraph 182 ===
+BEFORE: เพื่อให้ผลการจำลองในโดเมนเวลา (TS) เริ่มต้นจากสภาวะสมดุลเดียวกับที่ได้จากการคำนวณ PF
+PARAGRAPH: ẋ = f(x, y, u, m(t), t),      0 = g(x, y, u, m(t), t)
+EQ1: ẋ = f(x, y, u, m(t), t),      0 = g(x, y, u, m(t), t)
+AFTER: (4)
+
+=== paragraph 189 ===
+BEFORE: Type
+PARAGRAPH: V
+EQ1: V
+AFTER: θ
+
+=== paragraph 190 ===
+BEFORE: V
+PARAGRAPH: θ
+EQ1: θ
+AFTER: Pinj*
+
+=== paragraph 193 ===
+BEFORE: Qinj*
+PARAGRAPH: Pload
+EQ1: Pload
+AFTER: Qload
+
+=== paragraph 194 ===
+BEFORE: Pload
+PARAGRAPH: Qload
+EQ1: Qload
+AFTER: 1
+
+=== paragraph 197 ===
+BEFORE: SLACK
+PARAGRAPH: 1.0000​
+EQ1: 1.0000
+AFTER: 0.0000​
+
+=== paragraph 198 ===
+BEFORE: 1.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 1.3319​
+
+=== paragraph 199 ===
+BEFORE: 0.0000​
+PARAGRAPH: 1.3319​
+EQ1: 1.3319
+AFTER: -0.1957​
+
+=== paragraph 200 ===
+BEFORE: 1.3319​
+PARAGRAPH: -0.1957​
+EQ1: -0.1957
+AFTER: 0.0000​
+
+=== paragraph 201 ===
+BEFORE: -0.1957​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 202 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 2
+
+=== paragraph 205 ===
+BEFORE: PQ
+PARAGRAPH: 0.9914​
+EQ1: 0.9914
+AFTER: -3.2585​
+
+=== paragraph 206 ===
+BEFORE: 0.9914​
+PARAGRAPH: -3.2585​
+EQ1: -3.2585
+AFTER: 0.3172​
+
+=== paragraph 207 ===
+BEFORE: -3.2585​
+PARAGRAPH: 0.3172​
+EQ1: 0.3172
+AFTER: 0.1767​
+
+=== paragraph 208 ===
+BEFORE: 0.3172​
+PARAGRAPH: 0.1767​
+EQ1: 0.1767
+AFTER: 0.2170​
+
+=== paragraph 209 ===
+BEFORE: 0.1767​
+PARAGRAPH: 0.2170​
+EQ1: 0.2170
+AFTER: 0.1270​
+
+=== paragraph 210 ===
+BEFORE: 0.2170​
+PARAGRAPH: 0.1270​
+EQ1: 0.1270
+AFTER: 3
+
+=== paragraph 213 ===
+BEFORE: PQ
+PARAGRAPH: 0.9667​
+EQ1: 0.9667
+AFTER: -8.6921​
+
+=== paragraph 214 ===
+BEFORE: 0.9667​
+PARAGRAPH: -8.6921​
+EQ1: -8.6921
+AFTER: 0.2884​
+
+=== paragraph 215 ===
+BEFORE: -8.6921​
+PARAGRAPH: 0.2884​
+EQ1: 0.2884
+AFTER: 0.1607​
+
+=== paragraph 216 ===
+BEFORE: 0.2884​
+PARAGRAPH: 0.1607​
+EQ1: 0.1607
+AFTER: 0.9420​
+
+=== paragraph 217 ===
+BEFORE: 0.1607​
+PARAGRAPH: 0.9420​
+EQ1: 0.9420
+AFTER: 0.1900​
+
+=== paragraph 218 ===
+BEFORE: 0.9420​
+PARAGRAPH: 0.1900​
+EQ1: 0.1900
+AFTER: 4
+
+=== paragraph 221 ===
+BEFORE: PQ
+PARAGRAPH: 0.9832​
+EQ1: 0.9832
+AFTER: -6.7064​
+
+=== paragraph 222 ===
+BEFORE: 0.9832​
+PARAGRAPH: -6.7064​
+EQ1: -6.7064
+AFTER: 0.0000​
+
+=== paragraph 223 ===
+BEFORE: -6.7064​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 224 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.4780​
+
+=== paragraph 225 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.4780​
+EQ1: 0.4780
+AFTER: -0.0390​
+
+=== paragraph 226 ===
+BEFORE: 0.4780​
+PARAGRAPH: -0.0390​
+EQ1: -0.0390
+AFTER: 5
+
+=== paragraph 229 ===
+BEFORE: PQ
+PARAGRAPH: 0.9858​
+EQ1: 0.9858
+AFTER: -5.5221​
+
+=== paragraph 230 ===
+BEFORE: 0.9858​
+PARAGRAPH: -5.5221​
+EQ1: -5.5221
+AFTER: 0.0000​
+
+=== paragraph 231 ===
+BEFORE: -5.5221​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 232 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0760​
+
+=== paragraph 233 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0760​
+EQ1: 0.0760
+AFTER: 0.0160​
+
+=== paragraph 234 ===
+BEFORE: 0.0760​
+PARAGRAPH: 0.0160​
+EQ1: 0.0160
+AFTER: 6
+
+=== paragraph 237 ===
+BEFORE: PQ
+PARAGRAPH: 1.0575​
+EQ1: 1.0575
+AFTER: -6.7136​
+
+=== paragraph 238 ===
+BEFORE: 1.0575​
+PARAGRAPH: -6.7136​
+EQ1: -6.7136
+AFTER: 0.4443​
+
+=== paragraph 239 ===
+BEFORE: -6.7136​
+PARAGRAPH: 0.4443​
+EQ1: 0.4443
+AFTER: 0.2476​
+
+=== paragraph 240 ===
+BEFORE: 0.4443​
+PARAGRAPH: 0.2476​
+EQ1: 0.2476
+AFTER: 0.1120​
+
+=== paragraph 241 ===
+BEFORE: 0.2476​
+PARAGRAPH: 0.1120​
+EQ1: 0.1120
+AFTER: 0.0750​
+
+=== paragraph 242 ===
+BEFORE: 0.1120​
+PARAGRAPH: 0.0750​
+EQ1: 0.0750
+AFTER: 7
+
+=== paragraph 245 ===
+BEFORE: PQ
+PARAGRAPH: 1.0253​
+EQ1: 1.0253
+AFTER: -6.9205​
+
+=== paragraph 246 ===
+BEFORE: 1.0253​
+PARAGRAPH: -6.9205​
+EQ1: -6.9205
+AFTER: 0.0000​
+
+=== paragraph 247 ===
+BEFORE: -6.9205​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 248 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 249 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 250 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 8
+
+=== paragraph 253 ===
+BEFORE: PQ
+PARAGRAPH: 1.0494​
+EQ1: 1.0494
+AFTER: -4.4090​
+
+=== paragraph 254 ===
+BEFORE: 1.0494​
+PARAGRAPH: -4.4090​
+EQ1: -4.4090
+AFTER: 0.2677​
+
+=== paragraph 255 ===
+BEFORE: -4.4090​
+PARAGRAPH: 0.2677​
+EQ1: 0.2677
+AFTER: 0.1491​
+
+=== paragraph 256 ===
+BEFORE: 0.2677​
+PARAGRAPH: 0.1491​
+EQ1: 0.1491
+AFTER: 0.0000​
+
+=== paragraph 257 ===
+BEFORE: 0.1491​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 258 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 9
+
+=== paragraph 261 ===
+BEFORE: PQ
+PARAGRAPH: 1.0219​
+EQ1: 1.0219
+AFTER: -8.6416​
+
+=== paragraph 262 ===
+BEFORE: 1.0219​
+PARAGRAPH: -8.6416​
+EQ1: -8.6416
+AFTER: 0.0000​
+
+=== paragraph 263 ===
+BEFORE: -8.6416​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 264 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.2950​
+
+=== paragraph 265 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.2950​
+EQ1: 0.2950
+AFTER: 0.1660​
+
+=== paragraph 266 ===
+BEFORE: 0.2950​
+PARAGRAPH: 0.1660​
+EQ1: 0.1660
+AFTER: 10
+
+=== paragraph 269 ===
+BEFORE: PQ
+PARAGRAPH: 1.0202​
+EQ1: 1.0202
+AFTER: -8.5886​
+
+=== paragraph 270 ===
+BEFORE: 1.0202​
+PARAGRAPH: -8.5886​
+EQ1: -8.5886
+AFTER: 0.0000​
+
+=== paragraph 271 ===
+BEFORE: -8.5886​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 272 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0900​
+
+=== paragraph 273 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0900​
+EQ1: 0.0900
+AFTER: 0.0580​
+
+=== paragraph 274 ===
+BEFORE: 0.0900​
+PARAGRAPH: 0.0580​
+EQ1: 0.0580
+AFTER: 11
+
+=== paragraph 277 ===
+BEFORE: PQ
+PARAGRAPH: 1.0347​
+EQ1: 1.0347
+AFTER: -7.7782​
+
+=== paragraph 278 ===
+BEFORE: 1.0347​
+PARAGRAPH: -7.7782​
+EQ1: -7.7782
+AFTER: 0.0000​
+
+=== paragraph 279 ===
+BEFORE: -7.7782​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 280 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0350​
+
+=== paragraph 281 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0350​
+EQ1: 0.0350
+AFTER: 0.0180​
+
+=== paragraph 282 ===
+BEFORE: 0.0350​
+PARAGRAPH: 0.0180​
+EQ1: 0.0180
+AFTER: 12
+
+=== paragraph 285 ===
+BEFORE: PQ
+PARAGRAPH: 1.0411​
+EQ1: 1.0411
+AFTER: -7.6862​
+
+=== paragraph 286 ===
+BEFORE: 1.0411​
+PARAGRAPH: -7.6862​
+EQ1: -7.6862
+AFTER: 0.0000​
+
+=== paragraph 287 ===
+BEFORE: -7.6862​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 288 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0610​
+
+=== paragraph 289 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0610​
+EQ1: 0.0610
+AFTER: 0.0160​
+
+=== paragraph 290 ===
+BEFORE: 0.0610​
+PARAGRAPH: 0.0160​
+EQ1: 0.0160
+AFTER: 13
+
+=== paragraph 293 ===
+BEFORE: PQ
+PARAGRAPH: 1.0342​
+EQ1: 1.0342
+AFTER: -7.8345​
+
+=== paragraph 294 ===
+BEFORE: 1.0342​
+PARAGRAPH: -7.8345​
+EQ1: -7.8345
+AFTER: 0.0000​
+
+=== paragraph 295 ===
+BEFORE: -7.8345​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 296 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.1350​
+
+=== paragraph 297 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.1350​
+EQ1: 0.1350
+AFTER: 0.0580​
+
+=== paragraph 298 ===
+BEFORE: 0.1350​
+PARAGRAPH: 0.0580​
+EQ1: 0.0580
+AFTER: 14
+
+=== paragraph 301 ===
+BEFORE: PQ
+PARAGRAPH: 1.0087​
+EQ1: 1.0087
+AFTER: -9.3374​
+
+=== paragraph 302 ===
+BEFORE: 1.0087​
+PARAGRAPH: -9.3374​
+EQ1: -9.3374
+AFTER: 0.0000​
+
+=== paragraph 303 ===
+BEFORE: -9.3374​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.0000​
+
+=== paragraph 304 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.0000​
+EQ1: 0.0000
+AFTER: 0.1490​
+
+=== paragraph 305 ===
+BEFORE: 0.0000​
+PARAGRAPH: 0.1490​
+EQ1: 0.1490
+AFTER: 0.0500​
+
+=== paragraph 306 ===
+BEFORE: 0.1490​
+PARAGRAPH: 0.0500​
+EQ1: 0.0500
+AFTER: 4. สภาวะสมดุล DAE และแบบจำลองเครื่องกำเนิดไฟฟ้าซิงโครนัส
+
+=== paragraph 311 ===
+BEFORE: หลัง PF ได้Vและกำลังของแต่ละอุปกรณ์ จะสร้าง state เริ่มต้นและแก้สมการ  ร่วมกับ KCL  อีกครั้ง จุดสมดุลนี้เป็นจุดเริ่มต้นร่วมของ  และ TS สำหรับ SG ที่บัส 1 ใช้แบบจำลอง round-rotor sixth-order ตามที่ [11] และ  [12] วางไว้ และตามแนวปฏิบัติของ [13] โดย state ที่เก็บคือ
+PARAGRAPH: xSG=[δ,ω,Eq',Ed',Eq″,Ed″]T
+EQ1: xSG=[δ,ω,Eq',Ed',Eq″,Ed″]T
+AFTER: (5)
+
+=== paragraph 318 ===
+BEFORE: TS ใช้สมการ DAE เดียวกับ (4) แล้ว discretize differential states ด้วย implicit trapezoidal method
+PARAGRAPH: xk+1-xk-h2[f(xk,yk,uk)+f(xk+1,yk+1,uk+1)]=0,
+EQ1: xk+1-xk-h2[f(xk,yk,uk)+f(xk+1,yk+1,uk+1)]=0,
+AFTER: (6)
+
+=== paragraph 320 ===
+BEFORE: (6)
+PARAGRAPH: gxk+1,yk+1,uk+1=0
+EQ1: gxk+1,yk+1,uk+1=0
+AFTER: Unknown ของแต่ละ step จึงประกอบด้วย differential และ algebraic variables พร้อมกัน ตัวแก้ใช้ Newton แบบมีการหน่วง
+
+=== paragraph 325 ===
+BEFORE: Unknown ของแต่ละ step จึงประกอบด้วย differential และ algebraic variables พร้อมกัน ตัวแก้ใช้ Newton แบบมีการหน่วง
+PARAGRAPH: J(zm)Δz=-r(zm),      zm1=zm+αΔz,   0<α≤1,
+EQ1: J(zm)Δz=-r(zm),      zm1=zm+αΔz,   0<α≤1,
+AFTER: (7)
+
+=== paragraph 329 ===
+BEFORE: (7)
+PARAGRAPH: และรับ step เมื่อ residual ไม่เชิงเส้นผ่านเกณฑ์ที่กำหนดไว้ก่อน สำหรับผลหลักในรายงานนี้ ทุก step ที่ยอมรับมี ‖r‖∞<10-8
+EQ1: ‖r‖∞<10-8
+AFTER: เส้นทาง adaptive ใช้แนวคิด step-doubling ของ trapezoidal method: ทดลองหนึ่ง full step และสอง half steps แล้วประเมิน local error จากความต่างของคำตอบลำดับสอง
+
+=== paragraph 332 ===
+BEFORE: เส้นทาง adaptive ใช้แนวคิด step-doubling ของ trapezoidal method: ทดลองหนึ่ง full step และสอง half steps แล้วประเมิน local error จากความต่างของคำตอบลำดับสอง
+PARAGRAPH: eLTE≈zh/2,h/2-zh22-1=zh/2,h/2-zh3
+EQ1: eLTE≈zh/2,h/2-zh22-1=zh/2,h/2-zh3
+AFTER: (8)
+
+=== paragraph 336 ===
+BEFORE: (8)
+PARAGRAPH: หาก Newton ไม่ลู่เข้า, state ออกนอกขอบเขตทางกายภาพที่อุปกรณ์ประกาศไว้ หรือค่าความคลาดเคลื่อนเฉพาะที่สูงเกินเกณฑ์ step นั้นจะถูกปฏิเสธและย้อนกลับไปยัง state ที่ยอมรับแล้วก่อนลด hใหม่กำหนดเวลาเหตุการณ์ให้ตรงกั บขอบเขตขั้นเวลาของการคำนวณเพื่อรักษา ความถูกต้องของสมการดุลกำลัง KCL และลดความไม่ต่อเนื่องเชิงตัวเล ขการประยุกต์ใช้วิธี ปรับขนาดขั้นเวลาอัตโนมัติ ให้ผลลัพธ์ทางพลวัตที่สอ ดคล้องกับวิธีขั้นเวลาคงที่
+EQ1: h
+AFTER: โดยสามารถรักษาความแม่นยำของวิถีการตอบสนองเชิงเวลา
+
+=== paragraph 340 ===
+BEFORE: IBR ที่ใช้ในกรณีหลักประกอบขึ้นจากบล็อกควบคุมมาตรฐานที่อ้างถึงในหัวข้อที่ 1 แล้วจัดให้อยู่ในแบบจำลองที่ใช้เวกเตอร์สถานะขนาดคงที่ เพื่อให้สามารถเปลี่ยนโหมดระหว่าง GFL และ GFM ได้โดยไม่ต้องปรับเปลี่ยนมิติของเวกเตอร์สถานะระหว่างการจำลอง โดยแต่ละ IBR มีตัวแปรสถานะ 17 ตัว และสามารถแบ่ง state ได้เป็นสามกลุ่ม
+PARAGRAPH: xIBR=xpTxGFLTxGFMTT,
+EQ1: xIBR=xpTxGFLTxGFMTT,
+AFTER: (9)
+
+=== paragraph 343 ===
+BEFORE: โดย
+PARAGRAPH: xp=[id, iq, Vdc, Idc]T,
+EQ1: xp=[id, iq, Vdc, Idc]T,
+AFTER: (10)
+
+=== paragraph 345 ===
+BEFORE: (10)
+PARAGRAPH: xGFL=[θPLL, ξPLL, ξP, ξQ, ξIdGFL, ξIqGFL]T,
+EQ1: xGFL=[θPLL, ξPLL, ξP, ξQ, ξIdGFL, ξIqGFL]T,
+AFTER: (11)
+
+=== paragraph 347 ===
+BEFORE: (11)
+PARAGRAPH: xGFM=[θVSG, ωVSG, E, ξVd, ξVq, ξIdGFM, ξIqGFM]T
+EQ1: xGFM=[θVSG, ωVSG, E, ξVd, ξVq, ξIdGFM, ξIqGFM]T
+AFTER: (12)
+
+=== paragraph 353 ===
+BEFORE: เมื่อนำทั้งสามกลุ่มมาเรียงในเวกเตอร์สถานะขนาดคงที่ จะได้
+PARAGRAPH: xIBR=[id,iq,Vdc, θPLL,ξPLL,ξP,ξQ,ξIdGFL,ξIqGFL,
+EQ1: xIBR=[id,iq,Vdc, θPLL,ξPLL,ξP,ξQ,ξIdGFL,ξIqGFL,
+AFTER: (13)
+
+=== paragraph 355 ===
+BEFORE: (13)
+PARAGRAPH: θVSG,ωVSG,E,ξVd,ξVq,ξIdGFM,ξIqGFM,Idc]T
+EQ1: θVSG,ωVSG,E,ξVd,ξVq,ξIdGFM,ξIqGFM,Idc]T
+AFTER: ในโครงสร้างแบบจำลอง 17 สถานะ โหมด GFL มีตัวแปรสถานะทำงาน 10 ตัว และโหมด GFM มี 11 ตัว โดยสถานะของสาขาการควบคุมที่ไม่ได้ใช้งาน (Inactive Control Branch) จะถูกตรึงค่า (Hold) ไว้ เพื่อใช้เป็นเงื่อนไขเริ่มต้นสำหรับการถ่ายโอนสถานะ (State Transfer) ในการสลับโหมดครั้งถัดไป
+
+=== paragraph 362 ===
+BEFORE: รูปที่ 2 โครงสร้างการควบคุมการสลับโหมด GFL/GFM
+PARAGRAPH: Vdq,i=Vi e-jθi=vd+jvq      is,i=id+jiqejθi      Ii=is,iκ
+EQ1: Vdq,i=Vi e-jθi=vd+jvq      is,i=id+jiqejθi      Ii=is,iκ
+AFTER: (14)
+
+=== paragraph 364 ===
+BEFORE: (14)
+PARAGRAPH: Si=Vi Ii*       Pinv=κRe Si      Qinv=κIm Si
+EQ1: Si=Vi Ii*       Pinv=κRe Si      Qinv=κIm Si
+AFTER: (15)
+
+=== paragraph 366 ===
+BEFORE: (15)
+PARAGRAPH: Common AC filter ทั้งสองโหมดใช้กระแส filter และ DC link ร่วมกัน โดยใน synchronous dq frame
+EQ1: dq
+AFTER: id=ωbLfvcd-vd-Rfid+ωpuLfiq,
+
+=== paragraph 368 ===
+BEFORE: Common AC filter ทั้งสองโหมดใช้กระแส filter และ DC link ร่วมกัน โดยใน synchronous dq frame
+PARAGRAPH: id=ωbLfvcd-vd-Rfid+ωpuLfiq,
+EQ1: id=ωbLfvcd-vd-Rfid+ωpuLfiq,
+AFTER: (16)
+
+=== paragraph 370 ===
+BEFORE: (16)
+PARAGRAPH: iq=ωbLfvcqvqRfiqωpuLfid.
+EQ1: iq=ωbLfvcqvqRfiqωpuLfid.
+AFTER: (17)
+
+=== paragraph 372 ===
+BEFORE: (17)
+PARAGRAPH: ωpu=1+θPLL/ωb  โหมด GFL ωVSG  โหมด GFM       ωb=2π f0
+EQ1: ωpu=1+θPLL/ωb  โหมด GFL ωVSG  โหมด GFM       ωb=2π f0
+AFTER: (18)
+
+=== paragraph 376 ===
+BEFORE: (18)
+PARAGRAPH: กระแส id,iq เป็น x จริง ตัว current limiter จำกัด current reference ที่ controller สั่ง ไม่ได้ clip state ของ filter แบบพีชคณิต เพราะการ clip state จะเปลี่ยน terminal KCL โดยตรง
+EQ1: id,iq
+EQ2: x
+AFTER: vcd=vd+Rf id-ωpuLf iq+kp,Iid*-id+ki,IξId
+
+=== paragraph 378 ===
+BEFORE: กระแส id,iq เป็น x จริง ตัว current limiter จำกัด current reference ที่ controller สั่ง ไม่ได้ clip state ของ filter แบบพีชคณิต เพราะการ clip state จะเปลี่ยน terminal KCL โดยตรง
+PARAGRAPH: vcd=vd+Rf id-ωpuLf iq+kp,Iid*-id+ki,IξId
+EQ1: vcd=vd+Rf id-ωpuLf iq+kp,Iid*-id+ki,IξId
+AFTER: (19)
+
+=== paragraph 380 ===
+BEFORE: (19)
+PARAGRAPH: vcq=vq+Rf iq+ωpuLf id+kp,Iiq*-iq+ki,IξIq
+EQ1: vcq=vq+Rf iq+ωpuLf id+kp,Iiq*-iq+ki,IξIq
+AFTER: (20)
+
+=== paragraph 382 ===
+BEFORE: (20)
+PARAGRAPH: ξId=id*-id      ξIq=iq*-iq
+EQ1: ξId=id*-id      ξIq=iq*-iq
+AFTER: (21)
+
+=== paragraph 384 ===
+BEFORE: (21)
+PARAGRAPH: r*=id,raw*2+iq,raw*2
+EQ1: r*=id,raw*2+iq,raw*2
+AFTER: (22)
+
+=== paragraph 386 ===
+BEFORE: (22)
+PARAGRAPH: id*,iq*=ΠIid,raw*,iq,raw*;Imax=id,raw*,iq,raw*  r*≤ ImaxImaxr*id,raw*,iq,raw*  r*>Imax
+EQ1: id*,iq*=ΠIid,raw*,iq,raw*;Imax=id,raw*,iq,raw*  r*≤ ImaxImaxr*id,raw*,iq,raw*  r*>Imax
+AFTER: ρd=id,raw*-id*      ρq=iq,raw*-iq*
+
+=== paragraph 388 ===
+BEFORE: id*,iq*=ΠIid,raw*,iq,raw*;Imax=id,raw*,iq,raw*  r*≤ ImaxImaxr*id,raw*,iq,raw*  r*>Imax
+PARAGRAPH: ρd=id,raw*-id*      ρq=iq,raw*-iq*
+EQ1: ρd=id,raw*-id*      ρq=iq,raw*-iq*
+AFTER: ξ=0  r*>Imax และ  g e ρ>0e  กรณีอื่น
+
+=== paragraph 390 ===
+BEFORE: ρd=id,raw*-id*      ρq=iq,raw*-iq*
+PARAGRAPH: ξ=0  r*>Imax และ  g e ρ>0e  กรณีอื่น
+EQ1: ξ=0  r*>Imax และ  g e ρ>0e  กรณีอื่น
+AFTER: (23)
+
+=== paragraph 394 ===
+BEFORE: (23)
+PARAGRAPH: DC-link และแหล่ง DC แบบไม่อุดมคติ สมการพลังงานของ DC link ต้องรู้กฎของ Idc ด้วย โครงงานจึงใช้ Thevenin source ที่มี internal resistance และ source-current state
+EQ1: Idc
+AFTER: CdcVdc=Idc-PacVdc-max(0,Vdc-Vdcmax)Rch,
+
+=== paragraph 396 ===
+BEFORE: DC-link และแหล่ง DC แบบไม่อุดมคติ สมการพลังงานของ DC link ต้องรู้กฎของ Idc ด้วย โครงงานจึงใช้ Thevenin source ที่มี internal resistance และ source-current state
+PARAGRAPH: CdcVdc=Idc-PacVdc-max(0,Vdc-Vdcmax)Rch,
+EQ1: CdcVdc=Idc-PacVdc-max(0,Vdc-Vdcmax)Rch,
+AFTER: (24)
+
+=== paragraph 398 ===
+BEFORE: (24)
+PARAGRAPH: τsIdc=Edc-VdcRdc-Idc,
+EQ1: τsIdc=Edc-VdcRdc-Idc,
+AFTER: (25)
+
+=== paragraph 400 ===
+BEFORE: (25)
+PARAGRAPH: Pac=vcdid+vcqiq
+EQ1: Pac=vcdid+vcqiq
+AFTER: (26)
+
+=== paragraph 406 ===
+BEFORE: ค่า Edc ถูกคำนวณจากสภาวะสมดุลของแหล่งจ่าย DC เพื่อรักษาความสอดคล้องของจุดทำงาน และค่าพารามิเตอร์ของระบบควบคุมถูกตรวจสอบว่าให้ตำแหน่งโพลทางพลวัตอยู่ในระนาบเชิงซ้อนด้านซ้ายเพื่อรับประกันเสถียรภาพ
+PARAGRAPH: Edc=Vdc0+RdcPac0Vdc0      Rdc=εdcVdc02Pr      Idc0=Pac0Vdc0
+EQ1: Edc=Vdc0+RdcPac0Vdc0      Rdc=εdcVdc02Pr      Idc0=Pac0Vdc0
+AFTER: (27)
+
+=== paragraph 408 ===
+BEFORE: (27)
+PARAGRAPH: Pac0=κ Pref+Rfid02+iq02      Rch=Vdcmax2δch1+δchPr
+EQ1: Pac0=κ Pref+Rfid02+iq02      Rch=Vdcmax2δch1+δchPr
+AFTER: การลด command-delay states แบบจำลองต้นทางมี actuation delay สองแกน แต่ delay เชิงกายภาพจาก digital control ประมาณ  ms ที่  kHz ซึ่งเล็กกว่า phasor time step หลายร้อยเท่า จึงใช้ singular-perturbation reduction  เพื่อตัด fast states ที่ RMS model ไม่สามารถ resolve ได้ การลดนี้คง equilibrium และ retained-state equations เดิม แต่ลดมิติของแบบจำลองจากโครงสร้างเดิม 20 สถานะเหลือ 16 สถานะ ก่อนเพิ่ม  เป็น state ที่ 17
+
+=== paragraph 413 ===
+BEFORE: 7.1 โหมดการทำงานแบบ GFL
+PARAGRAPH: GFL ทำงานเป็น current-controlled resource และต้องอาศัยVของโครงข่ายเพื่อกำหนดมุมอ้างอิง PLL แปลงVบัสเข้าสู่กรอบของตนเองด้วย Vdq=Ve-jθPLL แล้วใช้ vq เป็น phase error
+EQ1: Vdq=Ve-jθPLL
+EQ2: vq
+AFTER: θPLL=kp,PLLvq+ki,PLLξPLL,      ξPLL=vq
+
+=== paragraph 414 ===
+BEFORE: GFL ทำงานเป็น current-controlled resource และต้องอาศัยVของโครงข่ายเพื่อกำหนดมุมอ้างอิง PLL แปลงVบัสเข้าสู่กรอบของตนเองด้วย Vdq=Ve-jθPLL แล้วใช้ vq เป็น phase error
+PARAGRAPH: θPLL=kp,PLLvq+ki,PLLξPLL,      ξPLL=vq
+EQ1: θPLL=kp,PLLvq+ki,PLLξPLL,      ξPLL=vq
+AFTER: (28)
+
+=== paragraph 417 ===
+BEFORE: กำลังที่วัดได้คำนวณจาก terminal current จริง จากนั้น outer P/Q PI สร้าง current reference
+PARAGRAPH: eP=κPref-Pinv,id,raw*=kpPeP+kiPξP,
+EQ1: eP=κPref-Pinv,id,raw*=kpPeP+kiPξP,
+AFTER: (29)
+
+=== paragraph 419 ===
+BEFORE: (29)
+PARAGRAPH: eQ=κQref-Qinv,iq,raw*=-kpQeQkiQξQ
+EQ1: eQ=κQref-Qinv,iq,raw*=-kpQeQkiQξQ
+AFTER: (30)
+
+=== paragraph 421 ===
+BEFORE: (30)
+PARAGRAPH: เครื่องหมายลบของ iq* มาจาก generator-injection convention ของโปรเจกต์ จากนั้น ΠI จำกัดขนาด reference ไม่ให้เกิน Imax และ inner PI สร้าง vcd,vcq เพื่อขับ filter current ใน (21). เมื่อ limiter ทำงาน outer integrator ใช้ conditional anti-windup ถ้า error กำลังผลักคำสั่งออกนอกขอบเขตจะ hold integrator แต่ถ้า error ช่วยดึงกลับเข้าขอบเขตจะปล่อยให้ integrate ต่อ
+EQ1: iq*
+EQ2: ΠI
+EQ3: Imax
+EQ4: vcd,vcq
+AFTER: 7.2 โหมดการทำงานแบบ GFM
+
+=== paragraph 425 ===
+BEFORE: GFM ไม่ใช้ PLL ใน active branch แต่สร้างมุมจาก VSG ของตัวเอง โครงสร้างนี้อยู่ในกลุ่มเดียวกับแบบจำลอง grid-forming ที่เผยแพร่เป็นอ้างอิงสาธารณะ [14]
+PARAGRAPH: MωVSG=κPref-Pinv-Dv(ωVSG-1),
+EQ1: MωVSG=κPref-Pinv-Dv(ωVSG-1),
+AFTER: (31)
+
+=== paragraph 427 ===
+BEFORE: (31)
+PARAGRAPH: θVSG=ωb(ωVSG-1),
+EQ1: θVSG=ωb(ωVSG-1),
+AFTER: (32)
+
+=== paragraph 429 ===
+BEFORE: (32)
+PARAGRAPH: E=kQ(κQref-Qinv)-kE(E-Eref)τE
+EQ1: E=kQ(κQref-Qinv)-kE(E-Eref)τE
+AFTER: (33)
+
+=== paragraph 433 ===
+BEFORE: (33)
+PARAGRAPH: state E เป็น voltage-forming reference ของ d-axis โดยกำหนด vd,ref=E และ vq,ref=0. Voltage PI แปลง voltage error เป็น current reference แล้วผ่าน current limiter เดียวกับ GFL ก่อนเข้า inner current PI ดังนั้น GFM สามารถสร้างมุมและVให้ island ได้ด้วยตัวเอง แต่ยังคงข้อจำกัดกระแสของ IBR
+EQ1: E
+EQ2: vd,ref=E
+EQ3: vq,ref=0
+AFTER: vdref=E       vqref=0      eVd=vdref-vd       eVq=vqref-vq
+
+=== paragraph 434 ===
+BEFORE: state E เป็น voltage-forming reference ของ d-axis โดยกำหนด vd,ref=E และ vq,ref=0. Voltage PI แปลง voltage error เป็น current reference แล้วผ่าน current limiter เดียวกับ GFL ก่อนเข้า inner current PI ดังนั้น GFM สามารถสร้างมุมและVให้ island ได้ด้วยตัวเอง แต่ยังคงข้อจำกัดกระแสของ IBR
+PARAGRAPH: vdref=E       vqref=0      eVd=vdref-vd       eVq=vqref-vq
+EQ1: vdref=E       vqref=0      eVd=vdref-vd       eVq=vqref-vq
+AFTER: (34)
+
+=== paragraph 436 ===
+BEFORE: (34)
+PARAGRAPH: id,raw*=kp,VeVd+ki,VξVd      iq,raw*=kp,VeVq+ki,VξVq
+EQ1: id,raw*=kp,VeVd+ki,VξVd      iq,raw*=kp,VeVq+ki,VξVq
+AFTER: (35)
+
+=== paragraph 442 ===
+BEFORE: Supervisor ใช้ค่าความเบี่ยงเบนVของ IBR และความถี่เฉลี่ยของระบบเพื่อสร้างสอง sub-indices
+PARAGRAPH: JV,i=Vi-Vi⋆Δ Vbase      Jf=fcoi-f0Δ fbase
+EQ1: JV,i=Vi-Vi⋆Δ Vbase      Jf=fcoi-f0Δ fbase
+AFTER: (36)
+
+=== paragraph 446 ===
+BEFORE: และรวมเป็น severity index
+PARAGRAPH: Si(t)=sat 0,1wV JV,i+wf Jf       wV+wf=1
+EQ1: Si(t)=sat 0,1wV JV,i+wf Jf       wV+wf=1
+AFTER: (37)
+
+=== paragraph 451 ===
+BEFORE: ใช้ hysteresis และ dwell เพื่อลดการ chatter
+PARAGRAPH: GFL →GFM :      ∃ i∈L: Si≥Γon ต่อเนื่องไม่น้อยกว่า  Td,on
+EQ1: GFL →GFM :      ∃ i∈L: Si≥Γon ต่อเนื่องไม่น้อยกว่า  Td,on
+AFTER: (38)
+
+=== paragraph 453 ===
+BEFORE: (38)
+PARAGRAPH: GFM →GFL :      ∀ i∈L∪G: Si<Γoff ต่อเนื่องไม่น้อยกว่า  Td,off
+EQ1: GFM →GFL :      ∀ i∈L∪G: Si<Γoff ต่อเนื่องไม่น้อยกว่า  Td,off
+AFTER: (39)
+
+=== paragraph 479 ===
+BEFORE: ตารางที่ 2 ค่าพารามิเตอร์ของ IBR แบบสองโหมดและของแหล่งจ่าย DC
+PARAGRAPH: Sbase, Mbase
+EQ1: Sbase
+EQ2: Mbase
+AFTER: ฐานกำลังของระบบ และของคอนเวอร์เตอร์
+
+=== paragraph 482 ===
+BEFORE: 100, 100 MVA
+PARAGRAPH: f0
+EQ1: f0
+AFTER: ความถี่ฐาน
+
+=== paragraph 485 ===
+BEFORE: 60 Hz
+PARAGRAPH: Lf, Rf
+EQ1: Lf
+EQ2: Rf
+AFTER: ตัวเหนี่ยวนำและความต้านทานของตัวกรอง
+
+=== paragraph 488 ===
+BEFORE: 0.15, 0.015 pu
+PARAGRAPH: Cdc, Vdc0
+EQ1: Cdc
+EQ2: Vdc0
+AFTER: คาปาซิแตนซ์และVอ้างอิงของบัส DC
+
+=== paragraph 491 ===
+BEFORE: 0.10 pu, 1.00 pu
+PARAGRAPH: Imax
+EQ1: Imax
+AFTER: ขีดจำกัดขนาดกระแสอ้างอิง (ฐานอุปกรณ์)
+
+=== paragraph 494 ===
+BEFORE: 1.20 pu
+PARAGRAPH: kp,PLL, ki,PLL
+EQ1: kp,PLL
+EQ2: ki,PLL
+AFTER: เกนของ PLL (เฉพาะ GFL)
+
+=== paragraph 497 ===
+BEFORE: 1.20, 5.00
+PARAGRAPH: kp,P, ki,P
+EQ1: kp,P
+EQ2: ki,P
+AFTER: เกนวงกำลังจริงชั้นนอก (เฉพาะ GFL)
+
+=== paragraph 500 ===
+BEFORE: 0.80, 2.50
+PARAGRAPH: kp,Q, ki,Q
+EQ1: kp,Q
+EQ2: ki,Q
+AFTER: เกนวงกำลังรีแอกทีฟชั้นนอก (เฉพาะ GFL)
+
+=== paragraph 503 ===
+BEFORE: 0.80, 2.50
+PARAGRAPH: kp,I, ki,I
+EQ1: kp,I
+EQ2: ki,I
+AFTER: เกนวงกระแสชั้นใน (ใช้ร่วมทั้งสองโหมด)
+
+=== paragraph 506 ===
+BEFORE: 0.30, 4.00
+PARAGRAPH: M
+EQ1: M
+AFTER: ความเฉื่อยเสมือนของ VSG (Hv=0.04 s)
+
+=== paragraph 507 ===
+BEFORE: M
+PARAGRAPH: ความเฉื่อยเสมือนของ VSG (Hv=0.04 s)
+EQ1: Hv=0.04
+AFTER: 0.08 pu
+
+=== paragraph 509 ===
+BEFORE: 0.08 pu
+PARAGRAPH: Dv
+EQ1: Dv
+AFTER: สัมประสิทธิ์ droop ของ VSG (droop 5 %)
+
+=== paragraph 512 ===
+BEFORE: 20.0 pu
+PARAGRAPH: kQ, kE, τE
+EQ1: kQ
+EQ2: kE
+EQ3: τE
+AFTER: เกนและค่าคงตัวเวลาของวง Q–V
+
+=== paragraph 513 ===
+BEFORE: kQ, kE, τE
+PARAGRAPH: เกนและค่าคงตัวเวลาของวง Q–V
+EQ1: Q
+EQ2: V
+AFTER: 0.25, 8.00, 0.05 s
+
+=== paragraph 515 ===
+BEFORE: 0.25, 8.00, 0.05 s
+PARAGRAPH: kp,V, ki,V
+EQ1: kp,V
+EQ2: ki,V
+AFTER: เกนวงV (เฉพาะ GFM)
+
+=== paragraph 518 ===
+BEFORE: 1.20, 4.50
+PARAGRAPH: εdc, Pr
+EQ1: εdc
+EQ2: Pr
+AFTER: การควบคุมVของแหล่ง DC และพิกัดกำลัง
+
+=== paragraph 521 ===
+BEFORE: 0.10, 1.00 pu
+PARAGRAPH: Vdcmax, δch
+EQ1: Vdcmax
+EQ2: δch
+AFTER: ระดับเริ่มทำงานของ chopper และ overshoot ที่ยอมรับ
+
+=== paragraph 524 ===
+BEFORE: 1.10 pu, 0.02
+PARAGRAPH: τs, ζ⋆
+EQ1: τs
+EQ2: ζ⋆
+AFTER: ค่าคงตัวเวลาของแหล่ง DC และ damping เป้าหมาย
+
+=== paragraph 526 ===
+BEFORE: ค่าคงตัวเวลาของแหล่ง DC และ damping เป้าหมาย
+PARAGRAPH: 0.005 s, 1/2
+EQ1: 1/2
+AFTER: εI
+
+=== paragraph 527 ===
+BEFORE: 0.005 s, 1/2
+PARAGRAPH: εI
+EQ1: εI
+AFTER: เกณฑ์ความต่อเนื่องของกระแสตอนสลับโหมด
+
+=== paragraph 529 ===
+BEFORE: เกณฑ์ความต่อเนื่องของกระแสตอนสลับโหมด
+PARAGRAPH: 10-10 pu
+EQ1: 10-10
+AFTER: ตารางที่ 3 การตั้งค่าระดับกระตุ้น เวลาหน่วง และเกณฑ์ของตัวกำกับอัตโนมัติ
+
+=== paragraph 532 ===
+BEFORE: ตารางที่ 3 การตั้งค่าระดับกระตุ้น เวลาหน่วง และเกณฑ์ของตัวกำกับอัตโนมัติ
+PARAGRAPH: Γon, Γoff
+EQ1: Γon
+EQ2: Γoff
+AFTER: ระดับกระตุ้นเข้าสู่ GFM และระดับปลดกลับสู่ GFL
+
+=== paragraph 535 ===
+BEFORE: 0.65, 0.35
+PARAGRAPH: Td,on, Td,off
+EQ1: Td,on
+EQ2: Td,off
+AFTER: เวลาหน่วงคงสถานะขาเข้าและขาออก
+
+=== paragraph 538 ===
+BEFORE: 0.10, 1.00 s
+PARAGRAPH: Δ Vbase, Δ fbase
+EQ1: Δ Vbase
+EQ2: Δ fbase
+AFTER: ฐานของดัชนีย่อยVและความถี่
+
+=== paragraph 541 ===
+BEFORE: 0.10 pu, 0.50 Hz
+PARAGRAPH: wV, wf
+EQ1: wV
+EQ2: wf
+AFTER: น้ำหนักของดัชนีย่อยทั้งสอง
+
+=== paragraph 544 ===
+BEFORE: 0.5, 0.5
+PARAGRAPH: Thold, Tlock
+EQ1: Thold
+EQ2: Tlock
+AFTER: เวลาถือสถานะขั้นต่ำหลังเหตุการณ์ และเวลาล็อกหลังการสั่งการ
+
+=== paragraph 547 ===
+BEFORE: 1.0, 2.0 s
+PARAGRAPH: Δ Vmax, Δ fmax, Δθmax
+EQ1: Δ Vmax
+EQ2: Δ fmax
+EQ3: Δθmax
+AFTER: ผลต่างV ความเร็วต่อหน่วย และมุมเฟสสูงสุดที่ยอมให้ปิดเบรกเกอร์
+
+=== paragraph 550 ===
+BEFORE: 0.05 pu, 0.001 pu, 10°
+PARAGRAPH: Tdwell, Toffmin
+EQ1: Tdwell
+EQ2: Toffmin
+AFTER: เวลายืนยัน synchronism และเวลาปลดขั้นต่ำก่อนปิดเบรกเกอร์
+
+=== paragraph 553 ===
+BEFORE: 0.5, 0.5 s
+PARAGRAPH: ζmin
+EQ1: ζmin
+AFTER: พื้น damping ratio ของเกณฑ์คัดกรอง ชุดอุปกรณ์ GFM
+
+=== paragraph 556 ===
+BEFORE: 0.05
+PARAGRAPH: εKCL, εN
+EQ1: εKCL
+EQ2: εN
+AFTER: เกณฑ์ residual ของ KCL ที่ลิมิตขวา และของ Newton ในแต่ละขั้นเวลา
+
+=== paragraph 558 ===
+BEFORE: เกณฑ์ residual ของ KCL ที่ลิมิตขวา และของ Newton ในแต่ละขั้นเวลา
+PARAGRAPH: 10-6, 10-8
+EQ1: 10-6
+EQ2: 10-8
+AFTER: β
+
+=== paragraph 559 ===
+BEFORE: 10-6, 10-8
+PARAGRAPH: β
+EQ1: β
+AFTER: ความกว้างแถบ blend ของ anti-windup (0 = สวิตช์แข็ง)
+
+=== paragraph 561 ===
+BEFORE: ความกว้างแถบ blend ของ anti-windup (0 = สวิตช์แข็ง)
+PARAGRAPH: 0 หรือ 10-3
+EQ1: 10-3
+AFTER: จากการทดสอบด้วยระบบทดสอบแสดงดังรูปที่ 1 และแสดงรายละเอียดของ IBR ดังตารางที่  2 ด้วยวิธีการทดสอบแสดงดังรูปที่ 2 โดยลำดับเหตุการณ์การทดสอบบนขอบเขตเวลา 160.000 s ประกอบด้วย: ปลดเครื่องกำเนิดไฟฟ้าซิงโครนัส (SG1) ที่เวลา t = 20.000 s เกิดฟอลต์แบบลัดวงจร 3 เฟสที่บัส 9 ที่เวลา t = 60.000 s เคลียร์ฟอลต์ที่เวลา t = 60.150 s สั่งคืน SG1 เข้าระบบที่เวลา t = 100.000 s และสิ้นสุดการจำลองที่เวลา t = 160.000 s
+
+=== paragraph 584 ===
+BEFORE: 10.1 การเปรียบเทียบผลระหว่างกรณีการสลับโหมด GFL/GFM และกรณีการตรึงโหมด GFL
+PARAGRAPH: SBus9(t)=V9(t)2 y9eff(t),      y9eff(t)=α_L(t) y9+χf(t)Zf,
+EQ1: SBus9(t)=V9(t)2 y9eff(t),      y9eff(t)=α_L(t) y9+χf(t)Zf,
+AFTER: (40)
+
+=== paragraph 586 ===
+BEFORE: (40)
+PARAGRAPH: โดย y9คือแอดมิตแตนซ์ของโหลดที่จุดทำงาน PF และ χftเป็นฟังก์ชันบ่งชี้ที่มีค่า 1 เฉพาะช่วงที่เกิดฟอลต์ พจน์ χft/Zf คือแอดมิตแตนซ์ของฟอลต์ที่ต่อลงดิน ณ บัส 9 สำหรับตัวคูณโหลด αLtเนื่องจากกรณีศึกษานี้ไม่มีการเปลี่ยนโหลด จึงกำหนด αLt= 1 ตลอดการจำลอง และช่วงเวลา 60.000–60.150 s รวมกระแสฟอลต์ไว้ตามที่เกิดขึ้นจริง การตรวจสอบความถูกต้องของสภาวะเริ่มต้นที่ t = 0 s พบว่าค่าที่คำนวณย้อนได้ตรงกับข้อมูลโหลดของกรณีศึกษาและ  PF ภายใน 10-9 pu ซึ่งได้
+EQ1: y9
+EQ2: χft
+EQ3: χft/Zf
+EQ4: αLt
+EQ5: 10-9
+AFTER: P = 0.295000 pu, Q = 0.166000 pu และ V9= 1.021934 pu ตรงทุกหลักทั้งสองกรณี
+
+=== paragraph 587 ===
+BEFORE: โดย y9คือแอดมิตแตนซ์ของโหลดที่จุดทำงาน PF และ χftเป็นฟังก์ชันบ่งชี้ที่มีค่า 1 เฉพาะช่วงที่เกิดฟอลต์ พจน์ χft/Zf คือแอดมิตแตนซ์ของฟอลต์ที่ต่อลงดิน ณ บัส 9 สำหรับตัวคูณโหลด αLtเนื่องจากกรณีศึกษานี้ไม่มีการเปลี่ยนโหลด จึงกำหนด αLt= 1 ตลอดการจำลอง และช่วงเวลา 60.000–60.150 s รวมกระแสฟอลต์ไว้ตามที่เกิดขึ้นจริง การตรวจสอบความถูกต้องของสภาวะเริ่มต้นที่ t = 0 s พบว่าค่าที่คำนวณย้อนได้ตรงกับข้อมูลโหลดของกรณีศึกษาและ  PF ภายใน 10-9 pu ซึ่งได้
+PARAGRAPH: P = 0.295000 pu, Q = 0.166000 pu และ V9= 1.021934 pu ตรงทุกหลักทั้งสองกรณี
+EQ1: V9
+AFTER: รูปที่ (d) แสดงความถี่ที่บัส 9
+
+=== paragraph 626 ===
+BEFORE: การจำลองแบบอิมพลิซิตพร้อมการปรับขั้นเวลาอัตโนมัติใช้เวลาคำนวณสูง โดยเฉพาะช่วงเกิด fault และช่วงที่โครงสร้างเครือข่ายเปลี่ยน ซึ่งต้องแก้สมการไม่เชิงเส้นซ้ำหลายครั้งต่อหนึ่งขั้นเวลา
+PARAGRAPH: แบบจำลอง IBR ต้นทางให้สมการฝั่ง AC และตัวควบคุมไว้ครบ แต่ไม่ได้กำหนดกฎของแหล่งจ่ายฝั่ง DC หากปิดสมการด้วยแหล่งจ่ายอุดมคติ Vdc จะแทบไม่ตอบสนองและค่าคาปาซิแตนซ์ Cdc จะหายออกจากพลวัตทั้งหมด
+EQ1: Vdc
+EQ2: Cdc
+AFTER: แนวทางการแก้ไขปัญหาและอุปสรรคที่เกิดขึ้น

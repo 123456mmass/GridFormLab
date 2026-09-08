@@ -190,6 +190,17 @@ function test_the_delivered_caches_reproduce_the_reported_split(tc)
 % Reads the shipped summary rather than re-running: the point is that the
 % reported split is what the helper produces from those very results, so a later
 % edit to either side is caught.
+%
+% The expectation below is the CURRENT measured split, and it changed on
+% 2026-09-04. Under the hard anti-windup switch, sg_fault_bus9 and
+% line_fault_9_14 stopped at t=50.083340 -- before the clearing each exists to
+% exercise -- so both reported defining_event_executed=false and this test froze
+% that. TS-2026-09-04-01 identified the stop as a sliding mode at the
+% current-limiter surface and the suite arms now carry anti_windup_blend=1e-3,
+% under which all four scenarios reach their 150 s horizon AND execute their own
+% defining event. The four trues are therefore the measured truth of the caches
+% on disk, not a relaxation: no acceptance gate changed, and the regenerated
+% summary.mat is what this test reads.
 f = fullfile(fileparts(mfilename('fullpath')),'..','output','diagnostics', ...
     'ieee14_scenario_suite','summary.mat');
 tc.assumeTrue(isfile(f), ...
@@ -197,8 +208,8 @@ tc.assumeTrue(isfile(f), ...
 S = load(f);
 sc = S.summary.scenarios;
 got = containers.Map({sc.id},{sc.defining_event_executed});
-expect = {'sg_load_step30',true; 'sg_fault_bus9',false; ...
-          'line_fault_9_14',false; 'former_outage',true};
+expect = {'sg_load_step30',true; 'sg_fault_bus9',true; ...
+          'line_fault_9_14',true; 'former_outage',true};
 for k = 1:size(expect,1)
     id = expect{k,1};
     tc.assumeTrue(got.isKey(id));

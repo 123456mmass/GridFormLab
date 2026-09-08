@@ -35,11 +35,14 @@ function sched = ibr_event_schedule(case_data, devices, ibr_events, t_end, dt)
 %                                 line does NOT come back (no restore_time).
 %                                 Does the island adapt to the reduced network,
 %                                 and do the promoted converters hand back?
-%     sg_trip_then_former_outage  sg_trip < ibr_trip
+%     sg_trip_then_former_outage  sg_trip < ibr_trip < sg_on
 %                                 The converter that owns the island angle
-%                                 reference is lost. No reclose is scheduled:
-%                                 the question is whether the framework
-%                                 recovers the reference by itself.
+%                                 reference is lost, and the machine is offered
+%                                 back afterwards. Two questions in one arm:
+%                                 does the framework recover the reference by
+%                                 itself, and can the machine then resynchronise
+%                                 onto an island that has permanently lost a
+%                                 converter?
 %
 %   Validation (fail-closed, no silent fallback):
 %     - times finite, nonnegative, and ordered per the selected profile
@@ -143,9 +146,12 @@ end
 % would receive a ZERO stamp, and the event would report applied=true while
 % changing nothing. Capability flags make that coupling explicit and per-event.
 %
-% sg_trip and sg_reclose are SEPARATE columns because one added profile trips
-% the machine and deliberately schedules no reclose: the question it asks is
-% whether the converters recover the angle reference on their own.
+% sg_trip and sg_reclose are SEPARATE columns because the ability to trip the
+% machine and the ability to offer it back are independent capabilities, and the
+% original four profiles arm them in fixed pairs. Every added profile now arms
+% both -- an arm that never recloses cannot show a hand-back, which is the second
+% half of the framework's claim -- but the columns stay separate so a future
+% profile can still trip without reclosing.
 %
 % sync_controller is its own column and is NOT implied by sg_reclose. The
 % offline-SG synchronizer (initialize_sync_controller) has only ever been armed
@@ -163,7 +169,7 @@ caps = { ...
     'sg_load_cycle',               false, true,  true,  true,  false, false, false, false, true ; ...
     'sg_fault_cycle',              true,  true,  true,  false, false, false, false, false, true ; ...
     'line_fault_relay_clear',      true,  true,  true,  false, false, false, true,  false, true ; ...
-    'sg_trip_then_former_outage',  false, true,  false, false, false, false, false, true,  false};
+    'sg_trip_then_former_outage',  false, true,  true,  false, false, false, false, true,  true };
 crow = find(strcmp(caps(:,1),event_profile),1);
 if isempty(crow)
     error('stability:ibr_event_schedule:badEventProfile', ...
@@ -478,13 +484,17 @@ case 'line_fault_relay_clear'
              'line_fault_clear < sg_on <= t_end.']);
     end
 case 'sg_trip_then_former_outage'
-    % Island, then the converter that owns the island angle reference is
-    % lost. No reclose is scheduled after it: the point is whether the
-    % framework recovers the reference on its own.
-    if ~(sg_trip + tol < ibr_trip && ibr_trip <= t_end + tol)
+    % Island, then the converter that owns the island angle reference is lost,
+    % then the machine is offered back. The outage must fall strictly between
+    % the two breaker events: before sg_trip the supervisor is not running at
+    % all (ts_simulate_ibr_hybrid.m:852 gates it on no SG online), so there
+    % would be no published ownership to resolve 'reference_owner' against, and
+    % after sg_on the island no longer needs a converter reference.
+    if ~(sg_trip + tol < ibr_trip && ibr_trip + tol < sg_on && ...
+            sg_on <= t_end + tol)
         error('stability:ibr_event_schedule:badOrdering', ...
-            ['sg_trip_then_former_outage requires sg_trip < ibr_trip ' ...
-             '<= t_end.']);
+            ['sg_trip_then_former_outage requires sg_trip < ibr_trip < ' ...
+             'sg_on <= t_end.']);
     end
 end
 

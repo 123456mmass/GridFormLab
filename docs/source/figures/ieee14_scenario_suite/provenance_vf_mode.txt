@@ -1,0 +1,117 @@
+generator: scripts/reporting/generate_ieee14_vf_mode_page.m
+schema:    ieee14_vf_mode_page/1.0
+generated: 2026-09-04T19:33:51Z
+caches:    output\diagnostics\ieee14_scenario_suite
+style:     4.65 in x 2.9 in, Helvetica 10 pt, tex interpreter, dashed major and minor, box off, ticks out
+
+ONE SHEET per scenario, two columns side by side under one converter legend. Each column
+  is a "GFM Mode Active" STRIP above a data panel:
+    (a) |V_i| at each converter bus, against THAT BUS's own healthy power-flow level
+    (b) f_i, the frequency of each converter ITSELF, with the nominal
+  The strip is a separate axes, not an overlay inside the data area, so a bar can never
+  sit on a trace and the traces keep the whole panel height.
+
+Cache reader. No step is taken, no equation is solved, and nothing is smoothed,
+  filtered, decimated, clipped, offset, interpolated or padded. Every plotted value is
+  either a raw accepted sample from the stored trajectory or the RUN'S OWN output map
+  evaluated on that stored state -- see the frequency note below, where that path is
+  gated.
+
+THE MODE STRIP is the outcome of the supervisor comparing S against Gamma_on/Gamma_off,
+  which is why this page refuses to draw without the threshold pair the run used. Each
+  bar spans one CONTIGUOUS grid-forming interval at its TRUE extent -- no minimum width
+  is applied, because widening a short interval to make it visible would draw a
+  grid-forming stretch that did not happen. A converter with no bar was never
+  grid-forming on this arm, and that absence is the fact.
+
+PANEL (b) IS THE CONVERTERS' OWN FREQUENCY, not the centre-of-inertia frequency.
+  The run publishes only half of it: add_diagnostics fills device_frequency_Hz from the
+  SG branch and the grid-forming branch (ts_simulate_ibr_hybrid.m:4158-4166), while the
+  grid-following branch records a current limit instead. The grid-following controller
+  DOES have a frequency -- its phase-locked loop tracks it, published as f_hz by
+  gfl_eecon49_full_model.m:165 -- so the missing stretches are recovered by calling the
+  run's OWN stored device closures (r.equilibrium.devices) on the run's OWN stored state
+  at each accepted sample: the same call add_diagnostics makes, on the same inputs.
+  THREE GATES make that admissible, and each refuses the page rather than drawing a
+  partial or mixed trace:
+    1. reproduction -- every sample the run DID publish must come back EXACTLY from the
+       same closures (tolerance 0)
+    2. completeness -- every ONLINE sample of every converter must end up with a
+       frequency, so no trace breaks for an unstated reason
+    3. one convention -- f_hz is checked against f_0*omega_PLL_pu, the form the published
+       half uses, so no mode change shows a step that is not in the run
+  All three residuals and counts are reported per scenario below.
+
+NO J = 1 RULES ON EITHER PANEL, at the owner's instruction (2026-09-04): the dashed
+  band edges are off the sheet. The index measures its frequency term on f_COI -- ONE
+  system trace, not these four -- and its voltage term against each bus's healthy level;
+  both bands belong to the severity page, which shows S itself. What stays on each panel
+  is the reference every trace is a deviation FROM: the healthy |V| per bus, and the
+  nominal f_0, which is READ from the run's own overlay bases rather than assumed.
+  The two bases are still re-derived and checked against the run's published J_V and J_f
+  below, so the page is still verified against the index it no longer draws.
+
+Y WINDOWS on a faulted arm are computed over the OPERATING BAND -- the run minus its
+  fault window plus 50 ms -- and anything outside is annotated AT THE FRAME with its
+  peak value. NOTHING is dropped, filtered or clipped: every sample is plotted and every
+  value outside a window is listed below.
+
+The x axis spans the REQUESTED horizon, not the last accepted sample: cropping to
+  the data would draw a truncated run as a finished one.
+
+NO VERTICAL EVENT RULES on the sheet, at the owner's instruction (2026-09-04): the
+  dashed and dotted rules are off both panels and off the mode strips. A bar's own left
+  edge already dates the mode change, and every scheduled instant the run carried is
+  listed by time, name and source below -- that table is now the ONLY record of them on
+  this page.
+
+--------------------------------------------------------------
+sg_fault_cycle160 SG trip, a converter takes the island angle reference, bolted fault at bus 9, then SG reclose, over 160 s
+  cache      output\diagnostics\ieee14_scenario_suite\sg_fault_cycle160.mat
+  cache_sha  db83247c92f05b1a947578a8bfef32a50aaad4740277f0976421904b8b209970
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_vf.png
+    sha256   11eb1683e9e414106df634d6b187c1986d4ee3fb803844f7abdf2c7c4cd1b295
+    mtime    2026-09-05 02:34:02
+    bytes    77336
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_vf.fig
+    sha256   edf34f83ad4bf7341ae548838c5c0131c64597c65b7e81e1349224f98d6cad62
+    mtime    2026-09-05 02:34:02
+    bytes    248256
+  horizon    160.000000 s of 160.000000 s requested (reached=1)
+  defining   fault_clear -> EXECUTED
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    2288 over 4 converter(s)
+  labels     deck IBR_1..IBR_4 = code IBR2, IBR3, IBR6, IBR8 at buses [2 3 6 8]
+  healthy    |V| at converter buses [0.991447 0.966733 1.05753 1.04937] pu (NOT drawn as a J_V = 1 envelope: +/-0.1000)
+  index      re-derived from the plotted signals over 9152 evaluated sample(s):
+             max|J_V-published|=0.000e+00  max|J_f-published|=0.000e+00  (tol 1.0e-09)
+             f0=60.0000 Hz  df_base=0.5000 Hz  dV_base=0.1000 pu
+  band       2 grid-forming interval(s) drawn
+  frequency  2224 sample(s) the run published (SG/grid-forming), 6928 recovered from the
+             grid-following PLL, 0 offline; per-converter ranges [59.37 59.4705 58.9371 59.4752;60.676 60.163 60.143 60.1472] Hz
+             reproduction residual 0.000e+00 Hz (tol 0) -- the closures reproduce what the
+             run published; convention residual 2.132e-14 Hz (tol 1.0e-09) -- f_hz agrees with
+             f_0*omega_PLL_pu
+  ranges     |V| [0.258035 1.863839] pu   f_COI [59.240121 60.676026] Hz
+  window     y limits from the operating band: run minus [60.0000 60.2000] s (2189 of 2288 samples kept)
+             (a) |V| [0.515552 1.17306]   (b) f [58.8419 60.2222]
+  offscale   value(s) outside a panel window, each annotated at the frame ON the sheet:
+    above  IBR2       1.795355 pu  at t = 60.150000 s
+    below  IBR2       0.282517 pu  at t = 60.000000 s
+    above  IBR3       1.733552 pu  at t = 60.150000 s
+    below  IBR3       0.317268 pu  at t = 60.000000 s
+    above  IBR6       1.863839 pu  at t = 60.150000 s
+    below  IBR6       0.275940 pu  at t = 60.000000 s
+    above  IBR8       1.790073 pu  at t = 60.150000 s
+    below  IBR8       0.258035 pu  at t = 60.000000 s
+    above  IBR2      60.676026 Hz  at t = 60.017644 s
+  events     8 scheduled instant(s) the run carried, NOT drawn on the sheet:
+       20.0000 s  disturbance SG trip                        r.sched.sg_trip
+       22.0887 s  supervisor  GFM+                           r.event_log(2).gfm_support_augment
+       25.3026 s  supervisor  GFM-                           r.event_log(3).gfm_support_release
+       60.0000 s  disturbance fault                          r.sched.fault_on
+       60.1500 s  disturbance clear                          r.sched.fault_clear
+      100.0000 s  disturbance SG offer                       r.sched.sg_on
+      102.3627 s  disturbance SG close                       r.actual_reclose_time
+      116.2379 s  supervisor  reselect                       r.event_log(8).sg_reselection
+

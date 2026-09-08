@@ -151,6 +151,11 @@ dev_recon = cell(nd,1);
 dev_xr = cell(nd,1);
 dev_ur = cell(nd,1);
 dev_has_u = false(nd,1);
+% Limiter-regime oracles, present only on devices that declare one. A device
+% without the field contributes an empty entry and is skipped, so the composite
+% regime map is exactly the set of devices whose RHS actually switches branch.
+dev_reg = cell(nd,1);
+dev_reg_key = cell(nd,1);
 for k = 1:nd
     dev_f{k} = devices(k).f;
     dev_inj{k} = devices(k).current_injection;
@@ -159,6 +164,13 @@ for k = 1:nd
     dev_xr{k} = (offsets(k)+1):(offsets(k)+devices(k).nx);
     dev_ur{k} = (u_offsets(k)+1):(u_offsets(k)+devices(k).nu);
     dev_has_u(k) = devices(k).nu > 0;
+    if isfield(devices(k),'limiter_regime') && ...
+            isa(devices(k).limiter_regime,'function_handle') && ...
+            isfield(devices(k),'limiter_regime_key') && ...
+            ~isempty(devices(k).limiter_regime_key)
+        dev_reg{k} = devices(k).limiter_regime;
+        dev_reg_key{k} = char(devices(k).limiter_regime_key);
+    end
 end
 
 % --- Composite x0, u0 -----------------------------------------------------
@@ -272,6 +284,12 @@ electrical_power = @(t,x,y,u,event_context) composite_Pe(t, x, y, u, ...
 % reconstruct(t,x,y,u,event_context): per-device outputs.
 reconstruct = @(t,x,y,u,event_context) composite_reconstruct(t, x, y, u, ...
     event_context, dev_recon, dev_xr, dev_ur, dev_has_u);
+% limiter_regime(t,x,y,u,event_context): the UNFROZEN limiter branch of every
+% device that declares one, keyed by the same name the device reads back out of
+% event_context.limiter_freeze. Additive: a bundle whose devices declare no
+% oracle yields an empty struct and no caller behaviour changes.
+limiter_regime = @(t,x,y,u,event_context) composite_limiter_regime(t, x, y, u, ...
+    event_context, dev_reg, dev_reg_key, dev_xr, dev_ur, dev_has_u);
 
 % --- Assemble dae struct --------------------------------------------------
 dae = struct();
@@ -290,6 +308,8 @@ dae.dae_g = dae_g;
 dae.current_injection = current_injection;
 dae.electrical_power = electrical_power;
 dae.reconstruct = reconstruct;
+dae.limiter_regime = limiter_regime;
+dae.limiter_regime_keys = dev_reg_key;
 dae.Ynet = Ynet;
 dae.topology = struct('Ypre',Ypre,'Yfault',Yfault,'Ypost',Ypost);
 dae.mapping = struct('bus_ids',bus_ids,'gen_buses',arrayfun(@(k) devices(k).bus_id, 1:nd));
@@ -330,6 +350,28 @@ for k = 1:numel(dev_f)
         u_dev = [];
     end
     dx(xr) = dev_f{k}(t, x(xr), y, u_dev, event_context);
+end
+end
+
+% =========================================================================
+function reg = composite_limiter_regime(t, x, y, u, event_context, ...
+    dev_reg, dev_reg_key, dev_xr, dev_ur, dev_has_u)
+%COMPOSITE_LIMITER_REGIME  Per-device unfrozen limiter branch, keyed by the
+%   device's own freeze key. Devices that declare no oracle are absent from the
+%   result; a device whose oracle returns empty (offline/tripped) is absent too,
+%   so the caller can only freeze branches that exist.
+reg = struct();
+for k = 1:numel(dev_reg)
+    if isempty(dev_reg{k}), continue; end
+    xr = dev_xr{k};
+    if dev_has_u(k)
+        u_dev = u(dev_ur{k});
+    else
+        u_dev = [];
+    end
+    r = dev_reg{k}(t, x(xr), y, u_dev, event_context);
+    if isempty(r), continue; end
+    reg.(dev_reg_key{k}) = r;
 end
 end
 

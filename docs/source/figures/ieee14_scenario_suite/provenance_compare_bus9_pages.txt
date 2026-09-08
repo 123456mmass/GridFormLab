@@ -1,0 +1,168 @@
+generator: scripts/reporting/generate_ieee14_compare_bus9_pages.m
+schema:    ieee14_compare_bus9_pages/1.0
+generated: 2026-09-04T20:53:39Z
+style:     4.65 in x 2.62 in, Helvetica 10 pt, tex interpreter, dashed major and minor, box off, ticks out
+
+TWO SHEETS, two panels each, at bus 9 -- the fault bus, which carries load but NO
+  device, so it reports what the island DELIVERS to a load bus rather than what any one
+  controller commands. One 160 s schedule on both arms:
+    sg_trip 20 -> fault_on 60 -> fault_clear 60.15 -> sg_on 100 -> 160 s
+    <id>_cmp_pq   (a) P_Bus9    (b) Q_Bus9
+    <id>_cmp_vf   (a) |V_Bus9|  (b) f_Bus9
+  blue = the delivered adaptive GFL/GFM switching policy (PROJECT_RESULT)
+  grey = the same case with every converter locked grid-following
+         (ASSUMED_DIAGNOSTIC, comparison-only)
+
+This is the report's 2x2 bus-9 comparison (generate_bus9_adaptive_vs_fixed_160s.m)
+  SPLIT INTO TWO SLIDE PAGES and restyled to match the deck's V/f and P/Q pages, at the
+  owner's instruction (2026-09-05). Every input gate of that figure is enforced here
+  unchanged: classifications, both arms converged to 160 s, one shared event schedule,
+  the device-to-bus mapping, one fault impedance, no load step, and the t=0 bus-9
+  identity gate on BOTH arms.
+
+Pure cache reader. No step is taken, no equation is solved, and nothing is smoothed,
+  filtered, decimated, clipped, offset, interpolated or padded. Each arm is drawn on
+  its OWN accepted-sample grid (2288 adaptive against 8007 fixed); nothing is resampled
+  onto the other's. No synthetic augmentation layer: the fixed arm oscillates on its
+  own, so there is nothing to add. LINE-ONLY -- no area, fill or patch under any
+  curve, so a thin trace can never read as a thick one.
+
+NO MODE STRIP on these pages, unlike their two siblings. The strip's lanes are
+  per-converter in the IBR palette, whose FIRST hue is this page's blue -- and here blue
+  means a POLICY, not IBR_1. A blue bar above a blue trace would read as the adaptive
+  arm's own bar rather than as a converter's, so the strip is left to the pages where
+  colour means a converter.
+
+NO VERTICAL EVENT RULES, and the panel tag sits BELOW the x label, centred: the
+  styling the owner set on the V/f and P/Q pages. Every scheduled instant is listed at
+  the end of this file instead.
+
+THE FREQUENCY PANEL IS THE FREQUENCY AT BUS 9 ITSELF, at the owner's instruction
+  (2026-09-05). Bus 9 carries load but NO device, so no frequency is a state there and
+  none is published for it; it is DERIVED from the bus's own voltage angle, which IS a
+  solved algebraic variable of the run:
+
+      f_9(t) = f_0 + (1/2pi) d(theta_9)/dt
+
+  taken as the secant slope of the UNWRAPPED angle across each accepted step -- the
+  average frequency over that step, carried at the step's MIDPOINT (so it is plotted on
+  its own time vector, not on the sample grid). BOTH arms are derived the same way from
+  their own solutions, which is what makes the two policies comparable here at all.
+
+  FOUR THINGS THAT WOULD MAKE THAT WRONG, all handled and all gated:
+    1. THE FRAME. An angle rate is a frequency only if the frame rotates at f_0. Gated
+       by measurement: before the first event both arms are synchronous, so theta_9 must
+       be STATIONARY -- and is, to |d theta_9| = 0 exactly, giving f_9 = f_0 exactly.
+    2. WRAPPING. theta_9 is returned on (-pi, pi]; it is unwrapped BEFORE it is
+       differenced. Raw wrap-sized jumps per arm are counted below.
+    3. THE EVENT JUMP. A transaction moves the algebraic state discontinuously and
+       publishes a left AND a right sample at ONE instant (dt = 0). Those pairs are
+       dropped rather than divided by; the count is below.
+    4. RESOLUTION. A secant can only express |f - f_0| <= 1/(2 dt). Beyond a half turn
+       per step the true motion is theta + 2 pi k for unknown k and the number would be
+       the GRID's bound, not the run's. Steps whose |d theta| reaches 1.5708 rad -- half
+       the wrap limit -- are NOT DRAWN, and how many is reported below.
+
+  So a broken grey trace is not a missing measurement: it is drawn where that arm's own
+  output grid determines the rate and gapped where it does not, and the gaps are
+  themselves a finding -- a fixed-GFL fleet moves this bus's angle faster than the run
+  recorded it.
+
+  per arm:
+    adaptive f_0 60.000000 Hz | 2287 step(s): 2279 determined, 0 undetermined (0.000 s of
+             160.000 s) | 8 zero-length event pair(s) | 3 raw wrap jump(s) | max |d theta|
+             0.1551 rad | grid bound >= 1.00 Hz | determined f_9 [49.8965 136.7214] Hz
+    fixed    f_0 60.000000 Hz | 8006 step(s): 4488 determined, 3514 undetermined (70.280 s of
+             160.000 s) | 4 zero-length event pair(s) | 4318 raw wrap jump(s) | max |d theta|
+             3.1416 rad | grid bound >= 25.00 Hz | determined f_9 [47.5314 72.4994] Hz
+  The frequency panel's WINDOW additionally ignores +/-0.25 s around each scheduled
+  instant: the first short step after a transaction carries a genuine but very large
+  rate, which would set an axis that flattens the comparison. Those samples are still
+  DRAWN and any excursion is annotated at the frame.
+
+Y WINDOWS cover BOTH arms over the OPERATING BAND -- the run minus [60 60.2] s -- with 6 %
+  headroom, so the two policies share ONE scale per panel; a comparison drawn on two
+  scales is not a comparison. Anything outside is annotated AT THE FRAME with its peak
+  (adaptive at the right edge, fixed at the left, because the two arms peak within
+  milliseconds of each other and labels at their own instants printed over one
+  another). Nothing is clipped silently: a sample leaving the window anywhere OUTSIDE
+  the fault window aborts the page.
+
+Bus-9 signals: S_9(t) = |V_9(t)|^2 * conj(y_9 + chi_f(t)/Z_f), chi_f = 1 on the fault
+  topology and 0 elsewhere; y_9 = 0.282472867-0.158950833j pu from the case load table at the PF
+  operating point (S_9 = 0.295000+0.166000j pu, |V_9| = 1.021934 pu). No load step on this
+  schedule, so the live multiplier is 1 everywhere. The t=0 identity gate requires the
+  reconstruction to reproduce those three values within 1e-9 pu on BOTH arms.
+
+adaptive arm : output\diagnostics\ieee14_scenario_suite\sg_fault_cycle160.mat
+  sha256 db83247c92f05b1a947578a8bfef32a50aaad4740277f0976421904b8b209970
+fixed arm    : output\diagnostics\ieee14_locked_gfl_diag\locked_gfl_diag_160s.mat
+  sha256 4a763e8d5c8f800c1fc302115d2f05e9bb5c1469d9b3c2ab370fb47ff7c55809
+fixed arm diagnostic opt-ins (that run only; production paths untouched):
+  allow_no_vf_island=true, angle_gauge_bus=1 after sg_trip+0.25 s, comparison-only clone
+  ibr.eecon49_dual_mode_ideal_dc for IBR2/3/6/8, diagnostic PLL pair (KpPll, KiPll) =
+  (0.2, 220) on the resource table only. It may support a COMPARATIVE statement and never
+  a readiness claim; the production noVoltageFormingSource refusal is unchanged.
+
+--------------------------------------------------------------
+cmp_pq
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_cmp_pq.png
+    sha256   56b170262f8efa031f190f54766167a37b2318f1f38f8a95eb33a6003c3cf82a
+    mtime    2026-09-05 03:53:44
+    bytes    81155
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_cmp_pq.fig
+    sha256   bad8110dad417e015901e8baf237a8c03d1b5b67153a2d63efc226e7dd4dfc83
+    mtime    2026-09-05 03:53:45
+    bytes    271167
+  panel P   window [0 0.596289]
+            adaptive [0.050388 0.911547]   fixed [4.43376e-06 0.562537] (whole run)
+            99 adaptive and 13 fixed sample(s) drawn but excluded from the window
+            offscale adaptive above channel 1     0.911547 at t = 60.150000 s
+  panel Q   window [0 0.335539]
+            adaptive [0.0502642 0.512938]   fixed [2.49493e-06 0.316546] (whole run)
+            99 adaptive and 13 fixed sample(s) drawn but excluded from the window
+            offscale adaptive above channel 1     0.512938 at t = 60.150000 s
+
+cmp_vf
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_cmp_vf.png
+    sha256   4e10e323c7752a169cec2b808f4176701a2756949ce06cbe6932ac43745b6cad
+    mtime    2026-09-05 03:53:47
+    bytes    90188
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_cmp_vf.fig
+    sha256   a017fe63828892d711f7bb6e3379c96a0dc8bb098dbb9edc07377b2196b3ad3d
+    mtime    2026-09-05 03:53:47
+    bytes    243446
+  panel Vm  window [0 1.49563]
+            adaptive [0.0316559 1.79639]   fixed [0.00396185 1.4112] (whole run)
+            99 adaptive and 13 fixed sample(s) drawn but excluded from the window
+            offscale adaptive above channel 1     1.796392 at t = 60.150000 s
+  panel f   window [46.0333 73.9975]
+            adaptive [49.8965 136.721]   fixed [47.5314 72.4994] (whole run)
+            167 adaptive and 88 fixed sample(s) drawn but excluded from the window
+            offscale adaptive above channel 1   136.721447 at t = 20.000003 s
+
+--------------------------------------------------------------
+MEASURED SCALARS, raw samples over one window of one arm -- no statistic is formed.
+  The ISLAND window (20 <= t < 100 s, the machine out) minus the fault window is what
+  separates the two policies, so it is reported beside the whole run.
+adaptive
+  samples    2288 accepted, 1689 in the island operating band
+  P          island op band [0.093092 0.326239]   whole run [0.050388 0.911547]
+  Q          island op band [0.052384 0.183579]   whole run [0.0502642 0.512938]
+  Vm         island op band [0.574074 1.07468]   whole run [0.0316559 1.79639]
+  f_9        2279 determined step(s), 0 undetermined (0.000 s not drawn)
+             island op band [59.2685 136.721]   whole run [49.8965 136.721]
+             THE PANEL'S OWN WINDOW SET (determined, off event): [59.2685 63.6214]
+             island subset [59.2685 63.6214]
+fixed
+  samples    8007 accepted, 3989 in the island operating band
+  P          island op band [1.5299e-05 0.562537]   whole run [4.43376e-06 0.562537]
+  Q          island op band [8.60892e-06 0.316546]   whole run [2.49493e-06 0.316546]
+  Vm         island op band [0.00735941 1.4112]   whole run [0.00396185 1.4112]
+  f_9        4488 determined step(s), 3514 undetermined (70.280 s not drawn)
+             island op band [47.5821 72.4994]   whole run [47.5314 72.4994]
+             THE PANEL'S OWN WINDOW SET (determined, off event): [47.5314 72.4994]
+             island subset [47.5821 72.4994]
+
+Event times (CASE_DEFINED, s), NOT drawn on either sheet: [20 60 60.15 100]
+  sg_trip, fault_on, fault_clear, sg_on

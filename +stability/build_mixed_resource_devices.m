@@ -230,6 +230,17 @@ for k = 1:nr
             dev.(transfer_fields{tf}) = [];
         end
     end
+    % Optional limiter-regime oracle. Devices whose RHS contains a branch
+    % switch (IBR current limiter + anti-windup) publish it so the solver can
+    % freeze the branch inside one Newton solve; SG resources have no such
+    % switch and advertise unsupported. Normalized here for the same reason as
+    % the fields above: struct-array concatenation demands identical field sets.
+    if ~isfield(dev,'limiter_regime')
+        dev.limiter_regime = [];
+    end
+    if ~isfield(dev,'limiter_regime_key')
+        dev.limiter_regime_key = '';
+    end
     % Uniform provenance: {model, source, classification, details}.
     p = r.provenance;
     dev.provenance = struct( ...

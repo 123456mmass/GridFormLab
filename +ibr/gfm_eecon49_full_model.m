@@ -64,13 +64,28 @@ dcp=ibr.dc_source_thevenin_params(dc,Vdc_ref,Cdc,Rf,kappa,P_ref,Q_ref,V0);
 nx_dev=10; if dcp.source_state, nx_dev=11; end
 x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiV,dcp);
 u0=[P_ref;Q_ref;E_ref];
+% Runtime limiter-regime key; see the GFL branch for the derivation. The
+% current limiter and its anti-windup are BRANCH SWITCHES recomputed inside
+% every residual evaluation (:114, :136-137), so a coupled Newton solve whose
+% FD perturbations straddle the switching surface assembles Jacobian columns
+% from two different equations. The solver may freeze the branch for one solve
+% via event_context.limiter_freeze.<key>; absent, every expression below is
+% the historical one in the historical order.
+limiter_key=matlab.lang.makeValidName(char(device_id), ...
+    'ReplacementStyle','underscore');
 f=@(t,x,y,u,ec) rhs(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax,dcp, ...
-    M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
+    M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref,limiter_freeze(ec,limiter_key), ...
+    anti_windup_blend(ec));
 current=@(t,x,y,u,ec) current_out(x,y,bus_position,kappa,Imax);
 power=@(t,x,y,u,ec) real(busv(y,bus_position)*conj(current(0,x,y,u,struct())));
 recon=@(t,x,y,u,ec) reconstruct(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc,Vdc_ref,Imax, ...
     M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref);
 eq=@(V,P,Q,ec) equilibrium(V,P,Q,kappa,Vdc_ref,Lf,Rf,kiV,dcp);
+% Regime oracle for the outer active-set loop: the UNFROZEN branch decision at
+% this state, produced by the same arithmetic path as the RHS.
+regime=@(t,x,y,u,ec) regime_only(x,y,u,bus_position,kappa,wb,Lf,Rf,Cdc, ...
+    Vdc_ref,Imax,dcp,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,E_ref, ...
+    anti_windup_blend(ec));
 dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, ...
     'bus_position',bus_position,'bus_ids',bus_ids(:).','device_type','ibr_gfm_eecon49_full', ...
     'mode','GFM','nx',nx_dev,'nu',3, ...
@@ -78,6 +93,7 @@ dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, .
     'input_names',{{'P_ref','Q_ref','E_ref'}},'x0',x0,'u0',u0,'f',f,'current_injection',current, ...
     'electrical_power',power,'reconstruct',recon,'equilibrium_initialize',eq, ...
     'active_state_indices',@(ec) 1:nx_dev, ...
+    'limiter_regime',regime,'limiter_regime_key',limiter_key, ...
     'provenance',struct('model','EECON49_GFM_FULL_STATE_MAPPED', ...
         'source','EECON49-P4 eqs.(6)-(8),(16)-(29), Fig.2 and parameter table; command-delay eqs.(20)-(21) reduced (T_d<<dt)', ...
         'source_classification','SOURCE_MAPPED', ...
@@ -91,7 +107,9 @@ dev=struct('name',char(device_id),'device_id',char(device_id),'bus_id',bus_id, .
         'readiness','SOURCE_IMPLEMENTED_PENDING_FULL_IBR_GATES'));
 end
 
-function dx=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
+function [dx,reg]=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0,frz,awb)
+if nargin<23, frz=[]; end
+if nargin<24 || isempty(awb), awb=0; end
 V=busv(y,bp); id=x(1); iq=x(2);
 vdc=x(3); th=x(4); om=x(5); E=x(6);
 xiVd=x(7); xiVq=x(8); xiId=x(9); xiIq=x(10);
@@ -113,6 +131,18 @@ idref_raw=kpV*evd+kiV*xiVd;
 iqref_raw=kpV*evq+kiV*xiVq;
 [idref,iqref,sat]=limit_i(idref_raw,iqref_raw,Imax);
 ri_d=idref_raw-idref; ri_q=iqref_raw-iqref;
+% Unfrozen branch decision at this state, reported for the outer active-set
+% loop. conditional_hold stays the SINGLE owner of the anti-windup predicate
+% and now also returns which way it went. A freeze overrides ONLY the two
+% voltage-loop integrator rows; the clipped references idref/iqref and
+% therefore every other row are computed from the live limiter as before.
+[dh_d,hold_d]=conditional_hold(evd,kiV,ri_d,sat,Imax,awb);
+[dh_q,hold_q]=conditional_hold(evq,kiV,ri_q,sat,Imax,awb);
+reg=struct('sat',sat,'hold_d',hold_d,'hold_q',hold_q);
+if ~isempty(frz)
+    if frz.hold_d, dh_d=0; else, dh_d=evd; end
+    if frz.hold_q, dh_q=0; else, dh_q=evq; end
+end
 ed=idref-id; eq=iqref-iq;
 vcd=vd+R*id-om*L*iq+kpI*ed+kiI*xiId;
 vcq=vq+R*iq+om*L*id+kpI*eq+kiI*xiIq;
@@ -133,10 +163,17 @@ if dcp.source_state, dx(11)=dc_rows(2); end
 % is the current-reference vector clipped by Imax. The inner current PI has
 % no separate voltage-command clamp in this model and therefore integrates
 % ed/eq normally.
-dx(7)=conditional_hold(evd,kiV,ri_d,sat);
-dx(8)=conditional_hold(evq,kiV,ri_q,sat);
+dx(7)=dh_d;
+dx(8)=dh_q;
 dx(9)=ed; dx(10)=eq;
 if any(~isfinite(dx)), error('ibr:gfm_eecon49:nonfinite','non-finite RHS.'); end
+end
+
+function reg=regime_only(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp, ...
+    M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0,awb)
+%REGIME_ONLY  The UNFROZEN limiter branch at this state, for the outer loop.
+[~,reg]=rhs(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,dcp, ...
+    M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0,[],awb);
 end
 
 function out=reconstruct(x,y,u,bp,k,wb,L,R,C,Vdc0,Imax,M,Dv,tauE,kQ,kE,kpV,kiV,kpI,kiI,Eref0)
@@ -176,6 +213,52 @@ end
 function V=busv(y,bp), V=complex(y(2*bp-1),y(2*bp)); if abs(V)<1e-8, error('ibr:gfm_eecon49:lowV','low voltage.'); end, end
 function v=getv(s,n,d), if isfield(s,n)&&~isempty(s.(n)), v=s.(n); else, v=d; end, end
 function [a,b,sat]=limit_i(a,b,m), r=hypot(a,b); sat=r>m; if sat, a=a*m/r; b=b*m/r; end, end
-function d=conditional_hold(e,direction_gain,limiter_residual,limited)
-if limited && direction_gain*e*limiter_residual>0, d=0; else, d=e; end
+function [d,held]=conditional_hold(e,direction_gain,limiter_residual,limited,m,blend)
+%CONDITIONAL_HOLD  Anti-windup on the voltage-loop PI: hold when the limiter is
+%   active and the integrator is driving further into the limit. HELD reports
+%   the branch taken so the solver can freeze it without duplicating the
+%   predicate.
+%
+%   BLEND (default 0) is the declared NUMERICAL_METHOD regularization of the
+%   switch; see the GFL branch for the derivation and the measured sliding mode.
+%   blend = 0 is the historical hard switch expression for expression; blend > 0
+%   engages the hold continuously over a band of width blend*m in the limiter
+%   residual, so the RHS is Lipschitz instead of jumping by |e|. Outside the
+%   band the two forms agree exactly.
+if nargin<6 || isempty(blend), blend=0; end
+held = limited && direction_gain*e*limiter_residual>0;
+if ~held, d=e; return; end
+if blend<=0, d=0; return; end
+s = min(1, abs(limiter_residual)/(blend*m));
+d = e*(1-s);
+held = s>=1;
+end
+
+function awb=anti_windup_blend(ec)
+%ANTI_WINDUP_BLEND  Declared blend width for the anti-windup switch, or 0.
+%   Read from event_context.anti_windup_blend, set by the TS driver from its own
+%   opt-in option. Absent (every historical caller) returns 0 and the hard
+%   switch is taken, so the model is byte-identical.
+awb=0;
+if isempty(ec) || ~isstruct(ec) || ~isfield(ec,'anti_windup_blend'), return; end
+v=ec.anti_windup_blend;
+if isnumeric(v) && isscalar(v) && isfinite(v) && v>=0, awb=double(v); end
+end
+
+function frz=limiter_freeze(ec,key)
+%LIMITER_FREEZE  Read a frozen limiter branch for this device, or [].
+%   The solver publishes event_context.limiter_freeze.<key> = struct with
+%   hold_d/hold_q while it holds the branch fixed inside one Newton solve.
+%   Absent (every historical caller), this returns [] and the RHS takes its
+%   live branch decision, so the model is byte-identical.
+frz=[];
+if isempty(ec) || ~isstruct(ec) || ~isfield(ec,'limiter_freeze'), return; end
+lf=ec.limiter_freeze;
+if ~isstruct(lf) || ~isscalar(lf) || ~isfield(lf,key), return; end
+c=lf.(key);
+if isstruct(c) && isscalar(c) && isfield(c,'hold_d') && isfield(c,'hold_q') && ...
+        islogical(c.hold_d) && isscalar(c.hold_d) && ...
+        islogical(c.hold_q) && isscalar(c.hold_q)
+    frz=c;
+end
 end

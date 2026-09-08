@@ -116,6 +116,12 @@ recon=@(t,x,y,u,ec) dual_reconstruct(t,x,y,u,ec,status_key,mode, ...
 eq=@(V,P,Q,ec) equilibrium_initialize(V,P,Q,ec,status_key,mode, ...
     gfl_dev,gfm_dev,x0);
 active=@(ec) active_indices(ec,status_key,mode,gfl_active,gfm_active);
+% Limiter-regime oracle for the solver's outer active-set loop. Both branch
+% models publish `limiter_regime`; this dispatches to whichever branch is live,
+% so the reported regime always belongs to the equation actually being solved.
+% Returns [] when the device is offline or tripped, matching dual_f's zero RHS.
+regime=@(t,x,y,u,ec) dual_regime(t,x,y,u,ec,status_key,mode, ...
+    gfl_dev,gfm_dev,u0);
 transfer=@(x,y,u,ecl,target,ecr,varargin) transfer_state( ...
     x,y,u,ecl,target,ecr,status_key,mode,gfl_dev,gfm_dev,u0, ...
     bus_position,varargin{:});
@@ -140,6 +146,8 @@ dev.equilibrium_initialize=eq;
 dev.active_state_indices_for_context=active;
 dev.dynamic_state_indices_for_context=active;
 dev.equilibrium_constraint_specs=[];
+dev.limiter_regime=regime;
+dev.limiter_regime_key=status_key;
 dev.mode_transfer_state=transfer; dev.transfer_state=transfer;
 dev.mode_transfer=transfer;
 switch char(mode)
@@ -184,6 +192,24 @@ end
 if any(~isfinite(dx))
     error('ibr:eecon49_dual_mode_model:nonfiniteRhs','Non-finite EECON49 RHS.');
 end
+end
+
+function reg=dual_regime(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
+%DUAL_REGIME  The live branch's UNFROZEN limiter regime, or [] when the device
+%   contributes no differential rows (offline or tripped, dual_f:178). The
+%   returned struct also carries which controller branch produced it, so a
+%   frozen regime can never be applied across a mode transfer.
+validate_state(x); u=resolve_u(u,u0);
+[online,m]=resolve_status(ec,id,default_mode);
+reg=[];
+if ~online || strcmp(m,'tripped'), return; end
+switch m
+case 'gfl'
+    reg=gfl.limiter_regime(t,to_gfl(x),y,u(1:2),ec);
+case 'GFM'
+    reg=gfm.limiter_regime(t,to_gfm(x),y,u,ec);
+end
+if isstruct(reg) && isscalar(reg), reg.mode=m; end
 end
 
 function I=dual_current(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)

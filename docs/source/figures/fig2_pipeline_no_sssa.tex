@@ -1,0 +1,53 @@
+%=============================================================================
+%  fig2_pipeline.tex -- figure 2 of the report, rebuilt WITHOUT the SSSA box.
+%
+%  The delivered figure drew PF -> DAE equilibrium -> SSSA -> TS with the
+%  supervisor feeding back into the equilibrium solve, which reads as "SSSA sits
+%  in the switching loop". It does not: the 160 s cache records
+%  execution_summary.sssa_invocations = 0 and selector_candidate_evaluations = 0,
+%  so no small-signal analysis runs while the supervisor switches modes. SSSA
+%  screens the candidate table BEFORE the run (report table 4, the 15 sets); the
+%  switching path itself is PF -> DAE equilibrium -> TS with the supervisor
+%  looping back.
+%
+%  Every style value is copied from report_power_system_project_final_th_v2.tex
+%  lines 121-122 and 291-302, so the rebuilt figure is the delivered figure minus
+%  one node: same box geometry, same fill, same arrow tip, same font at the same
+%  size, same academicblue on the supervisor box.
+%
+%  BUILD (from this directory):
+%      xelatex -interaction=nonstopmode fig2_pipeline.tex
+%      pdftoppm -r 475 -png fig2_pipeline.pdf fig2_pipeline
+%=============================================================================
+\documentclass[12pt,border=2pt]{standalone}
+\usepackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[
+  Path=C:/Users/User/Desktop/Power-flow/docs/source/fonts/TH Sarabun PSK V-1/,
+  Extension=.ttf,
+  UprightFont={THSarabun},
+  BoldFont={THSarabun Bold},
+  ItalicFont={THSarabun Italic},
+  BoldItalicFont={THSarabun BoldItalic}
+]{THSarabun}
+\usepackage{type1cm}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
+\definecolor{academicblue}{RGB}{35,64,96}
+\definecolor{blockfill}{RGB}{242,244,247}
+\linespread{0.92}
+\begin{document}
+\begin{tikzpicture}[
+  box/.style={draw=black,thin,rounded corners=1.5pt,minimum width=1.35in,minimum height=0.55in,align=center,fill=blockfill},
+  arr/.style={-{Latex[length=2.2mm]},thick}]
+\node[box] (pf) {Power Flow\\$V,\theta,P,Q$};
+\node[box,right=0.18in of pf] (eq) {DAE equilibrium\\$f=0,\ g=0$};
+\node[box,right=0.18in of eq] (ts) {TS\\implicit trapezoid};
+\node[box,below=0.32in of ts,draw=academicblue,very thick] (sup) {Supervisor\\GFL/GFM};
+\draw[arr] (pf)--(eq)--(ts);
+\draw[arr] (ts)--(sup);
+\draw[arr] (sup.west) -| (eq.south);
+\end{tikzpicture}
+\end{document}

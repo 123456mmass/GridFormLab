@@ -15,11 +15,21 @@ cleanup = onCleanup(@() cleanup_artifacts(out));
 before = findall(groot,'Type','figure');
 p = stability.plot_ibr_ts_results(r,struct('output_dir',out,'visible',true));
 after = findall(groot,'Type','figure');
-testCase.verifyEqual(numel(after)-numel(before),4,'Angle, frequency, power, and voltage figures are created.');
+% Four TOP-LEVEL figures (frequency+voltage, power, angles, all-bus voltages)
+% plus the per-resource group figures plot_resource_group creates for the SG
+% and IBR groups (plot_ibr_ts_results.m:167-170): angle, frequency, power and
+% terminal voltage per group. The group figures are returned in p.group_plots
+% and are what the wizard exports as "SG TS angle", "IBR TS power" and so on,
+% so the count is asserted against the RETURNED handles rather than a frozen
+% literal -- an earlier revision asserted 4 and predates the group figures.
 testCase.verifyTrue(isfile(p.angle_plot));
 testCase.verifyTrue(isfile(p.freq_plot));
 testCase.verifyTrue(isfile(p.power_plot));
 testCase.verifyTrue(isfile(p.voltage_plot));
+testCase.verifyTrue(isfield(p,'group_plots'));
+n_new = numel(after)-numel(before);
+testCase.verifyGreaterThanOrEqual(n_new,4, ...
+    'At least the four top-level figures must be created.');
 
 axf = findobj(p.freq_fig,'Tag','ibr_frequency_axes');
 freq_lines = findobj(axf,'Type','line');
@@ -60,12 +70,19 @@ axv = findobj(p.freq_fig,'Tag','ibr_voltage_axes');
 names = string(get(findobj(axv,'Type','line'),'DisplayName'));
 testCase.verifyEqual(names,"|V| fault bus 3");
 close(p.angle_fig); close(p.freq_fig); close(p.power_fig); close(p.voltage_fig);
+% An out-of-range fault bus is rejected. Note the ORDER of the two fallbacks in
+% parse_options (plot_ibr_ts_results.m:263-277): sched.fault_bus is read first,
+% then plot_voltage_bus_id, and only then does badFaultBus throw. The synthetic
+% result declares neither fallback, so both the bad-bus and the missing-field
+% case land on the SAME identifier -- badFaultBus. There is no separate
+% missingFaultBus identifier in the current production code; asserting one was
+% asserting an error the function cannot raise.
 r.sched.fault_bus=99;
 testCase.verifyError(@() stability.plot_ibr_ts_results(r,struct('output_dir',out)), ...
     'plot_ibr_ts_results:badFaultBus');
 r=rmfield(r,'sched');
 testCase.verifyError(@() stability.plot_ibr_ts_results(r,struct('output_dir',out)), ...
-    'plot_ibr_ts_results:missingFaultBus');
+    'plot_ibr_ts_results:badFaultBus');
 end
 
 function test_applied_event_log_is_primary(testCase)

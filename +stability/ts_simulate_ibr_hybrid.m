@@ -250,6 +250,8 @@ while t < settings.t_end-settings.event_tol
             'fd_grouping',settings.fd_grouping, ...
             'fd_structure_check',settings.fd_structure_check, ...
             'fd_perturbation',settings.fd_perturbation, ...
+            'limiter_regime_freeze',settings.limiter_regime_freeze, ...
+            'limiter_regime_max_outer',settings.limiter_regime_max_outer, ...
             'state_predictor',predictor);
         % NOTE: the linear predictor is rebuilt per ATTEMPT below, because it
         % scales with the trial step. Building it once from the nominal h and
@@ -467,6 +469,8 @@ while t < settings.t_end-settings.event_tol
             'fd_grouping',settings.fd_grouping, ...
             'fd_structure_check',settings.fd_structure_check, ...
             'fd_perturbation',settings.fd_perturbation, ...
+            'limiter_regime_freeze',settings.limiter_regime_freeze, ...
+            'limiter_regime_max_outer',settings.limiter_regime_max_outer, ...
             'state_predictor',predictor);
         if support_predictor_active && strcmpi(predictor,'linear_kcl') && ...
                 ~isempty(predictor_prev_x) && isfinite(predictor_prev_t) && ...
@@ -890,7 +894,7 @@ while t < settings.t_end-settings.event_tol
             direction='augment';
             [candidate,found,selection_audit]= ...
                 stability.select_support_augmentation_candidate( ...
-                opt.selector_table,current_gfm);
+                opt.selector_table,current_gfm,online_ibr);
         elseif t>=support_retry_after-settings.event_tol && down_due
             direction='release';
             [candidate,found,selection_audit]= ...
@@ -1587,6 +1591,42 @@ s.fd_perturbation = char(option(opt,'fd_perturbation','absolute'));
 if ~ismember(lower(string(s.fd_perturbation)),["absolute","scaled"])
     error('ts_simulate_ibr_hybrid:badFdPerturbation', ...
         'fd_perturbation must be absolute or scaled.');
+end
+% Limiter-regime freezing inside the coupled Newton solve (opt-in), forwarded to
+% stability.ts_step_composite. The IBR current limiter and its anti-windup are
+% branch switches the device RHS re-decides on every call, so at a state on the
+% switching surface the FD Jacobian can be assembled across a branch boundary
+% and the resulting direction is a Newton direction for neither branch. When
+% enabled, each solve holds every device's branch fixed, then reclassifies at
+% the solution and repeats while the classification keeps moving, up to
+% limiter_regime_max_outer passes; a solve whose branch does not match its own
+% solution is reported as NON-CONVERGENCE, so the caller's halving and
+% fail-closed policy is the sole acceptance authority exactly as before.
+% NUMERICAL_METHOD: no equation, limit or acceptance gate changes -- only which
+% smooth branch a single Newton solve is asked to solve. Default off:
+% byte-identical.
+s.limiter_regime_freeze = logical(option(opt,'limiter_regime_freeze',false));
+s.limiter_regime_max_outer = option(opt,'limiter_regime_max_outer',4);
+if ~isnumeric(s.limiter_regime_max_outer) || ...
+        ~isscalar(s.limiter_regime_max_outer) || ...
+        ~isfinite(s.limiter_regime_max_outer) || ...
+        s.limiter_regime_max_outer < 1 || ...
+        s.limiter_regime_max_outer ~= fix(s.limiter_regime_max_outer)
+    error('ts_simulate_ibr_hybrid:badLimiterRegimeMaxOuter', ...
+        'limiter_regime_max_outer must be a positive integer.');
+end
+% Anti-windup blend width. Declared on the event context so every device RHS
+% reads it through the same reader (anti_windup_blend in both eecon49 branch
+% models) without threading a new argument through every call site. See the
+% model derivation; default 0 is the historical hard switch, byte-identical.
+s.anti_windup_blend = option(opt,'anti_windup_blend',0);
+if ~isnumeric(s.anti_windup_blend) || ~isscalar(s.anti_windup_blend) || ...
+        ~isfinite(s.anti_windup_blend) || s.anti_windup_blend < 0
+    error('ts_simulate_ibr_hybrid:badAntiWindupBlend', ...
+        'anti_windup_blend must be a finite non-negative scalar.');
+end
+if s.anti_windup_blend > 0
+    ec.anti_windup_blend = s.anti_windup_blend;
 end
 % Timescale for the post-reclose FIELD-VOLTAGE command ramp (opt-in).
 % 'mode' (default) is the historical behaviour: the field voltage shares the C1
@@ -3004,6 +3044,24 @@ if isempty(selected) || numel(selected)~=numel(candidate.selected_gfm_indices) |
         ~isequal(candidate.ready_to_commit,true) || ~isequal(candidate.feasible,true) || ...
         ~isscalar(ref) || ~isfinite(ref) || ~ismember(ref,selected)
     reason='Authenticated support candidate is not a ready nonempty referenced GFM set.';
+    return;
+end
+% The destination may not name an out-of-service device in any role. The
+% static table cannot know the service state, so a severity decision taken
+% after a converter outage can otherwise commit a row containing the device
+% that just left -- publishing its ownership and certified input for a
+% converter that is gone (former_outage at t=64.037 committed [2 3 4 5] with
+% IBR2 already tripped). This is the same predicate select_post_outage_candidate
+% enforces for the outage itself; it is asserted here because this transaction
+% is what publishes the metadata.
+online_now=false(1,numel(dae.devices));
+for k=1:numel(dae.devices)
+    online_now(k)=device_is_online(dae.devices(k),ec);
+end
+if ~all(ismember(selected,find(online_now))) || ~ismember(ref,find(online_now))
+    reason=sprintf(['Support %s candidate names an out-of-service device ' ...
+        '(selected %s, reference %d); refusing to publish ownership for a ' ...
+        'converter that is gone.'],direction,mat2str(selected),ref);
     return;
 end
 current_modes=current_mode_vector(dae,ec);

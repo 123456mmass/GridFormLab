@@ -12,10 +12,24 @@ function testZeroTransientDampingReproducesBaselineExactly(testCase)
 % transient-damping coefficient is zero and the droop is matched, i.e.
 %   M dom/dt = kP - Pinv - (1/R)(om-1) - 0*(om-om_f)   ==   ... - Dv(om-1)
 % for Dv = 1/R.  This is the implementation oracle for the whole model: the
-% independent reference is ibr.gfm_eecon49_full_model, an unmodified file.
+% independent reference is ibr.gfm_eecon49_full_model.
 % AbsTol 0 -- any difference means the new swing block is not the declared
 % equation.  omega_f is deliberately perturbed away from omega to prove the
 % first ten rows do not read it when D_t=0.
+%
+% ROW 3 (the DC-link row) IS EXCLUDED, and the exclusion is the point rather
+% than a concession. The two families no longer share a DC closure and were not
+% meant to: NUM-2026-08-20-01 replaced the EECON49 family's ideal closure --
+% which cancelled `Pac/vdc` identically and left `V_dc` with no dynamics at all
+% -- with the state-carrying Thevenin source in ibr.dc_source_thevenin_rhs,
+% while GATE-2026-08-25-02 deliberately kept the DECOUPLED family on the
+% algebraic source (`dc_source.source_state = strcmp(model_id,'eecon49_dual')`
+% in scenario_ieee14_1sg_4ibr.m:345) so its GFL adapter stays 10-state. So the
+% EECON49 model is an unmodified reference for the SWING block, which is what
+% this oracle exists to check, and is NOT a reference for the DC row.
+% Comparing row 3 across families measures the documented divergence, not the
+% swing equation. Row 3 is therefore asserted against the decoupled model's OWN
+% declared closure below, so it is still covered -- just by the right oracle.
 Dv=20.0; V0=1.02; P=0.40; Q=0.15; E=1.02;
 b=ibr.gfm_eecon49_full_model('B',2,1,[2 3],V0,base_params(Dv),P,Q,E);
 d=ibr.gfm_decoupled_full_model('D',2,1,[2 3],V0, ...
@@ -25,6 +39,8 @@ verifyEqual(testCase,d.state_names{11},'omega_f');
 verifyEqual(testCase,d.provenance.omega_f_index,11);
 verifyEqual(testCase,d.x0(1:10),b.x0,'AbsTol',0);
 verifyEqual(testCase,d.x0(11),1,'AbsTol',0);
+swing_rows=[1 2 4 5 6 7 8 9 10];   % every row of 1:10 except the DC row
+dprm=d.provenance.params;
 rng(7); evaluated=0;
 for k=1:200
     xb=b.x0+0.08*randn(10,1); xb(3)=0.9+0.2*rand;
@@ -37,8 +53,14 @@ for k=1:200
         continue;
     end
     evaluated=evaluated+1;
-    verifyEqual(testCase,fd(1:10),fb,'AbsTol',0);
+    verifyEqual(testCase,fd(swing_rows),fb(swing_rows),'AbsTol',0);
     verifyEqual(testCase,fd(11),50.0*(xd(5)-xd(11)),'AbsTol',0);
+    % Row 3 against the decoupled family's own algebraic-source closure. The
+    % ideal closure cancels Pac/vdc exactly, so dVdc/dt = (Vdc0 - Vdc)/Tdc and
+    % neither Pac nor C may appear. Writing the reduced form here rather than
+    % re-deriving the coded one makes the cancellation itself the assertion.
+    verifyEqual(testCase,fd(3),(dprm.Vdc_ref-xd(3))/dprm.Tdc,'AbsTol',1e-12, ...
+        'the decoupled DC row must reduce to the ideal first-order closure');
 end
 verifyGreaterThan(testCase,evaluated,100, ...
     'the random sweep must actually evaluate the models');

@@ -1,0 +1,11 @@
+Local proof audit, 2026-09-05; RNG 20260905
+No network trajectory was rerun or modified.
+Metrics: |dI| |dP| |dQ| |dVdc| |dIdc| |df_Hz| |d_norm_dq_squared| |d_dq|_inf |dx|_inf |d_dI_dt| |d_dVdc_dt| |d_dIdc_dt|
+GFL->GFM: 0 0 0 0 0 0 0 0.0619738330931 0.0619738330931 101.613573071 0.201803136627 0 
+GFM->GFL: 6.93889390391e-18 0 0 0 0 7.1054273576e-15 0 0.0465920487079 0.12 100.746310261 0.114869123112 0 
+Sweep: 600 transfers, Mbase=[50 100 200] MVA
+Sweep maxima (first 7 metrics): 8.00593208497e-16 8.881784197e-16 4.4408920985e-16 0 0 1.42108547152e-14 1.7763568394e-15 
+Bare mode change current jump: 0.0626684111869 pu
+Assembled device dimensions: 6 17 17 17 17 
+Assembled state count: 74
+Stack error 0; foreign-state sensitivity 0; foreign-voltage sensitivity 0

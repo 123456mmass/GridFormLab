@@ -1,0 +1,85 @@
+generator: scripts/reporting/generate_ieee14_pq_mode_page.m
+schema:    ieee14_pq_mode_page/1.0
+generated: 2026-09-04T19:40:46Z
+caches:    output\diagnostics\ieee14_scenario_suite
+style:     4.65 in x 2.9 in, Helvetica 10 pt, tex interpreter, dashed major and minor, box off, ticks out
+
+ONE SHEET per scenario, two columns side by side under one converter legend. Each
+  column is a "GFM Mode Active" STRIP above a data panel:
+    (a) P_i, the active power each converter delivered
+    (b) Q_i, the reactive power each converter delivered, against zero
+  The strip is a separate axes, not an overlay inside the data area, so a bar can never
+  sit on a trace and the traces keep the whole panel height.
+
+Pure cache reader. Nothing is simulated, re-solved, smoothed, filtered, decimated,
+  clipped, offset, interpolated or padded: every plotted sample is a raw accepted
+  value from the stored trajectory.
+
+NEITHER PANEL IS MASKED FOR SERVICE. The mode strip is masked -- a converter out of
+  service has no mode -- but P and Q are not: a departed converter injects no current,
+  so its zero is a MEASURED injection and hiding it would hide the outage. The masked
+  sample count is listed per scenario below.
+
+THE MODE STRIP is the outcome of the supervisor comparing S against Gamma_on/Gamma_off,
+  which is why this page refuses to draw without the threshold pair the run used. Each
+  bar spans one CONTIGUOUS grid-forming interval at its TRUE extent -- no minimum width
+  is applied, because widening a short interval to make it visible would draw a
+  grid-forming stretch that did not happen. A converter with no bar was never
+  grid-forming on this arm, and that absence is the fact.
+
+Y WINDOWS on a faulted arm are computed over the OPERATING BAND -- the run minus its
+  fault window plus 50 ms -- and anything outside is annotated AT THE FRAME with its
+  peak value. NOTHING is dropped, filtered or clipped: every sample is plotted and every
+  value outside a window is listed below.
+
+The x axis spans the REQUESTED horizon, not the last accepted sample: cropping to
+  the data would draw a truncated run as a finished one.
+
+NO VERTICAL EVENT RULES on the sheet, matching the sibling V/f page (the owner took
+  them off both, 2026-09-04/05): the dashed and dotted rules are off both panels and off
+  the mode strips. A bar's own left edge already dates the mode change, and every
+  scheduled instant the run carried is listed by time, name and source below -- that
+  table is now the ONLY record of them on this page.
+
+--------------------------------------------------------------
+sg_fault_cycle160 SG trip, a converter takes the island angle reference, bolted fault at bus 9, then SG reclose, over 160 s
+  cache      output\diagnostics\ieee14_scenario_suite\sg_fault_cycle160.mat
+  cache_sha  db83247c92f05b1a947578a8bfef32a50aaad4740277f0976421904b8b209970
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_pq_mode.png
+    sha256   c896f737a97df85c6a10491d917c419caa823f0a6af9b5b73fd3a18456352f60
+    mtime    2026-09-05 02:41:02
+    bytes    96828
+  file       docs\source\figures\ieee14_scenario_suite\sg_fault_cycle160_pq_mode.fig
+    sha256   0e10073f856d77318edde39290c3b33b1d815226b4e1834082770b6585f19a0e
+    mtime    2026-09-05 02:41:03
+    bytes    259202
+  horizon    160.000000 s of 160.000000 s requested (reached=1)
+  thresholds Gamma_on=0.6500 Gamma_off=0.3500
+  samples    2288 over 4 converter(s)
+  labels     deck IBR_1..IBR_4 = code IBR2, IBR3, IBR6, IBR8
+  ranges     P [0.040784 2.173301]  Q [-0.427087 0.893525] pu (whole run)
+  window     y limits from the operating band: run minus [60.0000 60.2000] s (2189 of 2288 samples kept)
+             P [0.119561 0.997887]  Q [-0.497992 0.825567]
+  offscale_P value(s) outside the window, each annotated at the frame:
+    IBR2   above        1.964685 at t = 60.150000 s
+    IBR2   below        0.040784 at t = 60.000000 s
+    IBR3   above        2.005981 at t = 60.150000 s
+    IBR3   below        0.118236 at t = 60.000000 s
+    IBR6   above        2.173301 at t = 60.150000 s
+    IBR6   below        0.116867 at t = 60.000000 s
+    IBR8   above        2.147987 at t = 60.150000 s
+    IBR8   below        0.050238 at t = 60.000000 s
+  offscale_Q value(s) outside the window, each annotated at the frame:
+    IBR2   above        0.893525 at t = 60.150000 s
+  gfm        2 contiguous interval(s) drawn
+  offline    0 converter-sample(s) out of service (P and Q still plotted there)
+  defining   fault_clear -> EXECUTED
+  events     8 scheduled instant(s) the run carried, NOT drawn on the sheet:
+       20.0000 s  disturbance SG trip                      r.sched.sg_trip
+       22.0887 s  supervisor  GFM+                         r.event_log(2).gfm_support_augment
+       25.3026 s  supervisor  GFM-                         r.event_log(3).gfm_support_release
+       60.0000 s  disturbance fault                        r.sched.fault_on
+       60.1500 s  disturbance clear                        r.sched.fault_clear
+      100.0000 s  disturbance SG offer                     r.sched.sg_on
+      102.3627 s  disturbance SG close                     r.actual_reclose_time
+      116.2379 s  supervisor  reselect                     r.event_log(8).sg_reselection

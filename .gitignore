@@ -88,3 +88,4 @@ docs/source/fonts/
 # pf_init_paths per AGENTS.md.
 scripts/psat-2.1.11-mat/
 pdf_*.txt
+*.exe

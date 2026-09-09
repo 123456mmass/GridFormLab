@@ -9,10 +9,10 @@
 %   * the cover's title box takes the same colour as the top and bottom bars.
 % Nothing else yet -- this is v13's whole scope.
 %
-% FIGURE NUMBERING follows the source paper's own, which is why Figure 1 is the
-% electrical model and Figure 2 the control structure: the red dashed box inside
-% Figure 1 points at "รูปที่ 2", and with this order that pointer still lands on
-% the right page.
+% FIGURE NUMBERING: the Introduction TikZ concept diagram is Figure 1; the
+% electrical model is Figure 2 and the control structure Figure 3. NOTE: the
+% red dashed box inside fig1_ibr_electrical.png still points at "รูปที่ 2",
+% which no longer matches -- the control structure is now Figure 3.
 %
 % COVER COLOUR. Measured from the v12 render: the frametitle bar is
 % myblue!82!black = RGB(0,0,146), the footline was Berlin's own RGB(38,38,134),
@@ -140,6 +140,21 @@ King Mongkut's Institute of Technology Ladkrabang (KMITL)
 \begin{frame}{Nomenclature}
 \fontsize{6.2}{7.2}\selectfont
 \renewcommand{\arraystretch}{1.0}\setlength{\tabcolsep}{3pt}
+\textbf{Abbreviations}\par\smallskip
+\begin{columns}[t,onlytextwidth]
+\column{.49\textwidth}
+\begin{tabular}{@{}p{1.55cm}>{\raggedright\arraybackslash}p{3.35cm}@{}}
+EMF & electromotive force\\
+GFL / GFM & grid-following / grid-forming control\\
+IBR & inverter-based resource\\
+PF / TS & power flow / time-domain simulation\\
+PLL & phase-locked loop\\
+SG & synchronous generator\\
+VSG & virtual synchronous generator\\
+\end{tabular}
+\column{.49\textwidth}
+\mbox{}
+\end{columns}\par\smallskip
 \textbf{Symbols}\par\smallskip
 \begin{columns}[t,onlytextwidth]
 \column{.49\textwidth}
@@ -173,21 +188,6 @@ $\xi_P,\xi_Q$ & power-loop integrator states\\
 $\xi_{Id}^{b},\xi_{Iq}^{b}$ & current-loop integrators, $b\in\{GFL,GFM\}$\\
 $\xi_{Vd},\xi_{Vq}$ & voltage-loop integrator states\\
 \end{tabular}
-\end{columns}\par\smallskip
-\textbf{Abbreviations}\par\smallskip
-\begin{columns}[t,onlytextwidth]
-\column{.49\textwidth}
-\begin{tabular}{@{}p{1.55cm}>{\raggedright\arraybackslash}p{3.35cm}@{}}
-EMF & electromotive force\\
-GFL / GFM & grid-following / grid-forming control\\
-IBR & inverter-based resource\\
-PF / TS & power flow / time-domain simulation\\
-PLL & phase-locked loop\\
-SG & synchronous generator\\
-VSG & virtual synchronous generator\\
-\end{tabular}
-\column{.49\textwidth}
-\mbox{}
 \end{columns}
 \end{frame}
 \begin{frame}{Introduction}
@@ -195,21 +195,24 @@ VSG & virtual synchronous generator\\
 \column{.48\textwidth}
 \small
 \begin{itemize}\setlength{\itemsep}{.30cm}
-\item Increasing inverter-based resource (IBR) penetration.
+\item Increasing  IBR penetration.
 \item Less synchronous-machine inertia.
-\item Weak grids challenge PLL-based grid-following (GFL) control.
-\item Grid-forming (GFM) control provides voltage and frequency support.
-\item Adapt the control mode to grid conditions [1],[2].
+\item Weak grids challenge PLL-based  GFL control.
+\item GFM control provides voltage and frequency support.
+\item Adapt the control mode to grid conditions [1], [2].
 \end{itemize}
 \column{.48\textwidth}
 \centering
+\begin{figure}
 \begin{tikzpicture}[font=\small,b/.style={draw=barblue,rounded corners,align=center,text width=3.8cm,minimum height=1.0cm},a/.style={-{Stealth},thick,barblue}]
 \node[b] (a) at (0,2.7) {Normal grid\\GFL: power regulation};
-\node[b] (b) at (0,.7) {Disturbance / SG loss\\Severity increases};
-\node[b] (c) at (0,-1.3) {Selected IBR enters GFM\\Voltage / frequency support};
+\node[b] (b) at (0,.7) {Disturbance  \\SG loss\\Severity increases};
+\node[b] (c) at (0,-1.3) {Selected IBR enters GFM\\Voltage\\frequency support};
 \draw[a] (a)--(b);\draw[a] (b)--(c);
 \draw[a] (c.east)--++(.25,0)|-(a.east);\node[font=\scriptsize,fill=white] at (0,1.65) {Recovery: return to GFL};
 \end{tikzpicture}
+\caption{GFL/GFM mode-switching concept.}
+\end{figure}
 \end{columns}
 \end{frame}
 
@@ -218,7 +221,7 @@ VSG & virtual synchronous generator\\
 \footnotesize
 \begin{columns}[t,onlytextwidth]
 \column{.48\textwidth}
-\textbf{Power flow}\par
+\textbf{PF}\par
 Rotor and converter states are constant; bus currents balance.\par
 \begin{equation}
 0=g(x,y,u_0,m).
@@ -229,24 +232,26 @@ P^{inj}_i-P_j(x,y,u_0,m)&=0,\\
 Q^{inj}_i-Q_j(x,y,u_0,m)&=0.
 \end{align}}
 \column{.48\textwidth}
-\textbf{Time-domain simulation}\par
+\textbf{TS}\par
 Machine and converter states respond to disturbances.\par
 \begin{align}
 \dot x&=f(x,y,u,m,t),\\
 0&=g(x,y,u,m,t),\\
 m_i&=\begin{cases}0&\text{GFL},\\1&\text{GFM}.\end{cases}
 \end{align}
-\begin{align}
-x&=[x_{SG}^{T},x_{IBR,1}^{T},\ldots,x_{IBR,4}^{T}]^T,\\
-x_{SG}&=[\delta,\omega,E_q',E_d',E_q'',E_d'']^T.
-\end{align}
 \end{columns}
+\begin{align}
+	\centering
+	x&=[x_{SG}^{T},x_{IBR,1}^{T},\ldots,x_{IBR,4}^{T}]^T,\\
+	x_{SG}&=[\delta,\omega,E_q',E_d',E_q'',E_d'']^T,\\
+	x_{IBR}&=[x_{p}^T,x_{GFL}^T,x_{GFM}^T]
+\end{align}
 \end{frame}
 
 \section{Proposed Models and Control Structure}
 \begin{frame}{IBR Model}
 \begin{columns}[c,onlytextwidth]
-\column{.48\textwidth}\footnotesize
+\column{.55\textwidth}\footnotesize
 \textbf{Shared physical states}
 \begin{equation}x_p=[i_d,i_q,V_{dc},I_{dc}]^T\end{equation}
 \begin{align}
@@ -254,14 +259,8 @@ x_{SG}&=[\delta,\omega,E_q',E_d',E_q'',E_d'']^T.
 \frac{L_f}{\omega_b}\dot i_q&=v_{cq}-v_q-R_fi_q\notag\\&\quad-\omega_{pu}L_fi_d.
 \end{align}
 \begin{equation}\omega_{pu}=\begin{cases}1+\dot\theta_{PLL}/\omega_b&m_i=0,\\\omega_{VSG}&m_i=1.\end{cases}\end{equation}
-\column{.48\textwidth}
-\begin{figure}\includegraphics[width=\linewidth]{figures/fig1_ibr_electrical.png}\caption{IBR electrical model.}\label{fig:plant}\end{figure}
-{\begin{equation}
-\scalebox{0.78}{$
-\dot x_{IBR}=\begin{cases}F_0(x_{IBR},y,u)&m_i=0,\\F_1(x_{IBR},y,u)&m_i=1.
-\end{cases}$}
-\tag*{\scriptsize (13)}
-\end{equation}}
+\column{.43\textwidth}
+\begin{figure}\includegraphics[width=\linewidth,trim=0 0 0 2mm,clip]{figures/xxxx.png}\caption{IBR electrical model.}\label{fig:plant}\end{figure}
 \stepcounter{equation}
 \end{columns}
 \end{frame}
@@ -316,16 +315,10 @@ x_{SG}&=[\delta,\omega,E_q',E_d',E_q'',E_d'']^T.
 		\begin{equation}
 			\kappa=S_{base}/M_{base}
 		\end{equation}
-		\begin{equation}
-			\begin{aligned}
-				x_{IBR}=[&i_d,i_q,V_{dc},\\[-1pt]
-				&x_{GFL}^{T},x_{GFM}^{T},I_{dc}]^T
-			\end{aligned}
-		\end{equation}
 		}
 		\column{.50\textwidth}
 		\centering
-		\vspace{.1cm}
+		\vspace{.8cm}
 		\begin{figure}
 			\includegraphics[width=\linewidth,height=6.4cm,keepaspectratio]{figures/intro222222222.png}
 			\caption{Switchable controller branches.}
@@ -337,22 +330,22 @@ x_{SG}&=[\delta,\omega,E_q',E_d',E_q'',E_d'']^T.
 \begin{frame}{Mode Switching: Supervisory Readiness}
 \centering
 \begin{figure}
-\vspace{2mm}
-\begin{tikzpicture}[font=\scriptsize,b/.style={draw=barblue,rounded corners,align=center,text width=2.05cm,minimum height=1.0cm},a/.style={-{Stealth},thick,barblue},lbl/.style={font=\tiny,text=myblue,align=center,inner sep=1.5pt}]
-\node[b] (v) at (0,0) {Measure $|V_i|,f_{coi}$\\at all IBR buses};
-\node[b] (j) at (3.15,0) {Compute indices\\$J_{V,i},J_f$ (20), (21)};
-\node[b] (s) at (6.30,0) {Severity index\\$S_i$ (22)};
-\node[b] (h) at (6.30,-2.45) {Compare $\Gamma_{on}/\Gamma_{off}$ + dwell $T_{d,on}/T_{d,off}$ (23), (24)};
-\node[b] (q) at (3.15,-2.45) {GFM / GFL\\request};
-\node[b] (r) at (0,-2.45) {Readiness check\\(references, feasible transfer)};
-\node[b] (m) at (0,-4.75) {Authorize mode change\\update $m_i$: GFL = 0, GFM = 1 (6)};
+\begin{tikzpicture}[font=\footnotesize,b/.style={draw=barblue,rounded corners,align=center,text width=2.35cm,minimum height=1.15cm},a/.style={-{Stealth},thick,barblue},lbl/.style={font=\tiny,text=myblue,align=center,inner sep=2pt}]
+\node[b] (v) at (-3.15,0) {Measure $|V_i|,f_{coi}$\\at all IBR buses};
+\node[b] (j) at (0.2,0) {Compute indices\\$J_{V,i},J_f$ (20), (21)};
+\node[b] (s) at (3.55,0) {Severity index\\$S_i$ (22)};
+\node[b] (h) at (3.55,-2.55) {Compare $\Gamma_{on}/\Gamma_{off}$ + dwell $T_{d,on}/T_{d,off}$ (23), (24)};
+\node[b] (q) at (0.2,-2.55) {GFM / GFL\\request};
+\node[b] (r) at (-3.15,-2.55) {Readiness check\\(references, feasible transfer)};
+\node[b] (m) at (-3.15,-4.9) {Authorize mode change\\update $m_i$: GFL = 0, GFM = 1 (6)};
 \draw[a](v.east)--(j.west);
 \draw[a](j.east)--(s.west);
 \draw[a](s.south)--(h.north);
 \draw[a](h.west)--(q.east);
 \draw[a](q.west)--(r.east);
 \draw[a](r.south)--(m.north);
-\draw[a](m.west)--++(-0.30,0)|-(v.west) node[lbl,pos=0.22,left]{feedback};
+\draw[a](m.west)--++(-0.4,0)|-(v.west) node[lbl,pos=0.22,left]{feedback};
+\node[lbl,text width=3.4cm] at (1.35,-4.9) {A switch is requested only when severity stays past the threshold for the full dwell time, then it is authorized only if the target device passes the readiness check; otherwise the mode is kept.};
 \end{tikzpicture}
 \caption{Supervisory readiness and GFL/GFM mode-switching procedure.}
 \end{figure}
@@ -383,6 +376,7 @@ Index bases: 0.10 pu, 0.50 Hz; voltage/frequency weights: 0.5/0.5.\par
 \begin{columns}[c,onlytextwidth]
 \column{.72\textwidth}\begin{figure}\includegraphics[width=\linewidth,height=6.25cm,keepaspectratio]{figures/fig4_ieee14_network.png}\caption{IEEE 14-bus study network [3].}\end{figure}
 \column{.25\textwidth}\small
+\centering
 SG1: Bus 1\\[.25cm]
 IBR$_1$: Bus 2\\IBR$_2$: Bus 3\\IBR$_3$: Bus 6\\IBR$_4$: Bus 8\\[.45cm]
 100 MVA\\60 Hz
@@ -393,6 +387,8 @@ IBR$_1$: Bus 2\\IBR$_2$: Bus 3\\IBR$_3$: Bus 6\\IBR$_4$: Bus 8\\[.45cm]
 \scriptsize
 \renewcommand{\arraystretch}{1.22}\setlength{\tabcolsep}{4pt}
 \centering
+\begin{table}
+\caption{Network and plant parameters.}
 \begin{tabular}{@{}p{3.05cm}p{3.0cm}p{2.55cm}p{1.25cm}@{}}
 \toprule Parameter & Symbol & Value & Unit\\\midrule
 \multicolumn{4}{@{}l}{\textbf{Network and synchronous machine}}\\
@@ -405,16 +401,19 @@ DC bus / current limit&$C_{dc},V_{dc}^{0},I_{max}$&0.10,1.00,1.20&pu\\
 DC source&$\epsilon_{dc},P_r,\tau_s,\zeta^\star$&0.10,1.00,0.005,0.707&--, pu, s, --\\
 Chopper&$V_{dc}^{max},\delta_{ch}$&1.10,0.02&pu, --\\
 \bottomrule
-\end{tabular}\par
+\end{tabular}
+\end{table}\par
 \medskip
 \raggedright\scriptsize
-* Units follow the normalized controller equations.\par
+* Table References: [2], [3] \par
 
 \end{frame}
 \begin{frame}{Parameter Settings: Control and Supervisor}
 \scriptsize
-\renewcommand{\arraystretch}{1.22}\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.06}\setlength{\tabcolsep}{3pt}
 \centering
+\begin{table}
+\caption{Controller and supervisor parameters.}
 \begin{tabular}{@{}p{3.05cm}p{3.0cm}p{2.55cm}p{1.25cm}@{}}
 \toprule Parameter & Symbol & Value & Unit\\\midrule
 \multicolumn{4}{@{}l}{\textbf{GFL control}}\\
@@ -432,10 +431,11 @@ Dwell / weights&$T_{d,on/off};w_V,w_f$&0.10/1.00;0.5,.50&s; --\\
 Hold / lock&$T_{hold},T_{lock}$&1.000, 2.000&s\\
 Index bases&$\Delta V_{base},\Delta f_{base}$&0.10,0.50&pu, Hz\\
 \bottomrule
-\end{tabular}\par
+\end{tabular}
+\end{table}\par
 \medskip
 \raggedright\scriptsize
-* Units follow the normalized controller equations.\par
+*Table References: [2]\par
 $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 \end{frame}
 
@@ -463,13 +463,8 @@ $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 \node[tag] at (3.25,-5.10) {$t=100$ s};
 \node[tag] at (0,-5.10) {$t=160$ s};
 \end{tikzpicture}
-\caption{Scenario timeline. Breaker reclose after synchronism: $102.363$ s; final IBR return to GFL: $116.238$ s.}
+\caption{Scenario timeline.}
 \end{figure}
-\end{frame}
-
-\begin{frame}{Result: IBR State Response}
-\centering\begin{figure}\includegraphics[width=\linewidth,height=5.45cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_ibr_states_v15.png}\caption{IBR$_1$ states: $(a)$ $i_d,i_q$; $(b)$ $V_{dc},I_{dc}$; $(c)$ $\omega_{VSG}$; $(d)$ $E$}\end{figure}
-{\scriptsize Blue = active; grey dashed = held stored state. IBR$_1$ only.\par}
 \end{frame}
 \begin{frame}{Result: Severity Index and Converter Mode}
 \centering
@@ -477,6 +472,9 @@ $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 
 \vspace{1mm}
 \begin{figure}\includegraphics[width=.68\linewidth]{figures/ieee14_scenario_suite/sg_fault_cycle160_mode3d.png}\caption{Converter mode $m_i$ per converter: GFL = 0, GFM = 1.}\end{figure}
+\end{frame}
+\begin{frame}{Result: IBR State Response}
+	\centering\begin{figure}\includegraphics[width=\linewidth,height=6.60cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_ibr_states_v15.png}\caption{$(a)$ $i_d,i_q$; $(b)$ $V_{dc}$; $(c)$ $\omega_{PLL}$; $(d)$ $\omega_{VSG}$}\end{figure}
 \end{frame}
 \begin{frame}{Result: Voltage and Frequency}
 \centering\begin{figure}\includegraphics[width=\linewidth,height=5.9cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_vf.png}\caption{Converter responses: $(a)$ bus-voltage magnitude and $(b)$ converter frequency.}\end{figure}
@@ -519,10 +517,6 @@ $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 \item N. Pogaku, M. Prodanovi\'{c}, and T. C. Green, ``Modeling, analysis and testing of autonomous operation of an inverter-based microgrid,'' \emph{IEEE Trans. Power Electronics}, 22(2), 613--625, 2007.
 \item H. Ding, R. Kar, Z. Miao, and L. Fan, ``A novel design for switchable grid-following and grid-forming control,'' \emph{IEEE Trans. Sustainable Energy}, 16(2), 1301--1314, 2025.
 \item MATPOWER, \emph{case14: IEEE 14-bus test case}, converted from the IEEE Common Data Format.
-\item S. K. M. Kodsi and C. A. Ca\~nizares, \emph{Modeling and simulation of IEEE 14 bus system with FACTS controllers}, University of Waterloo, Technical Report 2003-3, 2003.
-\item A. Yazdani and R. Iravani, \emph{Voltage-Sourced Converters in Power Systems}, Wiley/IEEE Press, 2010.
-\item R. Teodorescu, M. Liserre, and P. Rodr\'{i}guez, \emph{Grid Converters for Photovoltaic and Wind Power Systems}, Wiley/IEEE Press, 2011.
-\item K. Sakimoto, Y. Miura, and T. Ise, ``Virtual synchronous generator without phase locked loop based on current controlled inverter and its parameter design,'' \emph{IEEJ Trans. Power and Energy}, 135(7), 462--470, 2015.
 \end{enumerate}
 \end{frame}
 \end{document}

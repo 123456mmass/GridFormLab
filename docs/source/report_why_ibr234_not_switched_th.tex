@@ -1,0 +1,250 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{fontspec}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+
+% ---------- Thai fonts ----------
+\setmainfont{TH Sarabun New}[Scale=1.24]
+\setsansfont{Tahoma}
+\newfontfamily\thaifont{TH Sarabun New}[Scale=1.24]
+
+% ---------- Colours (match deck vocabulary) ----------
+\definecolor{myblue}{RGB}{0,41,120}
+\definecolor{barblue}{RGB}{0,90,170}
+\definecolor{rulegray}{RGB}{120,120,120}
+
+% ---------- Headings ----------
+\titleformat{\section}{\Large\bfseries\color{myblue}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{myblue}}{\thesubsection}{0.8em}{}
+\titlespacing{\section}{0pt}{14pt}{6pt}
+\titlespacing{\subsection}{0pt}{10pt}{4pt}
+
+% ---------- Header/footer ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{rulegray} sg\_fault\_cycle160 — การวิเคราะห์การสลับโหมด}
+\fancyhead[R]{\small\color{rulegray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- Code-ish inline ----------
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\setlist{nosep,leftmargin=1.6em}
+
+\title{\bfseries\color{myblue} ทำไม IBR 2--4 จึงไม่สลับเป็น GFM\\[2pt]
+\large การวิเคราะห์ Figure 7 (Severity Index) และ Figure 8 (Converter Mode)\\
+ของ scenario \code{sg\_fault\_cycle160}}
+\author{}
+\date{9 กันยายน 2569}
+
+\begin{document}
+\maketitle
+\vspace{-1.2em}
+
+\section*{คำถาม}
+จาก Figure 7 ดัชนีความรุนแรง $S_i$ ของ IBR ทั้งสี่ตัวพุ่งทะลุเส้น threshold
+$\Gamma_{\mathrm{on}} = 0.65$ หลายครั้ง แต่ Figure 8 กลับแสดงว่า IBR$_1$
+(บัส 2, แถบน้ำเงิน) ถูกสลับเป็น GFM ตั้งแต่ตอน SG หลุด ($t = 20$ s) และมีเพียง
+IBR$_3$ (บัส 6, แถบแดง) ที่ถูกเสริมเข้ามาช่วงสั้น ๆ ส่วน IBR$_2$ (บัส 3) กับ
+IBR$_4$ (บัส 8) คงโหมด GFL ตลอด run คำถามคือ ทำไมตัวที่เหลือจึงไม่สลับ ทั้งที่ดัชนีของมัน ``ควร'' สลับ หรือมี
+กลไกใดมาขัดขวาง
+
+(ตารางตลอดบันทึกนี้ระบุชื่อคู่กับหมายเลขบัสกำกับเสมอ เพราะตรรกะ supervisor
+ทำงานบนหมายเลขบัส [2, 3, 6, 8] ส่วน Figure 7/8 ใช้ชื่อ IBR$_1$--IBR$_4$
+ตามลำดับนั้น)
+
+\section*{คำตอบโดยย่อ}
+\textbf{ไม่มีกลไกใดมา ``ขัด'' รายตัว} คำตอบอยู่ที่สถาปัตยกรรมการตัดสินใจของ
+supervisor: $S_i$ ของแต่ละตัวไม่ได้เป็นตัวตัดสินว่า ``ตัวไหนสลับ'' — มันเป็นเพียง
+\textbf{ทริกเกอร์ระดับระบบ} ที่ตอบคำถามว่า ``\emph{เมื่อไร} ระบบต้องการ
+forming support เพิ่ม'' ส่วนคำถามว่า ``\emph{ตัวไหน} สลับ'' เป็นสิทธิ์ของ
+\emph{authenticated selector table} ที่เลือก strict superset ที่เล็กที่สุด
+ของชุด GFM ปัจจุบันเสมอ และก่อนจะถึงขั้นนั้น หลักฐานต้องผ่านเกตเวลาสองชั้น
+(minimum-hold และ dwell) ซึ่งหลักฐานของ IBR$_2$--IBR$_4$ ไม่เคยยืนยันได้นานพอ
+หลังจากการสลับครั้งแรก
+
+ทุกตัวเลขในบันทึกนี้อ่านมาจาก cache ของ run จริง
+(\code{output/diagnostics/ieee14\_scenario\_suite/sg\_fault\_cycle160.mat},
+2{,}288 accepted samples) เทียบกับตรรกะใน
+\code{+stability/ts\_simulate\_ibr\_hybrid.m} บรรทัด 846--903 และ
+\code{+stability/select\_support\_augmentation\_candidate.m}
+
+\section{ชั้นที่ 1: $S_i$ เป็นทริกเกอร์ระดับระบบ ไม่ใช่ตัวเลือกรายตัว}
+
+ตรรกะ supervisor ทำงานดังนี้ (ไฟล์ \code{ts\_simulate\_ibr\_hybrid.m}):
+\begin{itemize}
+\item วัด $S_i$ ของทุกตัวที่ยัง online จากสองเทอมเท่านั้น:
+      $S_i = \mathrm{sat}\bigl(\tfrac{1}{2}J_{V,i} + \tfrac{1}{2}J_f\bigr)$
+      ($J_f$ ใช้ร่วมกันทั้งระบบผ่าน $f_{\mathrm{COI}}$)
+\item เงื่อนไข ``เครียด'' คือ
+      \code{up\_stress = any(}$S_i \geq \Gamma_{\mathrm{on}}$\code{)}
+      \textbf{เฉพาะบนตัวที่ยังเป็น GFL} (บรรทัด 861--863) —
+      เป็นค่าเดียวทั้งเกาะ ไม่มีการจัดอันดับรายตัว
+\item เมื่อเงื่อนไขติดและครบ dwell แล้ว การเลือกตัวสลับถูกส่งต่อให้
+      \code{select\_support\_augmentation\_candidate} ซึ่งค้นหาใน
+      selector table (15 คอนฟิกูเรชันที่ตรวจสอบและรับรองไว้ล่วงหน้า)
+      โดยมีกฎจัดอันดับ: \emph{จำนวน GFM ที่เพิ่มน้อยที่สุด} $\to$
+      \emph{ส่วนเผื่อเสถียรภาพมากที่สุด} $\to$ เลข device น้อยที่สุด
+      (ฟังก์ชัน \code{precedes}, บรรทัด 101--112)
+\end{itemize}
+
+ดังนั้นแม้ IBR$_2$--IBR$_4$ จะมี $S_i$ สูงกว่า IBR$_1$ ในหลายช่วง
+ตารางก็ไม่เคยมองค่า $S_i$ เลย — มันมองเพียงว่าชุด GFM ปัจจุบันคืออะไร
+และ superset ใด ``เล็กสุดที่ยังปลอดภัย''
+
+\section{ชั้นที่ 2: เกตเวลาสองชั้นบล็อกช่วงแรกที่ทุกตัวพุ่งพร้อมกัน}
+
+\subsection{หลักฐานจาก trajectory จริง}
+ทันทีหลัง SG trip ที่ $t = 20$ s ดัชนีของทั้งสี่ตัวพุ่งถึง $S_i = 1.000$
+ค้างนาน 248--539 ms (Table~\ref{tab:excursions}) หากไม่มีเกตเวลา
+ทั้งสี่ตัว ``สมควร'' สลับพร้อมกันตามที่ตาเปล่าอ่านจาก Figure 7
+
+\begin{table}[h]
+\centering\small
+\caption{ช่วงที่ $S_i > \Gamma_{\mathrm{on}} = 0.65$ ของแต่ละตัว (อ่านจาก cache)}
+\label{tab:excursions}
+\begin{tabular}{@{}clll@{}}
+\toprule
+ตัว (บัส) & รอบ $t = 20$ s & รอบ $t \approx 22$ s & รอบ fault $t = 60$ s \\
+\midrule
+IBR$_1$ (2) & 20.00--20.25 (248 ms) & 22.09--22.16 (68 ms), 22.62--22.88 (269 ms) & 60.00--60.15 (151 ms) \\
+IBR$_2$ (3) & 20.00--20.25 (248 ms) & 21.99--22.09, 22.09--22.22, 22.48--23.13 (651 ms) & 60.00--60.15 (151 ms) \\
+IBR$_3$ (6) & 20.00--20.39 (389 ms) & 22.09--22.78 (694 ms) & 60.00--60.15 (151 ms) \\
+IBR$_4$ (8) & 20.00--20.54 (539 ms) & 22.09--22.19 (100 ms) & 60.00--60.15 (151 ms) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{เกตที่ 1: minimum-hold}
+บรรทัด 867--868 บังคับว่า supervisor ต้องรอ
+$T_{\mathrm{minhold}} = 1.0$ s นับจากการ trip ($t_{\mathrm{trip}} = 20$ s)
+จึงจะเริ่มสะสม dwell ได้ — ตลอดช่วง $t \in [20, 21)$ s ที่ทั้งสี่ตัวทะลุ
+$\Gamma_{\mathrm{on}}$ พร้อมกัน ตัวจับเวลาทุกตัวถูกรีเซ็ตเป็นศูนย์อยู่ตลอด
+(\code{support\_status = 'MINIMUM\_HOLD'})
+
+\subsection{เกตที่ 2: dwell ต้องต่อเนื่อง}
+เมื่อปลดล็อกที่ $t = 21.0$ s ปรากฏว่าค่า $S_i$ ของทุกตัว \emph{ตกลงมา
+ต่ำกว่า} $\Gamma_{\mathrm{on}}$ ไปแล้ว (ตัวอย่างที่ $t \approx 21.49$ s:
+$0.489 / 0.438 / 0.425 / 0.442$ ตามลำดับ IBR$_1$--IBR$_4$) จึงไม่มี dwell
+สะสมใด ๆ up-stress กลับมาเสถียรอีกครั้งที่ $t = 21.99$ s (IBR$_2$ ขึ้นก่อน) และเมื่อครบ $T_{d,\mathrm{on}} = 0.10$ s ที่ $t = 22.089$ s
+supervisor จึง commit การ augment ครั้งแรก
+
+\subsection{ผลของครั้งแรก: เป้าหมายสองตัว สลับจริงตัวเดียว}
+event log บันทึกไว้ชัดเจน:
+
+\begin{quote}\small
+\code{gfm\_support\_augment committed at t=22.089; selected=[2 4],
+reference=2, 1 device(s) transitioned}
+\end{quote}
+
+\code{selected=[2 4]} คือ\emph{ชุดเป้าหมาย}ที่ตาราง (fingerprint
+\code{f62cbf2f}) รับรองไว้: GFM สองตัวคือบัส 2 (IBR$_1$) และบัส 6
+(IBR$_3$) แต่บันทึกว่า ``1 device(s) transitioned'' เพราะ IBR$_1$
+\emph{เป็น GFM อยู่แล้ว} ตั้งแต่ $t = 20.0$ s --- event log แถว
+\code{sg\_trip} บันทึก \code{selected=[2], reference=2, committed 1
+authenticated selected-GFM resource(s)} หมายความว่าธุรกรรม trip ของ SG
+ส่งมอบ angle reference ให้บัส 2 และสลับมันเป็น GFM ในการ commit เดียวกัน
+(นี่คือแถบน้ำเงินยาว $t = 20.0$--$116.238$ s ของ IBR$_1$ ใน Figure 8)
+ดังนั้นเมื่อ augment ที่ $t = 22.089$ s ต้องการชุด $\{2,4\}$ จึงเหลือ
+ตัวที่ต้องสลับจริงเพียง device 4 (บัส 6, IBR$_3$) ---
+\textbf{แถบแดงสั้น 22.089--25.303 s ใน Figure 8 คือ IBR$_3$ ไม่ใช่
+IBR$_1$} และสังเกตว่า \emph{ผู้ทริกเกอร์} คือ IBR$_2$ (บัส 3)
+แต่ \emph{ผู้ถูกเลือก} คือ IBR$_3$ (บัส 6) ตามกฎของตาราง
+ไม่ใช่ตามค่า $S_i$
+
+\section{ชั้นที่ 3: ทำไมจึงไม่มีการ augment ครั้งที่สอง}
+
+หลัง $t = 22.089$ s ชุด GFM คือ $\{2,4\}$ (IBR$_1$ กับ IBR$_3$) ชุด GFL
+จึงเหลือ $\{3,5\}$ คือ \textbf{IBR$_2$ (บัส 3) กับ IBR$_4$ (บัส 8)
+เพียงสองตัว} และเงื่อนไข up-stress ถูกประเมินใหม่ \emph{เฉพาะบนชุดนี้}
+พร้อมตัวจับเวลาที่ต้องเริ่มนับใหม่ทั้งหมด จากข้อมูลจริง:
+
+\begin{center}\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+$t$ [s] & $S$ IBR$_2$ (บัส 3) & $S$ IBR$_4$ (บัส 8) & up-stress บน GFL $\{3,5\}$ \\
+\midrule
+22.10 & 1.000 & 0.947 & จริง \\
+22.51 & 0.678 & 0.606 & จริง \\
+22.98 & 0.697 & 0.497 & จริง \\
+23.08 & 0.668 & 0.477 & จริง \\
+23.21 & 0.633 & 0.463 & \textbf{เท็จ} (ทุกตัวหลุด) \\
+23.60 & 0.505 & 0.395 & เท็จ ต่อเนื่องจนสิ้น run \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+หลัง commit มีช่วง up-stress เหลือสองช่วง: 22.089--22.219 s (129 ms) กับ
+22.482--23.133 s (651 ms) --- ทว่า IBR$_4$ หลุดใต้ threshold ตั้งแต่
+$t = 22.19$ s เหลือ IBR$_2$ ยืนอยู่ตัวเดียว และก่อนช่วงที่สองจะยาวถึง
+$T_{d,\mathrm{on}} = 100$ ms จากการรีเซ็ต dwell หลัง commit (22.089 + 0.100
+= 22.189 s) up-stress ก็ขาดช่วงไปแล้วที่ $t = 22.219$ s ทำให้ dwell รีเซ็ต
+อีกครั้ง ส่วนช่วง 22.482--23.133 s แม้ยาว 651 ms แต่เกิดขึ้น\emph{หลัง}จาก
+IBR$_3$ เป็น GFM แล้ว เกาะจึงฟื้นตัวเร็วขึ้นเรื่อย ๆ จน IBR$_2$ หลุดที่
+$t = 23.133$ s ก่อน dwell ชุดใหม่จะยืนยันครบ --- หลัง $t = 23.2$ s
+ทุกตัวต่ำกว่า 0.65 ถาวร supervisor เข้าสู่สถานะ hysteresis hold
+
+เมื่อดัชนีทั้งระบบตกใต้ $\Gamma_{\mathrm{off}} = 0.35$ ครบทุกตัวที่
+$t \approx 24.3$ s และค้างครบ $T_{d,\mathrm{off}} = 1.00$ s supervisor
+จึง commit การ release ที่ $t = 25.303$ s ($\{2,4\} \to \{2\}$)
+คืน IBR$_3$ กลับเป็น GFL --- นี่คือจุดสิ้นสุดของแถบแดงใน Figure 8
+ส่วน IBR$_1$ (บัส 2) ถูกคงไว้เป็น GFM เพราะมันคือ angle-reference owner
+(ผู้ถือ reference จะไม่ถูก release ตราบใดที่ SG ยังไม่กลับมา)
+
+\section{ชั้นที่ 4: ช่วง fault $t = 60$ s --- spike ที่สูงที่สุดใน Figure 7}
+
+ตอน fault bolted ที่บัส 9 ($Z_f = 0.01 + 0.01i$, 60.00--60.15 s) ดัชนีของ
+ทั้งสี่ตัวถูกปักที่ $S_i = 1.000$ ตลอดฟอลต์ --- นี่คือแหล่งของเสาสูงสุดใน
+Figure 7 แต่:
+
+\begin{itemize}
+\item ฟอลต์ยาวเพียง 150 ms และ $S_i$ ทุกตัวตกใต้ $\Gamma_{\mathrm{on}}$
+      ที่ $t = 60.151$ s ทันทีหลังเคลียร์ ตัวจับเวลาได้ dwell ต่อเนื่อง
+      $\approx 151$ ms (เกิน 100 ms อยู่หน่อยเดียว) ก่อนหลักฐานจะพับลง
+\item ณ เวลานั้น IBR$_2$ กับ IBR$_4$ ยังเป็น GFL (IBR$_1$ ยังถือ
+      reference เป็น GFM อยู่) ดังนั้นหาก dwell ครบก็จะเกิด augment
+      รอบใหม่ --- แต่พอเคลียร์ฟอลต์ปุ๊บ ภายใน 10 ms ค่า $S_i$
+      ร่วงเหลือ 0.06--0.17 และต่อไปต่ำกว่า 0.27 ตลอด เกาะพิสูจน์ตัวเองว่า
+      \emph{แข็งแรงโดยไม่ต้องเพิ่ม former เลย}
+\item ตรรกะจึงตอบ ``ไม่ทำอะไร'' --- ซึ่งคือพฤติกรรมที่ถูกต้อง:
+      severity index สูงชั่วคราวจากฟอลต์สั้นไม่ใช่เหตุให้เปลี่ยน
+      topology ของ forming
+\end{itemize}
+
+ส่วนจุดสิ้นสุดของแถบ GFM ของ IBR$_1$ ใน Figure 8 ($t = 116.238$ s)
+เกิดจากเส้นทางแยกของ SG-reclose: เมื่อ SG กลับมาที่ $t = 102.363$ s
+reference ถูกย้ายคืนให้ SG ทันที แต่ IBR$_1$ ยังคงโหมด GFM ไว้อีก
+$\approx 13.9$ s จนกว่าดัชนีของมันจะคงอยู่ใต้ $\Gamma_{\mathrm{off}}$ ครบ
+เกณฑ์ supervisor จึงคืนมันเป็น GFL ผ่าน \code{sg\_reselection}
+ทิ้งเกาะให้เป็น GFL ทั้งหมดจนจบ run
+
+\section{สรุป}
+
+\begin{enumerate}[label=\textbf{\arabic*.}]
+\item กราฟ $S_i$ ที่ทะลุเส้น $\Gamma_{\mathrm{on}}$ ใน Figure 7 คือ
+      \emph{หลักฐานนำเข้า} ของการตัดสินใจระดับระบบ ไม่ใช่คำสั่งรายตัว
+\item IBR$_1$ ไม่ได้ถูก selector เลือกจากค่า $S_i$ --- มันถูกสลับโดย
+      \emph{ธุรกรรม trip ของ SG เอง} ตอน $t = 20$ s เพื่อรับ angle
+      reference (แถบน้ำเงิน) ส่วนการ augment ที่ $t = 22.089$ s เลือกชุด
+      $\{2,4\}$ จากตาราง ซึ่งหมายถึงตัวที่สลับจริงคือ IBR$_3$
+      (แถบแดง) เพราะ IBR$_1$ เป็น GFM อยู่แล้ว
+\item IBR$_2$ กับ IBR$_4$ ไม่ได้ ``โดนขัด'' --- พวกมันแพ้เกตเวลา:
+      ช่วงแรกโดน minimum-hold 1 s กลืนหายไป ช่วงที่เหลือ (22.10--23.13 s)
+      dwell ต่อเนื่องไม่เคยถึง 100 ms หลังจาก IBR$_3$ ถูกเสริมเข้าไปแล้ว
+      ดัชนีจึงสลายตัวก่อนเกตจะเปิดอีก
+\item พฤติกรรมทั้งหมดสอดคล้องกับหลักออกแบบ:
+      \emph{สลับให้น้อยที่สุดเท่าที่จำเป็น และพิสูจน์ก่อนทุกครั้ง}
+      --- Figure 7 กับ Figure 8 จึงไม่ขัดกัน แต่เป็นภาพสองมุมของ
+      กระบวนการเดียวกัน
+\end{enumerate}
+
+\end{document}

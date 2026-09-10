@@ -20,26 +20,26 @@ function out = generate_ieee14_ibr_state_page(opts)
 %    gfm: d_VSG omega_VSG E xi_Vd xi_Vq xi_Id xi_Iq | I_dc]
 % (+ibr/eecon49_dual_mode_model.m header). The four chosen are the ones that
 % carry the transition a viewer needs to see:
-%   (a) i_d, i_q   -- the physical AC port current, CONTINUOUS across both
-%                     switches (the transfer map preserves it; the page shows
-%                     that rather than asserting it);
-%   (b) V_dc, I_dc -- the shared DC plant, which keeps evolving in both modes
-%                     and reacts to the fault;
-%   (c) omega_VSG  -- the GFM frequency coordinate: held at its anchor while
+%   (a) i_d        -- the shared physical AC-port current;
+%   (b) V_dc       -- the shared DC-plant voltage;
+%   (c) omega_PLL  -- the GFL frequency output in p.u., reconstructed from
+%                     the PLL states: v_q = imag(V_bus*exp(-1i*delta_PLL)),
+%                     dw = kpPLL*v_q + kiPLL*xi_PLL,
+%                     omega_PLL = 1 + dw/omega_b
+%                     (gfl_eecon49_full_model.m);
+%   (d) omega_VSG  -- the GFM frequency coordinate: held at its anchor while
 %                     GFL is active, integrated while GFM is active, held again
 %                     after the hand-back. The hold/integrate/hold pattern IS
-%                     the mode-switching mechanism made visible;
-%   (d) E          -- the GFM voltage amplitude state, same hold/integrate/hold
-%                     pattern on the voltage side.
+%                     the mode-switching mechanism made visible.
 % Controller integrator states (xi_*) are not shown: they are re-initialised at
 % each transfer by design, so their traces are discontinuous BY CONSTRUCTION and
 % would invite a question the mechanism already answers.
 %
-% HELD STATES ARE DRAWN HELD. omega_VSG and E are constant outside the GFM
-% interval because the inactive branch is frozen, not integrated
-% (case_data.inactive_state_rule, policy 'frozen'). The page draws them as they
-% are stored; the GFM interval is marked by the mode strip above each panel so
-% the held stretches read as held, not as flat data.
+% HELD STATES ARE DRAWN HELD. omega_VSG is constant outside the GFM interval
+% because the inactive branch is frozen, not integrated
+% (case_data.inactive_state_rule, policy 'frozen'). The page draws the states
+% as they are stored; omega_PLL exists only on the GFL samples, so the two
+% frequency traces together mark the mode interval without any overlay.
 %
 % Lettering follows the standing contract: Helvetica through the 'tex'
 % interpreter, no box, ticks outward, dashed major and minor grid, and a .fig
@@ -54,11 +54,10 @@ arguments
     opts.out_dir (1,1) string = fullfile('docs','source','figures', ...
         'ieee14_scenario_suite')
     opts.scenarios (1,:) string = "sg_fault_cycle160"
-    % 2x2 on one slide: the canvas is the deck's text width, tall enough that
-    % each panel keeps about 1.05 in of data height under its mode strip.
+    % เว้นที่ให้ legend, tick, xlabel และชื่อ panel ใต้กราฟ
     opts.width_in (1,1) double {mustBePositive} = 4.65
-    opts.height_in (1,1) double {mustBePositive} = 2.90
-    opts.font_size (1,1) double {mustBePositive} = 10
+    opts.height_in (1,1) double {mustBePositive} = 3.12
+    opts.font_size (1,1) double {mustBePositive} = 9
     opts.font_name (1,1) string = "Helvetica"
     opts.dpi (1,1) double {mustBePositive} = 300
     opts.save_fig (1,1) logical = true
@@ -134,7 +133,7 @@ if numel(names) ~= 17
     error('generate_ieee14_ibr_state_page:stateCount', ...
         'IBR2 declares %d states, not 17.',numel(names));
 end
-need = {'i_d','i_q','V_dc','gfm_omega_VSG','gfm_E','I_dc'};
+need = {'i_d','i_q','V_dc','gfm_omega_VSG'};
 col = zeros(1,numel(need));
 base = sum(cellfun(@numel,{devs(1:target-1).state_names}));
 for q = 1:numel(need)
@@ -156,9 +155,42 @@ else
         'x_traj is %s for %d samples and a column index up to %d.', ...
         mat2str(size(x)),nt,max(col));
 end
-i_d  = x(:,col(1));  i_q = x(:,col(2));
-V_dc = x(:,col(3));  wsg = x(:,col(4));
-E    = x(:,col(5));  Idc = x(:,col(6));
+i_d  = x(:,col(1));
+i_q  = x(:,col(2));
+V_dc = x(:,col(3));
+wsg  = x(:,col(4));
+
+% omega_PLL: the 17-state vector keeps the PLL angle (gfl_delta_PLL) and its
+% integrator (gfl_xi_PLL); the PLL frequency output is reconstructed from those
+% two states, the way the GFL branch itself computes it
+% (gfl_eecon49_full_model.m): dw = kpPLL*v_q + kiPLL*xi_PLL with
+% v_q = imag(V_bus * exp(-1i*delta_PLL)). The device object stored in the cache
+% carries that branch and its parameters, so the page evaluates the stored
+% trajectory through it. Only GFL samples keep the value (NaN elsewhere).
+dpll_col = find(strcmp(names,'gfl_delta_PLL'),1);
+xpll_col = find(strcmp(names,'gfl_xi_PLL'),1);
+if isempty(dpll_col) || isempty(xpll_col)
+    error('generate_ieee14_ibr_state_page:pllStateMissing', ...
+        'IBR2 carries no gfl_delta_PLL/gfl_xi_PLL states.');
+end
+dpll = x(:,base+dpll_col);
+xpll = x(:,base+xpll_col);
+dev = devs(target);
+% The PLL gains and base frequency are the GFL branch defaults from
+% gfl_eecon49_full_model.m (the case ships no override). The dual-mode shell
+% does not carry them on the device struct, so read them straight from the
+% source constants, the same values the live model used.
+kpPLL = 1.20; kiPLL = 5.00; omega_b = 2*pi*60;
+yrow = @(v,i) v(i,:);
+Vre = yrow(r.y_traj,2*dev.bus_position-1);
+Vim = yrow(r.y_traj,2*dev.bus_position);
+wpll = nan(nt,1);
+for jj = 1:nt
+    Vb = complex(Vre(jj),Vim(jj));
+    vq = imag(Vb*exp(-1i*dpll(jj)));
+    dw = kpPLL*vq + kiPLL*xpll(jj);
+    wpll(jj) = 1 + dw/omega_b;
+end
 
 % --- the mode of THIS converter, per accepted sample ----------------------
 % device_modes_history is stored [n_devices x n_samples] (cell of strings).
@@ -202,14 +234,28 @@ id_step = max(abs(diff(i_d(win))));
 held = ~gfm;
 w_held = wsg(held);
 omega_held = isempty(w_held) || (max(w_held)-min(w_held) < 1e-9);
+% สีน้ำเงินคือ active; สีเทาของ VSG คือ state ที่บันทึกขณะ inactive
+% PLL hold ref. เป็นเส้นอ้างอิงแสดงค่าก่อนเข้า GFM ไม่ใช่ output ที่จำลอง
+wpll_active = wpll;
+wpll_active(gfm) = NaN;
+wpll_frozen = nan(nt,1);
+k_on = find(gfm & ~[false;gfm(1:end-1)]);
+k_off = find(gfm & ~[gfm(2:end);false]);
+for q = 1:numel(k_on)
+    k_hold = max(1,k_on(q)-1);
+    wpll_frozen(k_on(q):k_off(q)) = wpll(k_hold);
+end
+wsg_active = wsg;
+wsg_active(~gfm) = NaN;
+wsg_frozen = wsg;
+wsg_frozen(gfm) = NaN;
 
-% --- canvas: 2x2, each panel under its own mode strip ----------------------
+% เว้นขอบและช่องระหว่าง panel ให้ข้อความ Helvetica ไม่ชนกัน
 W = opts.width_in; H = opts.height_in;
-LEFT = 0.52; RIGHT = 0.05; GAPX = 0.46;
-BOT = 0.46; TOP = 0.10; GAPY = 0.52;
-STRIPH = 0.10; STRIPGAP = 0.03;
+LEFT = 0.58; RIGHT = 0.18; GAPX = 0.68;
+BOT = 0.55; TOP = 0.28; GAPY = 0.72;
 COLW = (W - LEFT - RIGHT - GAPX)/2;
-ROWH = (H - BOT - TOP - GAPY - 2*(STRIPH+STRIPGAP))/2;
+ROWH = (H - BOT - TOP - GAPY)/2;
 if ROWH <= 0.30
     error('generate_ieee14_ibr_state_page:canvasTooShort', ...
         'The canvas leaves %.2f in per panel; raise height_in.',ROWH);
@@ -217,14 +263,15 @@ end
 f1 = pf_page_figure(W,H,fs,opts.font_name);
 xr = [0 t(end)];
 col_blue = [0.00 0.16 0.70];
+col_frozen = [0.40 0.40 0.40];
 
 panels = { ...
-    '{\iti_d}, {\iti_q} [p.u.]',        {i_d,i_q}, {'{\iti_d}','{\iti_q}'}, '(a)'; ...
-    '{\itV_{dc}}, {\itI_{dc}} [p.u.]',  {V_dc,Idc}, {'{\itV_{dc}}','{\itI_{dc}}'}, '(b)'; ...
-    '\omega_{VSG} [p.u.]',              {wsg},      {'\omega_{VSG}'}, '(c)'; ...
-    '{\itE} [p.u.]',                    {E},        {'{\itE}'}, '(d)'};
-pos = [LEFT,               BOT+ROWH+GAPY+STRIPH+STRIPGAP; ...
-       LEFT+COLW+GAPX,     BOT+ROWH+GAPY+STRIPH+STRIPGAP; ...
+    'i_d, i_q [p.u.]',       {i_d,i_q},                    '(a)'; ...
+    'V_{dc} [p.u.]',         {V_dc},                       '(b)'; ...
+    '\omega_{PLL} [p.u.]',   {wpll_frozen,wpll_active},    '(c)'; ...
+    '\omega_{VSG} [p.u.]',   {wsg_frozen,wsg_active},      '(d)'};
+pos = [LEFT,               BOT+ROWH+GAPY; ...
+       LEFT+COLW+GAPX,     BOT+ROWH+GAPY; ...
        LEFT,               BOT; ...
        LEFT+COLW+GAPX,     BOT];
 
@@ -232,39 +279,44 @@ for p = 1:4
     x0 = pos(p,1); y0 = pos(p,2);
     ax = axes_in(f1,[x0 y0 COLW ROWH],W,H); hold(ax,'on');
     traces = panels{p,2};
-    names_p = panels{p,3};
     for q = 1:numel(traces)
-        plot(ax,t,traces{q},'Color',col_blue*(1-0.45*(q-1))+[0 0 0], ...
-            'LineWidth',1.0,'HandleVisibility','off');
+        if p >= 3 && q == 1
+            plot(ax,t,traces{q},'--','Color',col_frozen, ...
+                'LineWidth',1.0,'HandleVisibility','off');
+        elseif p == 1 && q == 2
+            plot(ax,t,traces{q},'-','Color',[0 0 0], ...
+                'LineWidth',1.0,'HandleVisibility','off');
+        else
+            plot(ax,t,traces{q},'-','Color',col_blue, ...
+                'LineWidth',1.0,'HandleVisibility','off');
+        end
     end
     yl = panel_window(ax,cell2mat(cellfun(@(c)c(:),traces, ...
         'UniformOutput',false)),0.10);
     xlim(ax,xr);
-    % event rules AFTER the window is fixed, so they span the panel exactly
-    for ev = [20 60 60.15 100]
-        xline(ax,ev,':','Color',[0.45 0.45 0.45],'LineWidth',0.6, ...
-            'HandleVisibility','off');
+    finish_panel(ax,fs,FN,panels{p,1},'t [s]',panels{p,3},ROWH);
+    xticks(ax,0:50:t(end));
+    switch p
+        case 1
+            col_iq = [0 0 0];
+            direct_label(ax,t,i_d,'i_d',col_blue,yl,fs,FN,0.84,0.09);
+            direct_label(ax,t,i_q,'i_q',col_iq,yl,fs,FN,0.84,0.09);
+            hactive = plot(ax,NaN,NaN,'-','Color',col_blue,'LineWidth',1);
+            hhold = plot(ax,NaN,NaN,'--','Color',col_frozen,'LineWidth',1);
+            hthird = plot(ax,NaN,NaN,'-','Color',col_iq,'LineWidth',1);
+            lg = legend(ax,[hactive hhold hthird],{'Active state','Hold state','i_q'}, ...
+                'Orientation','horizontal','Box','off','Interpreter','tex', ...
+                'FontName',FN,'FontSize',fs-0.5,'AutoUpdate','off');
+            lg.Units = 'normalized';
+            lg.Position = [0.23 0.943 0.61 0.047];
     end
-    % label each trace inline at its right end, so no legend box is needed
-    for q = 1:numel(traces)
-        yv = traces{q}(end);
-        text(ax,xr(2),min(max(yv,yl(1)+0.04*(yl(2)-yl(1))), ...
-            yl(2)-0.04*(yl(2)-yl(1))),[' ' names_p{q}], ...
-            'FontName',FN,'FontSize',fs-2, ...
-            'Interpreter','tex','HorizontalAlignment','left', ...
-            'VerticalAlignment','middle','Clipping','off');
-    end
-    finish_panel(ax,fs,FN,panels{p,1},'{\itt} [s]',panels{p,4});
-    % mode strip above the panel: one lane, one bar for the GFM interval
-    mode_strip_single(f1,[x0 y0+ROWH+STRIPGAP COLW STRIPH],W,H,t,gfm, ...
-        col_blue,xr);
     page_range{p} = yl; %#ok<AGROW>
 end
 
-png = fullfile(odir,sprintf('%s_ibr_states.png',C.id));
+png = fullfile(odir,sprintf('%s_ibr_states_v15.png',C.id));
 pf_page_export(f1,png,opts.dpi,opts.save_fig);
 if opts.save_fig
-    figf = fullfile(odir,sprintf('%s_ibr_states.fig',C.id));
+    figf = fullfile(odir,sprintf('%s_ibr_states_v15.fig',C.id));
 else
     figf = '';
 end
@@ -350,21 +402,36 @@ ylim(ax,yl);
 end
 
 % ==========================================================================
-function finish_panel(ax,fs,FN,ylab,xlab,tag)
-%FINISH_PANEL  No box, ticks outward, dashed major and minor grid, deck font.
+function direct_label(ax,t,y,label,color,yl,fs,FN,xfrac,yoffset)
+%DIRECT_LABEL วาง label ภายในกราฟ โดยเว้นระยะจากเส้นและขอบ
+xv = t(1) + xfrac*(t(end)-t(1));
+valid = find(isfinite(y));
+if isempty(valid), return; end
+[~,j] = min(abs(t(valid)-xv));
+k = valid(j);
+yv = min(max(y(k)+yoffset*diff(yl),yl(1)+0.10*diff(yl)), ...
+    yl(2)-0.10*diff(yl));
+text(ax,t(k),yv,label,'FontName',FN,'FontSize',fs, ...
+    'Color',color,'Interpreter','tex','HorizontalAlignment','center', ...
+    'VerticalAlignment','middle','Clipping','on');
+end
+
+% ==========================================================================
+function finish_panel(ax,fs,FN,ylab,xlab,tag,rowh)
+%FINISH_PANEL Helvetica แบบสไลด์: แกน x จำนวนเต็ม แกน y สองตำแหน่ง
 set(ax,'Box','off','TickDir','out','Layer','bottom', ...
     'XMinorGrid','on','YMinorGrid','on','MinorGridLineStyle','--', ...
     'MinorGridColor',[0.65 0.65 0.65],'GridLineStyle','--', ...
     'GridColor',[0.85 0.85 0.85],'TickLabelInterpreter','tex', ...
-    'FontName',FN,'FontSize',fs);
+    'FontName',FN,'FontSize',fs,'PositionConstraint','innerposition');
 grid(ax,'on');
+xtickformat(ax,'%.0f');
+ytickformat(ax,'%.2f');
 ylabel(ax,ylab,'FontName',FN,'FontSize',fs,'Interpreter','tex');
-if ~isempty(xlab)
-    xlabel(ax,xlab,'FontName',FN,'FontSize',fs,'Interpreter','tex');
-else
-    set(ax,'XTickLabel',[]);
-end
-text(ax,0.5,-0.42,tag,'Units','normalized','Interpreter','tex', ...
+xl = xlabel(ax,xlab,'FontName',FN,'FontSize',fs,'Interpreter','tex');
+xl.Units = 'normalized';
+xl.Position(1:2) = [0.5 -0.25/rowh];
+text(ax,0.5,-0.41/rowh,tag,'Units','normalized','Interpreter','tex', ...
     'HorizontalAlignment','center','VerticalAlignment','top', ...
     'FontName',FN,'FontSize',fs,'Clipping','off');
 end

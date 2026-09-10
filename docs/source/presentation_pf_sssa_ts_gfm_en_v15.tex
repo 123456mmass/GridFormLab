@@ -260,7 +260,7 @@ m_i&=\begin{cases}0&\text{GFL},\\1&\text{GFM}.\end{cases}
 \end{align}
 \begin{equation}\omega_{pu}=\begin{cases}1+\dot\theta_{PLL}/\omega_b&m_i=0,\\\omega_{VSG}&m_i=1.\end{cases}\end{equation}
 \column{.43\textwidth}
-\begin{figure}\includegraphics[width=\linewidth,trim=0 0 0 2mm,clip]{figures/xxxx.png}\caption{IBR electrical model.}\label{fig:plant}\end{figure}
+\begin{figure}\includegraphics[width=\linewidth,trim=0 0 0 2mm,clip]{figures/xxxx.png}\caption{IBR model.}\label{fig:plant}\end{figure}
 \stepcounter{equation}
 \end{columns}
 \end{frame}
@@ -468,25 +468,25 @@ $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 \end{frame}
 \begin{frame}{Result: Severity Index and Converter Mode}
 \centering
-\begin{figure}\includegraphics[width=.68\linewidth]{figures/ieee14_scenario_suite/sg_fault_cycle160_agsi3d.png}\caption{Severity index $S_i$ per converter.}\end{figure}
+\begin{figure}\includegraphics[width=.68\linewidth]{figures/ieee14_scenario_suite/sg_fault_cycle160_agsi3d.png}\caption{Severity index $S_i$ .}\end{figure}
 
 \vspace{1mm}
-\begin{figure}\includegraphics[width=.68\linewidth]{figures/ieee14_scenario_suite/sg_fault_cycle160_mode3d.png}\caption{Converter mode $m_i$ per converter: GFL = 0, GFM = 1.}\end{figure}
+\begin{figure}\includegraphics[width=.68\linewidth]{figures/ieee14_scenario_suite/sg_fault_cycle160_mode3d.png}\caption{ $m_i$  GFL = 0, GFM = 1.}\end{figure}
 \end{frame}
 \begin{frame}{Result: IBR State Response}
 	\centering\begin{figure}\includegraphics[width=\linewidth,height=6.60cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_ibr_states_v15.png}\caption{$(a)$ $i_d,i_q$; $(b)$ $V_{dc}$; $(c)$ $\omega_{PLL}$; $(d)$ $\omega_{VSG}$}\end{figure}
 \end{frame}
 \begin{frame}{Result: Voltage and Frequency}
-\centering\begin{figure}\includegraphics[width=\linewidth,height=5.9cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_vf.png}\caption{Converter responses: $(a)$ bus-voltage magnitude and $(b)$ converter frequency.}\end{figure}
+\centering\begin{figure}\includegraphics[width=\linewidth,height=5.9cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_vf.png}\caption{$(a)$ bus-voltage magnitude and $(b)$ converter frequency.}\end{figure}
 \end{frame}
 \begin{frame}{Result: Active and Reactive Power}
-\centering\begin{figure}\includegraphics[width=\linewidth,height=5.9cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_pq_mode.png}\caption{Converter power responses: $(a)$ active power and $(b)$ reactive power.}\end{figure}
+\centering\begin{figure}\includegraphics[width=\linewidth,height=5.9cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_pq_mode.png}\caption{ $(a)$ active power and $(b)$ reactive power.}\end{figure}
 \end{frame}
 \begin{frame}{Fault Bus  Voltage and Frequency}
-\centering\begin{figure}\includegraphics[width=\linewidth,height=5.75cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_cmp_vf.png}\caption{Bus-9 responses for adaptive GFL/GFM and fixed-GFL cases: $(a)$ voltage magnitude and $(b)$ frequency.}\end{figure}
+\centering\begin{figure}\includegraphics[width=\linewidth,height=5.75cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_cmp_vf.png}\caption{ $(a)$ voltage magnitude and $(b)$ frequency.}\end{figure}
 \end{frame}
 \begin{frame}{Fault Bus Active and Reactive Power}
-\centering\begin{figure}\includegraphics[width=\linewidth,height=5.75cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_cmp_pq.png}\caption{Bus-9 power responses for adaptive GFL/GFM and fixed-GFL cases: $(a)$ active power and $(b)$ reactive power.}\end{figure}
+\centering\begin{figure}\includegraphics[width=\linewidth,height=5.75cm,keepaspectratio]{figures/ieee14_scenario_suite/sg_fault_cycle160_cmp_pq.png}\caption{ $(a)$ active power and $(b)$ reactive power.}\end{figure}
 \end{frame}
 
 \section{Summary}
@@ -518,5 +518,15 @@ $\dagger$ Report notation: $M=2H_v$, $H_v=0.04$ s.\par
 \item H. Ding, R. Kar, Z. Miao, and L. Fan, ``A novel design for switchable grid-following and grid-forming control,'' \emph{IEEE Trans. Sustainable Energy}, 16(2), 1301--1314, 2025.
 \item MATPOWER, \emph{case14: IEEE 14-bus test case}, converted from the IEEE Common Data Format.
 \end{enumerate}
+\end{frame}
+
+\section{Q\&A}
+\begin{frame}{Q \& A}
+\vfill
+\centering
+\LARGE{\textbf{Thank you for your attention}}\\[0.5cm]
+\large{Power System Dynamics, Stability, and Control (PSDSC) Research Center}\\[0.6cm]
+\includegraphics[width=3.0cm]{qr_pgaz_lab.png}
+\vfill
 \end{frame}
 \end{document}

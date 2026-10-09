@@ -2806,7 +2806,7 @@ try
         end
         if isfield(rec,'omega') && isfinite(rec.omega)
             omega_grid=reference_grid_omega(dae,x,y,u,ec);
-            diag.df_pu = abs(rec.omega-omega_grid);
+            diag.df_pu = abs(stability.sg_speed_deviation(dev,rec)-omega_grid);
         end
         if isfield(rec,'delta') && isfinite(rec.delta)
             diag.dtheta_deg = abs(angle(vb)*180/pi - rec.delta*180/pi);
@@ -4313,7 +4313,8 @@ gopt=struct('dV_max',case_data.synchronism.dV_max_pu, ...
     'dwell_min',settings.sync_dwell);
 names=fieldnames(settings.sync_overrides);
 for k=1:numel(names), gopt.(names{k})=settings.sync_overrides.(names{k}); end
-guard=stability.synchronism_guard(Vbus,rec.V_open_circuit,rec.delta,rec.omega,omega_grid,gopt);
+omega_sg=stability.sg_speed_deviation(dev,rec);
+guard=stability.synchronism_guard(Vbus,rec.V_open_circuit,rec.delta,omega_sg,omega_grid,gopt);
 sync_pass=guard.passes;
 prospective=stability.sg_prospective_close_metrics( ...
     t,x(xi),y,u(ui),ec,dev,case_data);

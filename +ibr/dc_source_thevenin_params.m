@@ -207,6 +207,19 @@ else
     Pac0=Pac0_override;
 end
 Edc=Vdc0+Rdc*Pac0/Vdc0;                                % (3)
+% ค่าที่ออกแบบไว้เป็น physical plant เดิม แม้ controller dispatch เปลี่ยน.
+% ผู้เรียกเดิมที่ไม่ระบุค่าทั้งคู่ยังใช้ operating-point derivation ตาม (3).
+has_E=isfield(dc,'Edc') && ~isempty(dc.Edc);
+has_R=isfield(dc,'Rdc') && ~isempty(dc.Rdc);
+if has_E ~= has_R
+    error('ibr:dc_source_thevenin:fixedPlant', ...
+        'Fixed DC plant requires both Edc and Rdc.');
+end
+if has_E
+    validateattributes(dc.Edc,{'double'},{'scalar','real','finite','positive'});
+    validateattributes(dc.Rdc,{'double'},{'scalar','real','finite','positive'});
+    Edc=dc.Edc; Rdc=dc.Rdc;
+end
 
 if ~isfinite(Cdc) || Cdc<=0
     error('ibr:dc_source_thevenin:Cdc','Cdc must be finite and positive.');
@@ -242,13 +255,30 @@ lam_pair=eig(A_dc);
 omega_n_dc=sqrt(abs(det(A_dc)));
 zeta_dc=-trace(A_dc)/(2*max(omega_n_dc,eps));
 Idc0=Pac0/Vdc0;   % dVdc/dt = 0 and dIdc/dt = 0 hold together at this value
+if has_E
+    % warm start ของ plant เดิม ไม่สร้างกระแสต้นทางใหม่ตาม P_ref.
+    Idc0=(Edc-Vdc0)/Rdc;
+end
+Idc_max=getv(dc,'Idc_max',NaN);
+Psource_max=getv(dc,'Psource_max',NaN);
+source_limits={Idc_max,Psource_max};
+for kk=1:numel(source_limits)
+    limit_value=source_limits{kk};
+    if ~isnumeric(limit_value) || ~isscalar(limit_value) || ...
+            ~isreal(limit_value) || ~(isnan(limit_value) || ...
+            (isfinite(limit_value) && limit_value>0))
+        error('ibr:dc_source_thevenin:sourceLimit', ...
+            'DC source limits must be positive finite scalars when declared.');
+    end
+end
 
 p=struct('closure','THEVENIN_SOURCE_STATE_WITH_LINEAR_CHOPPER', ...
     'classification','PROJECT_DERIVED', ...
     'eps_dc',eps_dc,'Pr',Pr,'Rdc',Rdc,'Edc',Edc,'Vdc0',Vdc0,'Cdc',Cdc, ...
     'Vdc_max',Vdc_max,'Rch',Rch,'delta_ch',delta_ch, ...
     'Pac0',Pac0,'id0',id0,'iq0',iq0,'lambda_dc',lambda_dc, ...
-    'source_state',source_state, ...
+    'source_state',source_state,'fixed_plant',has_E, ...
+    'Idc_max',Idc_max,'Psource_max',Psource_max, ...
     'tau_s',tau_s,'tau_s_maxflat',tau_s_maxflat, ...
     'tau_s_stability_max',tau_s_stability_max,'zeta_target',zeta_target, ...
     'Idc0',Idc0,'lambda_dc_pair',lam_pair(:).', ...

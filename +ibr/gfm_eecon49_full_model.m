@@ -197,10 +197,11 @@ I_sys=conj(complex(P,Q)/V);
 I_inv=k*I_sys;
 th=angle(V); E=abs(V);
 Idq=I_inv*exp(-1i*th); id=real(Idq); iq=imag(Idq);
+[Vdc,Idc]=ibr.dc_source_equilibrium(dcp,k*P+R*(id^2+iq^2),Vdc);
 % Index 11 is the DC-source current state, appended so indices 1..10 keep their
 % published meaning.
 x=[id;iq;Vdc;th;1;E;id/kiV;iq/kiV;0;0];
-if dcp.source_state, x(11)=dcp.Idc0; end
+if dcp.source_state, x(11)=Idc; end
 end
 
 function n=gfm_state_names_for(nx)

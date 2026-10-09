@@ -19,7 +19,7 @@ function result = mixed_equilibrium_solve(case_data, config, opt)
 %         z = [x_active; y_except_ImVref; P_ref_reference]
 %         R = [f_active; every physical KCL row].
 %       Thus the angle gauge removes a coordinate, never a KCL equation.
-%     - For an online SG REF, both rectangular reference-bus coordinates are
+%     - For an online SG SLACK, both rectangular reference-bus coordinates are
 %       fixed to the case Vm/angle and the constant SG controls [Tm;Efd] are
 %       solved as operating-point outputs while every physical KCL row is kept.
 %       The returned u_eq is then held constant by TS/SSSA; no per-step slack
@@ -163,18 +163,26 @@ if online_count > 0 && vf_count < 1
     return;
 end
 
+slack_sg_online = false;
+if ~isempty(online_sg_indices)
+    ref_bus_ids = mpc.bus(mpc.bus(:,2)==3,1);
+    for sk = online_sg_indices(:)'
+        if any(devices(sk).bus_id == ref_bus_ids)
+            slack_sg_online = true;
+        end
+    end
+end
 [reference_device_index, ref_error] = resolve_reference_index( ...
-    devices, eq_hybrid_state, config, vf_indices, isempty(online_sg_indices));
+    devices, eq_hybrid_state, config, vf_indices, ~slack_sg_online);
 if ~isempty(ref_error)
     result.failure_id = 'mixed_equilibrium_solve:badReference';
     result.failure_reason = ref_error;
     return;
 end
-% A committed GFM reference describes the SG_OFF right-limit configuration.
-% While an SG is online, MATPOWER REF semantics require the unique online SG
-% at the case REF bus to own the numerical reference. This prevents a mixed
-% SG+GFM candidate from falling into row replacement with no balancing input.
-if ~isempty(online_sg_indices)
+% While the case SLACK SG is online it owns the numerical reference.
+% After that breaker opens, remaining classical SG keep scheduled Pm/Emag
+% and the committed online GFM balances the island.
+if slack_sg_online
     ref_bus_ids = mpc.bus(mpc.bus(:,2)==3,1);
     sg_ref_matches = [];
     for sk = online_sg_indices(:)'
@@ -185,19 +193,25 @@ if ~isempty(online_sg_indices)
     if numel(sg_ref_matches) ~= 1
         result.failure_id = 'mixed_equilibrium_solve:badSGReference';
         result.failure_reason = sprintf( ...
-            'Expected exactly one online SG at the case REF bus; found %d.', ...
+            'Expected exactly one online SG at the case SLACK bus; found %d.', ...
             numel(sg_ref_matches));
         return;
     end
     reference_device_index = sg_ref_matches(1);
+elseif ~isempty(online_sg_indices) && (isempty(reference_device_index) || ...
+        ~strcmpi(runtime_mode(devices(reference_device_index),eq_hybrid_state),'gfm'))
+    result.failure_id = 'mixed_equilibrium_solve:badSGReference';
+    result.failure_reason = ['Case SLACK SG is offline while other SG remain; ' ...
+        'an explicit online GFM reference is required.'];
+    return;
 end
 reference_device = devices(reference_device_index);
 reference_bus_position = reference_device.bus_position;
 gauge_var = 2*reference_bus_position;   % eliminate Im(V_ref_bus)
 gauge_row = gauge_var;
 reference_mode = runtime_mode(reference_device,eq_hybrid_state);
-use_gfm_slack = isempty(online_sg_indices) && strcmpi(reference_mode,'gfm');
-use_sg_slack = any(strcmpi(reference_mode,{'sg','synchronous'}));
+use_gfm_slack = ~slack_sg_online && strcmpi(reference_mode,'gfm');
+use_sg_slack = slack_sg_online && any(strcmpi(reference_mode,{'sg','synchronous'}));
 use_physical_slack = use_gfm_slack || use_sg_slack;
 
 % --- Angle coordinate ------------------------------------------------------
@@ -208,10 +222,10 @@ if use_sg_slack
             ~isfinite(mpc.bus(bus_row,8)) || mpc.bus(bus_row,8)<=0
         result.failure_id = 'mixed_equilibrium_solve:badReferenceVoltage';
         result.failure_reason = ...
-            'The selected SG REF requires a finite positive case Vm setpoint.';
+            'The selected SG SLACK requires a finite positive case Vm setpoint.';
         return;
     end
-    % MATPOWER REF contract: both |V| and angle are specified; P/Q are solved.
+    % MATPOWER SLACK contract: both |V| and angle are specified; P/Q are solved.
     % In rectangular coordinates at angle zero this fixes Re(V)=Vm, Im(V)=0.
     vcon.vars = [2*reference_bus_position-1, 2*reference_bus_position];
     vcon.rows = [];
@@ -432,6 +446,11 @@ if use_gfm_slack
         if isfield(case_data,'dispatch_contract') && ...
                 isfield(case_data.dispatch_contract,'post_trip') && ...
                 isfield(case_data.dispatch_contract.post_trip,'participation')
+            % Forwarded for ABI compatibility only.  The balance contract
+            % (decision ledger item 8 / D12) puts the one scalar mismatch on
+            % the reference GFM alone; the initializer collapses any supplied
+            % weights onto the reference device, so no non-reference P_ref
+            % moves off its schedule.
             reduced_opt.p_participation= ...
                 case_data.dispatch_contract.post_trip.participation;
         end
@@ -503,6 +522,7 @@ Ynet = dae.Ynet;
 u_base = u_eq_init;
 slack_u_index = [];
 slack_slots = [];
+ref_layout = '';   % 'emf6_tm_efd' | 'classical_pm_emag' (set for an SG slack)
 if use_gfm_slack
     slack_slot = find(strcmpi(string(reference_device.input_names),'P_ref'),1);
     if isempty(slack_slot)
@@ -513,15 +533,13 @@ if use_gfm_slack
     slack_slots = slack_slot;
     slack_u_index = dae.u_offsets(reference_device_index) + slack_slot;
 elseif use_sg_slack
-    tm_slot = find(strcmpi(string(reference_device.input_names),'Tm'),1);
-    efd_slot = find(strcmpi(string(reference_device.input_names),'Efd'),1);
-    if isempty(tm_slot) || isempty(efd_slot) || tm_slot==efd_slot
+    [slack_slots, ref_layout, ref_slot_error] = ...
+        resolve_sg_reference_slots(reference_device);
+    if ~isempty(ref_slot_error)
         result.failure_id = 'mixed_equilibrium_solve:referenceMissingSGInputs';
-        result.failure_reason = ...
-            'Reference SG must declare distinct Tm and Efd equilibrium inputs.';
+        result.failure_reason = ref_slot_error;
         return;
     end
-    slack_slots = [tm_slot,efd_slot];
     slack_u_index = dae.u_offsets(reference_device_index) + slack_slots;
 end
 if use_physical_slack
@@ -532,10 +550,11 @@ else
     algebraic_rows = setdiff(1:ny_full,gauge_row,'stable');
 end
 
-residual_fn = @(z) coupled_residual( ...
+physical_residual_fn = @(z) coupled_residual( ...
     z, active_x_indices, all_frozen_indices, all_frozen_values, ...
     free_vars, vcon_vars, vcon_ref, ny_full, dae, Ynet, u_base, ...
     slack_u_index, algebraic_rows, eq_context);
+residual_fn = physical_residual_fn;
 
 % Actual residual/unknown cardinality, not a counting tautology.
 r_initial = residual_fn(z0);
@@ -656,10 +675,14 @@ result.reference = struct( ...
     'balances_active_power',use_physical_slack, ...
     'physical_kcl_enforced',true, ...
     'slack_input_names',{cellstr(string(reference_device.input_names(slack_slots)))}, ...
+    'control_layout',ref_layout, ...
+    'slack_controls_scheduled_pu',[],'slack_controls_solved_pu',[], ...
     'P_scheduled_pu',NaN,'P_scheduled_MW',NaN, ...
     'P_solved_pu',NaN,'P_solved_MW',NaN,'P_deviation_MW',NaN, ...
     'Tm_scheduled_pu',NaN,'Tm_solved_pu',NaN, ...
-    'Efd_scheduled_pu',NaN,'Efd_solved_pu',NaN);
+    'Efd_scheduled_pu',NaN,'Efd_solved_pu',NaN, ...
+    'Pm_scheduled_pu',NaN,'Pm_solved_pu',NaN, ...
+    'Emag_scheduled_pu',NaN,'Emag_solved_pu',NaN);
 if use_gfm_slack
     result.reference.P_scheduled_pu = reduced_init.reference_p_scheduled_pu;
     result.reference.P_scheduled_MW = ...
@@ -677,10 +700,20 @@ if use_gfm_slack
         return;
     end
 elseif use_sg_slack
-    result.reference.Tm_scheduled_pu = u_base(slack_u_index(1));
-    result.reference.Efd_scheduled_pu = u_base(slack_u_index(2));
-    result.reference.Tm_solved_pu = u_sol(slack_u_index(1));
-    result.reference.Efd_solved_pu = u_sol(slack_u_index(2));
+    sched = u_base(slack_u_index); solvd = u_sol(slack_u_index);
+    result.reference.slack_controls_scheduled_pu = sched;
+    result.reference.slack_controls_solved_pu = solvd;
+    if strcmp(ref_layout,'classical_pm_emag')
+        result.reference.Pm_scheduled_pu = sched(1);
+        result.reference.Pm_solved_pu = solvd(1);
+        result.reference.Emag_scheduled_pu = sched(2);
+        result.reference.Emag_solved_pu = solvd(2);
+    else
+        result.reference.Tm_scheduled_pu = sched(1);
+        result.reference.Efd_scheduled_pu = sched(2);
+        result.reference.Tm_solved_pu = solvd(1);
+        result.reference.Efd_solved_pu = solvd(2);
+    end
 end
 
 % --- Limit checks ---------------------------------------------------------
@@ -1277,4 +1310,37 @@ end
 if isfield(config,'reference_resource_index')
     h = [h '|ref=' num2str(config.reference_resource_index)]; %#ok<AGROW>
 end
+end
+
+% =========================================================================
+function [slots, layout, reason] = resolve_sg_reference_slots(dev)
+%RESOLVE_SG_REFERENCE_SLOTS  The two equilibrium input slots of a reference SG.
+%   Generic across machine families, discovered by INPUT NAME so a classical
+%   machine's [Pm, |E|] pair is handled WITHOUT relabelling |E| as the EMF6 field
+%   voltage Efd.  A device may declare its layout via
+%   dev.equilibrium_control_layout ('classical_pm_emag'); otherwise the EMF6
+%   [Tm, Efd] pair is assumed, which keeps every existing EMF6 contract intact.
+slots = []; layout = ''; reason = '';
+names = string(dev.input_names);
+has = @(n) any(strcmpi(names,n));
+if has('Pm') && has('Emag')
+    layout = 'classical_pm_emag'; want = {'Pm','Emag'};
+elseif has('Tm') && has('Efd')
+    layout = 'emf6_tm_efd'; want = {'Tm','Efd'};
+else
+    reason = sprintf(['Reference SG "%s" declares neither the classical ' ...
+        '[Pm,Emag] nor the EMF6 [Tm,Efd] equilibrium-input pair.'], ...
+        char(dev.device_id));
+    return;
+end
+a = find(strcmpi(names,want{1}),1);
+b = find(strcmpi(names,want{2}),1);
+if isempty(a) || isempty(b) || a==b
+    reason = sprintf(['Reference SG "%s" must declare distinct %s and %s ' ...
+        'equilibrium inputs (layout "%s").'], ...
+        char(dev.device_id), want{1}, want{2}, layout);
+    slots = [];
+    return;
+end
+slots = [a,b];
 end

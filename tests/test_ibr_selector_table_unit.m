@@ -18,9 +18,10 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+original_path=path;
+testCase.addTeardown(@()path(original_path));
 root = fileparts(fileparts(mfilename('fullpath')));
 addpath(root, '-begin');
-testCase.addTeardown(@() rmpath(root));
 pf_init_paths();
 end
 
@@ -947,7 +948,7 @@ for k = 1:4
     resources(k+1).resource_id = names{k};
     resources(k+1).bus_id = 200 + k;
     resources(k+1).resource_type = 'ibr';
-    resources(k+1).model_id = 'regfm_b1_dual';
+    resources(k+1).model_id = 'eecon49_dual';
     resources(k+1).supported_modes = ["gfl","gfm","tripped"];
     resources(k+1).voltage_forming_modes = 'gfm';
     resources(k+1).initial_mode = 'gfl';

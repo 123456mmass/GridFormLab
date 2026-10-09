@@ -94,6 +94,36 @@ pre_event_input_fp = sprintf('pre_event_input|%s', mat2str(pre_event_input(:).')
 sync_ctl=initialize_sync_controller(dae,u,sched,case_data);
 
 samples = new_samples(x,y,u,ec,active,topology);
+if settings.ne39_rate_policy_enabled || ...
+        (isfield(opt,'online_rate_measurement') && isequal(opt.online_rate_measurement,true))
+    rate_opt = struct('fbase',case_data.base_values.frequency_Hz, ...
+        'warmup_s',.02,'rocov_tau_s',.02);
+    if isfield(opt,'online_rate_options')
+        for name=fieldnames(opt.online_rate_options)'
+            rate_opt.(name{1})=opt.online_rate_options.(name{1});
+        end
+    end
+    if settings.ne39_rate_policy_enabled && ...
+            (~isfield(rate_opt,'rocov_tau_s') || ...
+             ~isscalar(rate_opt.rocov_tau_s) || ~isfinite(rate_opt.rocov_tau_s) || ...
+             rate_opt.rocov_tau_s<=0)
+        error('ts_simulate_ibr_hybrid:ne39RateClock', ...
+            'production ROCOV ต้องใช้ time constant บน dt จริง');
+    end
+    samples.rate_accumulator = stability.EtFcsRateAccumulator(rate_opt);
+    samples.rate_devices = dae.devices;
+    samples.rate_case = case_data;
+    samples.rate_log = {};
+    if settings.ne39_rate_policy_enabled
+        samples.ne39_policy=settings.ne39_policy;
+        samples.ne39_settings=settings;
+        samples.ne39_dae=dae;
+        samples.ne39_policy_state=struct();
+        samples.ne39_epoch=[];
+        samples.ne39_decision_log={};
+    end
+    samples = record_accepted_rates(samples,0,x,y,u,ec);
+end
 % Admittance log for the opt-in reference-AGSI overlay only. It records the
 % (time, label, Y) of every topology in force so the post-processor can compute
 % a topology-correct Thevenin/SCR. Empty and untouched when the overlay is off.
@@ -669,7 +699,12 @@ while t < settings.t_end-settings.event_tol
                 % the scheduled branch are both restored, so the live-network
                 % bookkeeping for the destination certificate must reset too.
                 load_mult=1.0; chronology_line_open=false;
-                log.applied=true; log.details='Base loads and scheduled branch restored before SG reclose request.';
+                log.applied=true;
+                if isfield(sched,'event_profile') && strcmp(sched.event_profile,'line_cycle')
+                    log.details='Scheduled branch restored; no SG reclose is requested.';
+                else
+                    log.details='Base loads and scheduled branch restored before SG reclose request.';
+                end
             else
                 [converged,failure_id,failure_reason,log]=transition_failure( ...
                     'ts_simulate_ibr_hybrid:rightLimit',reason,log);
@@ -679,9 +714,10 @@ while t < settings.t_end-settings.event_tol
             if isfield(opt,'automatic_gfm_switching') && ~isempty(opt.automatic_gfm_switching)
                 agfm = logical(opt.automatic_gfm_switching);
             end
+            trip_opt=opt; trip_opt.dt=settings.dt;
             [ok,x_new,y_new,u_new,ec_new,active_new,handler_log,reason, ...
                 right_norm,stage,dispatch_after,trip_controller_audit] = trip_transaction( ...
-                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm,opt);
+                t,x,y,Ycurr,u,ec,dae,sched,case_data,settings.kcl_tol,agfm,trip_opt);
             if ~isempty(fieldnames(trip_controller_audit))
                 controller_audit = trip_controller_audit;
             end
@@ -750,9 +786,10 @@ while t < settings.t_end-settings.event_tol
             % sample and the post-event restart (:812-818). It must not
             % duplicate any of them, which is why this case mirrors 'sg_trip'
             % rather than the free-standing support transaction.
+            ibr_opt=opt; ibr_opt.dt=settings.dt;
             [ok,x_new,y_new,u_new,ec_new,handler_log,reason,right_norm]= ...
                 ibr_trip_transaction(t,x,y,Ycurr,u,ec,dae,sched,case_data, ...
-                settings,opt,topology);
+                settings,ibr_opt,topology);
             log=new_event_log(ev.type,t);
             log.pre_kcl_norm=pre_norm; log.right_kcl_norm=right_norm;
             log.input_before=u; log.input_after=u_new;
@@ -885,11 +922,30 @@ while t < settings.t_end-settings.event_tol
             support_status='HYSTERESIS_HOLD';
         end
 
+        if settings.ne39_rate_policy_enabled
+            pd=samples.ne39_decision_log{end};
+            if ~hold_ok
+                samples.ne39_policy_state=struct();
+                support_up_since=NaN; support_down_since=NaN;
+            else
+                if isempty(fieldnames(samples.ne39_policy_state))
+                    support_up_since=NaN; support_down_since=NaN;
+                else
+                    support_up_since=samples.ne39_policy_state.up_since;
+                    support_down_since=samples.ne39_policy_state.down_since;
+                end
+                support_status=pd.reason;
+            end
+        end
         direction=''; candidate=struct(); found=false; selection_audit=struct();
         up_due=isfinite(support_up_since) && ...
             t-support_up_since>=settings.severity_T_d_on-settings.event_tol;
         down_due=isfinite(support_down_since) && ...
             t-support_down_since>=settings.severity_T_d_off-settings.event_tol;
+        if settings.ne39_rate_policy_enabled
+            up_due=hold_ok && pd.augment && ~isempty(current_gfl);
+            down_due=hold_ok && pd.release && ~isempty(current_gfm);
+        end
         if t>=support_retry_after-settings.event_tol && up_due
             direction='augment';
             [candidate,found,selection_audit]= ...
@@ -906,8 +962,9 @@ while t < settings.t_end-settings.event_tol
             transaction_counter=transaction_counter+1;
             support_tx_id=transaction_counter;
             samples=mark_transaction_left(samples,t,x,y,u,ec,active,topology,support_tx_id);
+            support_settings=settings; support_settings.dt=settings.dt;
             [ok,x_new,y_new,u_new,ec_new,support_log,reason,right_norm]= ...
-                sg_off_support_transaction(t,x,y,Ycurr,u,ec,dae,settings, ...
+                sg_off_support_transaction(t,x,y,Ycurr,u,ec,dae,support_settings, ...
                 candidate,direction,case_data,sched,load_mult, ...
                 chronology_line_open,topology);
             log=new_event_log(['gfm_support_' direction],t);
@@ -945,6 +1002,9 @@ while t < settings.t_end-settings.event_tol
                 support_retry_after=t+settings.T_lockout;
             end
             support_up_since=NaN; support_down_since=NaN;
+            if settings.ne39_rate_policy_enabled
+                samples.ne39_policy_state=struct();
+            end
             event_log(end+1,1)=log; %#ok<AGROW>
             log_status=stability.ibr_status_snapshot(log.type,t,dae,ec,active, ...
                 kcl_norm(dae,t,x,y,Ycurr,u,ec));
@@ -1206,7 +1266,11 @@ while t < settings.t_end-settings.event_tol
             [sev_ok, current_gfm, sev_values] = post_reclose_severity( ...
                 t, x, y, u, ec, dae, settings);
             severity_release_since(setdiff(1:numel(dae.devices),current_gfm)) = NaN;
-            if ~sev_ok
+            if settings.ne39_rate_policy_enabled && ...
+                    ~samples.ne39_decision_log{end}.release
+                severity_release_since(:)=NaN;
+                reselection_status='RATE_OR_PREDICTION_RELEASE_HOLD';
+            elseif ~sev_ok
                 severity_release_since(:) = NaN;
                 reselection_status = 'SEVERITY_EVIDENCE_UNAVAILABLE';
             elseif isempty(current_gfm)
@@ -1226,6 +1290,9 @@ while t < settings.t_end-settings.event_tol
                 release = current_gfm(isfinite(severity_release_since(current_gfm)) & ...
                     t-severity_release_since(current_gfm) >= ...
                     settings.severity_T_d_off-settings.event_tol);
+                if settings.ne39_rate_policy_enabled
+                    release=current_gfm; % policy ตรวจ continuous safe dwell ครบแล้ว.
+                end
                 hold_ok = isfinite(actual_reclose) && ...
                     t-actual_reclose >= settings.T_minimum_hold-settings.event_tol && ...
                     sync_ctl.handback_complete;
@@ -1313,7 +1380,7 @@ while t < settings.t_end-settings.event_tol
             [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
                 no_mode_change] = reselection_transaction( ...
                 t, x, y, Ycurr, u, ec, dae, settings, target_modes, ...
-                target_selected, authority);
+                target_selected, authority, case_data);
             log = new_event_log('sg_reselection',t);
             log.transaction_id = reselection_tx_id;
             log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
@@ -1381,6 +1448,15 @@ res.topology_history=samples.topology;
 res.Y_log=samples.topology;
 res.active_state_history=samples.active;
 res.event_context_history=samples.context;
+if isfield(samples,'rate_accumulator')
+    res.online_rate_log=samples.rate_log;
+    res.online_rate_series=samples.rate_accumulator.rates();
+    res.online_rate_jumps=samples.rate_accumulator.jump_diagnostics();
+end
+if isfield(samples,'ne39_decision_log')
+    res.ne39_decision_log=samples.ne39_decision_log;
+    res.ne39_policy=samples.ne39_policy;
+end
 res.event_log=event_log;
 res.status_log=status_log;
 res.events=events;
@@ -1665,6 +1741,37 @@ s.severity_gamma_on = option(opt,'severity_gamma_on',0.65);
 s.severity_gamma_off = option(opt,'severity_gamma_off',0.35);
 s.severity_T_d_on = option(opt,'severity_T_d_on',0.10);
 s.severity_T_d_off = option(opt,'severity_T_d_off',1.00);
+s.ne39_study=isfield(case_data,'study_capability') && ...
+    isfield(case_data,'source_variant') && ...
+    strcmp(case_data.source_variant.id,'TAMU_LEDESMA_2016');
+s.resources=option(opt,'resources',struct([]));
+s.ne39_rate_policy_enabled = logical(option(opt,'ne39_rate_policy',false));
+s.ne39_policy = option(opt,'ne39_policy',struct());
+if s.ne39_rate_policy_enabled
+    if ~isfield(case_data,'source_variant') || ...
+            ~strcmp(case_data.source_variant.id,'TAMU_LEDESMA_2016') || ...
+            ~has_healthy_v || ~has_healthy_bus
+        error('ts_simulate_ibr_hybrid:ne39PolicyContext', ...
+            'NE39 policy ต้องใช้ TAMU case และ healthy PF reference ครบ');
+    end
+    % PROJECT_DERIVED: rate ceiling และ horizon เป็น policy design ไม่ใช่ relay setting.
+    defaults=struct('si_on',s.severity_gamma_on,'si_off',s.severity_gamma_off, ...
+        'rocof_max',1,'rocov_max',1,'v_min',.9,'v_max',1.1, ...
+        'f_min',case_data.base_values.frequency_Hz-.5, ...
+        'f_max',case_data.base_values.frequency_Hz+.5, ...
+        'prediction_horizon',.25,'on_dwell',s.severity_T_d_on, ...
+        'off_dwell',s.severity_T_d_off);
+    for name=fieldnames(s.ne39_policy)'
+        if ~isfield(defaults,name{1})
+            error('ts_simulate_ibr_hybrid:ne39PolicyOption','ไม่รู้จัก policy.%s',name{1});
+        end
+        defaults.(name{1})=s.ne39_policy.(name{1});
+    end
+    s.ne39_policy=defaults;
+    empty=struct('severity',[],'v_pu',[],'f_hz',[], ...
+        'rocof_hz_s',[],'rocov_pu_s',[],'valid',[]);
+    stability.ne39_rate_policy(0,empty,struct(),s.ne39_policy);
+end
 % --- Support transition certificate (opt-in, AGSI-2026-08-14-02) -----------
 % When enabled, sg_off_support_transaction forward-simulates the accepted
 % right state before committing and refuses fail-closed if the island would
@@ -1721,6 +1828,10 @@ if any(~isfinite(sev_contract)) || s.severity_gamma_off<0 || ...
     error('ts_simulate_ibr_hybrid:invalidSeverityContract', ...
         ['Severity thresholds/dwells must be finite, Gamma_on>Gamma_off>=0, ' ...
          'and T_d_on/T_d_off nonnegative.']);
+end
+if s.ne39_study && isfield(sched,'coordinated_handback') && sched.coordinated_handback
+    error('ts_simulate_ibr_hybrid:ne39HandbackEvidence', ...
+        'NE39 coordinated handback ยังไม่มี authenticated transition certificate');
 end
 if isfield(opt,'synchronism_overrides'), s.sync_overrides=opt.synchronism_overrides; end
 if isfield(opt,'delays_overrides')
@@ -2165,6 +2276,22 @@ if automatic_gfm_switching
         if isempty(cand_n) && isfield(mc,'n_gfm_required'), cand_n = mc.n_gfm_required; end
         if isempty(cand_ref) && isfield(mc,'reference_resource_index'), cand_ref = mc.reference_resource_index; end
     end
+    if isfield(case_data,'study_capability')
+        % SG_OFF certificate ต้องตรงกับ breaker ที่เปิดจริง ห้ามใช้ all-SG-off
+        % certificate อนุมัติ contingency ที่ยังเหลือ SG online.
+        sg_mask=arrayfun(@(d)strcmpi(char(d.capabilities.resource_type),'sg'),dae.devices);
+        sg_ids={dae.devices(sg_mask).device_id};
+        post=case_data.dispatch_contract.post_trip;
+        if ~all(isfield(post,{'sg_ids','remaining_sg_ids'})) || ...
+                ~isequal(string(post.sg_ids(:)),string({sched.sg_id}).') || ...
+                ~isempty(intersect(string(post.sg_ids),string(post.remaining_sg_ids))) || ...
+                ~isequal(sort([string(post.sg_ids(:));string(post.remaining_sg_ids(:))]), ...
+                         sort(string(sg_ids(:))))
+            handler_log=auth_fail_log('stability:gfm_selection:contingencyMismatch', ...
+                'SG_OFF certificate does not match the scheduled SG contingency.');
+            reason=handler_log.details; return;
+        end
+    end
     event=struct('type','sg_trip_request','t',t,'sg_ids',{{sched.sg_id}}, ...
         'committed_selection',struct('selected_gfm_indices',cand_sel, ...
         'n_gfm_required',cand_n, ...
@@ -2193,6 +2320,21 @@ if automatic_gfm_switching
     end
     [ok,yr,reason,right_norm]=right_limit(xr,y,Y,dae,ur,ecr,t,kcl_tol);
     if ~ok, stage='rightLimit'; end
+    if ok && isfield(case_data,'study_capability')
+        [trial_ok,trial_reason,trial_audit]=ne39_private_transition_trial( ...
+            t,xr,yr,ur,ecr,Y,dae,case_data,cand,opt,kcl_tol);
+        controller_audit.ne39_transition=trial_audit;
+        if ~trial_ok
+            ok=false; stage='transitionTrial';
+            reason=trial_reason;
+            handler_log=auth_fail_log( ...
+                'stability:gfm_selection:transitionEvidenceMissing',trial_reason);
+            handler_log.selected_gfm_indices=cand_sel;
+            handler_log.n_gfm_required=cand_n;
+            handler_log.reference_resource_index=cand_ref;
+            xr=x; yr=y; ur=u; ecr=ec; active=[]; return;
+        end
+    end
     if ok, active=stability.ts_dynamic_state_indices(dae,ecr); end
 else
     % --- sg_breaker_trip only (no firmware, F2) ---
@@ -2571,7 +2713,19 @@ handler_log.selected_gfm_indices=selected_after;
 handler_log.reference_resource_index=ref_after;
 handler_log.owner_after=ref_after;
 handler_log.reference_recovered=owner_lost;
-if owner_lost && settings.support_transition_certificate_enabled
+if owner_lost && isfield(case_data,'study_capability')
+    [cert_ok,cert_reason,~]=ne39_private_transition_trial( ...
+        t,x_right,y_right,u_right,ec_right,Y,dae,case_data,candidate,opt, ...
+        settings.kcl_tol);
+    if ~cert_ok
+        handler_log.failure_id='stability:gfm_selection:transitionEvidenceMissing';
+        reason=sprintf(['NE39 reference recovery after %s refused: %s'], ...
+            char(dev_t.device_id),cert_reason);
+        handler_log.details=reason;
+        ok=false;
+        x_right=x; y_right=y; u_right=u; ec_right=ec; return;
+    end
+elseif owner_lost && settings.support_transition_certificate_enabled
     [cert_ok,cert_reason]=stability.certify_support_transition( ...
         t,x_right,y_right,u_right,ec_right,Y,dae,settings,candidate);
     if ~cert_ok
@@ -2949,6 +3103,64 @@ else
 end
 end
 
+function [ok,reason,audit]=ne39_private_transition_trial( ...
+    t,x,y,u,ec,Y,dae,case_data,candidate,opt,kcl_tol)
+%NE39_PRIVATE_TRANSITION_TRIAL เรียก certify บน right state ที่ยังไม่ publish.
+%   refusal คืน false โดยไม่แตะ live x/y/u/mode; PASS ของ certify ไม่ได้ตั้ง
+%   commit_authorized — caller เป็นผู้ตัดสินหลัง trial นี้ผ่าน.
+ok=false; reason=''; audit=struct();
+resources=[];
+if isfield(opt,'resources') && isstruct(opt.resources) && ~isempty(opt.resources)
+    resources=opt.resources;
+end
+if isempty(resources)
+    reason='NE39 transition trial lacks authenticated resources.'; return;
+end
+if ~isfield(case_data,'synchronism') || ~isstruct(case_data.synchronism)
+    reason='NE39 transition trial lacks declared synchronism bounds.'; return;
+end
+sync=case_data.synchronism;
+f0=case_data.base_values.frequency_Hz;
+% dV/df/dtheta ของ synchronism เป็นแถบ dwell ไม่ใช่ขีด snapshot.
+% แรงดันใช้ช่วง operating ของบัส TAMU (0.9-1.1 pu).
+% ความถี่ใช้ +/-0.5 Hz ซึ่งกว้างกว่าแถบ dwell. มุม slip ใช้ 180 deg.
+bounds=struct('v_min',0.9,'v_max',1.1,'f_min',f0-0.5,'f_max',f0+0.5);
+trial_dt=option(opt,'dt',0.01);
+% horizon มาจาก omega ของ candidate; budget ต้องครอบ dt และ dt/2
+% โดยไม่ตัด trial ให้สั้นกว่าที่ certify กำหนด.
+if ~isfield(candidate,'omega') || ~isscalar(candidate.omega) || ...
+        ~isfinite(candidate.omega) || candidate.omega>=0
+    reason='NE39 transition trial lacks a stable candidate decay rate.'; return;
+end
+trial_horizon=max(log(1/option(opt,'rho',case_data.delays.rho))/ ...
+    (-candidate.omega),sync.dwell_s);
+if isfield(candidate,'physical_eigenvalues') && isnumeric(candidate.physical_eigenvalues)
+    osc=candidate.physical_eigenvalues(imag(candidate.physical_eigenvalues)~=0);
+    if ~isempty(osc)
+        [~,j]=max(real(osc)); period=2*pi/abs(imag(osc(j)));
+        trial_horizon=ceil(trial_horizon/period)*period;
+    end
+end
+% budget ครอบ horizon เดียวกับ certify; เกินงบต้อง refuse ไม่ตัดเวลา trial.
+trial_steps=min(32000,ceil(2*trial_horizon/trial_dt)+8);
+trial_opt=struct('dt',trial_dt,'max_steps',trial_steps, ...
+    'rho',option(opt,'rho',case_data.delays.rho), ...
+    'sync_dwell',sync.dwell_s,'newton_tol',option(opt,'newton_tol',1e-8), ...
+    'max_iter',option(opt,'max_iter',50),'fd_eps',option(opt,'fd_eps',3e-6), ...
+    'kcl_tol',kcl_tol,'energy_tol_pu_s',1e-6, ...
+    'refinement_tol',1e-5,'slip_limit_deg',180);
+try
+    [ok,audit]=stability.certify_ne39_transition(t,x,y,u,ec,Y,dae, ...
+        resources,case_data,bounds,candidate,trial_opt);
+catch me
+    reason=sprintf('%s: %s',me.identifier,me.message); return;
+end
+if ~ok
+    reason=sprintf('NE39 private transition trial refused: %s (%s).', ...
+        char(string(audit.status)),char(string(audit.reason)));
+end
+end
+
 function hl = auth_fail_log(failure_id, details)
 %AUTH_FAIL_LOG  Uniform handler_log for an authentication failure that must
 %   publish NO right sample and commit NO candidate. Preserves the
@@ -3027,7 +3239,8 @@ if nargin < 15
 end
 ok=false; x_right=x; y_right=y; u_right=u; ec_right=ec;
 handler_log=struct('details',''); reason=''; right_norm=inf;
-if sg_online_state(dae,ec)
+ne39_support=isstruct(case_data) && isfield(case_data,'study_capability');
+if sg_online_state(dae,ec) && ~ne39_support
     reason='SG-off support transaction rejected because an SG is online.';
     return;
 end
@@ -3182,7 +3395,21 @@ condition_audit=struct('applied',false,'device_indices',[],'device_ids',{{}}, ..
 cert_audit=struct();
 commit_variant='unconditioned';
 
-if ~settings.support_transition_certificate_enabled
+if ne39_support
+    x_right=x_plain;
+    [ok,y_right,reason,right_norm]=right_limit( ...
+        x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+    if ok
+        [trial_ok,trial_reason,~]=ne39_private_transition_trial( ...
+            t,x_right,y_right,u_right,ec_right,Y,dae,case_data,candidate, ...
+            settings,settings.kcl_tol);
+        if ~trial_ok
+            ok=false;
+            reason=sprintf('NE39 support transition refused: %s',trial_reason);
+            x_right=x; y_right=y; u_right=u; ec_right=ec; return;
+        end
+    end
+elseif ~settings.support_transition_certificate_enabled
     % ---- Default path: byte-identical to the pre-AGSI-2026-08-14 behaviour.
     % No incumbent conditioning and no trial. The A/B/C measurement at the
     % t=22.05 commit proved that conditioning is NOT universally beneficial
@@ -3437,7 +3664,7 @@ end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
     reselection_transaction(t, x, y, Y, u, ec, dae, settings, target_modes, ...
-    target_selected, authority)
+    target_selected, authority, case_data)
 %RESELECTION_TRANSACTION  Commit an already-authorized Phase-2 target.
 %   Authority is established outside the transaction by either the dynamic
 %   severity supervisor or the legacy authenticated SG_ON selector.  This
@@ -3476,6 +3703,7 @@ if isempty(changing)
         authority,t);
     return;
 end
+if nargin<12, case_data=struct(); end
 ec_right=ec;
 ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(ec.hybrid_state);
 for k=1:numel(changing)
@@ -3508,6 +3736,14 @@ end
 ec_right.hybrid_state=hs;
 [ok,y_right,reason,right_norm]=right_limit( ...
     x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
+if ok && isfield(case_data,'study_capability')
+    % target ของ reselection ไม่มี omega/spectrum ที่ authenticate แล้ว
+    % จึงยังไม่มี private trial ให้เรียก. ไม่ publish จาก right-limit อย่างเดียว.
+    ok=false;
+    reason='NE39 reselection lacks an authenticated transition spectrum (transitionEvidenceMissing).';
+    x_right=x; y_right=y; u_right=u; ec_right=ec;
+    return;
+end
 if ok
     handler_log.details=sprintf('%s reselection committed at t=%.3f; %d device(s) transitioned.', ...
         authority,t,numel(changing));
@@ -3565,12 +3801,13 @@ current_gfm=online_ibr(mask);
 severity=severity_all(mask);
 end
 
-function [ok, online_ibr, severity] = online_ibr_severity( ...
+function [ok, online_ibr, severity, components] = online_ibr_severity( ...
     t, x, y, u, ec, dae, settings)
 %ONLINE_IBR_SEVERITY  Complete two-term AGSI evidence for every online IBR.
 %   The scalar contains only J_V and J_f.  Feasibility, SSSA margin, current
 %   limits, and reference ownership remain separate non-tradeable gates.
 ok=false; online_ibr=[]; severity=[];
+components=struct('Jv',[],'Jf',[],'f_coi_hz',NaN);
 nd=numel(dae.devices);
 freq=nan(1,nd); inertia=nan(1,nd); online=false(1,nd);
 rec_cache=cell(1,nd);
@@ -3589,10 +3826,14 @@ for k=1:nd
     end
     online(k)=logical(rec.online);
     if ~online(k), continue; end
-    if strcmpi(char(rec.mode),'sg') && isfield(rec,'omega') && ...
-            isfinite(rec.omega) && isfield(rec,'H_system') && ...
-            isfinite(rec.H_system) && rec.H_system>0
-        freq(k)=settings.severity_f0_Hz*(1+rec.omega);
+    if any(strcmpi(char(rec.mode),{'sg','synchronous'})) && ...
+            isfield(rec,'omega') && isfinite(rec.omega) && ...
+            isfield(rec,'H_system') && isfinite(rec.H_system) && rec.H_system>0
+        if strcmpi(char(rec.mode),'synchronous')
+            freq(k)=settings.severity_f0_Hz*rec.omega; % classical: absolute pu speed.
+        else
+            freq(k)=settings.severity_f0_Hz*(1+rec.omega); % detailed SG: deviation.
+        end
         inertia(k)=rec.H_system;
     elseif strcmpi(char(rec.mode),'gfm') && ...
             isfield(rec,'gfm') && isstruct(rec.gfm) && ...
@@ -3620,6 +3861,8 @@ for k=1:nd
     end
 end
 severity=nan(1,numel(online_ibr));
+components.Jv=nan(size(severity)); components.Jf=nan(size(severity));
+components.f_coi_hz=fcoi;
 for q=1:numel(online_ibr)
     k=online_ibr(q); dev=dae.devices(k); bp=dev.bus_position;
     if ~isscalar(bp) || bp<1 || 2*bp>numel(y), return; end
@@ -3629,6 +3872,7 @@ for q=1:numel(online_ibr)
     vref=settings.healthy_pf_V(ref_idx);
     Jv=abs(Vm-vref)/settings.severity_dV_base;
     Jf=abs(fcoi-settings.severity_f0_Hz)/settings.severity_df_base_Hz;
+    components.Jv(q)=Jv; components.Jf(q)=Jf;
     severity(q)=min(1,max(0,0.5*Jv+0.5*Jf));
 end
 ok=all(isfinite(severity));
@@ -3923,13 +4167,13 @@ end
 u_candidate=u_candidate(:);
 for k=1:numel(dae.devices)
     dev=dae.devices(k);
-    % Both project-owned P/Q-reference dual families are covered: the 16-state
-    % coupled-swing model and the 17-state decoupled-swing model. A family left
-    % out of this list is skipped silently, so the committed configuration would
-    % run against the PREVIOUS operating point (RECLOSE-2026-08-13-01).
+    % The project-owned P/Q-reference dual family is covered: the 16-state
+    % coupled-swing model. A family left out of this list is skipped silently,
+    % so the committed configuration would run against the PREVIOUS operating
+    % point (RECLOSE-2026-08-13-01).
     if ~isfield(dev,'device_type') || ...
             ~any(strcmpi(char(dev.device_type), ...
-                {'ibr_eecon49_dual','ibr_decoupled_dual'}))
+                {'ibr_eecon49_dual'}))
         continue;
     end
     for wanted=["P_ref","Q_ref"]
@@ -4099,6 +4343,68 @@ s.t(end+1)=t; s.x(:,end+1)=x(:); s.y(:,end+1)=y(:); s.u(:,end+1)=u(:);
 s.side{end+1}=side; s.topology{end+1}=topology;
 s.context{end+1}=ec; s.active{end+1}=active(:)';
 s.transaction_id(end+1)=tx_id;
+if isfield(s,'rate_accumulator')
+    s=record_accepted_rates(s,t,x,y,u,ec);
+end
+end
+
+function s=record_accepted_rates(s,t,x,y,u,ec)
+% เรียกเฉพาะ accepted sample/atomic right limit ไม่ถูกเรียกจาก trial solver.
+dev=s.rate_devices; xo=0; uo=0;
+sample=repmat(struct('device_index',0,'mode','','online',false, ...
+    'f_hz',NaN,'v_mag',NaN,'fdot_hz_s',NaN),1,numel(dev));
+for k=1:numel(dev)
+    d=dev(k); xd=x(xo+(1:d.nx)); ud=u(uo+(1:d.nu));
+    q=stability.et_fcs_device_frequency(d,t,xd,y,ud,ec,s.rate_case);
+    bp=d.bus_position;
+    sample(k)=struct('device_index',k,'mode',q.mode,'online',q.online, ...
+        'f_hz',q.f_hz,'v_mag',abs(complex(y(2*bp-1),y(2*bp))), ...
+        'fdot_hz_s',q.fdot_hz_s);
+    xo=xo+d.nx; uo=uo+d.nu;
+end
+[s.rate_accumulator,staged]=s.rate_accumulator.step(t,sample,true);
+s.rate_log{end+1}=staged;
+if isfield(s,'ne39_policy')
+    [sev_ok,idx,sev,components]=online_ibr_severity(t,x,y,u,ec,s.ne39_dae,s.ne39_settings);
+    epoch=[[staged.device_index];[staged.epoch]];
+    % ทุก resource epoch รวม SG ต้องตรง; event right limit เริ่ม dwell ใหม่.
+    duplicate=~isempty(s.ne39_decision_log) && ...
+        t<=s.ne39_decision_log{end}.t;
+    if ~isequal(epoch,s.ne39_epoch) || duplicate
+        s.ne39_policy_state=struct();
+    end
+    s.ne39_epoch=epoch;
+    [aligned,found]=ismember(idx,[staged.device_index]);
+    aligned_ok=all(aligned) && sev_ok;
+    input=struct('severity',sev,'v_pu',nan(size(idx)), ...
+        'f_hz',nan(size(idx)),'rocof_hz_s',nan(size(idx)), ...
+        'rocov_pu_s',nan(size(idx)),'valid',false(size(idx)));
+    if aligned_ok
+        input.v_pu=[sample(found).v_mag];
+        input.f_hz=[staged(found).f_hz];
+        input.rocof_hz_s=[staged(found).rocof_hz_s];
+        input.rocov_pu_s=[staged(found).rocov_pu_s];
+        input.valid=[staged(found).valid];
+    end
+    [decision,s.ne39_policy_state]=stability.ne39_rate_policy( ...
+        t,input,s.ne39_policy_state,s.ne39_policy);
+    decision.t=t; decision.device_indices=idx; decision.sample=input;
+    decision.si_components=components;
+    decision.trigger_argmax=struct('si',NaN,'rocof',NaN,'rocov',NaN);
+    if decision.valid && ~isempty(idx)
+        [~,j]=max(input.severity); decision.trigger_argmax.si=idx(j);
+        [~,j]=max(abs(input.rocof_hz_s)); decision.trigger_argmax.rocof=idx(j);
+        [~,j]=max(abs(input.rocov_pu_s)); decision.trigger_argmax.rocov=idx(j);
+    end
+    decision.epoch=epoch; decision.commit_authorized=false;
+    decision.commit_gate='TRANSITION_EVIDENCE_REQUIRED';
+    if sg_online_state(s.ne39_dae,ec)
+        decision.support_context='SG_ON_AUGMENTATION_NOT_CONNECTED';
+    else
+        decision.support_context='SG_OFF_AUTHENTICATED_SELECTION_REQUIRED';
+    end
+    s.ne39_decision_log{end+1}=decision;
+end
 end
 
 function s=mark_transaction_left(s,t,x,y,u,ec,active,topology,tx_id)
@@ -4464,6 +4770,10 @@ if ~sched.enabled || ~sched_flag(sched,'has_sync_controller', ...
     return;
 end
 k=find(strcmp({dae.devices.device_id},sched.sg_id));
+if numel(k)==1 && strcmp(dae.devices(k).device_type,'sg_classical')
+    % Classical SG คง Pm/Emag เดิม; ไม่เติม governor/AVR เพื่อบังคับ reclose.
+    return;
+end
 if numel(k)~=1 || dae.devices(k).nx~=6
     error('ts_simulate_ibr_hybrid:syncControllerSg', ...
         'Chronology synchronizer requires one six-state SG.');

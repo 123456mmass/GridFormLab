@@ -64,6 +64,11 @@ if ~isfield(cand,'fd_zeta_worsts'), cand.fd_zeta_worsts = []; end
 if ~isfield(cand,'zeta_min'), cand.zeta_min = NaN; end
 if ~isfield(cand,'zeta_worst'), cand.zeta_worst = NaN; end
 if ~isfield(cand,'zeta_margin'), cand.zeta_margin = NaN; end
+% Evidence surfacing fields (uniform on EVERY return path so the returned
+% candidate keeps the caller's struct schema -- e.g. ibr_config_selector's
+% candidate_template -- and a struct-array append never sees a dissimilar shape).
+if ~isfield(cand,'measured'), cand.measured = struct(); end
+if ~isfield(cand,'evidence'), cand.evidence = []; end
 
 % --- gamma_req frozen check ---
 % gamma_req is retained as the candidate ORDERING key and the reference decay
@@ -185,9 +190,26 @@ elseif ~sg_online_context && isfield(case_data,'dispatch_contract') && ...
         dispatch = case_data.dispatch_contract.post_trip.post_trip_Pg_MW;
     end
 end
+if sg_online_context && isfield(case_data,'study_capability') && ...
+        ~has_dispatch_values(dispatch)
+    pre = case_data.dispatch_contract.pre_fault;
+    ii = find(strcmpi({resources.resource_type},'ibr'));
+    for k=ii
+        id = char(resources(k).resource_id);
+        dispatch.(id) = pre.(id);
+    end
+end
 if ~sg_online_context && is_source_full_state_resources(resources)
-    dispatch=mode_aware_source_dispatch(case_data,resources, ...
-        cand.selected_gfm_indices,dispatch);
+    try
+        dispatch=mode_aware_source_dispatch(case_data,resources, ...
+            cand.selected_gfm_indices,dispatch);
+    catch me
+        cand.reason = me.message;
+        cand.failure_id = me.identifier;
+        cand.feasible = false;
+        cand.ready_to_commit = false;
+        return;
+    end
 end
 % Also check opt.scenario_opt.dispatch
 if isfield(opt,'scenario_opt') && isstruct(opt.scenario_opt) && ...
@@ -213,15 +235,23 @@ try
     % build_mixed_resource_devices uses resources.initial_mode, not scenario_opt.
     % So we will generate temporary resources copy with updated initial_mode
     resources_tmp = resources;
+    [sg_off_mask,sg_mask_id,sg_mask_msg] = ne39_sg_off_mask( ...
+        case_data,resources_tmp,sg_online_context);
+    if ~isempty(sg_mask_id)
+        cand.reason = sg_mask_msg;
+        cand.failure_id = sg_mask_id;
+        cand.feasible = false;
+        cand.ready_to_commit = false;
+        return;
+    end
     for k=1:numel(resources_tmp)
         resource_type = lower(char(resources_tmp(k).resource_type));
-        sg_online = isfield(opt,'sg_online') && isscalar(opt.sg_online) && ...
-            logical(opt.sg_online);
-        if strcmp(resource_type,'sg') && ~sg_online
+        this_sg_off = sg_off_mask(k);
+        if strcmp(resource_type,'sg') && this_sg_off
             % The selector owns the post-SG-trip configuration contract.
-            % Evaluate the candidate with every SG breaker open; leaving the
-            % source online here would test a different physical system and
-            % falsely certify/reject the requested GFM subset.
+            % Evaluate the candidate with the scheduled SG breaker(s) open;
+            % leaving the source online here would test a different physical
+            % system and falsely certify/reject the requested GFM subset.
             resources_tmp(k).initial_online = false;
             if any(strcmpi(string(resources_tmp(k).supported_modes),'breaker_open'))
                 resources_tmp(k).initial_mode = 'breaker_open';
@@ -261,9 +291,8 @@ try
         end
         is_sg = isfield(devices(k),'capabilities') && ...
             strcmpi(char(devices(k).capabilities.resource_type),'sg');
-        sg_online = isfield(opt,'sg_online') && isscalar(opt.sg_online) && ...
-            logical(opt.sg_online);
-        if is_sg && ~sg_online
+        sg_is_off = sg_off_mask(k);
+        if is_sg && sg_is_off
             hs.device_online.(key) = false;
             hs.device_modes.(key) = 'breaker_open';
         elseif ismember(k, cand.selected_gfm_indices)
@@ -351,6 +380,29 @@ cand.eq_context = eq_result.equilibrium_context;
 cand.eq_active_indices = eq_result.active_state_indices;
 cand.eq_rcond = eq_result.rcond;
 cand.eq_partition = eq_result.partition;
+
+% --- Physical evidence surfacing (this seam OWNS it) ----------------------
+% Uniform ABI: every physical-evidence field carries {id, applicable, status,
+% value, provenance}.  A field is NEVER left as bare NaN/false to be silently
+% ignored -- a missing capability is a NAMED status the caller must honour.
+%   status values:
+%     'MEASURED'               - value is a real measurement (see provenance)
+%     'PENDING_DEVICE_SURFACE' - physically required, but the device/builder
+%                                does not yet expose the input; NOT satisfied
+%     'NOT_APPLICABLE'         - genuinely not part of THIS context
+% current/P-Q ใช้ค่าที่วัดจริงจาก equilibrium เทียบ limits ที่ประกาศ.
+% NE39 study เพิ่ม steady DC reserve จาก fixed plant ใน final gate ด้านล่าง.
+% Synchronism/transition เป็นหลักฐานคนละบริบท ไม่รับรองจาก steady equilibrium.
+try
+    cand.measured = measure_equilibrium(devices, eq_result, case_data);
+catch me
+    cand.measured = evidence_field('measured',false,'PENDING_DEVICE_SURFACE',[], ...
+        sprintf('equilibrium measurement failed: %s', me.message));
+end
+% Per-item records are assembled as cand.evidence at the FINAL decision below
+% (equilibrium/SSSA/P-Q PASS with real values; current-limit, dc-reserve and the
+% GFL<->GFM transition-continuity item are PENDING_DEVICE_SURFACE -- no surrogate
+% is fabricated; the steady synchronism item is NOT_APPLICABLE).
 
 % --- Full-KCL SSSA evaluation ---
 cand.sssa_evaluated = false;
@@ -487,6 +539,144 @@ cand.reason = sprintf(['feasible: KCL %.2e, robust zeta %.4g >= %.4g ' ...
     numel(cand.physical_eigenvalues));
 cand.failure_id = '';
 
+% Physical-evidence records consumed by the lazy selector's certificate gate
+% (stability.ibr_selector_search_lazy/evidence_records_pass).  STRICT rule: only
+% records that are TRUE for THIS (steady) context are emitted; every emitted
+% applicable record carries a REAL value and a PASS word.  Items that belong to a
+% DIFFERENT certificate context (dc_reserve -> the GFM-capability/transition
+% decision; synchronism_transition -> the GFL<->GFM mode-change continuity check)
+% are deliberately NOT emitted here: a PENDING placeholder would (correctly) be
+% rejected by the strict gate and would falsely condemn every steady candidate,
+% and emitting a value we cannot compute would be fabrication.  Those certs are
+% owned by their own contexts, not this steady selector.
+cand.evidence = build_evidence_records(cand, resources, case_data);
+if isfield(case_data,'study_capability')
+    % steady reserve ของ plant เดิม ไม่อ้างว่า transition/synchronism ผ่าน.
+    dc = stability.ibr_dc_steady_reserve(devices,resources,eq_result,case_data);
+    cand.evidence(end+1) = dc;
+    cand.dc_reserve_MW = dc.value;
+    pqr = pq_limits_record(cand,resources);
+    ir = current_limit_record(cand,resources);
+    cand.within_limits = ~isempty(pqr) && ~isempty(ir) && ...
+        strcmp(pqr.status,'PASS') && strcmp(ir.status,'PASS');
+    if ~cand.within_limits || ~strcmp(dc.status,'PASS')
+        cand.feasible = false;
+        cand.ready_to_commit = false;
+        cand.failure_id = 'stability:ibr_candidate_evaluate:studyCapability';
+        cand.reason = 'Study current/P-Q/DC steady evidence is missing or failed.';
+    end
+end
+
+end
+
+function recs = build_evidence_records(cand, resources, case_data)
+%BUILD_EVIDENCE_RECORDS  Certificate-gate records for one certified candidate.
+%   Assembled only on the all-gates-pass path, so the items that were gated
+%   above (physical KCL, equilibrium, full-KCL SSSA) carry their real value.
+recs = evidence_field('equilibrium_balance', true, 'PASS', ...
+    cand.physical_kcl_norm, ...
+    'physical KCL residual at the accepted equilibrium (<=1e-6 gate)');
+recs(end+1) = evidence_field('equilibrium_rcond', true, ...
+    tf_word(isfinite(cand.eq_rcond) && cand.eq_rcond > 0), cand.eq_rcond, ...
+    'reciprocal condition number of the accepted equilibrium Jacobian');
+recs(end+1) = evidence_field('sssa_full_kcl', true, 'PASS', cand.zeta_worst, ...
+    'full-KCL SSSA worst damping ratio over the robust perturbed spectra');
+r = pq_limits_record(cand, resources);
+if ~isempty(r)
+    recs(end+1) = r;
+end
+r = current_limit_record(cand, resources);
+if ~isempty(r)
+    recs(end+1) = r;
+end
+recs(end+1) = evidence_field('synchronism_steady', false, ...
+    'NOT_APPLICABLE', NaN, ...
+    ['synchronism applies at reconnect/handback, not to a steady candidate ' ...
+     'equilibrium; waived as SYNCHRON-steady (not TRANSITION)']);
+end
+
+function r = current_limit_record(cand, resources)
+%CURRENT_LIMIT_RECORD  Measured per-device |I| vs the declared machine-base Imax.
+%   Convention (from +ibr/gfl_eecon49_full_model: line 57 `id0=kappa*P_ref/Vmag`,
+%   line 166 `I_inv = I*kappa`): kappa = Sbase/Mbase and the device's
+%   current_injection returns the SYSTEM-base current, so the MACHINE-base
+%   current is I_sys*kappa and the declared Imax (ImaxSS) is in MACHINE pu.
+%   Utilisation = (|I_sys|*kappa)/Imax, dimensionless, PASS if <=1.  Requires
+%   the ACTUAL Sbase/Mbase metadata -- a missing base is NOT defaulted to
+%   kappa=1 (that would silently rescale a real limit by ~5-65x); the item is
+%   omitted instead.  Real comparison (MW/MVAr-free).
+compared = false; ok = true; worst = -Inf;
+if isfield(cand,'measured') && isstruct(cand.measured) && ...
+        isfield(cand.measured,'value')
+    rows = cand.measured.value;
+    for k = 1:numel(rows)
+        idx = find(strcmpi({resources.resource_id}, rows(k).resource_id), 1);
+        if isempty(idx), continue; end
+        R = resources(idx);
+        if ~isfield(R,'limits') || ~isfield(R.limits,'ImaxSS') || ...
+                ~isscalar(R.limits.ImaxSS) || ~isfinite(R.limits.ImaxSS) || ...
+                R.limits.ImaxSS <= 0
+            continue;
+        end
+        if ~isfield(R,'ratings') || ~isstruct(R.ratings) || ...
+                ~isfield(R.ratings,'Sbase') || ~isfield(R.ratings,'Mbase') || ...
+                ~isscalar(R.ratings.Sbase) || R.ratings.Sbase <= 0 || ...
+                ~isscalar(R.ratings.Mbase) || R.ratings.Mbase <= 0
+            continue;   % no real base contract -> emit nothing (no kappa=1 guess)
+        end
+        kappa = R.ratings.Sbase / R.ratings.Mbase;
+        compared = true;
+        u = (rows(k).I_pu * kappa) / R.limits.ImaxSS;
+        worst = max(worst, u); ok = ok && (u <= 1 + 1e-6);
+    end
+end
+if ~compared
+    r = [];   % no declared Imax/base to compare against -> omit
+    return;
+end
+r = evidence_field('current_limit', true, tf_word(ok), worst, ...
+    'measured |I|*kappa vs declared machine-base Imax; value = worst utilisation');
+end
+
+function r = pq_limits_record(cand, resources)
+%PQ_LIMITS_RECORD  Measured per-device P/Q vs the resource's declared limits.
+%   Only finite, positive declared limits are compared (MW/MVAr -- unambiguous
+%   units), so the comparison is REAL, never a surrogate.  value is the worst
+%   utilisation (fraction of the declared limit).  When NO resource declares a
+%   finite limit the item returns EMPTY and is omitted -- a missing limit check
+%   is not silently PASSed.
+compared = false; ok = true; worst = -Inf;
+if isfield(cand,'measured') && isstruct(cand.measured) && ...
+        isfield(cand.measured,'value')
+    rows = cand.measured.value;
+    for k = 1:numel(rows)
+        idx = find(strcmpi({resources.resource_id}, rows(k).resource_id), 1);
+        if isempty(idx) || ~isfield(resources(idx),'limits'), continue; end
+        L = resources(idx).limits;
+        if isfield(L,'Pmax_MW') && isscalar(L.Pmax_MW) && ...
+                isfinite(L.Pmax_MW) && L.Pmax_MW > 0
+            compared = true;
+            u = rows(k).P_MW / L.Pmax_MW;
+            worst = max(worst, u); ok = ok && (u <= 1 + 1e-6);
+        end
+        if isfield(L,'Qmax_MVAr') && isscalar(L.Qmax_MVAr) && ...
+                isfinite(L.Qmax_MVAr) && L.Qmax_MVAr > 0
+            compared = true;
+            u = abs(rows(k).Q_MVAr) / L.Qmax_MVAr;
+            worst = max(worst, u); ok = ok && (u <= 1 + 1e-6);
+        end
+    end
+end
+if ~compared
+    r = [];   % no declared limit to compare against -> omit (not a PENDING reject)
+    return;
+end
+r = evidence_field('pq_limits', true, tf_word(ok), worst, ...
+    'measured P/Q (MW/MVAr) vs declared resource Pmax/Qmax; value = worst utilisation');
+end
+
+function w = tf_word(tf)
+if tf, w = 'PASS'; else, w = 'FAIL'; end
 end
 
 function z = worst_damping_ratio(lambda)
@@ -515,26 +705,136 @@ zeta(~(mag > 0)) = -Inf;
 z = min(zeta);
 end
 
+function e = evidence_field(id, applicable, status, value, provenance)
+e = struct('id',char(id),'applicable',logical(applicable),'status',char(status), ...
+    'value',value,'provenance',char(provenance));
+end
+
+function e = measure_equilibrium(devices, eq_result, case_data)
+%MEASURE_EQUILIBRIUM  Real per-device P/Q/|I|/|V| at the accepted equilibrium.
+%   An EVIDENCE table, not a gate.  I is the device's own current_injection at
+%   y0 (system pu), P/Q in MW/MVAr on case_data.mpc.baseMVA.
+Sbase = case_data.mpc.baseMVA;
+y0 = eq_result.y0; V = complex(y0(1:2:end), y0(2:2:end));
+nd = numel(devices); xo = 0; uo = 0;
+rows = repmat(struct('resource_id','','P_MW',NaN,'Q_MVAr',NaN, ...
+    'I_pu',NaN,'V_pu',NaN), 1, nd);
+for k = 1:nd
+    d = devices(k);
+    x = eq_result.x0(xo+(1:d.nx)); u = eq_result.u_eq(uo+(1:d.nu));
+    I = d.current_injection(0, x, y0, u, eq_result.equilibrium_context);
+    S = V(d.bus_position)*conj(I);
+    rows(k) = struct('resource_id',char(d.device_id),'P_MW',real(S)*Sbase, ...
+        'Q_MVAr',imag(S)*Sbase,'I_pu',abs(I),'V_pu',abs(V(d.bus_position)));
+    xo = xo + d.nx; uo = uo + d.nu;
+end
+e = struct('id','measured','applicable',true,'status','MEASURED', ...
+    'value',rows, ...
+    'provenance','device.current_injection at the accepted equilibrium y0');
+end
+
+function [mask,failure_id,msg] = ne39_sg_off_mask(case_data,resources,sg_online)
+%NE39_SG_OFF_MASK  mask ของ SG ที่ breaker เปิดใน context นี้.
+%   SG_ON เป็น false ทั้งแถว. SG_OFF ของ NE39 ใช้ post_trip partition:
+%   tripped=true, remaining=false, IBR=false. composition ที่ไม่มีสัญญา
+%   remaining ยังเป็น all-SG-off ตามเส้นทาง IEEE14 เดิม.
+mask = false(numel(resources),1);
+failure_id = '';
+msg = '';
+if sg_online, return; end
+has_partial = isfield(case_data,'study_capability') && ...
+    isfield(case_data,'dispatch_contract') && ...
+    isfield(case_data.dispatch_contract,'post_trip') && ...
+    isfield(case_data.dispatch_contract.post_trip,'sg_ids') && ...
+    isfield(case_data.dispatch_contract.post_trip,'remaining_sg_ids');
+if ~has_partial
+    for k = 1:numel(resources)
+        if isfield(resources(k),'resource_type') && ...
+                strcmpi(char(resources(k).resource_type),'sg')
+            mask(k) = true;
+        end
+    end
+    return;
+end
+post = case_data.dispatch_contract.post_trip;
+tripped = cellstr(string(post.sg_ids));
+remaining = cellstr(string(post.remaining_sg_ids));
+sg_ids = {};
+for k = 1:numel(resources)
+    if ~isfield(resources(k),'resource_type') || ...
+            ~strcmpi(char(resources(k).resource_type),'sg')
+        continue;
+    end
+    id = char(resources(k).resource_id);
+    sg_ids{end+1} = id; %#ok<AGROW>
+    in_trip = any(strcmp(tripped,id));
+    in_remain = any(strcmp(remaining,id));
+    if in_trip == in_remain
+        failure_id = 'stability:ibr_candidate_evaluate:contingencyMismatch';
+        msg = sprintf('SG %s must be tripped or remaining, not both or neither.',id);
+        return;
+    end
+    mask(k) = in_trip;
+end
+if numel(unique(tripped)) ~= numel(tripped) || ...
+        numel(unique(remaining)) ~= numel(remaining) || ...
+        ~isequal(sort([tripped remaining]),sort(sg_ids))
+    failure_id = 'stability:ibr_candidate_evaluate:contingencyMismatch';
+    msg = 'NE39 post-trip SG ids must partition every SG exactly once.';
+    mask(:) = false;
+end
+end
+
 function tf = has_dispatch_values(dispatch)
 tf = isstruct(dispatch) && isscalar(dispatch) && ...
     ~isempty(fieldnames(dispatch));
 end
 
 function tf=is_source_full_state_resources(resources)
-% Both project full-state dual families use the mode-aware source dispatch
-% contract: 'eecon49_dual' (16-state, coupled swing) and 'decoupled_dual'
-% (17-state, decoupled swing).  Omitting a family here does not throw; it
-% silently selects the fallback dispatch and therefore a different operating
-% point, so the list must be kept complete.
+% The project full-state dual family uses the mode-aware source dispatch
+% contract: 'eecon49_dual' (16-state, coupled swing).  Omitting the family here
+% does not throw; it silently selects the fallback dispatch and therefore a
+% different operating point, so the list must be kept complete.
 ibr_idx=find(arrayfun(@(r)isfield(r,'resource_type') && ...
     strcmpi(char(r.resource_type),'ibr'),resources));
 tf=~isempty(ibr_idx) && all(arrayfun(@(k)isfield(resources(k),'model_id') && ...
     any(strcmpi(char(resources(k).model_id), ...
-        {'eecon49_dual','decoupled_dual'})),ibr_idx));
+        {'eecon49_dual'})),ibr_idx));
 end
 
 function dispatch=mode_aware_source_dispatch(case_data,resources,selected,fallback)
 dispatch=fallback;
+if isfield(case_data,'study_capability')
+    % NE39 ใช้ dispatch เดียวกับ runtime ไม่แจก deficit ซ้ำตาม selected modes.
+    % sg_ids เป็น SG ที่ trip ไม่ใช่ทุก SG ใน composition; remaining ต้อง partition ครบ.
+    if ~isfield(case_data.dispatch_contract.post_trip,'post_trip_Pg_MW') || ...
+            ~isfield(case_data.dispatch_contract.post_trip,'sg_ids') || ...
+            ~isfield(case_data.dispatch_contract.post_trip,'remaining_sg_ids')
+        error('stability:ibr_candidate_evaluate:missingContingencyDispatch', ...
+            'NE39 requires an explicit contingency-specific post-trip dispatch.');
+    end
+    post=case_data.dispatch_contract.post_trip;
+    expected=cellstr(string({resources(strcmpi({resources.resource_type},'sg')).resource_id}));
+    tripped=cellstr(string(post.sg_ids));
+    remaining=cellstr(string(post.remaining_sg_ids));
+    if numel(unique(tripped))~=numel(tripped) || numel(unique(remaining))~=numel(remaining) || ...
+            ~isempty(intersect(tripped,remaining)) || ...
+            ~isequal(sort([tripped remaining]),sort(expected))
+        error('stability:ibr_candidate_evaluate:contingencyMismatch', ...
+            'NE39 post-trip SG ids must partition every SG exactly once.');
+    end
+    dispatch=post.post_trip_Pg_MW;
+    ii=find(strcmpi({resources.resource_type},'ibr'));
+    for k=ii
+        id=char(resources(k).resource_id);
+        if ~isfield(dispatch,id) || ~isnumeric(dispatch.(id)) || ...
+                ~isscalar(dispatch.(id)) || ~isreal(dispatch.(id)) || ~isfinite(dispatch.(id))
+            error('stability:ibr_candidate_evaluate:badModeAwareDispatch', ...
+                'Post-trip dispatch for %s must be finite real MW.',id);
+        end
+    end
+    return;
+end
 if ~isfield(case_data,'dispatch_contract') || ...
         ~isfield(case_data.dispatch_contract,'pre_fault') || ...
         ~isfield(case_data.dispatch_contract,'post_trip') || ...
@@ -563,11 +863,17 @@ deficit=case_data.dispatch_contract.post_trip.deficit_MW;
 for k=ibr_idx(:)'
     id=char(resources(k).resource_id);
     field=[id '_Pg_MW'];
-    if ~isfield(pre,field) || ~isfinite(pre.(field))
+    if isfield(pre,field) && isnumeric(pre.(field)) && isscalar(pre.(field)) && ...
+            isfinite(pre.(field))
+        val=pre.(field);                 % IEEE14 contract: <id>_Pg_MW
+    elseif isfield(pre,id) && isnumeric(pre.(id)) && isscalar(pre.(id)) && ...
+            isfinite(pre.(id))
+        val=pre.(id);                    % case-owned pre-fault dispatch in MW
+    else
         error('stability:ibr_candidate_evaluate:missingModeAwareDispatch', ...
-            'Pre-fault dispatch lacks %s.',field);
+            'Pre-fault dispatch lacks %s (or a numeric pre_fault.%s).',field,id);
     end
-    dispatch.(id)=pre.(field);
+    dispatch.(id)=val;
     pos=find(gfl_idx==k,1);
     if ~isempty(pos), dispatch.(id)=dispatch.(id)+deficit*weights(pos); end
 end

@@ -31,7 +31,15 @@ if ~any(strcmp(mode,{'et_fcsps','bo_replay'}))
     error('stability:et_fcs_production_trip_decision:badMode', ...
         'mode must be et_fcsps or bo_replay.');
 end
-policy = stability.et_fcs_policy_ieee14();
+% Policy is case-agnostic by default (stability.et_fcs_policy_generic, whose
+% values equal the historical IEEE14 contract). A caller -- e.g. the NE39 path
+% -- may supply an explicit frozen policy through opt.policy; the default is
+% never mutated and the alias et_fcs_policy_ieee14 returns the same contract.
+if isfield(opt,'policy') && isstruct(opt.policy) && ~isempty(opt.policy)
+    policy = opt.policy;
+else
+    policy = stability.et_fcs_policy_generic();
+end
 state = accepted_state(t,x,y,Y,ec,dae,case_data,resources);
 event = struct('event_id',sprintf('sg_trip@%.12g',t),'type','sg_trip', ...
     'authenticated',true,'local_request',false);

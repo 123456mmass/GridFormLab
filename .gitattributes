@@ -1,0 +1,2 @@
+# เก็บ benchmark source แบบ byte-identical รวม line endings เดิม.
+docs/benchmark_sources/ne39_tamu/** -text

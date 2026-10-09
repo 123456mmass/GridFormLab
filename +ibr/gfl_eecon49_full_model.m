@@ -64,6 +64,9 @@ iq0=-kappa*Q_ref/Vmag;
 nx_dev=10; if dcp.source_state, nx_dev=11; end
 x0=[id0;iq0;Vdc_ref;th0;0;id0/kiP;-iq0/kiQ;0;0;0];
 if dcp.source_state, x0(11)=dcp.Idc0; end
+if dcp.fixed_plant
+    x0=equilibrium(V0,P_ref,Q_ref,kappa,Vdc_ref,Lf,Rf,kiP,kiQ,dcp);
+end
 u0=[P_ref;Q_ref];
 % Runtime limiter-regime key. The current limiter and its anti-windup are
 % BRANCH SWITCHES recomputed inside every residual evaluation (:94, :115-116),
@@ -170,8 +173,9 @@ end
 function x=equilibrium(V,P,Q,k,Vdc,L,R,kiP,kiQ,dcp) %#ok<INUSD>
 if abs(V)<=0, error('ibr:gfl_eecon49:eq','low voltage.'); end
 th=angle(V); id=k*P/abs(V); iq=-k*Q/abs(V);
+[Vdc,Idc]=ibr.dc_source_equilibrium(dcp,k*P+R*(id^2+iq^2),Vdc);
 x=[id;iq;Vdc;th;0;id/kiP;-iq/kiQ;0;0;0];
-if dcp.source_state, x(11)=dcp.Idc0; end
+if dcp.source_state, x(11)=Idc; end
 end
 
 function n=state_names_for(nx)

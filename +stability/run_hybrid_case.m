@@ -195,6 +195,14 @@ end
 if isfield(opt,'fd_structure_check') && ~isempty(opt.fd_structure_check)
     ts_opt_base.fd_structure_check=opt.fd_structure_check;
 end
+% Algebraic (y) column grouping. 'auto' (kernel default) combines y columns
+% with disjoint closed network neighbourhoods after the per-device y-locality
+% proof in stability.ts_fd_y_locality succeeds; 'off' keeps the historical one
+% column per group. The grouped Jacobian is bit-identical to the per-column
+% construction (verified by fd_structure_check). Forwarded so a run can pin it.
+if isfield(opt,'fd_y_grouping') && ~isempty(opt.fd_y_grouping)
+    ts_opt_base.fd_y_grouping=opt.fd_y_grouping;
+end
 % FD perturbation rule (opt-in). 'absolute' is the kernel and driver default, so
 % an omitted option leaves the run byte-identical; 'scaled' selects the
 % magnitude-proportional step h_j = fd_eps*(1+|z_j|).
@@ -383,6 +391,11 @@ end
 if isfield(opt,'automatic_support_supervision')
     ts_opt_ibr.automatic_support_supervision = opt.automatic_support_supervision;
 end
+for rate_field={'online_rate_measurement','online_rate_options', ...
+        'ne39_rate_policy','ne39_policy'}
+    name=rate_field{1};
+    if isfield(opt,name), ts_opt_ibr.(name)=opt.(name); end
+end
 severity_fields={'severity_gamma_on','severity_gamma_off', ...
     'severity_T_d_on','severity_T_d_off'};
 for k=1:numel(severity_fields)
@@ -404,9 +417,24 @@ end
 if isfield(opt,'controller_trial_evidence') && ~isempty(opt.controller_trial_evidence)
     ts_opt_ibr.controller_trial_evidence=opt.controller_trial_evidence;
 end
+% network-only แบบไม่เปลี่ยนโหมดไม่มี candidate ให้ commit จึงไม่สร้าง selector.
+% จำกัด fault/load/line profiles: ห้าม SG trip/reclose หรือ support supervision.
+no_selection_fault = isfield(sched,'event_profile') && ...
+    any(strcmp(sched.event_profile,{'fault_only','load_only','line_cycle'})) && ~canonical_agfm && ...
+    (~isfield(opt,'automatic_support_supervision') || ...
+    isequal(opt.automatic_support_supervision,false) || ...
+    isequal(opt.automatic_support_supervision,0));
 % Build the precomputed authenticated selector table (SG_OFF + SG_ON) before
 % TS. Fail closed if the table cannot be built (no feasible candidate for a
 % required context). The table is bound to an immutable selector_table_fingerprint.
+if no_selection_fault
+    ts_opt_ibr.automatic_support_supervision = false;
+    if strcmp(sched.event_profile,'fault_only')
+        result.metadata.selector_not_required = 'FAULT_ONLY_NO_MODE_CHANGE_AUTHORISED';
+    else
+        result.metadata.selector_not_required = 'NETWORK_EVENT_NO_MODE_CHANGE_AUTHORISED';
+    end
+else
 try
     table_opt = struct();
     if isfield(opt,'gamma_req') && ~isempty(opt.gamma_req)
@@ -453,10 +481,141 @@ try
     if isfield(opt,'sg_on_n_gfm_required') && ~isempty(opt.sg_on_n_gfm_required)
         table_opt.sg_on = struct('n_gfm_required', opt.sg_on_n_gfm_required);
     end
+    supplied_table = false; supplied_fp = ''; supplied_is_lazy = false;
     if isfield(opt,'selector_table') && isstruct(opt.selector_table) && ...
             isfield(opt.selector_table,'selector_table_fingerprint')
-        selector_table=opt.selector_table;
-    else
+        supplied_table = true;
+        supplied_is_lazy = is_lazy_style_table(opt.selector_table);
+        if supplied_is_lazy && isfield(opt.selector_table,'state_validity_fingerprint')
+            supplied_fp = opt.selector_table.state_validity_fingerprint;
+        end
+        selector_table = opt.selector_table;
+    end
+    lazy_flag = isfield(opt,'lazy_gfm_search') && isscalar(opt.lazy_gfm_search) && ...
+        logical(opt.lazy_gfm_search);
+    if (~supplied_table && lazy_flag) || (supplied_table && supplied_is_lazy)
+        % --- LAZY path: opt-in build, OR REVALIDATION of a supplied table -----
+        % A caller-SUPPLIED lazy table is NOT trusted.  We REBUILD from the live
+        % inputs so the engine re-derives its OWN state fingerprint and
+        % re-certifies against the ACTUAL state, then REQUIRE the supplied
+        % fingerprint to MATCH the recomputed one.  A stale / tampered /
+        % arbitrary ('foo') fingerprint therefore fails closed, and the commit
+        % decision rests on the freshly certified table, never on a supplied
+        % status.  (A caller wanting cheap reuse must use the search's own
+        % opt.cache contract, not an unverified table.)
+        table_opt.lazy_gfm_search = true;
+        forward = {'certificate','budget','candidate_evaluator','state_validity', ...
+            'gamma_req'};
+        for fi = 1:numel(forward)
+            f = forward{fi};
+            if isfield(opt,f) && ~isempty(opt.(f)), table_opt.(f) = opt.(f); end
+        end
+        % Physically-required evidence is mandatory before ANY decision is
+        % certified.  If the caller omits the flag we REQUIRE it; if the caller
+        % explicitly disables it, that is a DIAGNOSTIC, non-production path and
+        % MUST NOT commit.
+        if isfield(table_opt,'certificate') && isstruct(table_opt.certificate)
+            cert = table_opt.certificate;
+        else
+            cert = struct();
+        end
+        if ~isfield(cert,'require_physical_evidence') || isempty(cert.require_physical_evidence)
+            cert.require_physical_evidence = true;
+        end
+        % --- DC-RESERVE gating -------------------------------------------------
+        % A mission that can switch a device to GFM MUST prove the dc-source
+        % ACTIVE-power reserve before ANY GFM commit.  We REQUIRE it here (rather
+        % than omit the item): a context with no dc-reserve producer then becomes
+        % CLEARLY INCONCLUSIVE -- the gate is never hidden by omission.  The
+        % signal is the mission intent: automatic GFM switching enabled, or a
+        % scheduled SG trip (which forces the SG_OFF context to pick GFM IBRs).
+        require_dc = false;
+        if exist('canonical_agfm','var') && ~isempty(canonical_agfm) && ...
+                isscalar(canonical_agfm) && logical(canonical_agfm)
+            require_dc = true;   % mission authorises automatic GFM switching
+        end
+        if isfield(opt,'ibr_events') && isstruct(opt.ibr_events) && ...
+                isfield(opt.ibr_events,'sg_trip') && ~isempty(opt.ibr_events.sg_trip)
+            require_dc = true;   % scheduled SG trip -> SG_OFF must pick GFM IBRs
+        end
+        if require_dc
+            cert.require_dc_reserve = true;
+        end
+        % Observable record of the caller's DC-gating decision (regression probe).
+        result.metadata.require_dc_reserve = double(require_dc);
+        table_opt.certificate = cert;
+        if ~logical(cert.require_physical_evidence)
+            result.metadata.diagnostic_nonproduction = true;
+            result.metadata.failure = 'run_hybrid_case:diagnosticNonProduction';
+            result.failure_id = 'run_hybrid_case:diagnosticNonProduction';
+            result.failure_reason = ['require_physical_evidence=false is a ' ...
+                'diagnostic-only path; refusing to commit.'];
+            result.converged = false;
+            return;
+        end
+        % --- Designate the SG_ON reference OWNER (one per island) -----------
+        % SG_ON is the pre-event ONLINE-reference context, so its owner is the
+        % case's slack synchronous generator, resolved from the network slack
+        % bus (NOT a hard-coded id, and NOT "the only online SG"): the search
+        % accepts a multi-SG online island and needs exactly ONE designated
+        % owner.  If the slack SG cannot be resolved/online we leave the owner
+        % unpinned so the selector's own policy decides (a lone online SG
+        % resolves itself; >1 without a policy fails closed).  Scoped to the
+        % opt-in lazy path so the legacy selector table for IEEE14 is unchanged.
+        owner = local_reference_sg_index(case_data, resources);
+        if ~isempty(owner)
+            if ~isfield(table_opt,'sg_on') || ~isstruct(table_opt.sg_on)
+                table_opt.sg_on = struct();
+            end
+            table_opt.sg_on.reference_resource_index = owner;
+        end
+        fresh = stability.ibr_selector_search_lazy( ...
+            case_data, resources, scenario, table_opt);
+        if supplied_table
+            % Freshness + tamper: the fingerprint recomputed from the LIVE state
+            % must equal the one the caller's table claims.
+            recomputed_fp = '';
+            if isfield(fresh,'state_validity_fingerprint')
+                recomputed_fp = fresh.state_validity_fingerprint;
+            end
+            if isempty(supplied_fp) || isempty(recomputed_fp) || ...
+                    ~strcmp(char(supplied_fp), char(recomputed_fp))
+                result.metadata.failure = 'run_hybrid_case:suppliedTableStale';
+                result.failure_id = 'run_hybrid_case:suppliedTableStale';
+                result.failure_reason = ['Supplied selector table ' ...
+                    'state_validity_fingerprint does not match the fingerprint ' ...
+                    'recomputed from the live state; a stale, tampered, or ' ...
+                    'arbitrary table is refused.'];
+                result.converged = false;
+                return;
+            end
+            if isfield(opt.selector_table,'selector_table_fingerprint') && ...
+                    isfield(fresh,'selector_table_fingerprint') && ...
+                    ~strcmp(char(opt.selector_table.selector_table_fingerprint), ...
+                            char(fresh.selector_table_fingerprint))
+                result.metadata.failure = 'run_hybrid_case:suppliedTableMismatch';
+                result.failure_id = 'run_hybrid_case:suppliedTableMismatch';
+                result.failure_reason = ['Supplied selector_table_fingerprint ' ...
+                    'does not match the recomputed table fingerprint.'];
+                result.converged = false;
+                return;
+            end
+        end
+        selector_table = fresh;
+        result.selector_table = selector_table;
+        % Commit gate on the ACTIVE context only (SG_ON is the pre-event, online
+        % reference context).  Same gate for the built and revalidated paths.
+        [gate_ok, gate_fid, gate_reason, gate_status] = ...
+            verify_lazy_active_commit(selector_table,resources);
+        if ~gate_ok
+            result.metadata.failure = 'run_hybrid_case:selectorLazyHold';
+            result.metadata.selector_status = gate_status;
+            result.failure_id = gate_fid;
+            result.failure_reason = gate_reason;
+            result.converged = false;
+            return;
+        end
+    elseif ~supplied_table
         selector_table = stability.ibr_selector_table(case_data, resources, ...
             scenario, table_opt);
     end
@@ -470,6 +629,7 @@ catch me
     result.failure_reason = me.message;
     result.converged = false;
     return;
+end
 end
 
 [ts_res, ts_meta] = stability.ts_simulate_ibr_hybrid(case_data, ts_devices, ...
@@ -559,7 +719,9 @@ end
 % paths that never reached TS).
 result.domain_rejected_trials = ts_safe_counter(ts_res,'domain_rejected_trials');
 result.subdivision_depth = ts_safe_counter(ts_res,'subdivision_depth');
-copy_fields = {'sample_side','topology_history','active_state_history', ...
+copy_fields = {'online_rate_log','online_rate_series','online_rate_jumps', ...
+    'ne39_decision_log','ne39_policy', ...
+    'sample_side','topology_history','active_state_history', ...
     'event_context_history', ...
     'device_online_history','device_frequency_Hz','coi_frequency_Hz', ...
     'device_P_pu','device_Q_pu','device_P_MW','device_Q_MVAr', ...
@@ -591,6 +753,111 @@ result.execution_summary=build_execution_summary(eq,ts_res,ts_res.event_log,scen
 result.fingerprint.scenario_id = '';
 if isfield(scenario, 'scenario_id')
     result.fingerprint.scenario_id = scenario.scenario_id;
+end
+end
+
+function tf = is_lazy_style_table(t)
+%IS_LAZY_STYLE_TABLE  True for a lazy selector table (SG_ON/SG_OFF contexts).
+%   Legacy exhaustive tables carry no per-context selection_status, so they keep
+%   their own code path and are not routed through the lazy entry gate.
+tf = isstruct(t) && isfield(t,'sg_on') && isstruct(t.sg_on) && ...
+    isfield(t.sg_on,'selection_status');
+end
+
+function [ok, failure_id, reason, status] = verify_lazy_active_commit(table,resources)
+%VERIFY_LAZY_ACTIVE_COMMIT  Pre-TS entry gate for a lazy-style selector table.
+%   A table is admissible only when the ACTIVE (SG_ON) context is CERTIFIED,
+%   ready_to_commit is set, AND the runtime state the table was computed for is
+%   BOUND (state_validity_fingerprint present -> require_state is mandatory).  A
+%   fingerprint match alone is NOT proof of certification and is never accepted
+%   as one.  This gate is shared by the freshly-built lazy table and a
+%   caller-SUPPLIED table so the two paths cannot disagree (fail-closed).
+ok = false; failure_id = ''; reason = ''; status = 'UNINITIALIZED';
+if ~isstruct(table) || ~isfield(table,'sg_on') || ~isstruct(table.sg_on)
+    failure_id = 'run_hybrid_case:selectorEntryGate';
+    reason = 'Selector table has no SG_ON active context.';
+    return;
+end
+a = table.sg_on;
+if isfield(a,'selection_status') && ~isempty(a.selection_status)
+    status = char(a.selection_status);
+end
+if ~strcmp(status,'CERTIFIED')
+    failure_id = 'run_hybrid_case:selectorEntryGate';
+    if isfield(a,'failure_id') && ~isempty(a.failure_id)
+        failure_id = char(a.failure_id);
+    end
+    if isfield(a,'selection_reason') && ~isempty(a.selection_reason)
+        reason = char(a.selection_reason);
+    end
+    if isempty(reason)
+        reason = sprintf('SG_ON context is %s, not CERTIFIED.', status);
+    end
+    return;
+end
+if ~isfield(a,'ready_to_commit') || ~logical(a.ready_to_commit)
+    failure_id = 'run_hybrid_case:selectorEntryGate';
+    reason = 'SG_ON is CERTIFIED but ready_to_commit is not set.';
+    return;
+end
+if ~isfield(table,'state_validity_fingerprint') || isempty(table.state_validity_fingerprint)
+    failure_id = 'run_hybrid_case:selectorEntryGate';
+    reason = ['No bound state_validity_fingerprint: a table without the ' ...
+        'runtime state it was computed for must not commit (require_state).'];
+    return;
+end
+% ต้องมี certificate ของ initial modes จริง ไม่ใช่แค่มี subset อื่นที่ผ่าน.
+matched = false;
+if isfield(a,'configurations')
+    for k=1:numel(a.configurations)
+        c=a.configurations(k);
+        if ~isfield(c,'ready_to_commit') || ~c.ready_to_commit || ...
+                ~isfield(c,'feasible') || ~c.feasible || ...
+                ~isfield(c,'modes') || numel(c.modes)~=numel(resources)
+            continue;
+        end
+        same = true;
+        for j=1:numel(resources)
+            same = same && strcmpi(char(c.modes{j}),char(resources(j).initial_mode));
+        end
+        if same, matched=true; break; end
+    end
+end
+if ~matched
+    failure_id='run_hybrid_case:initialModesNotCertified';
+    reason='No certified SG_ON candidate matches the actual initial device modes.';
+    return;
+end
+ok = true;
+end
+
+function idx = local_reference_sg_index(case_data, resources)
+%LOCAL_REFERENCE_SG_INDEX  Resource index of the case's slack synchronous SG.
+%   Resolved from the network slack bus (mpc.bus type 1), never a hard-coded id.
+%   Returns [] when the case exposes no slack bus or no online SG sits on it, so
+%   the caller leaves the reference owner unpinned and the selector's own policy
+%   decides.
+idx = [];
+if ~isfield(case_data,'mpc') || ~isfield(case_data.mpc,'bus') || ...
+        isempty(case_data.mpc.bus)
+    return;
+end
+bus = case_data.mpc.bus;
+% case_data.mpc.bus is the RAW MATPOWER table: col 2 is MATPOWER's type, where
+% 1=PQ, 2=PV, 3=SLACK.  (+cases/case_ne39.m:254 -- the project's INTERNAL
+% 1=slack / 3=PQ remap is applied to a SEPARATE proj_type vector, NOT to
+% case_data.mpc.bus, so it must not be used here.)  The slack bus is type 3.
+srow = find(bus(:,2) == 3, 1);
+if isempty(srow), return; end
+slack_bus = bus(srow,1);
+for k = 1:numel(resources)
+    r = resources(k);
+    if ~isfield(r,'bus_id') || ~isfield(r,'resource_type'), continue; end
+    if strcmpi(char(r.resource_type),'sg') && ...
+            isequal(double(r.bus_id), double(slack_bus)) && ...
+            (~isfield(r,'initial_online') || logical(r.initial_online))
+        idx = k; return;
+    end
 end
 end
 

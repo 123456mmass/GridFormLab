@@ -107,23 +107,32 @@ if n_src==1, gfl_active=[gfl_active 17]; gfm_active=[gfm_active 17]; end
 status_key=matlab.lang.makeValidName(char(device_id), ...
     'ReplacementStyle','underscore');
 
-f=@(t,x,y,u,ec) dual_f(t,x,y,u,ec,status_key,mode,gfl_dev,gfm_dev,u0);
-current=@(t,x,y,u,ec) dual_current(t,x,y,u,ec,status_key,mode,gfl_dev,gfm_dev,u0);
+% The canonical default mode is IMMUTABLE: the arguments block already restricts
+% `mode` to "gfl"/"GFM"/"tripped", and resolve_status returns exactly
+% canonical_mode(default_mode) on every call that carries no runtime override.
+% Computing that string once here removes the per-call lower/strtrim/char
+% normalisation from the hot path. The override path still canonicalises the raw
+% runtime value through canonical_mode, so the resolved mode, the accepted
+% spellings and every error identifier are unchanged.
+mode_canon=canonical_mode(mode);
+
+f=@(t,x,y,u,ec) dual_f(t,x,y,u,ec,status_key,mode_canon,gfl_dev,gfm_dev,u0);
+current=@(t,x,y,u,ec) dual_current(t,x,y,u,ec,status_key,mode_canon,gfl_dev,gfm_dev,u0);
 power=@(t,x,y,u,ec) real(bus_voltage(y,bus_position)*conj( ...
     current(t,x,y,u,ec)));
-recon=@(t,x,y,u,ec) dual_reconstruct(t,x,y,u,ec,status_key,mode, ...
+recon=@(t,x,y,u,ec) dual_reconstruct(t,x,y,u,ec,status_key,mode_canon, ...
     gfl_dev,gfm_dev,u0,bus_position);
-eq=@(V,P,Q,ec) equilibrium_initialize(V,P,Q,ec,status_key,mode, ...
+eq=@(V,P,Q,ec) equilibrium_initialize(V,P,Q,ec,status_key,mode_canon, ...
     gfl_dev,gfm_dev,x0);
-active=@(ec) active_indices(ec,status_key,mode,gfl_active,gfm_active);
+active=@(ec) active_indices(ec,status_key,mode_canon,gfl_active,gfm_active);
 % Limiter-regime oracle for the solver's outer active-set loop. Both branch
 % models publish `limiter_regime`; this dispatches to whichever branch is live,
 % so the reported regime always belongs to the equation actually being solved.
 % Returns [] when the device is offline or tripped, matching dual_f's zero RHS.
-regime=@(t,x,y,u,ec) dual_regime(t,x,y,u,ec,status_key,mode, ...
+regime=@(t,x,y,u,ec) dual_regime(t,x,y,u,ec,status_key,mode_canon, ...
     gfl_dev,gfm_dev,u0);
 transfer=@(x,y,u,ecl,target,ecr,varargin) transfer_state( ...
-    x,y,u,ecl,target,ecr,status_key,mode,gfl_dev,gfm_dev,u0, ...
+    x,y,u,ecl,target,ecr,status_key,mode_canon,gfl_dev,gfm_dev,u0, ...
     bus_position,varargin{:});
 
 state_names={'i_d','i_q','V_dc', ...
@@ -168,12 +177,17 @@ dev.provenance=struct( ...
         'active GFL=10 and active GFM=11; command-delay states reduced ' ...
         '(v_del=v_cmd, T_d<<dt); Tdc retired, DC source is Thevenin with ' ...
         'a current state, tau_s=Ls/Rdc']);
+% เปิดเผยค่าของ plant ที่ closures ใช้จริง ไม่สร้าง DC parameters ชุดที่สอง.
+% เก็บทั้งสอง branch เพื่อให้ผู้ตรวจยืนยันความตรงกันก่อนใช้เป็นหลักฐาน.
+dev.provenance.params = gfl_dev.provenance.params;
+dev.provenance.branch_params = struct('gfl',gfl_dev.provenance.params, ...
+    'gfm',gfm_dev.provenance.params);
 end
 
 % -------------------------------------------------------------------------
-function dx=dual_f(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
+function dx=dual_f(t,x,y,u,ec,id,default_canon,gfl,gfm,u0)
 validate_state(x); u=resolve_u(u,u0);
-[online,m]=resolve_status(ec,id,default_mode);
+[online,m]=resolve_status(ec,id,default_canon);
 dx=zeros(numel(x),1);
 if ~online || strcmp(m,'tripped'), return; end
 switch m
@@ -194,13 +208,13 @@ if any(~isfinite(dx))
 end
 end
 
-function reg=dual_regime(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
+function reg=dual_regime(t,x,y,u,ec,id,default_canon,gfl,gfm,u0)
 %DUAL_REGIME  The live branch's UNFROZEN limiter regime, or [] when the device
 %   contributes no differential rows (offline or tripped, dual_f:178). The
 %   returned struct also carries which controller branch produced it, so a
 %   frozen regime can never be applied across a mode transfer.
 validate_state(x); u=resolve_u(u,u0);
-[online,m]=resolve_status(ec,id,default_mode);
+[online,m]=resolve_status(ec,id,default_canon);
 reg=[];
 if ~online || strcmp(m,'tripped'), return; end
 switch m
@@ -212,9 +226,9 @@ end
 if isstruct(reg) && isscalar(reg), reg.mode=m; end
 end
 
-function I=dual_current(t,x,y,u,ec,id,default_mode,gfl,gfm,u0)
+function I=dual_current(t,x,y,u,ec,id,default_canon,gfl,gfm,u0)
 validate_state(x); u=resolve_u(u,u0);
-[online,m]=resolve_status(ec,id,default_mode);
+[online,m]=resolve_status(ec,id,default_canon);
 if ~online || strcmp(m,'tripped'), I=0+0i; return; end
 if strcmp(m,'gfl')
     I=gfl.current_injection(t,to_gfl(x),y,u(1:2),ec);
@@ -227,9 +241,9 @@ if ~isscalar(I) || ~isfinite(I)
 end
 end
 
-function out=dual_reconstruct(t,x,y,u,ec,id,default_mode,gfl,gfm,u0,bp)
+function out=dual_reconstruct(t,x,y,u,ec,id,default_canon,gfl,gfm,u0,bp)
 validate_state(x); u=resolve_u(u,u0);
-[online,m]=resolve_status(ec,id,default_mode);
+[online,m]=resolve_status(ec,id,default_canon);
 out=struct('mode',char(m),'online',online,'bus_position',bp);
 if ~online
     out.current=0+0i; out.electrical_power=0; out.breaker_open=true; return;
@@ -254,8 +268,8 @@ case 'tripped'
 end
 end
 
-function xeq=equilibrium_initialize(V,P,Q,ec,id,default_mode,gfl,gfm,xwarm)
-[online,m]=resolve_status(ec,id,default_mode);
+function xeq=equilibrium_initialize(V,P,Q,ec,id,default_canon,gfl,gfm,xwarm)
+[online,m]=resolve_status(ec,id,default_canon);
 xeq=xwarm(:);
 if ~online || strcmp(m,'tripped')
     if any(~isfinite([P Q])) || abs(P)>64*eps(max(1,abs(P))) || ...
@@ -272,13 +286,13 @@ else
 end
 end
 
-function idx=active_indices(ec,id,default_mode,gfl_idx,gfm_idx)
-[online,m]=resolve_status(ec,id,default_mode);
+function idx=active_indices(ec,id,default_canon,gfl_idx,gfm_idx)
+[online,m]=resolve_status(ec,id,default_canon);
 if ~online || strcmp(m,'tripped'), idx=[]; return; end
 if strcmp(m,'gfl'), idx=gfl_idx; else, idx=gfm_idx; end
 end
 
-function [xr,info]=transfer_state(xl,y,u,ecl,target,ecr,id,default_mode, ...
+function [xr,info]=transfer_state(xl,y,u,ecl,target,ecr,id,default_canon, ...
     gfl,gfm,u0,bp,varargin)
 tol=1e-10;
 if ~isempty(varargin)
@@ -293,9 +307,9 @@ if ~isscalar(tol) || ~isfinite(tol) || tol<=0
 end
 validate_state(xl); u=resolve_u(u,u0);
 V=bus_voltage(y,bp);
-Ileft=dual_current(0,xl,y,u,ecl,id,default_mode,gfl,gfm,u0);
+Ileft=dual_current(0,xl,y,u,ecl,id,default_canon,gfl,gfm,u0);
 S=V*conj(Ileft); P=real(S); Q=imag(S);
-[~,source]=resolve_status(ecl,id,default_mode);
+[~,source]=resolve_status(ecl,id,default_canon);
 target=canonical_mode(target);
 xr=xl(:);
 if strcmp(target,'GFM')
@@ -329,7 +343,7 @@ ecr=set_context_mode(ecr,ecl,id,target);
 if strcmp(target,'tripped')
     Iright=0+0i; Pright=0; Qright=0;
 else
-    Iright=dual_current(0,xr,y,u,ecr,id,default_mode,gfl,gfm,u0);
+    Iright=dual_current(0,xr,y,u,ecr,id,default_canon,gfl,gfm,u0);
     Sr=V*conj(Iright); Pright=real(Sr); Qright=imag(Sr);
     if abs(Iright-Ileft)>tol
         error('ibr:transfer_maps:currentContinuity', ...
@@ -367,34 +381,48 @@ ec.hybrid_state.device_modes.(key)=target;
 ec.hybrid_state.device_online.(key)=true;
 end
 
-function [online,m]=resolve_status(ec,key,default_mode)
-% KEY is the constructor's status_key (see the hoist note at the top of this
-% file). Reading it straight from the argument removes the per-call
-% matlab.lang.makeValidName that dominated the profile; the resolved field name
-% is bit-for-bit the same string, so online/mode resolution is unchanged.
-online=true; raw=char(default_mode);
-if ~isempty(ec) && isstruct(ec) && isfield(ec,'hybrid_state') && ...
-        isstruct(ec.hybrid_state)
-    hs=ec.hybrid_state;
-    if isfield(hs,'device_online') && isstruct(hs.device_online) && ...
-            isfield(hs.device_online,key)
-        v=hs.device_online.(key);
-        if ~(islogical(v) && isscalar(v))
-            error('ibr:eecon49_dual_mode_model:badRuntimeOnline', ...
-                'Runtime online flag must be one logical scalar.');
-        end
-        online=v;
+function [online,m]=resolve_status(ec,key,default_canon)
+% KEY is the constructor's status_key and DEFAULT_CANON its precomputed
+% canonical default mode (both hoisted at the top of this file, see the note
+% where mode_canon is built). The no-override path returns DEFAULT_CANON
+% directly, so no text is normalised on it; the override path still
+% canonicalises the raw runtime value through canonical_mode. The resolved field
+% name, the accepted mode spellings and every error identifier are unchanged.
+online=true; m=default_canon;
+if isempty(ec) || ~isstruct(ec) || ~isfield(ec,'hybrid_state'), return; end
+hs=ec.hybrid_state;
+if ~isstruct(hs), return; end
+if isfield(hs,'device_online') && isstruct(hs.device_online) && ...
+        isfield(hs.device_online,key)
+    v=hs.device_online.(key);
+    if ~(islogical(v) && isscalar(v))
+        error('ibr:eecon49_dual_mode_model:badRuntimeOnline', ...
+            'Runtime online flag must be one logical scalar.');
     end
-    if isfield(hs,'device_modes') && isstruct(hs.device_modes) && ...
-            isfield(hs.device_modes,key)
-        raw=hs.device_modes.(key);
-    end
+    online=v;
 end
-m=canonical_mode(raw);
+if isfield(hs,'device_modes') && isstruct(hs.device_modes) && ...
+        isfield(hs.device_modes,key)
+    m=canonical_mode(hs.device_modes.(key));
+end
 end
 
 function m=canonical_mode(raw)
-if ~(ischar(raw) || (isstring(raw) && isscalar(raw)))
+% Fast path: the three canonical spellings are returned verbatim when RAW
+% already is one of them, which is the case on every runtime override the
+% project writes (the constructor default is precomputed separately). Anything
+% else -- other cases, padded text, string scalars, non-text -- falls through to
+% the allocating lower/strtrim/char normalisation, so the accepted set and the
+% error identifiers are exactly those of the historical implementation.
+if ischar(raw)
+    if strcmp(raw,'gfl'), m='gfl'; return; end
+    if strcmp(raw,'GFM'), m='GFM'; return; end
+    if strcmp(raw,'tripped'), m='tripped'; return; end
+elseif isstring(raw) && isscalar(raw)
+    if raw=="gfl", m='gfl'; return; end
+    if raw=="GFM", m='GFM'; return; end
+    if raw=="tripped", m='tripped'; return; end
+else
     error('ibr:eecon49_dual_mode_model:badRuntimeMode', ...
         'Runtime mode must be text.');
 end
@@ -422,7 +450,12 @@ end
 end
 
 function validate_state(x)
-if ~isvector(x) || ~ismember(numel(x),[16 17]) || any(~isfinite(x))
+% The length test is a direct comparison of the only two legal sizes rather than
+% ismember(...,[16 17]); it is the same predicate, and it was the single largest
+% self-time in the profile. isvector and the finiteness scan are unchanged, so
+% the accepted set and the error identifier are identical.
+n=numel(x);
+if ~isvector(x) || (n~=16 && n~=17) || any(~isfinite(x))
     error('ibr:eecon49_dual_mode_model:badState', ...
         'Expected 16 or 17 finite EECON49 superset states.');
 end

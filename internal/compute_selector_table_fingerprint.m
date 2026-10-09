@@ -80,6 +80,15 @@ if isfield(inputs,'topology_payload') && ~isempty(inputs.topology_payload)
     parts{end+1} = sprintf('topology=%s', topology_to_str(inputs.topology_payload)); %#ok<AGROW>
 end
 
+% ผูก lazy evidence กับ contract จริง รวม ratings/params/limits และ SG partition.
+for name = {'state_validity','resource_contracts','dispatch_contract'}
+    if isfield(inputs,name{1}) && ~isempty(inputs.(name{1}))
+        value = inputs.(name{1});
+        if isscalar(value), text = struct_to_str(value);
+        else, text = config_array_to_str(value); end
+        parts{end+1} = [name{1} '=' text]; %#ok<AGROW>
+    end
+end
 input_fp = hash_string(strjoin(parts, '|'));
 
 % Evidence fingerprint. Accept either pre-serialized universe strings

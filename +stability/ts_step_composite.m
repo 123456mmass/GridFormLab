@@ -47,6 +47,18 @@ if ~isscalar(fd_grouping) || ~ismember(fd_grouping,["auto","off"])
     error('ts_step_composite:badFdGrouping', ...
         'fd_grouping must be auto or off.');
 end
+% Algebraic (y) column grouping. 'auto' (default) asks ts_fd_column_groups to
+% combine y columns whose closed network neighbourhoods are disjoint, but ONLY
+% after the per-device y-locality proof in stability.ts_fd_y_locality succeeds
+% (the proof is re-run when the device set / mode / freeze context changes, and
+% it fails closed to one column per group). The grouped Jacobian is bit-identical
+% to the per-column construction (verified by fd_structure_check), so this is a
+% numerical-method option only: it changes no residual, tolerance, or gate.
+fd_y_grouping = lower(string(option_value(opt,'fd_y_grouping','auto')));
+if ~isscalar(fd_y_grouping) || ~ismember(fd_y_grouping,["auto","off"])
+    error('ts_step_composite:badFdYGrouping', ...
+        'fd_y_grouping must be auto or off.');
+end
 verbose = logical(option_value(opt,'verbose',false));
 full_kcl = logical(option_value(opt,'full_kcl',true));
 t_now = option_value(opt,'t_now',0.0);
@@ -183,7 +195,9 @@ if fd_grouping == "off"
         'fallback_reason','disabled_by_option');
 else
     [fd_groups,fd_rowsets,fd_info] = stability.ts_fd_column_groups( ...
-        dae,active_indices,numel(free_vars),full_kcl);
+        dae,active_indices,numel(free_vars),full_kcl, ...
+        struct('y_grouping',fd_y_grouping~="off",'Ynet',Ynet, ...
+               'x',x0,'u',u,'event_context',event_context,'t',t_now));
 end
 if fd_perturbation == "absolute"
     % Scalar step: forward_fd takes the byte-for-byte historical path.
@@ -539,7 +553,7 @@ end
 
 function [is_online, active_mode] = resolve_runtime_mode(dev, event_context)
 %RESOLVE_RUNTIME_MODE  Read the runtime online/mode for a device without
-%   invoking any device callback. Mirrors dual_mode_ibr_model.resolve_status
+%   invoking any device callback. Mirrors eecon49_dual_mode_model.resolve_status
 %   semantics: runtime hybrid_state takes precedence over constructor
 %   defaults; an offline device is never a violator.
 is_online = true;

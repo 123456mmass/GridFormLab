@@ -3,7 +3,7 @@ function init = mixed_ibr_sg_on_gfl_initialize(case_data, dae, event_context, op
 %   This is a PROJECT_DERIVED numerical initializer only.  It does not alter
 %   the production GFL/SG ODEs, inputs, KCL, limits, or Newton acceptance
 %   gates.  An online GFL controls scheduled P/Q, hence its bus is PQ for this
-%   warm-start PF; the online SG remains the sole REF.  The caller still solves
+%   warm-start PF; the online SG remains the sole SLACK.  The caller still solves
 %   and verifies the full nonlinear DAE with all physical KCL rows.
 
 arguments
@@ -161,17 +161,29 @@ for kk = find(online(:))'
     end
     x(xr) = x_dev(:);
     if ~is_ibr(kk)
-        ur = dae.u_offsets(kk)+1:dae.u_offsets(kk)+dev.nu;
-        z = dev.f(0,x_dev,y_from_voltage(V),[0;0],event_context);
-        t_sensitivity = dev.f(0,x_dev,y_from_voltage(V),[1;0],event_context)-z;
-        e_sensitivity = dev.f(0,x_dev,y_from_voltage(V),[0;1],event_context)-z;
-        if abs(t_sensitivity(2))<eps || abs(e_sensitivity(3))<eps
-            init.failure_id = 'mixed_ibr_sg_on_gfl_initialize:controlSensitivity';
-            init.failure_reason = sprintf('SG equilibrium-control sensitivity is singular for %s.',dev.device_id);
-            return;
+        names = string(dev.input_names);
+        if any(strcmpi(names,'Pm')) && any(strcmpi(names,'Emag'))
+            % Classical machine: controls [Pm, |E|], two states, no field-flux
+            % state.  Its factory already seeds u0 from the case power flow, and
+            % the mode-aware PF reproduces that operating point (the IBR buses are
+            % already constant-PQ and the SG buses stay PV), so the stationary
+            % controls are LEFT as the factory set them.  The EMF6 [Tm,Efd]
+            % sensitivity solve below does NOT apply, and evaluating f with a zero
+            % |E| second input would be invalid.
+        else
+            ur = dae.u_offsets(kk)+1:dae.u_offsets(kk)+dev.nu;
+            yv = y_from_voltage(V);
+            z = dev.f(0,x_dev,yv,[0;0],event_context);
+            t_sensitivity = dev.f(0,x_dev,yv,[1;0],event_context)-z;
+            e_sensitivity = dev.f(0,x_dev,yv,[0;1],event_context)-z;
+            if abs(t_sensitivity(2))<eps || abs(e_sensitivity(3))<eps
+                init.failure_id = 'mixed_ibr_sg_on_gfl_initialize:controlSensitivity';
+                init.failure_reason = sprintf('SG equilibrium-control sensitivity is singular for %s.',dev.device_id);
+                return;
+            end
+            u(ur(1)) = -z(2)/t_sensitivity(2);
+            u(ur(2)) = -z(3)/e_sensitivity(3);
         end
-        u(ur(1)) = -z(2)/t_sensitivity(2);
-        u(ur(2)) = -z(3)/e_sensitivity(3);
     end
 end
 

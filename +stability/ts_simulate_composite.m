@@ -38,6 +38,26 @@ verbose = false; if isfield(opt,'verbose') && ~isempty(opt.verbose), verbose = o
 newton_tol = 1e-8;
 max_iter   = 50;
 fd_eps     = 3e-6;
+% FD Jacobian construction knobs, forwarded verbatim to ts_step_composite so a
+% caller can pin the exact construction for benchmarking and verification. An
+% omitted option leaves the kernel default (fd_grouping/fd_y_grouping 'auto',
+% fd_structure_check false), so the run is byte-identical to before.
+fd_grouping = 'auto';
+if isfield(opt,'fd_grouping') && ~isempty(opt.fd_grouping)
+    fd_grouping = char(string(opt.fd_grouping));
+end
+fd_y_grouping = 'auto';
+if isfield(opt,'fd_y_grouping') && ~isempty(opt.fd_y_grouping)
+    fd_y_grouping = char(string(opt.fd_y_grouping));
+end
+fd_structure_check = false;
+if isfield(opt,'fd_structure_check') && ~isempty(opt.fd_structure_check)
+    fd_structure_check = logical(opt.fd_structure_check);
+end
+fd_perturbation = 'absolute';
+if isfield(opt,'fd_perturbation') && ~isempty(opt.fd_perturbation)
+    fd_perturbation = char(string(opt.fd_perturbation));
+end
 load_model = 'cz_p_cz_q';
 if isfield(opt,'load_model') && ~isempty(opt.load_model), load_model = opt.load_model; end
 full_kcl = false;
@@ -174,6 +194,8 @@ for step = 1:n_steps
     t_now = (step-1)*dt;
     step_opt = struct('newton_tol',newton_tol,'max_iter',max_iter, ...
         'fd_eps',fd_eps,'verbose',verbose,'full_kcl',full_kcl,'t_now',t_now, ...
+        'fd_grouping',fd_grouping,'fd_y_grouping',fd_y_grouping, ...
+        'fd_structure_check',fd_structure_check,'fd_perturbation',fd_perturbation, ...
         'vcon_vars',vcon_vars,'vcon_ref',vcon_ref,'free_vars',free_vars, ...
         'free_rows',step_free_rows);
     step_result = stability.ts_step_composite(x_curr,y_curr,dt,dae,Ynet,u, ...

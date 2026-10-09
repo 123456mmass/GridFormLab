@@ -32,6 +32,9 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %
 %   Factory dispatch (model_id -> factory):
 %     "sg_emf6"        -> stability.sg_composite_device (single EMF6 machine)
+%     "sg_classical"   -> stability.sg_classical_device (2nd-order classical SG,
+%                          controls [Pm, Emag]; used by NE39 whose dynamics are
+%                          the classical RTS-1996-derived set)
 %     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
 %     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (16-state shared-plant dual)
 %     "decoupled_dual"  -> ibr.decoupled_dual_mode_model (17-state dual, decoupled
@@ -106,7 +109,19 @@ for k = 1:nr
             % only for the engine field (factory keeps its internal mode).
             dev.mode = 'synchronous';
             dev.initial_mode = 'synchronous';
-        case {'regfm_b1_dual','eecon49_dual','decoupled_dual'}
+        case 'sg_classical'
+            % Classical (2nd-order) SG.  Its two equilibrium controls are
+            % [Pm, Emag] -- NOT the EMF6 [Tm, Efd] -- and it has no field-flux
+            % state.  H/D/X'd are read from case_data.machines.units by the
+            % factory (r.dynamic_params carries no machine data, uniform with
+            % sg_emf6).  Used by the New England 39-bus case, whose machine
+            % dynamics are the classical RTS-1996-derived set and for which no
+            % EMF6 time constants exist.
+            dev = stability.sg_classical_device(case_data, string(rid), ...
+                bus, bp, bus_ids(:)', V0, r.dynamic_params);
+            dev.mode = 'synchronous';
+            dev.initial_mode = 'synchronous';
+        case 'eecon49_dual'
             % Dispatch + P_ref from scenario_opt.dispatch (system-base MW -> pu).
             P_ref_MW = 0.0;
             if isfield(scenario_opt,'dispatch') && isfield(scenario_opt.dispatch, rid)
@@ -155,12 +170,19 @@ for k = 1:nr
             elseif strcmp(mid,'eecon49_dual')
                 dev = ibr.eecon49_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
                     V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
-            elseif strcmp(mid,'decoupled_dual')
-                dev = ibr.decoupled_dual_mode_model(string(rid), bus, bp, bus_ids(:)', ...
-                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
             else
-                dev = ibr.dual_mode_ibr_model(string(rid), bus, bp, bus_ids(:)', ...
-                    V0, params, P_ref_pu, Q_ref_pu, V_ref_pu, string(ibr_mode));
+                % FAIL CLOSED.  The `case` above admits only 'eecon49_dual', so
+                % nothing should reach here -- but the previous code had a bare
+                % `else` that built ibr.dual_mode_ibr_model for ANY unrecognised
+                % model_id.  That meant a typo, or a family retired from the
+                % dispatch, silently produced a working device of the WRONG KIND
+                % instead of an error.  This file is imported by every mixed
+                % SG+IBR build, so that is the one place a silent substitution
+                % would propagate everywhere unnoticed.
+                error('stability:build_mixed_resource_devices:noFactoryForModelId', ...
+                    ['Resource "%s" has model_id "%s" with no factory and no ' ...
+                     'ibr_factory_override entry. Registered IBR model_id: ' ...
+                     'eecon49_dual.'], rid, mid);
             end
             dev.mode = lower(ibr_mode);
             dev.initial_mode = lower(ibr_mode);
@@ -241,13 +263,17 @@ for k = 1:nr
     if ~isfield(dev,'limiter_regime_key')
         dev.limiter_regime_key = '';
     end
-    % Uniform provenance: {model, source, classification, details}.
+    % คง provenance schema ร่วม แต่ไม่ทิ้ง parameters ของ closures ที่สร้างจริง.
+    actual = dev.provenance;
+    params = struct(); branches = struct();
+    if isfield(actual,'params'), params = actual.params; end
+    if isfield(actual,'branch_params'), branches = actual.branch_params; end
     p = r.provenance;
     dev.provenance = struct( ...
         'model', p.model, ...
         'source', p.source, ...
         'classification', p.classification, ...
-        'details', p.details);
+        'details', p.details,'params',params,'branch_params',branches);
 
     device_cells{k} = dev;
     device_order{k} = rid;

@@ -15,6 +15,8 @@ function sched = ibr_event_schedule(case_data, devices, ibr_events, t_end, dt)
 %     combined     fault_on < fault_clear <= sg_trip < sg_on
 %     fault_only   fault_on < fault_clear
 %     sg_cycle     sg_trip < sg_on
+%     load_only    load_step <= t_end (ไม่เปลี่ยน mode)
+%     line_cycle   line_trip < restore_time <= t_end (ไม่เปลี่ยน mode)
 %     chronology   sg_trip < load_step < fault_on < fault_clear < line_trip
 %                  < restore_time = sg_on
 %
@@ -48,8 +50,8 @@ function sched = ibr_event_schedule(case_data, devices, ibr_events, t_end, dt)
 %     - times finite, nonnegative, and ordered per the selected profile
 %     - duplicate/coincident ambiguous events fail closed (tol 1e-12), except
 %       fault_clear == sg_trip is explicitly allowed by the ordering contract.
-%       restore_time is excluded from that check because the chronology
-%       contract REQUIRES restore_time == sg_on.
+%       restore_time ตรวจด้วย ordering เฉพาะ profile: chronology เท่ากับ
+%       sg_on ส่วน line_cycle ต้องหลัง line_trip และไม่เกิน horizon.
 %     - fault_bus valid external bus ID present in case_data.mpc.bus
 %     - Zf valid finite non-zero complex
 %     - selected_gfm_indices exact, unique, in-range, reference in selected
@@ -126,7 +128,7 @@ end
 
 PROFILES = {'combined','fault_only','sg_cycle','chronology', ...
     'sg_load_cycle','sg_fault_cycle','line_fault_relay_clear', ...
-    'sg_trip_then_former_outage'};
+    'sg_trip_then_former_outage','load_only','line_cycle'};
 event_profile = 'combined';
 if isfield(ibr_events,'event_profile') && ~isempty(ibr_events.event_profile)
     if ~(ischar(ibr_events.event_profile) || isstring(ibr_events.event_profile))
@@ -169,7 +171,9 @@ caps = { ...
     'sg_load_cycle',               false, true,  true,  true,  false, false, false, false, true ; ...
     'sg_fault_cycle',              true,  true,  true,  false, false, false, false, false, true ; ...
     'line_fault_relay_clear',      true,  true,  true,  false, false, false, true,  false, true ; ...
-    'sg_trip_then_former_outage',  false, true,  true,  false, false, false, false, true,  true };
+    'sg_trip_then_former_outage',  false, true,  true,  false, false, false, false, true,  true ; ...
+    'load_only',                  false, false, false, true,  false, false, false, false, false; ...
+    'line_cycle',                 false, false, false, false, true,  true,  false, false, false};
 crow = find(strcmp(caps(:,1),event_profile),1);
 if isempty(crow)
     error('stability:ibr_event_schedule:badEventProfile', ...
@@ -457,6 +461,15 @@ end
 % rule, so the chronology contract above is untouched and each new profile
 % states its own admissible order.
 switch event_profile
+case 'load_only'
+    if load_step>t_end+tol
+        error('stability:ibr_event_schedule:badOrdering','load_step ต้องไม่เกิน horizon');
+    end
+case 'line_cycle'
+    if ~(line_trip+tol<restore_time && restore_time<=t_end+tol)
+        error('stability:ibr_event_schedule:badOrdering', ...
+            'line_cycle ต้องมี line_trip < restore_time <= horizon');
+    end
 case 'sg_load_cycle'
     % Island first, then the load grows on the island, then the machine is
     % offered back. The severity supervisor only runs while no SG is online

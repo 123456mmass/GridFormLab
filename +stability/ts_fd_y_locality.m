@@ -1,0 +1,160 @@
+function loc = ts_fd_y_locality(dae, x, u, event_context, t)
+%TS_FD_Y_LOCALITY  Structural y-locality proof for the FD Jacobian y columns.
+%
+%   LOC = ts_fd_y_locality(DAE, X, U, EVENT_CONTEXT, T) proves, by direct
+%   perturbation of the assembled device callbacks, that every device reads the
+%   shared algebraic vector Y ONLY at the two entries of its OWN mapped bus
+%   (bus_position -> y(2*b-1), y(2*b)).  The result authorises
+%   stability.ts_fd_column_groups to group algebraic (y) columns whose closed
+%   network neighbourhoods are disjoint: if device k reads only its own bus
+%   voltage, perturbing y at bus b changes only (i) device k's differential
+%   rows when bus_map(k)==b and (ii) the KCL rows {i : Ynet(i,b)~=0}.  Both are
+%   exact, so the grouped forward-difference Jacobian equals the per-column one
+%   BIT-FOR-BIT (the caller re-checks this with fd_structure_check).
+%
+%   WHY A PROBE AND NOT AN ASSUMPTION
+%   ---------------------------------
+%   The device ABI hands each device the WHOLE y vector, so locality is a
+%   property of every device implementation, not of the engine.  A probe over
+%   the real callbacks (with the real control inputs U and the real event
+%   context) is therefore the only sound proof.  Perturbing bus b in BOTH its
+%   real and imaginary entries exercises the two couplings a device could hide:
+%   the terminal voltage phasor it forms, and any current/PLL/limiter/DC branch
+%   that reads V.  Any device that responds to a foreign bus fails the proof and
+%   the caller must fall back to the historical per-column FD.
+%
+%   COST / CACHING
+%   --------------
+%   The probe costs about nd*(nb-1) device evaluations, so it must be amortised
+%   across the steps of one run.  The caller caches LOC on a signature of the
+%   devices and the event context (stability.ts_fd_column_groups).  A different
+%   device set, mode/regime, or freeze context changes the signature and forces
+%   a re-probe, so a cached proof is never reused across a different device
+%   closure.  The topology (Ypre/Yfault/Ypost) does NOT enter the signature:
+%   device y-locality is a device property, independent of which network is
+%   stamped, while the KCL row sets are recomputed from the current Y every call
+%   by the caller.
+%
+%   FAIL CLOSED: LOC.local is FALSE on any foreign-bus response, on a non-finite
+%   probe value, or on a malformed device table.  The caller then keeps the
+%   historical one-column-per-group construction.
+%
+%   Classification: PROJECT_DERIVED numerical proof over SOURCE_IMPLEMENTED
+%   device callbacks.  It changes no residual, tolerance, or state contract.
+
+arguments
+    dae struct
+    x double
+    u double
+    event_context struct
+    t double = 0
+end
+
+loc = struct('local',false,'reason','','n_devices',0,'n_buses',0, ...
+    'step',0,'worst_change',0,'classification','PROJECT_DERIVED');
+
+required = {'devices','device_offsets','u_offsets','bus_map','nb'};
+for k = 1:numel(required)
+    if ~isfield(dae,required{k})
+        loc.reason = ['missing_' required{k}];
+        return;
+    end
+end
+if ~isstruct(dae.devices) || ~isfield(dae.devices,'nx') || ...
+        ~isfield(dae.devices,'f') || ~isfield(dae.devices,'current_injection')
+    loc.reason = 'devices_without_abi';
+    return;
+end
+
+offset = double(dae.device_offsets(:)');
+uoffset = double(dae.u_offsets(:)');
+bmap = double(dae.bus_map(:)');
+nd = numel(dae.devices);
+nb = double(dae.nb);
+if numel(offset) ~= nd || numel(uoffset) ~= nd || numel(bmap) ~= nd || ...
+        nd < 1 || ~isfinite(nb) || nb < 1
+    loc.reason = 'device_table_length_mismatch';
+    return;
+end
+if numel(x) < max(offset + double([dae.devices.nx]))
+    loc.reason = 'state_vector_too_short';
+    return;
+end
+if ~isfield(dae,'y0') || numel(dae.y0) ~= 2*nb
+    loc.reason = 'ny_not_two_per_bus';
+    return;
+end
+
+% Registered structural declaration for every device. A probe at one state is
+% NOT a proof (a nonlinear device could have zero foreign response here and a
+% nonzero one elsewhere), so locality requires an explicit registered
+% declaration; any undeclared device fails closed to the per-column FD.
+for k = 1:nd
+    dev_k = dae.devices(k);
+    [dec, di] = stability.algebraic_y_locality_declaration(dev_k);
+    if ~dec
+        loc.reason = sprintf('undeclared device %d (%s=%s)',k,di.source,di.key);
+        loc.n_devices = nd; loc.n_buses = nb;
+        return;
+    end
+end
+
+% Probe step: a small but comfortably above round-off absolute perturbation.
+% Device outputs are O(1) pu, so 1e-6 clears double round-off (~2.2e-16) by ~10
+% decades while staying in the linear regime, so a genuinely local device shows
+% EXACTLY zero change (bit-identical inputs). This probe is an ADDITIONAL
+% cross-check on the declared set, never a substitute for the declaration.
+h = 1e-6;
+% device ที่ local ได้ input ณ PCC เดิมทุก bit จึงต้องได้ output เดิมทุก bit.
+% ไม่ใช้ tolerance กับ raw change เพราะจะซ่อน foreign derivative ที่เล็กกว่า h.
+sensitivity_tol = 0;
+
+y0 = dae.y0(:);
+dev = dae.devices;
+worst = 0;
+for k = 1:nd
+    nxk = double(dev(k).nx); nuk = double(dev(k).nu);
+    xk = x(offset(k)+(1:nxk));
+    if nuk > 0
+        uk = u(uoffset(k)+(1:nuk));
+    else
+        uk = zeros(0,1);
+    end
+    f_ref = dev(k).f(t, xk, y0, uk, event_context);
+    I_ref = dev(k).current_injection(t, xk, y0, uk, event_context);
+    if any(~isfinite(f_ref)) || ~isfinite(I_ref)
+        loc.reason = sprintf('nonfinite_at_base_device_%d',k);
+        return;
+    end
+    bk = bmap(k);
+    for b = 1:nb
+        if b == bk, continue; end
+        % perturb แต่ละ coordinate แยกกัน ป้องกัน Re/Im cancellation.
+        for column=2*b-1:2*b
+            yp=y0; yp(column)=yp(column)+h;
+            df=dev(k).f(t,xk,yp,uk,event_context)-f_ref;
+            dI=dev(k).current_injection(t,xk,yp,uk,event_context)-I_ref;
+            if any(~isfinite(df)) || ~isfinite(dI)
+                loc.reason=sprintf('nonfinite_probe_device_%d_bus_%d',k,b);
+                return;
+            end
+            ch=max([norm(df,inf),abs(dI)]); worst=max(worst,ch);
+            if ch>sensitivity_tol
+                loc.reason=sprintf( ...
+                    'device %d reads foreign bus %d (change %.3e > %.1e)', ...
+                    k,b,ch,sensitivity_tol);
+                loc.n_devices=nd; loc.n_buses=nb; loc.step=h;
+                loc.worst_change=worst;
+                return;
+            end
+        end
+    end
+end
+
+loc.local = true;
+loc.reason = 'all_devices_y_local_to_own_bus';
+loc.n_devices = nd;
+loc.n_buses = nb;
+loc.step = h;
+loc.worst_change = worst;
+end

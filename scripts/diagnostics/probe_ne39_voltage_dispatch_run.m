@@ -33,11 +33,26 @@ op=struct('t_end',T,'dt',.0025,'verbose',false,'ibr_events',e, ...
 for name=fieldnames(extra)'
     op.(name{1})=extra.(name{1});
 end
+classification='PROJECT_DERIVED_VOLTAGE_DISPATCH_PRODUCTION_EXPERIMENT';
+if isfield(op,'ne39_assessment_policy') && strcmp(op.ne39_assessment_policy,'observe_voltage')
+    classification='PROJECT_DERIVED_VOLTAGE_OBSERVATION_STUDY';
+end
 request=struct('source_raw',raw_file,'scenario',s,'options',op, ...
-    'classification','PROJECT_DERIVED_VOLTAGE_DISPATCH_PRODUCTION_EXPERIMENT');
+    'classification',classification,'production_certified',false);
 save(fullfile(folder,'request.mat'),'request','-v7.3');
 fprintf('[NE39-voltage-dispatch-run] start artifact=%s horizon=%g\n',folder,op.t_end);
 timer=tic; result=stability.run_hybrid_case(s,op); elapsed=toc(timer);
+if strcmp(classification,'PROJECT_DERIVED_VOLTAGE_OBSERVATION_STUDY')
+    result.study_status='STUDY_INCOMPLETE'; result.production_certified=false;
+    if result.converged && ~isempty(result.t) && abs(result.t(end)-op.t_end)<=1e-12
+        result.study_status='STUDY_HORIZON_COMPLETED';
+    end
+    if ~isempty(result.t) && all(isfinite(result.y_traj),'all')
+        b=struct('v_min',.9,'v_max',1.1);
+        result.voltage_observation=stability.ne39_voltage_observation(result.t, ...
+            abs(complex(result.y_traj(1:2:end,:),result.y_traj(2:2:end,:))),s.case_data.mpc.bus(:,1),b);
+    end
+end
 save(fullfile(folder,'raw.mat'),'request','result','elapsed','-v7.3');
 reached=0; if ~isempty(result.t), reached=result.t(end); end
 fprintf('[NE39-voltage-dispatch-run] reached=%g/%g converged=%d elapsed=%g\n', ...
@@ -55,5 +70,6 @@ end
 if isfield(result,'floor_accepted_steps')
     fprintf('floor_accepted_steps=%d\n',result.floor_accepted_steps);
 end
+if isfield(result,'study_status'), fprintf('study_status=%s reclose_time=%g\n',result.study_status,result.actual_reclose_time); end
 fprintf('artifact=%s\n',folder);
 end

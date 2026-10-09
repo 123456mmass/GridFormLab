@@ -13,7 +13,8 @@ arguments
     bounds (1,1) struct
 end
 evidence=struct('status','UNKNOWN','reason','ข้อมูลไม่ครบ','records',struct([]), ...
-    'classification','PROJECT_DERIVED','trajectory_certified',false);
+    'classification','PROJECT_DERIVED','trajectory_certified',false, ...
+    'complete',false,'nonvoltage_status','UNKNOWN','voltage_reference',struct());
 if ~all(isfield(bounds,{'v_min','v_max','f_min','f_max'})) || ...
         ~all(isfield(dae,{'devices','device_offsets','u_offsets'})) || ...
         numel(resources)~=numel(dae.devices)
@@ -29,8 +30,16 @@ if any(~isfinite([x;y;u])) || ~isreal([x;y;u])
     evidence.status='FAIL'; evidence.reason='state ไม่ finite/real'; return;
 end
 Sbase=case_data.mpc.baseMVA;
+if numel(y)~=2*size(case_data.mpc.bus,1)
+    evidence.reason='network voltage dimensions ไม่ตรง'; return;
+end
 vm=abs(complex(y(1:2:end),y(2:2:end)));
-network_ok=all(vm>=bounds.v_min & vm<=bounds.v_max);
+network_valid=all(isfinite(vm) & vm>0);
+network_ok=network_valid && all(vm>=bounds.v_min & vm<=bounds.v_max);
+evidence.voltage_reference=struct('bounds_pu',[bounds.v_min bounds.v_max], ...
+    'bus_ids',case_data.mpc.bus(:,1),'magnitude_pu',vm, ...
+    'out_of_band',vm<bounds.v_min | vm>bounds.v_max,'pass',network_ok, ...
+    'scope','PROJECT_OPERATING_REFERENCE_NOT_UNIVERSAL_TRANSIENT_LIMIT');
 rows=struct([]);
 try
     for k=1:numel(dae.devices)
@@ -55,7 +64,7 @@ try
             'stored_energy_MJ',NaN,'stored_energy_rate_pu',NaN, ...
             'source_minus_losses_pu',NaN,'energy_rhs_error_pu',NaN, ...
             'ac_dc_power_error_pu',NaN, ...
-            'pass',false,'failure','');
+            'pass',false,'failure','','nonvoltage_pass',false,'checks',struct());
         checks=struct('electrical_evidence',isscalar(I) && isfinite(I) && isfinite(pq), ...
             'frequency_evidence',fr.online && isfinite(fr.f_hz), ...
             'voltage',abs(V)>=bounds.v_min && abs(V)<=bounds.v_max, ...
@@ -123,7 +132,8 @@ try
             checks.ac_dc_power_balance=row.ac_dc_power_error_pu<=1e-8;
         end
         names=fieldnames(checks); passed=structfun(@(v)logical(v),checks);
-        row.pass=all(passed);
+        row.pass=all(passed); row.checks=checks;
+        row.nonvoltage_pass=all(passed(~strcmp(names,'voltage')));
         if ~row.pass, row.failure=strjoin(names(~passed),','); end
         rows=[rows,row]; %#ok<AGROW>
     end
@@ -132,6 +142,9 @@ catch me
 end
 evidence.records=rows;
 if isempty(rows), evidence.reason='ไม่มี online resource'; return; end
+evidence.complete=true;
+evidence.nonvoltage_status='FAIL';
+if network_valid && all([rows.nonvoltage_pass]), evidence.nonvoltage_status='PASS'; end
 if network_ok && all([rows.pass])
     evidence.status='PASS'; evidence.reason='snapshot constraints ผ่าน';
 else

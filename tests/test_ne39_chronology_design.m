@@ -80,8 +80,67 @@ for name={'load_right','restore_right'}
 end
 end
 
+function test_fixed_reactor_witness_is_not_production_certificate(tc)
+b=tc.TestData.base; qr=2000*ones(9,1);
+op=struct('voltage_setpoints_pu',ones(10,1),'fixed_port_reactor_MVAr',qr);
+c=cases.ne39_chronology_design(b,op);
+tc.verifyEqual(c.mpc.branch,b.mpc.branch);
+tc.verifyEqual(c.mpc.bus(:,3:4),b.mpc.bus(:,3:4));
+tc.verifyEqual(c.mpc.bus(c.ibr_buses,6),b.mpc.bus(c.ibr_buses,6)-qr);
+tc.verifyEqual(c.bus_data(c.ibr_buses,10),b.bus_data(c.ibr_buses,10)-qr/100);
+tc.verifyEqual(c.source_detail,b.source_detail);
+tc.verifyEqual(c.machines,b.machines);
+tc.verifyFalse(c.chronology_design.physical_network_extension.selected_for_production);
+folder=probe_ne39_chronology_design(op,struct('sssa',true));
+data=load(fullfile(folder,'screen.mat'),'screen'); a=data.screen;
+tc.assertEqual(a.status,'SCREENED_NOT_PRODUCTION_CERTIFIED',a.reason);
+tc.verifyTrue(a.load_restore_pass); tc.verifyFalse(a.endpoint_pass);
+tc.verifyFalse(a.production_ready);
+tc.verifyEqual(a.fault_right.evidence.status,'FAIL');
+tc.verifyEqual(a.line_right.evidence.status,'PASS');
+for name={'sg_on','post_trip','loaded','line_open','load_right','restore_right'}
+    tc.verifyEqual(a.(name{1}).evidence.status,'PASS');
+    tc.verifyLessThanOrEqual(a.(name{1}).kcl,1e-6);
+end
+for name={'load_right','restore_right'}
+    z=a.(name{1}); tc.verifyEqual(z.current_jump_pu,0,'AbsTol',0);
+    tc.verifyTrue(z.state_continuity_exact); tc.verifyTrue(z.input_continuity_exact);
+end
+for name={'sg_on','post_trip'}
+    rows=a.(name{1}).sssa;
+    for k=1:3
+        tc.verifyTrue(rows{k}.gate_pass);
+        tc.verifyTrue(rows{k}.no_eig_delete);
+        tc.verifyGreaterThanOrEqual(rows{k}.zeta_worst,c.selector.zeta_min_damping);
+    end
+end
+end
+
+function test_case_bound_all_gfm_witness(tc)
+[op,analysis]=ne39_endpoint_design_options();
+c=cases.ne39_chronology_design(tc.TestData.base,op);
+tc.verifyEqual(sum(op.fixed_port_reactor_MVAr),16168.30560442528,'AbsTol',1e-9);
+tc.verifyEqual(c.chronology_design.Dv,60*c.chronology_design.imbalance_converter_pu/.1,'RelTol',1e-14);
+folder=probe_ne39_chronology_design(op,analysis);
+data=load(fullfile(folder,'screen.mat')); a=data.screen;
+tc.assertEqual(a.status,'SCREENED_NOT_PRODUCTION_CERTIFIED',a.reason);
+tc.verifyTrue(a.endpoint_pass); tc.verifyTrue(a.sssa_pass);
+tc.verifyFalse(a.production_ready);
+tc.verifyTrue(all(strcmp({data.request.scenario.resources(2:end).initial_mode},'gfm')));
+for name={'sg_on','post_trip','loaded','line_open','load_right','restore_right','fault_right','line_right'}
+    tc.verifyEqual(a.(name{1}).evidence.status,'PASS');
+    tc.verifyLessThanOrEqual(a.(name{1}).kcl,1e-6);
+end
+end
+
 function test_invalid_options_fail_closed(tc)
 b=tc.TestData.base;
+tc.verifyError(@()probe_ne39_chronology_design(struct(),struct('sssa',2)), ...
+    'probe_ne39_chronology_design:sssa');
+tc.verifyError(@()probe_ne39_chronology_design(struct(),struct('unknown',true)), ...
+    'probe_ne39_chronology_design:option');
+tc.verifyError(@()cases.ne39_chronology_design(b,struct('fixed_port_reactor_MVAr',-ones(9,1))), ...
+    'MATLAB:expectedNonnegative');
 tc.verifyError(@()cases.ne39_chronology_design(b,struct('rocof_target_Hz_s',[1 2])), ...
     'MATLAB:expectedScalar');
 tc.verifyError(@()cases.ne39_chronology_design(b,struct('unknown',1)), ...

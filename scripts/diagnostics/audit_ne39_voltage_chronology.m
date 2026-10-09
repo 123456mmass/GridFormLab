@@ -1,6 +1,6 @@
 function audit=audit_ne39_voltage_chronology(raw_file)
 %AUDIT_NE39_VOLTAGE_CHRONOLOGY ตรวจ accepted samples กับ network ตาม event จริง.
-% ไม่แก้ raw, ไม่ยกเลิก physical gate และไม่ใช้ sg_on request แทน breaker reclose.
+% ไม่แก้ raw; strict/study แยกกัน และไม่ใช้ sg_on request แทน breaker reclose.
 arguments
     raw_file (1,1) string
 end
@@ -20,11 +20,14 @@ audit=struct('artifact',char(raw_file),'status','NO_TRAJECTORY', ...
     'max_full_kcl',NaN,'max_kcl_time',NaN,'strict_lte_pass',false, ...
     'horizon_reached',false,'scheduled_events_applied',false, ...
     'actual_reclose_time',r.actual_reclose_time,'reclose_status',r.reclose_status, ...
-    'physical_switching_certified',false);
+    'physical_switching_certified',false,'nonvoltage_failures',0, ...
+    'voltage_only_failures',0,'study_status','NOT_ASSESSED', ...
+    'actual_reclose_applied',false,'strict_snapshot_pass',false,'production_certified',false);
 if isempty(r.t), return; end
 nt=numel(r.t); kcl=zeros(1,nt); status=cell(1,nt); failures=cell(1,nt);
 vm=abs(complex(r.y_traj(1:2:end,:),r.y_traj(2:2:end,:)));
 audit.voltage_min_pu=min(vm,[],'all'); audit.voltage_max_pu=max(vm,[],'all');
+audit.voltage_observation=stability.ne39_voltage_observation(r.t,vm,c.mpc.bus(:,1),bounds);
 e=request.options.ibr_events; Y0=dae.Ynet; Y=Y0; Ybase=Y0;
 Sload=(c.mpc.bus(:,3)+1i*c.mpc.bus(:,4))/c.mpc.baseMVA;
 load_stamp=e.load_step_factor*diag(conj(Sload)./(abs(dae.pf.bus_voltage(:)).^2+eps));
@@ -49,7 +52,7 @@ for k=1:nt
                     Ybase=Ybase-line_stamp; Y=Ybase;
                 case 'topology_restore'
                     Ybase=Y0; Y=Y0;
-                case {'sg_trip','sg_on'}
+                case {'sg_trip','sg_on','sg_reclose'}
                 otherwise
                     error('audit_ne39_voltage_chronology:event', ...
                         'ยังไม่มี network reconstruction สำหรับ applied event %s',q.type);
@@ -62,6 +65,9 @@ for k=1:nt
     kcl(k)=norm(Y*V-dae.current_injection(r.t(k),x,y,u,ec),inf);
     ev=stability.ne39_transition_snapshot(r.t(k),x,y,u,ec,dae,s.resources,c,bounds);
     status{k}=ev.status; failures{k}=ev.records(~[ev.records.pass]);
+    study_allowed=stability.ne39_snapshot_policy(ev,"observe_voltage");
+    audit.nonvoltage_failures=audit.nonvoltage_failures+(strcmp(ev.status,'FAIL') && ~study_allowed);
+    audit.voltage_only_failures=audit.voltage_only_failures+(strcmp(ev.status,'FAIL') && study_allowed);
     audit.samples_checked=audit.samples_checked+1;
     audit.snapshot_failures=audit.snapshot_failures+strcmp(ev.status,'FAIL');
     audit.snapshot_unknowns=audit.snapshot_unknowns+~any(strcmp(ev.status,{'PASS','FAIL'}));
@@ -97,6 +103,12 @@ for j=1:numel(expected)
 end
 audit.scheduled_events_applied=all(applied);
 audit.event_types=expected; audit.event_applied=applied;
+% A request or a finite summary alone does not prove the breaker closed.
+reclose_hit=find(strcmp({r.event_log.type},'sg_reclose') & [r.event_log.applied]);
+audit.actual_reclose_applied=isscalar(reclose_hit) && isfinite(r.actual_reclose_time) && ...
+    abs(r.event_log(reclose_hit).t-r.actual_reclose_time)<=1e-12 && ...
+    strcmp(r.reclose_status,'SUCCESS');
+audit.strict_snapshot_pass=audit.snapshot_failures==0 && audit.snapshot_unknowns==0;
 audit.phase_summary=struct('phase',{},'samples',{},'failures',{},'unknowns',{});
 phases={'pre_trip','post_trip','loaded','fault','post_fault','line_open','restored'};
 edges=[0,e.sg_trip,e.load_step,e.fault_on,e.fault_clear,e.line_trip,e.restore_time,Inf];
@@ -125,9 +137,20 @@ audit.status='CHRONOLOGY_NOT_VERIFIED';
 if audit.horizon_reached && audit.strict_lte_pass && audit.scheduled_events_applied && ...
         isfinite(audit.max_full_kcl) && audit.max_full_kcl<=1e-6
     audit.status='CHRONOLOGY_NUMERICALLY_VERIFIED_PHYSICAL_OR_RECLOSE_INCOMPLETE';
-    if audit.snapshot_failures==0 && audit.snapshot_unknowns==0 && ...
-            isfinite(audit.actual_reclose_time) && strcmp(audit.reclose_status,'SUCCESS')
+    if audit.strict_snapshot_pass && audit.actual_reclose_applied && ...
+            isfinite(audit.dc_energy_error_max_pu_s) && audit.dc_energy_error_max_pu_s<=1e-6
         audit.status='CHRONOLOGY_ACCEPTED_SAMPLES_AND_RECLOSE_VERIFIED';
+    end
+end
+% Study completion ไม่แทน strict status/reclose และยังต้องผ่าน DC energy ledger.
+if isfield(request.options,'ne39_assessment_policy') && ...
+        strcmp(request.options.ne39_assessment_policy,'observe_voltage')
+    audit.study_status='STUDY_INCOMPLETE';
+    if audit.horizon_reached && audit.strict_lte_pass && audit.scheduled_events_applied && ...
+            isfinite(audit.max_full_kcl) && audit.max_full_kcl<=1e-6 && ...
+            audit.nonvoltage_failures==0 && audit.snapshot_unknowns==0 && ...
+            isfinite(audit.dc_energy_error_max_pu_s) && audit.dc_energy_error_max_pu_s<=1e-6
+        audit.study_status='STUDY_ACCEPTED_SAMPLES_VERIFIED';
     end
 end
 folder=fileparts(raw_file);
@@ -146,6 +169,8 @@ for j=1:numel(audit.phase_summary)
     fprintf('CHRONOLOGY_PHASE %s samples=%d fail=%d unknown=%d\n', ...
         q.phase,q.samples,q.failures,q.unknowns);
 end
+fprintf('CHRONOLOGY_STUDY status=%s strict_snapshot_pass=%d actual_reclose_applied=%d production_certified=%d\n', ...
+    audit.study_status,audit.strict_snapshot_pass,audit.actual_reclose_applied,audit.production_certified);
 fprintf('artifact=%s\n',audit_file);
 end
 

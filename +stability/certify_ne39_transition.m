@@ -2,6 +2,7 @@ function [ok,audit] = certify_ne39_transition(t,x,y,u,ec,Y,dae,resources,c,bound
 %CERTIFY_NE39_TRANSITION private forward trial; ไม่เปลี่ยน live state หรือ timer.
 % ตรวจ snapshot ทุก accepted trial sample และรัน dt/2 ยืนยัน energy accounting.
 % PASS เป็นหลักฐาน trajectory เท่านั้น; caller ต้อง authenticate context/transfer.
+% observe_voltage คืน study status แยก โดยคง strict evidence และ gates อื่น.
 arguments
     t (1,1) double {mustBeFinite}
     x (:,1) double
@@ -16,10 +17,12 @@ arguments
     candidate (1,1) struct
     opt (1,1) struct
 end
+policy=string(get_policy(opt));
 ok=false;
 audit=struct('status','UNKNOWN','reason','ขาด certified spectrum/trial contract', ...
     'horizon_s',NaN,'passes',{{}},'commit_authorized',false, ...
-    'refinement_scope','ALL_COARSE_ACCEPTED_TIMES','refinement_samples',0);
+    'refinement_scope','ALL_COARSE_ACCEPTED_TIMES','refinement_samples',0, ...
+    'assessment_policy',char(policy),'strict_snapshot_pass',false);
 if ~ismatrix(Y) || size(Y,1)~=size(Y,2) || ...
         size(Y,1)*2~=numel(y) || any(~isfinite(Y(:))) || ...
         ~isfield(dae,'devices') || ~isfield(dae,'device_offsets') || ...
@@ -86,7 +89,7 @@ for pass=1:2
         audit.reason=['TRIAL_EVIDENCE_UNAVAILABLE: ' me.message]; return;
     end
     audit.passes{pass}=a;
-    if ~strcmp(a.status,'PASS')
+    if ~any(strcmp(a.status,{'PASS','STUDY_TRIAL_COMPLETE'}))
         audit.status=a.status; audit.reason=a.reason;
         if strcmp(a.reason,'DT_REFINEMENT_NOT_RESOLVED')
             audit.refinement_error=path_refinement_error;
@@ -103,6 +106,10 @@ if audit.refinement_error>opt.refinement_tol
     audit.reason='DT_REFINEMENT_NOT_RESOLVED'; return;
 end
 ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
+audit.strict_snapshot_pass=all(cellfun(@(a)a.strict_snapshot_pass,audit.passes));
+if policy=="observe_voltage"
+    audit.status='STUDY_TRIAL_COMPLETE'; audit.reason='STUDY_TRIAL_AND_REFINEMENT_COMPLETE';
+end
 
     function [a,X,yy]=trial(dt,pass)
         X=x; yy=y; elapsed=0; next_coarse=2; proposed_h=dt;
@@ -114,9 +121,10 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
         a=struct('status','UNKNOWN','reason','','dt',dt,'steps',0, ...
             't_reached',0,'energy_error_pu_s',0,'peak_angle_excursion_deg',0, ...
             'step_attempts',0,'rejected_steps',0,'min_dt',Inf,'max_dt',0, ...
-            'peak_local_refinement_error',0);
+            'peak_local_refinement_error',0,'strict_snapshot_pass',true, ...
+            'voltage_excursion_samples',0,'voltage_min_pu',Inf,'voltage_max_pu',0);
         e=stability.ne39_transition_snapshot(t,X,yy,u,ec,dae,resources,c,bounds);
-        if ~strcmp(e.status,'PASS')
+        if ~observe_snapshot(e)
             a.status=e.status; a.reason=e.reason; a.failed_snapshot=e; return;
         end
         residual=dae.dae_g(t,X,yy,Y,u,ec);
@@ -216,7 +224,7 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
                 a.reason='TRIAL_KCL_NOT_RESOLVED'; return;
             end
             e=stability.ne39_transition_snapshot(t+elapsed,X,yy,u,ec,dae,resources,c,bounds);
-            if ~strcmp(e.status,'PASS')
+            if ~observe_snapshot(e)
                 a.status=e.status; a.reason=e.reason; a.failed_snapshot=e; return;
             end
             rows=e.records(startsWith({e.records.resource_id},'IBR'));
@@ -252,7 +260,19 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
             coarse_state=coarse_state(:,1:a.steps+1);
         end
         a.status='PASS'; a.reason='TRIAL_COMPLETE';
+        if policy=="observe_voltage", a.status='STUDY_TRIAL_COMPLETE'; end
         progress();
+
+        function allowed=observe_snapshot(ev)
+            allowed=stability.ne39_snapshot_policy(ev,policy);
+            a.strict_snapshot_pass=a.strict_snapshot_pass && strcmp(ev.status,'PASS');
+            if ev.complete
+                vr=ev.voltage_reference;
+                a.voltage_excursion_samples=a.voltage_excursion_samples+~vr.pass;
+                a.voltage_min_pu=min(a.voltage_min_pu,min(vr.magnitude_pu));
+                a.voltage_max_pu=max(a.voltage_max_pu,max(vr.magnitude_pu));
+            end
+        end
 
         function progress()
             if isinf(progress_interval), return; end
@@ -289,4 +309,12 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
             idx(end+1)=kk; a(end+1)=theta; comp(end+1)=labels(d.bus_position); %#ok<AGROW>
         end
     end
+end
+
+function policy=get_policy(opt)
+policy="strict";
+if isfield(opt,'assessment_policy'), policy=string(opt.assessment_policy); end
+if ~isscalar(policy) || ~any(policy==["strict","observe_voltage"])
+    error('stability:certify_ne39_transition:policy','assessment_policy ไม่ถูกต้อง');
+end
 end

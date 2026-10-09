@@ -209,8 +209,23 @@ rejection_history = repmat(struct('t',NaN,'attempted_dt',NaN,'error_norm',NaN, .
 % This avoids MATLAB struct-array field-type mismatch between a pre-declared
 % empty template (e.g. char '' vs char 'none') and the real records.
 resync_diag = struct();
+% Explicit study policy เท่านั้น: default route ไม่เพิ่ม sample gate ใหม่.
+if isfield(opt,'ne39_assessment_policy')
+    samples.ne39_assessment=struct('policy',char(string(opt.ne39_assessment_policy)), ...
+        'dae',dae,'case_data',case_data,'resources',opt.resources, ...
+        'bounds',struct('v_min',.9,'v_max',1.1, ...
+        'f_min',case_data.base_values.frequency_Hz-.5, ...
+        'f_max',case_data.base_values.frequency_Hz+.5), ...
+        'samples_checked',0,'strict_snapshot_failures',0,'voltage_excursion_samples',0, ...
+        'failed',false,'failure_reason','','energy_error_pu_s',0,'previous_t',0);
+    samples=record_ne39_snapshot(samples,0,x,y,u,ec);
+end
 
 while t < settings.t_end-settings.event_tol
+    if isfield(samples,'ne39_assessment') && samples.ne39_assessment.failed
+        converged=false; failure_id='ts_simulate_ibr_hybrid:ne39StudyConstraint';
+        failure_reason=samples.ne39_assessment.failure_reason; break;
+    end
     if settings.stepper=="adaptive"
         % Error-controlled proposal. dt_max_armed keeps event-crossing
         % detection on a cadence comparable to the fixed grid while a
@@ -283,6 +298,7 @@ while t < settings.t_end-settings.event_tol
             'limiter_regime_freeze',settings.limiter_regime_freeze, ...
             'limiter_regime_max_outer',settings.limiter_regime_max_outer, ...
             'state_predictor',predictor);
+        if isfield(opt,'ne39_assessment_policy'), step_opt.ne39_observe_midpoint=true; end
         % NOTE: the linear predictor is rebuilt per ATTEMPT below, because it
         % scales with the trial step. Building it once from the nominal h and
         % reusing it across halved retries hands Newton an initial guess a
@@ -481,6 +497,10 @@ while t < settings.t_end-settings.event_tol
         is_event_left = event_cursor<=numel(events) && ...
             abs(t-events(event_cursor).t)<=settings.event_tol;
         side = ternary(is_event_left,'left','continuous');
+        if isfield(cand,'midpoint')
+            m=cand.midpoint;
+            samples=append_sample(samples,t-h_try/2,m.x,m.y,m.u,ec,active,topology,'continuous',0,false);
+        end
         samples = append_sample(samples,t,x,y,u,ec,active,topology,side);
     else
         x_step_left=x;
@@ -578,6 +598,10 @@ while t < settings.t_end-settings.event_tol
         samples = append_sample(samples,t,x,y,u,ec,active,topology,side);
     end
 
+    if isfield(samples,'ne39_assessment') && samples.ne39_assessment.failed
+        converged=false; failure_id='ts_simulate_ibr_hybrid:ne39StudyConstraint';
+        failure_reason=samples.ne39_assessment.failure_reason; break;
+    end
     % Apply every scheduled transition at this timestamp as ONE atomic
     % publication group (C4). Shared group_tx_id covers the left sample,
     % every event ranking in the group, and the single committed right sample.
@@ -883,6 +907,10 @@ while t < settings.t_end-settings.event_tol
         if settings.stepper=="adaptive"
             dt_adaptive = settings.dt_min;
         end
+    end
+    if isfield(samples,'ne39_assessment') && samples.ne39_assessment.failed
+        converged=false; failure_id='ts_simulate_ibr_hybrid:ne39StudyConstraint';
+        failure_reason=samples.ne39_assessment.failure_reason; break;
     end
     % --- Real-time SG-off AGSI support supervisor --------------------------
     % Event names are not switching commands. Every accepted sample is
@@ -1461,6 +1489,15 @@ if isfield(samples,'ne39_decision_log')
     res.ne39_decision_log=samples.ne39_decision_log;
     res.ne39_policy=samples.ne39_policy;
 end
+if isfield(samples,'ne39_assessment')
+    a=samples.ne39_assessment;
+    res.ne39_assessment=rmfield(a,{'dae','case_data','resources'});
+    res.ne39_assessment.production_certified=false;
+    if a.failed
+        converged=false; failure_id='ts_simulate_ibr_hybrid:ne39StudyConstraint';
+        failure_reason=a.failure_reason;
+    end
+end
 res.event_log=event_log;
 res.status_log=status_log;
 res.events=events;
@@ -1583,6 +1620,13 @@ meta.subdivision_depth=subdivision_depth;
 end
 
 function [dae,u,ec,sched,s] = initialize(case_data,devices,x0,y0,opt)
+if isfield(opt,'ne39_assessment_policy')
+    policy=string(opt.ne39_assessment_policy);
+    if ~isscalar(policy) || ~any(policy==["strict","observe_voltage"]) || ...
+            ~isfield(opt,'resources') || numel(opt.resources)~=numel(devices)
+        error('ts_simulate_ibr_hybrid:ne39AssessmentPolicy','study policy/resources ไม่ถูกต้อง');
+    end
+end
 required={'u_eq','event_context','ibr_event_schedule'};
 for k=1:numel(required)
     if ~isfield(opt,required{k})
@@ -1643,7 +1687,7 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
 s.progress_every = option(opt,'progress_every',0);
 s.progress_file  = char(option(opt,'progress_file',''));
 s.progress_last  = -Inf;
-for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps'}
+for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps','ne39_assessment_policy'}
     if isfield(opt,tfield{1}) && ~isempty(opt.(tfield{1}))
         s.(tfield{1})=opt.(tfield{1});
     end
@@ -3138,7 +3182,7 @@ end
 sync=case_data.synchronism;
 f0=case_data.base_values.frequency_Hz;
 % dV/df/dtheta ของ synchronism เป็นแถบ dwell ไม่ใช่ขีด snapshot.
-% แรงดันใช้ช่วง operating ของบัส TAMU (0.9-1.1 pu).
+% 0.9-1.1 pu เป็น project operating reference ไม่ใช่ universal transient limit.
 % ความถี่ใช้ +/-0.5 Hz ซึ่งกว้างกว่าแถบ dwell. มุม slip ใช้ 180 deg.
 bounds=struct('v_min',0.9,'v_max',1.1,'f_min',f0-0.5,'f_max',f0+0.5);
 trial_dt=option(opt,'dt',0.01);
@@ -3168,7 +3212,8 @@ trial_opt=struct('dt',trial_dt,'max_steps',trial_steps, ...
     'sync_dwell',sync.dwell_s,'newton_tol',option(opt,'newton_tol',1e-8), ...
     'max_iter',option(opt,'max_iter',50),'fd_eps',option(opt,'fd_eps',3e-6), ...
     'kcl_tol',kcl_tol,'energy_tol_pu_s',1e-6, ...
-    'refinement_tol',1e-5,'slip_limit_deg',180);
+    'refinement_tol',1e-5,'slip_limit_deg',180, ...
+    'assessment_policy',option(opt,'ne39_assessment_policy','strict'));
 try
     [ok,audit]=stability.certify_ne39_transition(t,x,y,u,ec,Y,dae, ...
         resources,case_data,bounds,candidate,trial_opt);
@@ -4115,6 +4160,9 @@ end
 cand.x=hh.x_full; cand.y=hh.y_full; cand.sync=sync_h2; cand.u_end=sync_h2.u_end;
 cand.converged=true; cand.finite=hh.finite;
 cand.iterations=stats.iterations; cand.residual_norm=stats.residual_norm;
+if isfield(step_opt,'ne39_observe_midpoint')
+    cand.midpoint=struct('x',h1.x_full,'y',h1.y_full,'u',u_h1);
+end
 
 % Richardson LTE (trapezoidal p=2, denominator 2^p-1=3), weighted RMS over the
 % ACTIVE differential states only (frozen coordinates are identical in both
@@ -4358,15 +4406,52 @@ s=struct('t',0,'x',x(:),'y',y(:),'u',u(:),'side',{{'initial'}}, ...
     'transaction_id',0);
 end
 
-function s=append_sample(s,t,x,y,u,ec,active,topology,side,tx_id)
+function s=append_sample(s,t,x,y,u,ec,active,topology,side,tx_id,record_rates)
 if nargin < 10, tx_id=0; end
+if nargin < 11, record_rates=true; end
 s.t(end+1)=t; s.x(:,end+1)=x(:); s.y(:,end+1)=y(:); s.u(:,end+1)=u(:);
 s.side{end+1}=side; s.topology{end+1}=topology;
 s.context{end+1}=ec; s.active{end+1}=active(:)';
 s.transaction_id(end+1)=tx_id;
-if isfield(s,'rate_accumulator')
+if record_rates && isfield(s,'rate_accumulator')
     s=record_accepted_rates(s,t,x,y,u,ec);
 end
+if isfield(s,'ne39_assessment'), s=record_ne39_snapshot(s,t,x,y,u,ec); end
+end
+
+function s=record_ne39_snapshot(s,t,x,y,u,ec)
+% อ่าน accepted/right sample; ไม่มีการแก้ plant/controller states.
+% Halfstep observation ไม่ป้อน rate supervisor เพิ่ม; event dt=0 ไม่มี energy impulse.
+a=s.ne39_assessment;
+ev=stability.ne39_transition_snapshot(t,x,y,u,ec,a.dae,a.resources,a.case_data,a.bounds);
+[allowed,decision]=stability.ne39_snapshot_policy(ev,a.policy);
+a.samples_checked=a.samples_checked+1;
+a.strict_snapshot_failures=a.strict_snapshot_failures+~strcmp(ev.status,'PASS');
+a.voltage_excursion_samples=a.voltage_excursion_samples+decision.voltage_excursion;
+if ~allowed
+    a.failed=true; a.failure_reason=sprintf('snapshot refused t=%g: %s',t,ev.reason);
+    a.failed_snapshot=ev;
+else
+    rows=ev.records(startsWith({ev.records.resource_id},'IBR'));
+    E=[rows.capacitor_energy_pu_s]+[rows.source_inductor_energy_pu_s];
+    flow=[rows.source_minus_losses_pu];
+    if any(~isfinite([E flow])) || (isfield(a,'initial_energy') && numel(E)~=numel(a.initial_energy))
+        a.failed=true; a.failure_reason=sprintf('DC evidence ไม่ครบ/finite t=%g',t);
+        s.ne39_assessment=a; return;
+    end
+    if ~isfield(a,'initial_energy')
+        a.initial_energy=E; a.integral=zeros(size(E));
+    else
+        a.integral=a.integral+.5*(t-a.previous_t)*(a.previous_flow+flow);
+    end
+    energy_residual=max([0 abs(E-a.initial_energy-a.integral)]);
+    a.energy_error_pu_s=max(a.energy_error_pu_s,energy_residual);
+    a.previous_t=t; a.previous_flow=flow;
+    if ~isfinite(energy_residual) || energy_residual>1e-6
+        a.failed=true; a.failure_reason=sprintf('DC energy ledger refused t=%g err=%g',t,energy_residual);
+    end
+end
+s.ne39_assessment=a;
 end
 
 function s=record_accepted_rates(s,t,x,y,u,ec)

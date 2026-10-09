@@ -1,14 +1,27 @@
-function folder=probe_ne39_chronology_design(opt)
+function folder=probe_ne39_chronology_design(opt,analysis_opt)
 %PROBE_NE39_CHRONOLOGY_DESIGN คัดกรอง plant/endpoint ก่อน production ไม่ใช่ replay PASS.
 arguments
     opt (1,1) struct = struct()
+    analysis_opt (1,1) struct = struct()
+end
+for name=fieldnames(analysis_opt)'
+    if ~ismember(name{1},{'sssa','initial_modes'})
+        error('probe_ne39_chronology_design:option','ไม่รู้จัก analysis option %s',name{1});
+    end
+end
+if isfield(analysis_opt,'sssa')
+    validateattributes(analysis_opt.sssa,{'logical','double'},{'scalar','real','finite'});
+    if ~ismember(analysis_opt.sssa,[0 1])
+        error('probe_ne39_chronology_design:sssa','sssa ต้องเป็น boolean');
+    end
 end
 root=pf_init_paths();
 folder=fullfile(root,'output','diagnostics', ...
     ['ne39_chronology_design_' char(datetime('now','Format','yyyyMMdd_HHmmss_SSS'))]);
 mkdir(folder);
 base=cases.case_ne39_1sg_9ibr();
-request=struct('design_options',opt,'classification','PROJECT_DERIVED_SCREENING', ...
+request=struct('design_options',opt,'analysis_options',analysis_opt, ...
+    'classification','PROJECT_DERIVED_SCREENING', ...
     'production_ready',false,'source_sha256',base.source_detail.transcription_sha256);
 screen=struct('status','NOT_RUN','reason','','production_ready',false);
 save(fullfile(folder,'request.mat'),'request','-v7.3');
@@ -16,6 +29,7 @@ timer=tic;
 try
     c=cases.ne39_chronology_design(base,opt);
     im=struct('device_id',{'IBR33','IBR37'},'mode',{'gfm','gfm'});
+    if isfield(analysis_opt,'initial_modes'), im=analysis_opt.initial_modes; end
     s=cases.scenario_ne39_tamu_mixed(c,struct('initial_modes',im));
     request.scenario=s;
     [dev,~]=stability.build_mixed_resource_devices(c,s.resources,s.scenario_opt);
@@ -51,16 +65,34 @@ try
     screen.line_open=snapshot(d,Yline,dae,ec,s.resources,c,bounds);
     screen.load_right=endpoint(a,Y0,Yload,dae,ec,s.resources,c,bounds);
     screen.restore_right=endpoint(d,Yline,Y0,dae,ec,s.resources,c,bounds);
+    fault_stamp=complex(zeros(size(Y0))); fault_stamp(16,16)=1/(1i*.1);
+    screen.fault_right=endpoint(b,Yload,Yload+fault_stamp,dae,ec,s.resources,c,bounds);
+    screen.line_right=endpoint(b,Yload,Yline,dae,ec,s.resources,c,bounds);
     screen.design=c.chronology_design;
+    if isfield(analysis_opt,'sssa') && analysis_opt.sssa
+        screen.sg_on.sssa=spectrum(eq_state,eq_dae,eq.equilibrium_context,c,1);
+        screen.post_trip.sssa=spectrum(a,dae,ec,c,ii(1));
+    end
     screen.production_ready=false; % ยังไม่ได้พิสูจน์ dynamics/selector/reclose.
-    screen.endpoint_pass=strcmp(screen.load_right.evidence.status,'PASS') && ...
+    screen.load_restore_pass=strcmp(screen.load_right.evidence.status,'PASS') && ...
         strcmp(screen.restore_right.evidence.status,'PASS');
+    screen.endpoint_pass=screen.load_restore_pass && ...
+        strcmp(screen.fault_right.evidence.status,'PASS') && strcmp(screen.line_right.evidence.status,'PASS');
+    screen.sssa_pass=false;
+    if isfield(screen.sg_on,'sssa') && isfield(screen.post_trip,'sssa')
+        screen.sssa_pass=all(cellfun(@(z)z.gate_pass,screen.sg_on.sssa)) && ...
+            all(cellfun(@(z)z.gate_pass,screen.post_trip.sssa));
+    end
     screen.status='SCREENED_NOT_PRODUCTION_CERTIFIED';
-    if ~screen.endpoint_pass, screen.reason='INSTANTANEOUS_ENDPOINT_CONSTRAINTS_FAIL'; end
+    if ~screen.endpoint_pass
+        screen.reason='INSTANTANEOUS_ENDPOINT_CONSTRAINTS_FAIL';
+    elseif isfield(analysis_opt,'sssa') && analysis_opt.sssa && ~screen.sssa_pass
+        screen.reason='SSSA_CONSTRAINTS_FAIL';
+    end
     fprintf('[NE39-design] capacity=%g required=%g M=%g H=%g Dv=%g endpoint_pass=%d\n', ...
         sum([c.study_capability.records.Pmax_MW]),c.chronology_design.Pcapacity_required_MW, ...
         c.chronology_design.M_s,c.chronology_design.H_s,c.chronology_design.Dv,screen.endpoint_pass);
-    for name={'post_trip','loaded','line_open','load_right','restore_right'}
+    for name={'post_trip','loaded','line_open','load_right','restore_right','fault_right','line_right'}
         z=screen.(name{1});
         fprintf('%s status=%s V=[%.9g %.9g] KCL=%.3g\n', ...
             name{1},z.evidence.status,z.Vmin,z.Vmax,z.kcl);
@@ -73,6 +105,7 @@ try
     end
 catch me
     screen.status='SCREEN_FAILED'; screen.reason=me.message; screen.failure_id=me.identifier;
+    screen.failure_stack=me.stack;
     fprintf('[NE39-design] failed %s: %s\n',me.identifier,me.message);
 end
 elapsed=toc(timer);
@@ -155,6 +188,34 @@ V=complex(a.y0(1:2:end),a.y0(2:2:end));
 I=dae.current_injection(0,a.x0,a.y0,a.u_eq,ec);
 z=struct('Vmin',min(abs(V)),'Vmax',max(abs(V)),'kcl',norm(Y*V-I,inf), ...
     'evidence',stability.ne39_transition_snapshot(0,a.x0,a.y0,a.u_eq,ec,dae,resources,c,bounds));
+end
+
+function records=spectrum(a,dae,ec,c,ref)
+% ทุก physical root และ FD factors เดิม ไม่ตัด root หลัง eig.
+active=[];
+for k=1:numel(dae.devices)
+    dev=dae.devices(k); key=matlab.lang.makeValidName(dev.device_id);
+    if ~ec.hybrid_state.device_online.(key), continue; end
+    if isa(dev.active_state_indices_for_context,'function_handle')
+        local=dev.active_state_indices_for_context(ec);
+    else
+        local=dev.active_state_indices;
+    end
+    active=[active,dae.device_offsets(k)+local]; %#ok<AGROW>
+end
+records=cell(1,3);
+for k=1:3
+    op=struct('full_kcl',true,'u_eq',a.u_eq,'event_context',ec, ...
+        'active_state_indices',active,'reference_device_index',ref,'fd_eps',3e-6*2^(k-2));
+    z=stability.composite_sssa_model(dae.devices,a.x0,a.y0,c,op);
+    roots=z.physical_eigenvalues; oscillatory=abs(imag(roots))>1e-6;
+    damping=-real(roots(oscillatory))./abs(roots(oscillatory));
+    worst=min(damping); if isempty(worst), worst=1; end
+    records{k}=z; records{k}.zeta_worst=worst;
+    records{k}.gate_pass=all(real(roots)<0) && worst>=c.selector.zeta_min_damping;
+    fprintf('SSSA ref=%d fd=%g physical_roots=%d omega=%g zeta=%g pass=%d\n', ...
+        ref,op.fd_eps,numel(roots),max(real(roots)),worst,records{k}.gate_pass);
+end
 end
 
 function z=endpoint(a,Yleft,Yright,dae,ec,resources,c,bounds)

@@ -205,6 +205,50 @@ tc.verifyFalse(ok); tc.verifyEqual(a.status,'UNKNOWN');
 tc.verifyEqual(a.reason,'TRIAL_BUDGET_EXHAUSTED');
 end
 
+function test_voltage_only_policy_keeps_strict_evidence(tc)
+s=tc.TestData.s; eq=tc.TestData.eq; d=tc.TestData.dae; y=eq.y0;
+ports=[d.devices.bus_position]; k=find(~ismember(1:size(s.case_data.mpc.bus,1),ports),1);
+y(2*k-1:2*k)=1.4*y(2*k-1:2*k);
+a=stability.ne39_transition_snapshot(0,eq.x0,y,eq.u_eq, ...
+    eq.equilibrium_context,d,s.resources,s.case_data,tc.TestData.bounds);
+tc.verifyEqual(a.status,'FAIL'); tc.verifyTrue(a.complete);
+tc.verifyEqual(a.nonvoltage_status,'PASS');
+tc.verifyTrue(a.voltage_reference.out_of_band(k));
+tc.verifyTrue(all([a.records.pass])); % load-only bus ยังถูกตรวจ.
+tc.verifyFalse(stability.ne39_snapshot_policy(a));
+[ok,decision]=stability.ne39_snapshot_policy(a,"observe_voltage");
+tc.verifyTrue(ok); tc.verifyEqual(decision.status,'STUDY_VOLTAGE_EXCURSION');
+tc.verifyEqual(a.status,'FAIL'); tc.verifyFalse(decision.production_certified);
+end
+
+function test_study_never_accepts_nonvoltage_or_unknown(tc)
+r=tc.TestData.s.resources; k=find(strcmp({r.resource_type},'ibr'),1);
+r(k).limits.ImaxF=.001; a=snapshot(tc,tc.TestData.eq.x0,r);
+tc.verifyFalse(stability.ne39_snapshot_policy(a,"observe_voltage"));
+r(k).limits.Pmax_MW=NaN; a=snapshot(tc,tc.TestData.eq.x0,r);
+tc.verifyEqual(a.status,'UNKNOWN'); tc.verifyFalse(a.complete);
+tc.verifyFalse(stability.ne39_snapshot_policy(a,"observe_voltage"));
+end
+
+function test_private_study_preserves_strict_voltage_failures(tc)
+[s,candidate,opt]=trial_inputs(tc); eq=tc.TestData.eq; d=tc.TestData.dae;
+b=tc.TestData.bounds; b.v_min=1.2; b.v_max=1.3;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data,b,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+opt.assessment_policy='observe_voltage';
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data,b,candidate,opt);
+tc.verifyTrue(ok,a.reason); tc.verifyEqual(a.status,'STUDY_TRIAL_COMPLETE');
+tc.verifyFalse(a.strict_snapshot_pass); tc.verifyFalse(a.commit_authorized);
+tc.verifyEqual(a.refinement_samples,a.passes{1}.steps);
+tc.verifyGreaterThan(a.passes{1}.voltage_excursion_samples,0);
+r=s.resources; k=find(strcmp({r.resource_type},'ibr'),1); r(k).limits.ImaxF=.001;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,r,s.case_data,b,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+end
+
 function [s,candidate,opt]=trial_inputs(tc)
 s=tc.TestData.s;
 % fixture ทดสอบ early gates/private stationary trial ไม่ใช่ authenticated production spectrum.

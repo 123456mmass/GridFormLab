@@ -84,10 +84,23 @@ for k = 1:numel(case_data.ibr_buses)
         r.dynamic_params.dc_source.Idc_max = design.Idc_continuous_design_pu;
         r.dynamic_params.dc_source.Psource_max = design.dc_source_power_design_MW/M;
     end
+    if isfield(case_data,'chronology_design')
+        % design opt-in ผูกกับ case: ให้ plant จริงใช้ค่าชุดเดียวกับ sizing ledger.
+        tuned = case_data.chronology_design.dynamic_params.(r.resource_id);
+        r.dynamic_params.gfl_eecon49 = tuned.gfl_eecon49;
+        r.dynamic_params.gfm_eecon49 = tuned.gfm_eecon49;
+        r.dynamic_params.dc_source = tuned.dc_source;
+        r.limits.Qmax_MVAr = design.Qmax_MVAr;
+    end
     r.provenance = struct('model','eecon49_dual', ...
         'source','EECON49-P4 Eqs.(6)-(29); project converter/DC design', ...
         'classification','AC_SOURCE_MAPPED_PARAMETERS_PROJECT_DEFINED', ...
         'details',sprintf('17-state shared plant; %.0f MVA converter; DC design bound is not certified reserve',M));
+    if isfield(case_data,'chronology_design')
+        r.provenance.classification = 'PROJECT_DERIVED_CHRONOLOGY_PLANT_DESIGN';
+        r.provenance.details = sprintf('%s; equations EECON49; ratings/control/DC เป็น study design', ...
+            case_data.chronology_design.id);
+    end
     spec = [spec,r]; %#ok<AGROW>
 end
 [resources,schema] = stability.resource_table(case_data,spec,scenario_opt);

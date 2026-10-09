@@ -280,3 +280,36 @@ Strict frequency fixture regressionผ่าน6/6 ไม่มีIncomplete แ
 ตรวจreserve arithmeticและfrozen-currentrightlimitโดยตรง: initialIBR5620MW + SG31 546.427081MW; sumIBRPmax7070MW แต่nominal+20%load7349.4MW จึงขาด279.4MWก่อนnetworklossesหากพยายามรักษาnominalvoltage. ที่50s/145s differentialstateและinputเท่ากันexactทั้งleft/right และaggregateinjectiondeltaI=0; Vเปลี่ยนจาก[1.00210024,1.06462759]เป็น[.842606448,.916074937]ที่loadstep และจาก[.989128622,1.059672]เป็น[1.10582272,1.27509077]ที่restore. นี่เป็นผลของlinearKCLกับcurrentstateต่อเนื่อง ไม่ใช่adaptiveLTEfailure; การเปลี่ยนPIgainอย่างเดียวที่stateเดิมไม่เปลี่ยนinstantaneousrightlimit. ต้องมีการออกแบบoperatingpoint/physicalplantหรือchronologyใหม่ที่ระบุชัดก่อนรัน ไม่แก้rawย้อนหลังหรือเพิ่มPmaxย้อนหลังให้ผลเดิมผ่าน.
 
 ตรวจslipหลังแปลงฐานหน่วยจากrawเดิมโดยไม่รัน/แก้trajectory: ที่145/150/160s ได้11.2777209/11.7220335/12.6237284pu หรือ676.663252/703.322010/757.423702Hz. ทุกจุดยังเกินsynchronismdf_maxอย่างชัดเจน. ผลนี้ยืนยันว่าunitfixจำเป็นต่อการวัดที่ถูกต้อง แต่ไม่ใช่การแก้frozen-Pmrotorcoastและไม่ทำให้rawเดิมrecloseสำเร็จ.
+
+## Study design หลังผู้ใช้อนุญาตให้ปรับค่าพร้อมเหตุผล (เริ่ม2026-10-09; ตรวจต่อ2026-10-10)
+
+เพิ่ม opt-in `cases.ne39_chronology_design` เฉพาะ1SG9IBR ไม่เปลี่ยน default/source archives/network/SG H-D-Xdp/synchronism/selector gates. ค่าและเป้าหมายเป็น **PROJECT_DERIVED** ไม่อ้างเป็น TAMU hardware หรือค่าที่ต้นทางตีพิมพ์. Profileนี้ยังไม่ production-ready; ไม่มี160sใหม่หรือactual recloseจากงานช่วงนี้.
+
+| ค่าที่ออกแบบ | สมการ/เหตุผล | ผล V1 |
+|---|---|---|
+| generator voltage setpoints | 1.04pu เป็น study target ภายใน.9–1.1; derive pre-event Pslack/Q ใหม่โดย PV PF | Psg31=545.694996MW; Vpfทั้งnetwork1.02251–1.08487pu |
+| active capacity | CZโหลดใช้ `1.2*Pd*(1.1/Vpf)^2`; loss allowance5% และdesign margin10% เป็นสมมติฐานที่ประกาศก่อนrun ไม่ใช่lossที่วัดจริง | load envelope8099.411902MW; required9354.820747MW; rounded total9410MW |
+| Q และ converter Mbase | SG31offline PV sizingPF ทั้ง loaded/line-open; Qmax=ceil10(1.2*maxabsQ); Mbase=ceil10(hypot(Pmax,Qmax)/(.9*1.0)) | total11360MVA; Idesign<=1.0pu เพื่อเว้นmarginถึงgate1.2pu |
+| virtual inertia | DeltaP=max(Psg,.2*Pload_envelope)/sumMbase; M=fbase*DeltaP/RoCoFtarget1Hz/s; H=M/2 | M8.555716798s, H4.277858399s converterbase; เป็น aggregate sizing ไม่ใช่รับรอง individual transient RoCoF |
+| droop | Dv=fbase*DeltaP/Deltaftarget.4Hz | Dv21.389291995; independent loaded/line commonf59.7481180/59.7602454Hz |
+| Q/V dynamics | kE8คงเดิม; kQ/kE=.025pu/puQ; tauE/kE=.05s | kQ.2, tauE.4s |
+| voltage PI | kpV1.2และinner kpI.3/kiI4คงต้นทาง; kiV/kpV=min(1/.05,slow_current_root/5) | เป็น PI-zero placement heuristic ไม่ใช่ closed-loop bandwidth/damping certificate; ต้องตรวจfullspectrumก่อนproduction |
+| DC capacitance | `.5*Cdc*(1-.9^2)=Pacmax*.02s`; .02sเป็นdeclaredsource-interruption energy target ไม่ใช่LTE timestep | Cdc.15716–.18888pu-s |
+| DC source | Rdc.1ตาม10%regulation; Edc=1+Rdc*Pac0; tau_sจากmaxflathelper; high-branch/current/trace/determinant checks; Idc/Psource5%margin | tau_s.007862–.009451s; GFL/GFMfixedplantตรงกันจริง |
+
+Pmax/Mbaseรายบัส:30=420/550,32=1090/1490,33=1060/1320,34=850/1040,35=1090/1360,36=940/1090,37=900/1020,38=1390/1590,39=1670/1900 (MW/MVA). Profileส่งค่าทั้งสองbranchและDCเข้าสู่productionfactoryจริง ไม่เพิ่มPmaxย้อนหลังให้rawเก่าผ่าน.
+
+| Experiment | ผล | ข้อสรุป |
+|---|---|---|
+| MATLAB R2025a `bci2cbe4u` | ไม่ถึงbatch ไม่มีoutputกว่า10นาที; ตรวจparent/commandlineแล้วหยุดเฉพาะPID66336/67576 | ไม่มีnumericaltestresult; ไม่ใช่simulationFAIL |
+| MATLAB R2024b `b1fadjsaj` | ไม่ถึง`BATCH_STARTED`; หยุดเฉพาะPID55820/38400หลังตรวจownership | ไม่ใช้exit127จากstopแทนphysicalFAIL |
+| R2025a `-nojvm` `bo0dqyb1u` | batchเริ่มได้; designtests4/4; screeningหยุดเพราะชื่อstateใช้gfm_omegaแทนgfm_omega_VSG | runtimeพร้อม; แก้diagnosticชื่อstate ไม่เปลี่ยนplant |
+| independent `ne39_independent_design_20261010_000622_189736` | basePASS; loadedโยนimbalanceให้referenceใหม่จึงIBR30overcurrent | เป็นnominal-frequency reference-redispatchscreen ไม่ใช่physicalpost-loadtrajectory; แก้oracleให้uคงเดิมและsolvecommondroopf |
+| MATLAB `ne39_chronology_design_20261010_001502_310` และindependent `001945_117243` | posttrip/loaded/lineopen physical snapshotsPASS; V1.02023–1.08140 /1.01102–1.07036 /1.00122–1.06621; fullKCL<=4.55e-10 | capacity/DC/droopsteadyปัญหาเดิมแก้ในscreen; ไม่ใช่SSSA/transient/productioncertificate |
+| same endpointscreen | loadrightV.855295210–.922020581; restoreright1.12927224–1.29121794; snapshotFAILเฉพาะvoltage; current/u/xคงเดิมและfullKCLผ่าน | ไม่รัน160sด้วยprofileที่endpointFAIL |
+| independent voltage1.06 `ne39_independent_design_20261010_001625_710981` | posttripVmax1.10423>1.1; loadrightmin.876343; restoremax1.31590 | เพิ่มsetpointเหมือนกันทุกเครื่องไม่แก้ทั้งสองendpoint |
+| necessary convexbound บนV1network | bus8 right |V|<=.89995723pu (+numericalallowance1e-7ยังต่ำกว่า.9); arbitraryIBRcurrents/phasorsโดยไม่จำกัดrating/dispatch และทุกleftbus<=1.1 | สำหรับnetwork/loadadmittanceชุดนี้ gains/rating/dispatchอย่างเดียวไม่สามารถให้ทุกleft/rightvoltageผ่าน; ไม่ได้พิสูจน์ทุกoperatingpointหรือnetworkextensionว่าเป็นไปไม่ได้ |
+
+Boundเก็บvectorhและidentityresidualใน`ne39_independent_design_20261010_001945_117243/screen.json`: K=Yleft^-1*C*(portrows)^-1, t=righttransferrow, r=t-hK. ใช้triangleinequality `|Vright8|<=1.1*(sumabs(h)+sumabs(r))` จากทุกleftbusและportvoltage<=1.1; boundไม่อาศัยclaimglobaloptimalityของSLSQP. Plantไม่มีphysicalcurrentjump จึงgainไม่เปลี่ยนrightlimitที่stateเดิม.
+
+ล่าสุดregression20/20ไม่มีIncomplete (design4,speed4,rollback5,fixed7). เพิ่มrealendpointfail-closedtestแล้วdesign5/5ไม่มีIncomplete; test/helper/design checkcode0warnings. Pythonoraclepy_compileผ่าน; source/defaultisolationตรวจactualcase/machine/archivepayloadและcasegatesด้วยtests. ยังไม่ตรวจSSSA/privateadaptive/160s/recloseของdesignใหม่. SGmechanicalextensionยังไม่เขียน; frozenpositivePm/D0ยังไม่reclose-ready. ขั้นถัดไปต้องออกแบบphysicalvoltage-support/operating-envelopeที่มีเหตุผลและตรวจendpointก่อน ไม่sweepPIหรือเพิ่มlimitsเพื่อให้FAILหาย.

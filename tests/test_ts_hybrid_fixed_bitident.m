@@ -99,6 +99,25 @@ testCase.verifyFalse(r.converged);
 testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badAdaptiveOptions');
 end
 
+function test_invalid_rannacher_n_fails_closed(testCase)
+[scenario,opt] = compressed_arm();
+opt.stepper = 'adaptive';
+for value = [-1, .5, Inf, NaN]
+    opt.rannacher_n = value;
+    r = stability.run_hybrid_case(scenario,opt);
+    testCase.verifyFalse(r.converged);
+    testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badAdaptiveOptions');
+end
+end
+
+function test_zero_rannacher_window_fails_closed(testCase)
+[scenario,opt] = compressed_arm();
+opt.stepper = 'adaptive'; opt.rannacher_window_dt = 0;
+r = stability.run_hybrid_case(scenario,opt);
+testCase.verifyFalse(r.converged);
+testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badAdaptiveOptions');
+end
+
 function test_nonstepper_adaptive_option_reaches_driver(testCase)
 % Regression for the pass-through loop: transposing the row cell array made
 % MATLAB execute the loop once with the whole option list in one column, so

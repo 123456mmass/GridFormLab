@@ -152,6 +152,7 @@ opt.dt_max=.01; opt.dt_max_armed=.01;
 opt.atol_x=1e-14; opt.rtol_x=1e-14;
 opt.atol_y=1e-14; opt.rtol_y=1e-14;
 opt.adaptive_strict_lte=true;
+opt.rannacher_n=0;
 opt.automatic_support_supervision=false;
 opt.ibr_events=struct('enabled',true,'event_profile','fault_only', ...
     'fault_on',.02,'fault_clear',.04,'fault_bus',9,'Zf',.1i, ...

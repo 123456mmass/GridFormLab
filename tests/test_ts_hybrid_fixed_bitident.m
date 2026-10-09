@@ -67,6 +67,7 @@ testCase.verifyEqual(char(r.stepper),'fixed');
 testCase.verifyFalse(isfield(r,'dt_history'),      'fixed must not publish dt_history');
 testCase.verifyFalse(isfield(r,'rejection_history'),'fixed must not publish rejection_history');
 testCase.verifyFalse(isfield(r,'rejected_steps'),  'fixed must not publish rejected_steps');
+testCase.verifyFalse(isfield(r,'adaptive_strict_lte'));
 end
 
 function test_bad_stepper_fails_closed(testCase)
@@ -88,6 +89,14 @@ testCase.verifyFalse(r.converged, 'a bad stepper must fail closed');
 testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badStepper', ...
     'the governing validation identifier must remain observable');
 testCase.verifyEqual(char(r.metadata.failure), 'ts_simulate_ibr_hybrid:badStepper');
+end
+
+function test_invalid_strict_lte_reaches_driver(testCase)
+[scenario,opt] = compressed_arm();
+opt.stepper = 'adaptive'; opt.adaptive_strict_lte = 2;
+r = stability.run_hybrid_case(scenario,opt);
+testCase.verifyFalse(r.converged);
+testCase.verifyEqual(char(r.failure_id), 'ts_simulate_ibr_hybrid:badAdaptiveOptions');
 end
 
 function test_nonstepper_adaptive_option_reaches_driver(testCase)

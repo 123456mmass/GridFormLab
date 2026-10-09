@@ -237,9 +237,15 @@ end
 for afield = {'stepper','dt_min','dt_max','dt_max_armed', ...
         'atol_x','rtol_x','atol_y','rtol_y', ...
         'controller_fac','controller_fac_min','controller_fac_max', ...
-        'reject_limit','rannacher_window_dt','rannacher_n'}
+        'reject_limit','rannacher_window_dt','rannacher_n','adaptive_strict_lte'}
     if isfield(opt,afield{1}) && ~isempty(opt.(afield{1}))
         ts_opt_base.(afield{1}) = opt.(afield{1});
+    end
+end
+% Private NE39 trial เลือก mesh/budget แบบ explicit; ไม่เปลี่ยน physical gates.
+for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps'}
+    if isfield(opt,tfield{1}) && ~isempty(opt.(tfield{1}))
+        ts_opt_base.(tfield{1})=opt.(tfield{1});
     end
 end
 % Reference-AGSI in-band overlay (opt-in, DIAGNOSTIC ONLY, 2026-08-13). The
@@ -737,7 +743,7 @@ end
 % adaptive path, so a fixed run keeps its exact prior field set aside from the
 % additive provenance label.
 adaptive_fields = {'stepper','dt_history','lte_history','rejected_steps', ...
-    'floor_accepted_steps','rejection_history', ...
+    'floor_accepted_steps','adaptive_strict_lte','rejection_history', ...
     'agsi_reference'};
 for k = 1:numel(adaptive_fields)
     name = adaptive_fields{k};

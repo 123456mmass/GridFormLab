@@ -96,6 +96,70 @@ tc.verifyEqual(u,eq.u_eq); tc.verifyEqual(ec,eq.equilibrium_context);
 tc.verifyFalse(a.commit_authorized);
 end
 
+function test_adaptive_private_trial_checks_every_coarse_time(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok,a.reason);
+tc.verifyEqual(a.timestep_strategy,'adaptive');
+tc.verifyEqual(a.refinement_samples,a.passes{1}.steps);
+tc.verifyEqual(a.passes{2}.steps,2*a.passes{1}.steps);
+tc.verifyEqual(a.passes{1}.t_reached,a.horizon_s,'AbsTol',1e-12);
+tc.verifyLessThanOrEqual(a.refinement_error,opt.refinement_tol);
+tc.verifyLessThanOrEqual(a.passes{1}.peak_local_refinement_error,opt.refinement_tol/20);
+tc.verifyGreaterThan(a.passes{1}.min_dt,0);
+tc.verifyLessThanOrEqual(a.passes{1}.max_dt,opt.dt);
+tc.verifyGreaterThanOrEqual(a.passes{1}.step_attempts,3*a.passes{1}.steps);
+tc.verifyFalse(a.commit_authorized);
+end
+
+function test_fixed_strategy_matches_default(tc)
+[s,candidate,opt]=trial_inputs(tc); eq=tc.TestData.eq; d=tc.TestData.dae;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+opt.timestep_strategy='fixed';
+[ok2,b]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok,a.reason); tc.verifyTrue(ok2,b.reason);
+tc.verifyEqual(a.passes,b.passes);
+tc.verifyEqual(a.refinement_error,b.refinement_error);
+end
+
+function test_progress_does_not_change_trial_evidence(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+opt.progress_interval_s=60;
+text=evalc('[ok2,b]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq,eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data,tc.TestData.bounds,candidate,opt);');
+tc.verifyTrue(ok,a.reason); tc.verifyTrue(ok2,b.reason);
+tc.verifyTrue(contains(text,'[NE39-private-trial]'));
+tc.verifyEqual(a.passes,b.passes);
+tc.verifyEqual(a.refinement_error,b.refinement_error);
+tc.verifyEqual(a.refinement_samples,b.refinement_samples);
+end
+
+function test_adaptive_keeps_physical_and_budget_gates(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae; x=eq.x0;
+i=find(strcmp({s.resources.resource_type},'ibr'),1); x(d.device_offsets(i)+17)=100;
+[ok,a]=stability.certify_ne39_transition(0,x,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+opt.max_steps=1;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'UNKNOWN');
+tc.verifyEqual(a.reason,'TRIAL_BUDGET_EXHAUSTED');
+end
+
 function test_wrong_right_kcl_is_not_certified(tc)
 [s,candidate,opt]=trial_inputs(tc);
 eq=tc.TestData.eq; d=tc.TestData.dae; y=eq.y0;

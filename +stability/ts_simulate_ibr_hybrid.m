@@ -347,8 +347,8 @@ while t < settings.t_end-settings.event_tol
                 % physical gate and is fully recorded (floor_accepted +
                 % lte_history). It is NOT a silent fixed-step fallback: the
                 % step taken is dt_min, not the nominal dt.
-                floor_ok = at_floor && cand.converged && est.usable && ...
-                    est.alg_res<=settings.kcl_tol;
+                floor_ok = ~settings.adaptive_strict_lte && at_floor && ...
+                    cand.converged && est.usable && est.alg_res<=settings.kcl_tol;
                 accept_this = lte_ok || floor_ok;
                 floor_accepted = accept_this && ~lte_ok;
             end
@@ -360,7 +360,7 @@ while t < settings.t_end-settings.event_tol
                 'reason',adaptive_reject_reason(cand,est,settings), ...
                 'retry_dt',max(settings.dt_min,h_try/2)); %#ok<AGROW>
             if at_floor
-                if ~step_is_be
+                if ~step_is_be && ~settings.adaptive_strict_lte
                     % Order-reduction rescue. At a C0 current-limiter switching
                     % kink the trapezoidal fixed-point iteration averages f at
                     % the two endpoints straddling the switch, which are
@@ -382,9 +382,10 @@ while t < settings.t_end-settings.event_tol
                 failure_id='ts_simulate_ibr_hybrid:adaptiveDtMin';
                 failure_reason=sprintf(['Adaptive step could not satisfy the ' ...
                     'DAE at dt_min=%.3e, t=%.6f (err=%.3e alg_res=%.3e ' ...
-                    'converged=%d, backward-Euler rescue attempted). ' ...
+                    'converged=%d, strict_lte=%d, backward_euler=%d). ' ...
                     'No silent fixed-step fallback.'], ...
-                    settings.dt_min,t,est.err,est.alg_res,cand.converged);
+                    settings.dt_min,t,est.err,est.alg_res,cand.converged, ...
+                    settings.adaptive_strict_lte,step_is_be);
                 break;
             elseif reject_count>=settings.reject_limit
                 converged=false;
@@ -860,6 +861,9 @@ while t < settings.t_end-settings.event_tol
             Ylog(end+1)=struct('t',t,'topology',topology,'Y',Ycurr); %#ok<AGROW>
         end
         rannacher_steps_remaining=1;
+        if settings.stepper=="adaptive" && settings.adaptive_strict_lte
+            rannacher_steps_remaining=0;
+        end
         subdivision_hint=0;
         predictor_prev_x=[];
         predictor_prev_t=NaN;
@@ -1497,6 +1501,7 @@ if settings.stepper=="adaptive"
     res.lte_history=lte_history;
     res.rejected_steps=rejected_steps;
     res.floor_accepted_steps=floor_accepted_steps;
+    res.adaptive_strict_lte=settings.adaptive_strict_lte;
     res.rejection_history=rejection_history;
 end
 % Phase-2 reselection + reference-ownership fields (F1/C1/F5).
@@ -1638,6 +1643,11 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
 s.progress_every = option(opt,'progress_every',0);
 s.progress_file  = char(option(opt,'progress_file',''));
 s.progress_last  = -Inf;
+for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps'}
+    if isfield(opt,tfield{1}) && ~isempty(opt.(tfield{1}))
+        s.(tfield{1})=opt.(tfield{1});
+    end
+end
 s.state_predictor = char(option(opt,'state_predictor','hold'));
 % Falsified alternative (2026-08-11, do not reintroduce without new
 % evidence): using an extrapolating predictor for ORDINARY steps instead of
@@ -1871,6 +1881,12 @@ if s.stepper=="adaptive"
     % as NOT_READY (TRACK_A_ADAPTIVE_TS); these values are declared in the
     % plan and the tests before any metric is viewed, and are overridden
     % per-caller, never retuned after seeing results.
+    s.adaptive_strict_lte=option(opt,'adaptive_strict_lte',false);
+    validateattributes(s.adaptive_strict_lte,{'logical','double'},{'scalar','finite'});
+    if ~ismember(s.adaptive_strict_lte,[0 1])
+        error('ts_simulate_ibr_hybrid:badAdaptiveOptions','adaptive_strict_lte ต้องเป็น boolean');
+    end
+    s.adaptive_strict_lte=logical(s.adaptive_strict_lte);
     s.atol_x = option(opt,'atol_x',1e-6);
     s.rtol_x = option(opt,'rtol_x',1e-4);
     s.atol_y = option(opt,'atol_y',1e-5);
@@ -3142,8 +3158,12 @@ if isfield(candidate,'physical_eigenvalues') && isnumeric(candidate.physical_eig
     end
 end
 % budget ครอบ horizon เดียวกับ certify; เกินงบต้อง refuse ไม่ตัดเวลา trial.
+trial_strategy=char(option(opt,'ne39_trial_timestep_strategy','fixed'));
 trial_steps=min(32000,ceil(2*trial_horizon/trial_dt)+8);
+if strcmp(trial_strategy,'adaptive'), trial_steps=32000; end
+trial_steps=option(opt,'ne39_trial_max_steps',trial_steps);
 trial_opt=struct('dt',trial_dt,'max_steps',trial_steps, ...
+    'timestep_strategy',trial_strategy, ...
     'rho',option(opt,'rho',case_data.delays.rho), ...
     'sync_dwell',sync.dwell_s,'newton_tol',option(opt,'newton_tol',1e-8), ...
     'max_iter',option(opt,'max_iter',50),'fd_eps',option(opt,'fd_eps',3e-6), ...

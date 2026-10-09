@@ -64,6 +64,20 @@ if ~isfinite(T) || ceil(T/(opt.dt/2))>opt.max_steps
     audit.reason='TRIAL_BUDGET_EXHAUSTED'; return;
 end
 active=stability.ts_dynamic_state_indices(dae,ec);
+strategy='fixed';
+if isfield(opt,'timestep_strategy'), strategy=char(opt.timestep_strategy); end
+if ~any(strcmp(strategy,{'fixed','adaptive'}))
+    error('stability:certify_ne39_transition:options','timestep_strategy ไม่ถูกต้อง');
+end
+% Adaptive mesh ใช้ step doubling เพื่อเลือก h เท่านั้น; global path refinement
+% และ physical/energy gates เดิมยังตัดสินทั้งสอง passes ทุก coarse accepted time.
+audit.timestep_strategy=strategy;
+progress_interval=Inf;
+if isfield(opt,'progress_interval_s')
+    validateattributes(opt.progress_interval_s,{'numeric'},{'scalar','real','finite','positive'});
+    progress_interval=opt.progress_interval_s;
+end
+progress_clock=tic; progress_last=-Inf;
 coarse_t=[]; coarse_state=[]; path_refinement_error=0;
 for pass=1:2
     try
@@ -81,6 +95,9 @@ for pass=1:2
     end
     if pass==1, xc=xx; yc=yy; else, xf=xx; yf=yy; end
 end
+if audit.refinement_samples~=audit.passes{1}.steps
+    audit.reason='DT_REFINEMENT_COVERAGE_INCOMPLETE'; return;
+end
 audit.refinement_error=max(path_refinement_error,max(abs([xf(active)-xc(active);yf-yc])));
 if audit.refinement_error>opt.refinement_tol
     audit.reason='DT_REFINEMENT_NOT_RESOLVED'; return;
@@ -88,14 +105,16 @@ end
 ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
 
     function [a,X,yy]=trial(dt,pass)
-        X=x; yy=y; elapsed=0; next_coarse=2;
+        X=x; yy=y; elapsed=0; next_coarse=2; proposed_h=dt;
         if pass==1
             coarse_t=zeros(1,ceil(T/dt)+1);
             coarse_state=zeros(numel(active)+numel(y),numel(coarse_t));
             coarse_state(:,1)=[X(active);yy];
         end
         a=struct('status','UNKNOWN','reason','','dt',dt,'steps',0, ...
-            't_reached',0,'energy_error_pu_s',0,'peak_angle_excursion_deg',0);
+            't_reached',0,'energy_error_pu_s',0,'peak_angle_excursion_deg',0, ...
+            'step_attempts',0,'rejected_steps',0,'min_dt',Inf,'max_dt',0, ...
+            'peak_local_refinement_error',0);
         e=stability.ne39_transition_snapshot(t,X,yy,u,ec,dae,resources,c,bounds);
         if ~strcmp(e.status,'PASS')
             a.status=e.status; a.reason=e.reason; a.failed_snapshot=e; return;
@@ -118,15 +137,59 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
         active_idx=stability.ts_dynamic_state_indices(dae,ec);
         while elapsed<T-1e-12
             if a.steps>=opt.max_steps, a.reason='TRIAL_BUDGET_EXHAUSTED'; return; end
-            h=min(dt,T-elapsed);
+            progress();
+            h=min(proposed_h,T-elapsed);
             if pass==2
+                if strcmp(strategy,'adaptive')
+                    interval=coarse_t(next_coarse)-coarse_t(next_coarse-1);
+                    h=min(h,interval/2);
+                end
                 h=min(h,coarse_t(next_coarse)-elapsed);
             end
             sopt=struct('t_now',t+elapsed,'newton_tol',opt.newton_tol, ...
                 'max_iter',opt.max_iter,'fd_eps',opt.fd_eps,'verbose',false, ...
                 'full_kcl',true,'domain_preserving_trials',true);
             try
-                step=stability.ts_step_composite(X,yy,h,dae,Y,u,ec,active_idx,sopt);
+                if pass==1 && strcmp(strategy,'adaptive')
+                    % รับ full step บน mesh ที่ local step-doubling ผ่านเท่านั้น.
+                    % pass2 เดินครึ่งทุก interval เดิมเพื่อทดสอบ global path จริง.
+                    local_tol=opt.refinement_tol/20;
+                    while true
+                        progress();
+                        step=stability.ts_step_composite(X,yy,h,dae,Y,u,ec,active_idx,sopt);
+                        a.step_attempts=a.step_attempts+1;
+                        local_error=Inf;
+                        if step.converged && step.finite
+                            half=stability.ts_step_composite(X,yy,h/2,dae,Y,u,ec,active_idx,sopt);
+                            a.step_attempts=a.step_attempts+1;
+                            if half.converged && half.finite
+                                sop2=sopt; sop2.t_now=t+elapsed+h/2;
+                                fine=stability.ts_step_composite(half.x_full,half.y_full,h/2, ...
+                                    dae,Y,u,ec,active_idx,sop2);
+                                a.step_attempts=a.step_attempts+1;
+                                if fine.converged && fine.finite
+                                    local_error=max(abs([fine.x_full(active)-step.x_full(active); ...
+                                        fine.y_full-step.y_full]));
+                                end
+                            end
+                        end
+                        if local_error<=local_tol, break; end
+                        a.rejected_steps=a.rejected_steps+1;
+                        if h<=opt.dt/4096
+                            a.reason='ADAPTIVE_TRIAL_STEP_NOT_RESOLVED'; return;
+                        end
+                        h=h/2;
+                    end
+                    factor=1.5;
+                    if local_error>0
+                        factor=min(1.5,max(.5,.8*(local_tol/local_error)^(1/3)));
+                    end
+                    proposed_h=min(dt,h*factor);
+                    a.peak_local_refinement_error=max(a.peak_local_refinement_error,local_error);
+                else
+                    step=stability.ts_step_composite(X,yy,h,dae,Y,u,ec,active_idx,sopt);
+                    a.step_attempts=a.step_attempts+1;
+                end
             catch me
                 a.reason=me.message; return;
             end
@@ -135,6 +198,7 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
             end
             X=step.x_full; yy=step.y_full; elapsed=elapsed+h;
             a.steps=a.steps+1; a.t_reached=elapsed;
+            a.min_dt=min(a.min_dt,h); a.max_dt=max(a.max_dt,h);
             if pass==1
                 coarse_t(a.steps+1)=elapsed;
                 coarse_state(:,a.steps+1)=[X(active);yy];
@@ -153,8 +217,8 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
             end
             e=stability.ne39_transition_snapshot(t+elapsed,X,yy,u,ec,dae,resources,c,bounds);
             if ~strcmp(e.status,'PASS')
-            a.status=e.status; a.reason=e.reason; a.failed_snapshot=e; return;
-        end
+                a.status=e.status; a.reason=e.reason; a.failed_snapshot=e; return;
+            end
             rows=e.records(startsWith({e.records.resource_id},'IBR'));
             nextflow=[rows.source_minus_losses_pu];
             integral=integral+.5*h*(flow+nextflow); flow=nextflow;
@@ -188,6 +252,19 @@ ok=true; audit.status='PASS'; audit.reason='PRIVATE_TRIAL_AND_REFINEMENT_PASS';
             coarse_state=coarse_state(:,1:a.steps+1);
         end
         a.status='PASS'; a.reason='TRIAL_COMPLETE';
+        progress();
+
+        function progress()
+            if isinf(progress_interval), return; end
+            wall=toc(progress_clock);
+            if wall-progress_last<progress_interval, return; end
+            progress_last=wall;
+            fprintf(['[NE39-private-trial] pass=%d t=%.9g/%.9g steps=%d ' ...
+                'attempts=%d rejected=%d next_h=%.3g energy_error=%.3g ' ...
+                'refinement_error=%.3g wall=%.1fs\n'], ...
+                pass,elapsed,T,a.steps,a.step_attempts,a.rejected_steps, ...
+                proposed_h,a.energy_error_pu_s,path_refinement_error,wall);
+        end
     end
 
     function [a,idx,comp]=angles(X,yy,now)

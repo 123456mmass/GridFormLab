@@ -226,3 +226,39 @@ Right-state diagnostic ใช้สมการเดิมและ label `DIAG
 Source archives คง byte-identical ด้วย `.gitattributes -text` ไม่ลบ trailing whitespace หรือเปลี่ยน line endings ของต้นฉบับ; diff-check ของโค้ดผ่านโดยแยก source archive ออก
 
 ตรวจ shared dependencies เพิ่ม `et_fcs_policy_generic`, backward-compatible IEEE14 alias และ explicit-policy input ของ production trip decision เข้า checkpoint; ไม่รวม comment-only changes ของ scenario/resource/SG helpers และงาน GUI path setup คำสั่ง dependency discovery แบบ relative path ล้มเหลวเพราะ test path ไม่ถูก resolve จึงรันใหม่ด้วย absolute paths; ณ ตอนจัด checkpoint ยังรอผล พร้อม regression เพิ่มของ rate/SCR/hotpath/scenario runner ไม่ถือว่างานที่ยังรันอยู่ผ่านแล้ว
+
+Checkpoint `a26d1cc` commit/push แล้วบน `checkpoint/ne39-160s-20261009`; ตรวจ remote hash ตรงกับ local ครบ76ไฟล์ และ staged deletions เดิม16ไฟล์ยังอยู่ไม่ถูก commit. หยุด absolute-path dependency discovery หลังเกิน7นาทีโดยไม่มีผล ไม่อ้างว่า dependency tool ตรวจครบ; ใช้ source trace ของ shared call paths ประกอบ scope แทน
+
+Regression เพิ่มจบ68 results แต่ **ผ่าน62 และถูก assumption filter6** ไม่ใช่68/68: frequency fixture ใช้ source case ที่ capability ยัง unknown. แก้เฉพาะ fixture เปิด `study_capability=true` และคืน original path แล้วรัน frequency suite ผ่าน6/6จริง รุ่นก่อนแก้มี hotpath warm median1792.8us/call ขณะ MATLAB jobs แย่งทรัพยากร ไม่ใช้แทน clean performance benchmark
+
+| การทดลองหลัง checkpoint | ผล | ข้อสรุป |
+|---|---|---|
+| `ne39_inertia_5sg_5ibr_20261009_150342_452` | all-GFM; M=.5/2/8 (H=.25/1/4s converter base), Dv=20/50/100; ทั้ง9profilesไม่ผ่าน .02 หลายตัว unstable | เพิ่ม inertia/damping gain อย่างเดียวไม่แก้ SG_ON; ไม่ติดตั้ง profile |
+| `ne39_voltage_bw_20261009_150837_424` | all-GFM; kiV=12/36/120, Dv=5/20/50; ทั้ง9profilesไม่ผ่าน .02 ที่ kiVสูงเกิด unstable roots | เพิ่ม voltage PI bandwidth อย่างเดียวไม่แก้; SG/DC/physical limits คงเดิม |
+
+อ่าน spectrum เดิมจาก raw entry พบ limiting mode SG_ON≈7.87rad/s และ zeta≈.00035–.00127 ส่วน SG_OFF≈7.42rad/sบาง subsetผ่าน. แยก replay1sพบ resource failuresเฉพาะ voltage153 records และ frequency30 records; ไม่มีการใช้จำนวนนี้แทน intersample/refinement certificate
+
+| การทดลองต่อเนื่อง | ผล | ข้อสรุป |
+|---|---|---|
+| `ne39_trip_1sg_9ibr_20261009_151209_708` | initial IBR33+37; exact SG_OFF all9GFM ผ่าน steady certificate แต่ private t=0 Vbus32=.883901; production trip rollback | target dynamics ต่างจากคู่เดิม แต่ transfer รักษากระแส จึงไม่เปลี่ยน instantaneous voltage |
+| `ne39_right_replay_20261009_151642_938` | exact all9GFM private right-state replay ถึง2s; t=0 FAIL; samples ที่ตรวจหลัง.0025sฟื้นเข้า V/f envelope | diagnostic recovery ไม่ใช่ production transition/global refinement/reclose certificate |
+| `ne39_voltage_op_20261009_151634_140` | ออกแบบ pre-event generator voltage floor1.02pu แล้ว derive PF/Q ใหม่; raw source/network/SG dynamics/ratings/gatesคงเดิม; private coarse passถึง1.84261591sผ่าน physical/KCL/energy/angle แต่ fine global error=.0269565853ที่sampleแรก | operating-point design แก้ coarse physical failure ไม่แก้ discretization; ยังไม่ติดตั้ง default และ production rollback |
+| right-step stencil รอบแรก | empty struct schema ทำให้ append rowล้มเหลวก่อน save | แก้ diagnostic schema ไม่แก้ kernel/physical gates |
+| `ne39_right_stencil_20261009_152234_360` | ทั้ง10 stencils converged; h=.0025 error=.0269565853; h=7.8125e-5 error=9.95954429e-6; h=1.953125e-5 error=1.71823828e-7 | fast transient resolveด้วยhเล็กได้; single-step stencilไม่ใช่ global trajectory certificate |
+
+เพิ่ม optional private `timestep_strategy='adaptive'` ใช้ full-step/two-half-step differenceเลือก mesh และรับ full step; local threshold=`refinement_tol/20` โดยคง global threshold1e-5ที่ทุก coarse accepted time. Fine passเดินครึ่งทุก coarse intervalจริง ไม่ใช้mesh uniformแทน. Budgetนับ accepted stepsต่อpassและrefuseเมื่อหมด; runtime adaptiveเลือกbudget32000แบบ explicitไม่ตัดhorizon. เพิ่มattempt/rejection/min-max dt diagnostics และไม่ต่อhalf-stepที่ไม่converged. Default fixedเทียบexplicit fixedได้ผลเดียวกันใน fixture; snapshot/private-trial regressionผ่าน14/14 รวมadaptive constraints/budget/refinement sample-count. การตรวจ exact voltage-op trajectoryกำลังรัน ณ จุดบันทึกนี้ ยังไม่อ้างadaptive production PASS.
+
+Strict frequency fixture regressionผ่าน6/6 ไม่มีIncomplete และ generic/IEEE14 policy aliasตรงกันด้วยisequaln. Snapshot+FD regression24/24ก่อนเพิ่มadaptive ไม่ใช้แทนผลทดสอบadaptiveที่เพิ่มภายหลัง.
+
+## Adaptive private trial และ strict LTE (2026-10-09)
+
+| การทดลอง | ผลที่ตรวจจริง | ข้อสรุป |
+|---|---|---|
+| `ne39_adaptive_trial_20261009_152911_345`, `154819_973`, `155329_010` | หยุดก่อนมี `trial.mat`; พบ MATLAB child ของงานซ้ำยังอยู่หลังหยุด launcher จึงตรวจ command line แล้วปิดเฉพาะ process ของ session | ไม่มีผล PASS/FAIL ของ trajectory; ห้ามนับเป็น trial ที่เสร็จ |
+| adaptive regression ก่อนเพิ่ม progress/coverage gate | snapshot14/14, LTE3/3, rollback+fixed8/8; ไม่มีIncomplete | default paths ผ่าน regression; ไม่ใช่ผล voltage-op transition |
+| `ne39_adaptive_trial_20261009_163754_142` | เปิด profiler; รับก้าวแรกที่h=1.953125e-5หลังreject7ครั้ง; logล่าสุดที่ตรวจถึงt=.000231461276s, steps10, wall396.1s; หยุดก่อนมีrawผลสุดท้าย | numerical fast transient เริ่ม resolveได้ แต่ยังไม่ครบhorizon; ไม่อ้างว่า physical/global gates ผ่านทั้งtrial |
+| canonical one-step profile | right-stateเดิม h=1.953125e-5; Newton2iterations, grouped FD23groups/12y-groups; profiled wall3.3178s ส่วนsingle-thread5.18275sและresidual2.83948e-9 | มีงานอื่นรันพร้อมกันและรวม cold locality probe; ไม่ใช่ clean speed comparison หรือหลักฐานว่าsingle-threadเร็วกว่า |
+
+เพิ่ม progress แบบ opt-in บอก simulation time, accepted steps, attempts/rejections และ energy/refinement errors; log ไม่เป็น input ของ numerical acceptance. เพิ่ม final coverage gate ให้จำนวน refinement samples ต้องเท่ากับ coarse accepted stepsก่อนPASS. ลบการassign resourcesซ้ำในinitialize เพราะมีassignmentเดิมอยู่แล้ว.
+
+พบ scheduled event บังคับ backward-Euler restart แม้ตั้งstrict LTE; แก้เฉพาะ `adaptive_strict_lte=true` ให้ไม่รับ restart/floor/rescueที่ไม่มีLTEผ่าน ส่วนdefaultfalseยังคงเดิม. เพิ่มnegative regressionตรวจว่า strict floor refusalไม่publishก้าวที่ถูกปฏิเสธ พร้อมtestoptionforwardingและfixed-schema. รุ่นหลังแก้นี้snapshot/private-trial regressionผ่าน15/15ไม่มีIncomplete รวมprogressไม่เปลี่ยนevidence; static analysisของtrial/probes/tests6ไฟล์ไม่พบwarning. LTEoracleผ่าน3/3; strict/default rollbackและfixed regressionยังรอผล. Voltage-optrialรอบ`165619_872`เริ่มจากrawเดิมและรับก้าวแรกh=1.953125e-5หลังreject7ครั้ง; ยังไม่ครบhorizon. **ยังไม่มีproduction SG-trip PASSหรือchronology160s PASS**.

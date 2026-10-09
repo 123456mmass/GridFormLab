@@ -57,6 +57,7 @@ function test_rejection_bookkeeping_is_consistent(testCase)
 r = stability.run_hybrid_case(scenario,opt);
 
 testCase.assertEqual(char(r.stepper),'adaptive');
+testCase.verifyFalse(r.adaptive_strict_lte);
 testCase.assertTrue(isfield(r,'rejection_history'), ...
     'adaptive must publish rejection_history');
 testCase.verifyEqual(numel(r.rejection_history), r.rejected_steps, ...
@@ -142,6 +143,29 @@ testCase.verifyEqual(numel(r.lte_history), numel(r.dt_history), ...
 % NaN; every other accepted step must have a finite error at or below tol.
 fin = r.lte_history(isfinite(r.lte_history));
 testCase.verifyTrue(all(fin >= 0), 'LTE estimates must be nonnegative');
+end
+
+function test_strict_lte_rejects_floor_without_restart_or_rescue(testCase)
+[scenario,opt] = adaptive_arm();
+opt.t_end=.05; opt.dt=.005; opt.dt_min=.004;
+opt.dt_max=.01; opt.dt_max_armed=.01;
+opt.atol_x=1e-14; opt.rtol_x=1e-14;
+opt.atol_y=1e-14; opt.rtol_y=1e-14;
+opt.adaptive_strict_lte=true;
+opt.automatic_support_supervision=false;
+opt.ibr_events=struct('enabled',true,'event_profile','fault_only', ...
+    'fault_on',.02,'fault_clear',.04,'fault_bus',9,'Zf',.1i, ...
+    'automatic_gfm_switching',false);
+r=stability.run_hybrid_case(scenario,opt);
+testCase.verifyTrue(r.adaptive_strict_lte);
+testCase.verifyFalse(r.converged);
+testCase.verifyEqual(char(r.failure_id),'ts_simulate_ibr_hybrid:adaptiveDtMin');
+testCase.verifyEqual(r.floor_accepted_steps,0);
+testCase.verifyTrue(all(isfinite(r.lte_history)));
+testCase.verifyTrue(all(r.lte_history<=1));
+testCase.verifyTrue(any([r.event_log.applied] & strcmp({r.event_log.type},'fault_on')));
+testCase.verifyTrue(any([r.rejection_history.error_norm]>1));
+testCase.verifyTrue(contains(r.failure_reason,'strict_lte=1, backward_euler=0'));
 end
 
 function v = local_get(s,f,d)

@@ -13,7 +13,7 @@
 | `8b31052` | เพิ่ม `scripts/diagnostics/ne39_reclose_applied_probe.m` (สคริปต์ probe) | — |
 
 ### ผลการตรวจที่ผ่าน
-- `test_ne39_sg_reclose_plant.m` + `test_ne39_sg_reclose_wiring.m` + `test_ne39_reclose_dynamic_sssa.m`: **33/33 ผ่าน**
+- ชุดรวม `test_ne39_sg_reclose_plant.m` + `test_ne39_sg_reclose_wiring.m` + `test_ne39_reclose_dynamic_sssa.m`: **30/30 ผ่าน** (วัดจริงครั้งเดียว; ที่มาคือ 13 plant + 14 wiring จากรอบ droop-regression รวมกับ 3 SSSA ใหม่ — ถ้าเครื่องใหม่ได้ไม่ครบ 30 ให้หยุดและวิเคราะห์ก่อน)
 - Selector ทั้ง SG_OFF และ SG_ON: **CERTIFIED** พร้อมสเปกตรัม 9 GFM ทั้งคู่ (probe run 20261010_195425_006)
 - SG bounds, กระแสจริง (S_max 573.3 MVA < rating 1106.6), แรงดันบน sample ที่รับ: ผ่าน
 
@@ -23,6 +23,12 @@
 - ค่าเริ่มต้นถูกล็อกเป็น `R_online_pu=0.20`; เกณฑ์ zeta 0.02 ไม่ถูกลด
 
 ## งานที่ยังเหลือ (บนเครื่องใหม่)
+
+0. **รันชุดทดสอบยืนยันสภาพแวดล้อมก่อนทุกอย่าง:**
+   ```powershell
+   & 'C:\Program Files\MATLAB\R2025a\bin\matlab.exe' -nojvm -batch "addpath(pwd); pf_init_paths(); rr=runtests({'tests/test_ne39_sg_reclose_plant.m','tests/test_ne39_sg_reclose_wiring.m','tests/test_ne39_reclose_dynamic_sssa.m'}); fprintf('SCOPED_TESTS pass=%d fail=%d\n',sum([rr.Passed]),sum([rr.Failed])); assert(all([rr.Passed]));"
+   ```
+   คาดหวัง: `SCOPED_TESTS pass=30 fail=0` (ต้องครบ 30 ก่อนไปขั้นต่อไป)
 
 1. **รัน probe ที่ dt=0.001** (ตั้งค่าไว้แล้วในไฟล์):
    ```powershell

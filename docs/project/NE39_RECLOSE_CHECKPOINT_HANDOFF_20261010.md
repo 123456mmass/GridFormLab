@@ -1,0 +1,100 @@
+# NE39 SG reclose — durable checkpoint handoff (2026-10-10)
+
+**Committed session handoff, not a completion certificate.** This document records the task state of the opt-in reduced SG31 reclose primitive at the moment of the main checkpoint commit. It is written to `docs/project/` so a later session can read it from the repository; read `git log` for the commit that contains it. The receipt for the broader commit that adds the separate WIP work is appended by the parent after that commit, at which point the file hash line below becomes historical.
+
+Authority: the latest direct human instruction is to **create the checkpoint commit and explain everything plus the next step for another session**. The human's active engineering objective is:
+
+> "แก้สิครับทำให้มัน reclose เราออกแบบเพื่อทดลองและนำไปใช้ได้ค่อนข้างจริง"
+
+i.e. make the NE39 SG reclose work, with a design defensible enough to experiment with and reasonably use — not merely a numerically converging close. **The reclose is NOT fixed.** No actual reclose is claimed anywhere in this document.
+
+- Goal record on the parent side: `goal-ab2c4b09-340c-4e29-8d02-b4141741da66`, revision 1, max 30 rounds. The goal is currently **paused because the harness does not permit the resume action**; this is recorded as paused, not falsely active and not complete.
+- Worktree: main [Power-flow](<C:/Users/User/Desktop/Power-flow/>) tree, branch `checkpoint/ne39-160s-20261009`, HEAD **`38ad0b83a60aa6aaa71d75655336e658d64847b2`** at the time of writing (already pushed; it is the ledger-only checkpoint, 1 file / 59 insertions). The main checkpoint described here is the commit that contains this document.
+- **Immutable evidence:** the old real-160 raw remains [raw.mat](<C:/Users/User/Desktop/Power-flow/output/diagnostics/ne39_voltage_dispatch_run_20261010_032919_827/raw.mat>) SHA256 `ED4670EB853E4C29AAD426985F9BCA382D78004C61E947AB9B0C332DA696E85E`. Do not overwrite or rerun it; postprocessing reads are allowed.
+
+## 1. What this checkpoint contains
+
+Main checkpoint = **7 files**: the five primitive files, the ledger, and this handoff. Working-tree paths/contents were observed while writing this note; the parent verifies the exact commit contents and re-checks hashes at commit time. This document asserts **no hash for itself** (no recursive self-reference) — read `git log` / the parent's receipt for the commit that carries it.
+
+| File | SHA256 observed at handoff | Role |
+|---|---|---|
+| [+stability/ne39_sg_reclose_plant_params.m](<C:/Users/User/Desktop/Power-flow/+stability/ne39_sg_reclose_plant_params.m>) | `0DEF094EF97C142A6BCEB8A78DDA715B8F5661F967232A379483AC1F7B138852` | NEW frozen `PROJECT_DERIVED` parameter builder |
+| [+stability/sg_classical_reclose_device.m](<C:/Users/User/Desktop/Power-flow/+stability/sg_classical_reclose_device.m>) | `B84CC81327BBDA817AD0FE088A49D3AF44BAD65C54C7AD1D79EED2B2350A2C84` | NEW opt-in 7-state device factory |
+| [+stability/sg_prospective_close_metrics.m](<C:/Users/User/Desktop/Power-flow/+stability/sg_prospective_close_metrics.m>) | `F40BD6A7842C3BA1195696E09877D517FBD44427B6AA6BB6F4CDAA10EB437E11` | MODIFIED: opt-in explicit-rating branch |
+| [tests/test_ne39_sg_reclose_plant.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_plant.m>) | `59DDDD3EEBD431109C8E5BAE33E4B06727C714CA7D94B446A19E8469930434BB` | NEW plant tests (14) |
+| [tests/test_ne39_sg_reclose_rating.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_rating.m>) | `0ED42283BC11DA6EDA1CF4DFC04E4831D5241473F93D482B54CC6439B293DFEE` | NEW rating tests (15) |
+| [docs/project/NE39_TAMU_MIGRATION.md](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_TAMU_MIGRATION.md>) | appended primitive-evidence section | Ledger |
+| this document | (no self hash) | Durable session handoff |
+
+Excluded from the checkpoint: the 16 user staged deletions, `raw.mat`, `tmp/`, caches, `bin/`, `obj/`, source archives, and generated artifacts.
+
+## 2. Why the old design failed (root cause)
+
+The published runtime reduces SG31 to a constant-EMF classical two-state machine `[delta, omega]` with **source `D=0`** and a **frozen positive `Pm`**. Once the breaker opens, `Pe=0` while `Pm` stays at its pre-trip value, so the rotor accelerates monotonically: `H_system=30.299999 s`, `domega/dt=0.09083237758246307 pu/s` constant, absolute speed 1 → 12.354047197811518 (145 s) → 13.7165 (160 s), open-circuit EMF staying 1.2338630347189892. The 150-s timeout reports `dV=0.20853053924627685 > 0.05`, `df=11.808209075419386 > 0.001`, `dtheta=87.51503400875991 deg > 10`, and the SG never closes (`actual_reclose_time=NaN`, `SYNC_TIMEOUT`).
+
+Two falsified shortcuts are recorded so they are not retried:
+
+- **Non-negative valve closure alone is insufficient.** With `Tsv=.2`, `Tch=.4`, valves shut to `Pref=0` and no shaft-loss term, speed settles at `1.0544537398986964 pu` after 5 s and stays there forever (parent `pwsh-71` disproof).
+- **A nominal-frequency-only phase law is insufficient.** At ±0.1 Hz the nominal-only target fails `df<=.001` / `dtheta<=10 deg` (parent `pwsh-83`), which is why real frequency-tracking states were authorized.
+
+Guards were checked and are **not** unit-buggy: `sg_speed_deviation` is `omega_ABS − 1` (plain subtraction, not the mathematical `abs`), and the voltage guard uses the correct open `E`.
+
+## 3. The implemented primitive (opt-in, PROJECT_DERIVED)
+
+`stability.ne39_sg_reclose_plant_params(case_data,opt)` → frozen parameter record; `stability.sg_classical_reclose_device(case_data,device_id,bus_id,bus_position,bus_ids,V0,params)` → opt-in device. Both are opt-in; existing defaults are untouched.
+
+- **States `nx=7`:** `[delta, omega, Psv, Pm, Emag, theta_hat, nu_hat]`, with `omega` absolute pu so the existing `sg_speed_deviation` stays valid. `nu_hat` is the estimated frequency deviation in rad/s; `theta_hat` is the local terminal phase estimate.
+- **Inputs, honestly named `[P_ref, Emag_ref]`:** these are **reference commands**, not the actual `Pm`/`Emag` states; source `H`/`D`/`Xdp` are preserved unchanged.
+- **Shaft power balance:** `2*H_system*omega*domega/dt = Pm - Pe - L0*omega^2` (source `D=0` retained; the windage `L0` is a separate declared term), with real non-negative valve/steam-chest states under `0 <= Pc,Psv,Pm <= Pmax`.
+- **Phase tracking:** local-terminal PLL (`e_pll = wrap(phase_bus - theta_hat)`, `theta_hat_dot = nu_hat + pll_Kp*e_pll`, `omega_hat = 1 + nu_hat/w0`) — no hidden read of another device's omega.
+- **Experimental declared constants:** windage `L0 = 1% of P0`, governor lags `Tsv=.2 s`, `Tch=.4 s`, `Emag` lag `.5 s`, capture `wn=.2 rad/s`, `zeta=1`.
+- **No reset / no fake close:** the rotor and internal EMF are never reset or frozen, no negative mechanical power or brake is introduced, and no synchronism gate is relaxed.
+- **Rating basis:** the stator rating is an explicit `S_rated_MVA` derived from the frozen Pmax/Q envelope times margin `1.1`, labelled `PROJECT_DERIVED`. Source `MBASE=100` is a **normalization only** and is never used as a stator/thermal rating.
+
+## 4. Test status — definitive result recorded
+
+The focused suite is **43 tests**: plant 14, rating 15, legacy prospective 2, speed 4, classical adapter 8, plus the **real online-factory closure check** (`f_inf < 1e-8`, `Pe = P_ref`, actual `Pm = Pe + L0`, true factory, explicit prospective rating).
+
+- **DEFINITIVE `pwsh-215` — COMPLETED exit 0: 43/43 Passed, 0 Failed, 0 Incomplete**, with the five suites run **isolated** (`addpath` + `pf_init_paths` before every suite).
+- **Real online factory closure passes:** `nx=7`, `f_inf=1.717548052701395e-17`, `Pe=5.4710017489623279 pu`, actual `Pm=5.5257117664519502 pu` (loss `0.05471001748962327 pu`), rated `1162.1019748713966 MVA`, `m.passes=true`, `DECLARED_PROJECT_DERIVED`. Source `H=30.299999`, `D=0`, `Xdp=.0697` unchanged.
+- **Capture test:** `+0.1 Hz` with the PLL initial-locked — slip `1.620e-11`, phase closing `0`, max transient `73.6457 deg`, eligible `19.994 s`; fixed terminal **all 7 roots** stable (max real `-0.1539610`, min real `-5.324784`).
+- **Fixture-vs-physics history, stated once and correctly:** the earlier combined `39 pass / speed 4 Incomplete` (`pwsh-169`/`pwsh-135` family) was a **fixture path-ordering defect and not physics** — the legacy [tests/test_sg_prospective_close_metrics.m](<C:/Users/User/Desktop/Power-flow/tests/test_sg_prospective_close_metrics.m>) `setupOnce` teardown calls `rmpath(root)` and removes the caller root after the rating fixture. **The new rating fixture is not at fault**; it already snapshots `path` and restores it. `pwsh-215` solves this by reinitializing the path before each suite, **without editing the legacy test and without weakening any assertion**.
+- **Lint:** factory cleanup is done and the source files are clean **except one remaining `unused tf=false` warning in the metrics helper**; recorded to fix later, and **not** a claim that all files are warning-free.
+- **Earlier context:** parent `pwsh-130` plant 14/14; parent `pwsh-109` rating 16/17 with one bad test constant (`I=5` against the `6.0 pu` circle), fixed to `I=7`.
+
+## 4a. Commit state of this document
+
+This handoff is **Prepared for committed checkpoint** — it is written but **not committed**, and no commit hash is asserted here. The main checkpoint manifest (the 7 files in §1), the broad source/tests/docs backup the user approved (which may include the WIP but must keep the **16 staged deletions**), and the manifest review are all still pending on the parent side; the parent appends the actual receipt hash after the commit. Other checkpoint scopes will follow the pending review-child notes.
+
+## 5. Explicit non-claims
+
+- **The installed capture test covers the `+0.1 Hz` tracker case ONLY, with the PLL initial-locked.** It is **not** a claim of full ±0.1 Hz field capture. Earlier ±0.1 Hz results come from **parent feasibility screens** (`pwsh-83` nominal-only disproof, `pwsh-84` tracked-PLL screen), which are diagnostics, not repository tests.
+- The real online-factory closure check **passed** (§4) but is a closure/consistency check — **not** an actual reclose.
+- This is **not** full-network SSSA, not private-trial coverage, and not a new chronology. No new short or full reclose run has been performed, and adaptive `max_step=.001` remains **NOT RUN**.
+- **Sensitivity limit flagged:** with a `0.5%` no-load loss the phase reaches `16.81038988 deg`, outside the `10 deg` criterion (parent `pwsh-86`); the declared `1%` default is therefore an explicit feasibility limit, **not field-ready**.
+- The three old 160-s verdicts are unchanged and are not reinterpreted here: accepted-sample study **PASS** (16051 samples, nonvoltage 0 / UNKNOWN 0), **strict voltage FAIL** (169 voltage-only samples), **actual reclose FAIL** (`SYNC_TIMEOUT`, `actual_reclose_time=NaN`). `production_certified=false` throughout.
+
+## 6. Separate work in progress — not in this checkpoint
+
+The four actual wiring files (verified present on disk) are:
+
+- [+cases/scenario_ne39_tamu_mixed.m](<C:/Users/User/Desktop/Power-flow/+cases/scenario_ne39_tamu_mixed.m>)
+- [+stability/build_mixed_resource_devices.m](<C:/Users/User/Desktop/Power-flow/+stability/build_mixed_resource_devices.m>)
+- [+stability/mixed_equilibrium_solve.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_equilibrium_solve.m>)
+- [+stability/mixed_ibr_reduced_initialize.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_ibr_reduced_initialize.m>)
+
+plus [tests/test_ne39_sg_reclose_wiring.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_wiring.m>). **There is no module named `sg_classical_reclose_wiring.m`** — that name in an earlier draft was fictional and is corrected here. The parent read the four patches and raised a **major review finding: the test accepts a `deviceLimit` failure rather than a full wire pass**; the child is fixing it, so this stays **WIP until the parent tests it** and it is **not** part of the main checkpoint.
+
+- The IEEE14 reclose workflow test ([tests/test_ieee14_ibr_sg_reclose_workflow.m](<C:/Users/User/Desktop/Power-flow/tests/test_ieee14_ibr_sg_reclose_workflow.m>)) belongs to the wiring/other-WIP track.
+- Two independent review children are pending per the parent: `86cb…` (application review) and `4d52…` (numerical review). The user approved a broad source/tests/docs backup commit that **may include the WIP but must keep the 16 staged deletions** and exclude raw/tmp/cache/bin/obj/source archives/artifacts.
+
+## 7. Next steps for another session
+
+1. **Parent first:** the 43-test suite plus the real online-factory closure check are green (`pwsh-215`, §4). Finish the remaining lint item (the `unused tf=false` warning in the metrics helper) without changing equations.
+2. **Wiring:** resolve the `deviceLimit` review finding, then parent-test the four wiring files and their wiring test; keep them out of any checkpoint until that review closes.
+3. **Then integration and evidence order:** guards/ratings authority; all-state online plus offline root accounting; only after those pass, a **new** timestamped short run with actual applied reclose and dwell (no reset), followed by the new full chronology under the `.001` cap — never by rerunning the old 160.
+4. **If asked to resume the paused goal:** the goal is paused at **revision 2** and the harness **model-resume action is unavailable**; re-arm only by an explicit human request, and never mark it complete on the strength of this document.
+
+## 8. Sources for this handoff
+
+Written from the actual new files and the parent's messages, not from the older continuation note ([tmp/ne39-reclose-pm-continuation-20261010.md](<C:/Users/User/Desktop/Power-flow/tmp/ne39-reclose-pm-continuation-20261010.md>)), whose statuses are historical. This writer ran no MATLAB, started no jobs or agents, and made no git/index/process changes.

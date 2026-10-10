@@ -2,6 +2,8 @@
 
 ## สถานะปัจจุบัน (authoritative, snapshot ณ ก่อน commit — 2026-10-10)
 
+> **Current primitive (opt-in, PROJECT_DERIVED):** reduced classical SG31 reclose plant `nx=7` `[delta,omega,Psv,Pm,Emag,theta_hat,nu_hat]`, inputs `P_ref`/`Emag_ref`, shaft `2Hωdω=Pm−Pe−L0ω²` (D=0 source), explicit rating `S_rated_MVA` จาก frozen Pmax/Q × margin 1.1 (ไม่ใช้ MBASE) — รายละเอียดที่ [primitive section:448–486](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_TAMU_MIGRATION.md#L448-L486>). `pwsh-215` isolated **43/43 pass** และ real online factory closure ผ่าน; **ยังไม่มี actual reclose/full-network/private และ `.001` NOT RUN** — "Prepared for committed checkpoint", goal paused rev2.
+
 ส่วนนี้เป็น **สถานะล่าสุดที่ใช้ตัดสินใจ**; หัวข้อเก่าที่ตามมา (รวม PENDING/running/no-subagent/ผล short 8.4s และ `pwsh-74`/`pwsh-90`) เป็น **ประวัติ ณ เวลานั้น** ไม่ใช่สถานะปัจจุบัน. รายละเอียดหลักฐานอยู่ที่ [superseding section:410–444](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_TAMU_MIGRATION.md#L410-L444>).
 
 - Branch `checkpoint/ne39-160s-20261009`, revision `8c891d6d7988a658bedbb099efa6652debe1bde7`; งาน study ทั้งหมดอยู่บน main working tree นี้ ไม่มี worktree/branch/reset ใหม่.
@@ -442,3 +444,44 @@ Code checkpoint `8c891d6d7988a658bedbb099efa6652debe1bde7` commit/pushแล้�
 ```
 
 ยังไม่มี Pm/change, reset rotor, fake close, sync relaxation, mitigation ใหม่ หรือการรัน adaptive cap.001. 16 staged deletions และ unrelated work คงเดิม; protection hashes `02F3EB7F…368C` และ `E58F4948…F3AA` ไม่เปลี่ยน. Git: ยังไม่มีการ mutate/index/commit/push จากงาน record นี้; checkpoint ถัดไปยัง pending parent review/commit ณ เวลาที่เขียน — เอกสารนี้ไม่ประดิษฐ์ commit hash ใหม่. Process snapshot สุดท้าย **NO_MATLAB_PROCESSES_REMAIN**; parent จะ review แล้ว commit **ledger-only** (ไฟล์นี้) เป็นขั้นถัดไป.
+
+## SG reclose primitive (opt-in, PROJECT_DERIVED) — ยังไม่ validated (2026-10-10)
+
+หัวข้อนี้ **เพิ่ม** หลักฐานของ primitive ที่ทำหลังผล study160; ไม่เขียนทับประวัติด้านบน. สถานะคือ **implemented + อยู่ระหว่าง review/test** และ **ไม่มีการอ้าง actual reclose**.
+
+### Root cause ที่ต้องแก้
+
+- Runtime ที่ published เป็น classical two-state `[delta,omega]` ที่ `D=0` และ `Pm` ค้างค่าบวก. เมื่อ breaker เปิด `Pe=0` แต่ `Pm` คงเดิม ⇒ rotor เร่งต่อเนื่อง: `H_system=30.299999s`, `domega/dt=.09083237758246307pu/s` คงที่, omega ABS 1 → 12.354047197811518(145s) → 13.7165(t160); open-Circuit E คงที่ 1.2338630347189892. ที่ timeout150 guard ล่าสุด `dV=.20853053924627685>.05`, `df=11.808209075419386>.001`, `dtheta=87.51503400875991deg>10`.
+- **Valve ปิดอย่างเดียวไม่พอ**: `Tsv=.2`, `Tch=.4`, `Pref=0` โดยไม่มี loss term ⇒ omega ABS ค้างที่ 1.0544537398986964 หลัง5s (parent `pwsh-71` disproof). **Nominal-only phase target ไม่พอ**: ที่ ±0.1Hz ไม่ผ่าน `df<=.001`/`dtheta<=10deg` (parent `pwsh-83`) ⇒ ต้องมี frequency-tracking state จริง. Guards ไม่ใช่ unit bug (`sg_speed_deviation`=`omega_ABS−1`).
+
+### สิ่งที่ implement (opt-in)
+
+- [+stability/ne39_sg_reclose_plant_params.m](<C:/Users/User/Desktop/Power-flow/+stability/ne39_sg_reclose_plant_params.m>) และ [+stability/sg_classical_reclose_device.m](<C:/Users/User/Desktop/Power-flow/+stability/sg_classical_reclose_device.m>): `nx=7` `[delta,omega,Psv,Pm,Emag,theta_hat,nu_hat]`, `omega` absolute pu, inputs `[P_ref,Emag_ref]` เป็น **reference command ไม่ใช่ state จริง**, source `H/D/Xdp` คงเดิม, ไม่ reset rotor/EMF.
+- Shaft: `2*H_system*omega*domega/dt = Pm − Pe − L0*omega²` (source `D=0` คงอยู่; windage `L0` แยก term) พร้อม valve/steam-chest ที่ไม่เป็นลบ `0<=Pc,Psv,Pm<=Pmax`.
+- PLL ที่ terminal ตัวเอง: `e_pll=wrap(phase_bus−theta_hat)`, `theta_hat_dot=nu_hat+pll_Kp*e_pll`, `omega_hat=1+nu_hat/w0` — ไม่มี hidden GFM omega. ค่าที่ประกาศเป็น experimental: windage1%P0, `Tsv=.2`, `Tch=.4`, `Emag` lag.5, `wn=.2`, `zeta=1`.
+- Rating: `S_rated_MVA` explicit จาก frozen Pmax/Q envelope × margin1.1 label **PROJECT_DERIVED**; `MBASE=100` เป็น normalization เท่านั้น ไม่ใช่ stator/thermal rating. Helper rating: [+stability/sg_prospective_close_metrics.m](<C:/Users/User/Desktop/Power-flow/+stability/sg_prospective_close_metrics.m>) เพิ่ม opt-in branch ที่ใช้ `dev.provenance.params` (schema `ne39_sg31_classical_reclose_v1`, model marker `sg_classical_reclose_project_derived`) และ **fail-closed** (`NOT_DECLARED`/`INVALID_METADATA`, rating NaN) แทนการ fallback ไป machine base; actual shaft power อ่านจาก `reconstruct(...).Pm_pu` ไม่ใช่ `u(1)`.
+- Tests: [tests/test_ne39_sg_reclose_plant.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_plant.m>) 14 และ [tests/test_ne39_sg_reclose_rating.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_rating.m>) 15.
+
+### Test status — ผ่าน 43/43 และ online closure แล้ว (definitive `pwsh-215`)
+
+- **`pwsh-215` COMPLETED exit0 (definitive)**: รันแบบ **isolated ต่อ suite** โดย `addpath`+`pf_init_paths` ก่อนทุก suite — **plant14 + rating15 + legacy prospective2 + speed4 + classical adapter8 = 43/43 Passed, 0 Failed, 0 Incomplete**. นี่คือผลที่นับ; ตัวเลข combined ก่อนหน้า (39 pass / speed4 Incomplete) เป็น **fixture-path ordering defect ไม่ใช่ physics**: teardown ของ legacy [tests/test_sg_prospective_close_metrics.m](<C:/Users/User/Desktop/Power-flow/tests/test_sg_prospective_close_metrics.m>) ใช้ `rmpath(root)` และลบ root ของ caller หลัง rating fixture ที่แก้แล้ว; `pwsh-215` re-init path ก่อนทุก suite จึงผ่าน **โดยไม่แก้ legacy test และไม่ลด assertion**. **อย่าโทษ rating fixture ใหม่** — มันแก้ถูกต้องแล้ว.
+- **REAL ONLINE factory closure ผ่านทั้งหมด**: `nx=7`, `f_inf=1.717548052701395e-17` (<1e-8), `Pe=5.4710017489623279pu`, actual `Pm=5.5257117664519502pu` (loss `.05471001748962327pu`), rated `1162.1019748713966MVA`, `m.passes=true`, `DECLARED_PROJECT_DERIVED`. Source `H=30.299999`, `D=0`, `Xdp=.0697` คงเดิม.
+- **Capture test `+0.1Hz` PLL initial-locked**: slip `1.620e-11`, phase closing `0`, max transient `73.6457deg`, eligible `19.994s`; fixed terminal **all 7 roots** stable (max real `-.1539610`, min real `-5.324784`). **ไม่ใช่ actual reclose, ไม่ใช่ full-network SSSA และไม่ใช่ private coverage.**
+- Lint: factory cleanup ทำแล้ว — **source files สะอาดหมด ยกเว้น metrics helper ที่ยังเหลือ `unused tf=false` 1 warning** (บันทึกไว้แก้ภายหลัง; **ไม่กล่าวว่าทุกไฟล์ 0 warning**).
+- Hashes ปัจจุบันของ 5 ไฟล์ primitive (อ่านสด ณ เวลาที่เขียน): params `0DEF094E…3852`, factory `B84CC813…A2C84`, metrics `F40BD6A7…37E11`, plant test `59DDDD3E…34BB`, rating test `0ED42283…3DFEE`.
+- mlint/cleanup และ test-constant history: parent `pwsh-130` plant14/14; rating `pwsh-109` เคย fail1 จาก `I=5` เทียบวงกลม 6.0pu แก้เป็น `I=7` แล้ว.
+
+### WIP อื่น (ไม่อยู่ใน checkpoint นี้)
+
+- Wiring patches สี่ไฟล์จริง (ยืนยันมีอยู่): [+cases/scenario_ne39_tamu_mixed.m](<C:/Users/User/Desktop/Power-flow/+cases/scenario_ne39_tamu_mixed.m>), [+stability/build_mixed_resource_devices.m](<C:/Users/User/Desktop/Power-flow/+stability/build_mixed_resource_devices.m>), [+stability/mixed_equilibrium_solve.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_equilibrium_solve.m>), [+stability/mixed_ibr_reduced_initialize.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_ibr_reduced_initialize.m>) พร้อม [tests/test_ne39_sg_reclose_wiring.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_wiring.m>). Parent อ่านแล้วและ **review เป็น major finding: test ยอมรับ deviceLimit failure ไม่ใช่ full wire pass** — child กำลังแก้; ยัง **WIP จนกว่า parent จะทดสอบ**. **ไม่มี module ชื่อ `sg_classical_reclose_wiring.m`** (ข้อความเก่าที่อ้างชื่อนั้นเป็น fiction, แก้แล้ว).
+- Main checkpoint manifest (7 ไฟล์ รวม handoff นี้, ไม่มี hash self-reference): 2 source ใหม่ + metrics helper + 2 test ใหม่ + ledger + [reclose checkpoint handoff](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md>). สถานะคือ **"Prepared for committed checkpoint"** จนกว่า git จะยืนยัน; scope checkpoint อื่นจะตามหลัง review-child notes.
+- Protection คงเดิม: **16 staged deletions** และ unrelated work; broad source/tests/docs backup ของผู้ใช้ **รวม WIP ได้แต่ต้องคง 16 deletions**.
+
+### ขอบเขตของหลักฐาน (สำคัญ)
+
+- Phase-gate test ที่ติดตั้งครอบคลุมเฉพาะกรณี **+0.1Hz tracker โดย PLL initial-locked** — **ไม่ใช่ข้ออ้าง capture เต็ม ±0.1Hz**; ผล ±0.1Hz อื่นมาจาก screen ของ parent (`pwsh-83`, `pwsh-84`) ซึ่งเป็น diagnostic. **ไม่ใช่ full-network SSSA, ไม่ใช่ private-trial coverage และไม่ใช่ chronology ใหม่**; adaptive cap `.001` ยัง **NOT RUN**.
+- Sensitivity: no-load loss `0.5%` ให้ phase `16.81038988deg` เกินเกณฑ์ `10deg` (parent `pwsh-86`) ⇒ default `1%` เป็น feasibility limit ไม่ใช่ field-ready.
+- รายละเอียด state ล่าสุดสำหรับ session ถัดไปอยู่ที่ [reclose checkpoint handoff](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md>).
+- Goal ของงานนี้ **paused rev2**; model-resume ไม่พร้อมใช้งาน ⇒ บันทึกเป็น paused **ไม่ใช่ complete**.
+
+**ผลเดิม 3 ข้อของ study160 ไม่เปลี่ยน**: accepted-sample study PASS (16051 samples, nonvoltage0/UNKNOWN0), strict voltage FAIL (169 voltage-only samples), actual reclose FAIL (`SYNC_TIMEOUT`, `actual_reclose_time=NaN`); `production_certified=false`. **ไม่มี actual reclose ใหม่ และไม่มี new full chronology ในหัวข้อนี้.**

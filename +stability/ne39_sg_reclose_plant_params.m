@@ -41,6 +41,8 @@ function p = ne39_sg_reclose_plant_params(case_data, opt)
 %                             1.10, range [1.0,1.25]; resultant stator apparent
 %                             rating/current circle is PROJECT_DERIVED, not a
 %                             source nameplate or certified capability curve
+%     R_online_pu             online primary droop, default 0.05, range
+%                             [0.04,0.06]; used only while synchronized
 %     omega_min_pu            minimum admissible absolute speed, default 0.20;
 %                             states/trials at or below it fail closed
 %     pll_Kp_rad_s            local-terminal phase estimator proportional
@@ -68,7 +70,7 @@ end
 
 allowed = {'Pmax_MW','no_load_loss_fraction','Tsv_s','Tch_s','T_emag_s', ...
     'omega_n_rad_s','zeta','emag_min_fraction','emag_max_fraction', ...
-    'Q_envelope_MVAr','stator_rating_margin','omega_min_pu', ...
+    'Q_envelope_MVAr','stator_rating_margin','omega_min_pu','R_online_pu', ...
     'pll_Kp_rad_s','pll_Ki_rad_s2','pll_frequency_limit_pu','pll_phase_limit_rad', ...
     'pll_Kp','pll_Ki'};
 unknown = setdiff(fieldnames(opt),allowed);
@@ -190,6 +192,12 @@ range_scalar(pll_Kp,'pll_Kp_rad_s',0.5,20,true,true);
 range_scalar(pll_Ki,'pll_Ki_rad_s2',0.1,40,true,true);
 range_scalar(pll_frequency_limit,'pll_frequency_limit_pu',0.005,0.10,true,true);
 range_scalar(pll_phase_limit,'pll_phase_limit_rad',pi/12,pi,true,true);
+% Online droop is a separate PROJECT_DERIVED primary-frequency law. The large
+% offline capture gain is not reused online: measured SG_ON participation is
+% an IBR angle mode, and that reuse dropped its damping below the unchanged
+% selector floor (0.01794 versus 0.02055 for the frozen two-state plant).
+R_online = option(opt,'R_online_pu',0.05);
+range_scalar(R_online,'R_online_pu',0.04,0.06,true,true);
 
 % Linearize the exact power balance about omega=1. Loss contributes 2*L0
 % and source damping contributes D to the speed coefficient; neither is hidden.
@@ -248,6 +256,8 @@ p.omega_n_rad_s = wn;
 p.zeta_target = zeta;
 p.Komega = Komega;
 p.Ktheta = Ktheta;
+p.R_online_pu = R_online;
+p.K_online_droop = 1/R_online;
 p.omega_min_pu = omega_min;
 p.pll_Kp_rad_s = pll_Kp;
 p.pll_Ki_rad_s2 = pll_Ki;

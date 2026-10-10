@@ -81,15 +81,13 @@ for k = 1:nd
     if ~has_callback && isfield(dev,'transfer_state') && isa(dev.transfer_state,'function_handle')
         has_callback = true;
     end
-    % Fallback: dual-mode type qualifies
-    is_dual = isfield(dev,'device_type') && strcmp(dev.device_type,'ibr_dual_mode');
     % Legacy capability check (kept for backward compat but not required)
     legacy_capable = false;
     if isfield(dev,'capabilities') && isfield(dev.capabilities,'supported_modes')
         legacy_capable = any(strcmpi(dev.capabilities.supported_modes,'gfm'));
     end
 
-    if ~(has_callback || is_dual || legacy_capable)
+    if ~(has_callback || legacy_capable)
         % No map for non-dual devices
         maps.(matlab.lang.makeValidName(mid, 'ReplacementStyle','underscore')) = M;
         continue;

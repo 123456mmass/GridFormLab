@@ -1,4 +1,6 @@
 function app = set_busy(app, is_busy)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SET_BUSY Enable/disable buttons during long operations.
 %   Returns modified app struct.
 

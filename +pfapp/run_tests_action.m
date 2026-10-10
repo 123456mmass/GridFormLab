@@ -1,4 +1,6 @@
 function app = run_tests_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_TESTS_ACTION Run automated test suite from the GUI.
 
 app = pfapp.set_busy(app, true);

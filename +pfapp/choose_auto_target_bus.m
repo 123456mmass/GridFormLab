@@ -1,4 +1,6 @@
 function [target_idx, reason] = choose_auto_target_bus(model, base_pf)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %CHOOSE_AUTO_TARGET_BUS Pick the weakest PQ (or non-slack) bus for CPF.
 
 if ~isempty(model.pq_buses)

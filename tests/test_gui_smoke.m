@@ -22,6 +22,35 @@ fig.Visible = 'off';
 fig.UserData.app = app;
 pfapp.wire_callbacks(app, fig);
 
+% Plots must be ON DEMAND.  With "Auto open plots after Run" checked, every
+% Run throws figure windows over the screen (the owner reported this twice:
+% a Padiyar TS figure, then 12 SMIB figures).  Assert the default is off.
+results = check(results, app.auto_separate_checkbox.Value == false, ...
+    'auto-separate-plots defaults OFF (plots are on demand)');
+
+% A saved preference must not be able to turn it back on.  This is what made
+% the figures keep coming back after the default was fixed: load_preferences
+% used to restore NbusStudio/auto_separate, and a stale true from before
+% overrode the default.  Seed a stale pref and prove the launch path is immune.
+had_pref = ispref('NbusStudio', 'auto_separate');
+if had_pref, saved_pref = getpref('NbusStudio', 'auto_separate'); end
+setpref('NbusStudio', 'auto_separate', true);
+try
+    app2 = pfapp.load_preferences(app);
+    results = check(results, app2.auto_separate_checkbox.Value == false, ...
+        'load_preferences cannot re-enable auto-open plots');
+    results = check(results, ~ispref('NbusStudio', 'auto_separate'), ...
+        'stale auto_separate pref is cleared on launch');
+catch e
+    results = check(results, false, sprintf('pref guard threw: %s', e.message));
+end
+if had_pref
+    setpref('NbusStudio', 'auto_separate', saved_pref);
+elseif ispref('NbusStudio', 'auto_separate')
+    % load_preferences already cleared it; only remove if something re-set it.
+    rmpref('NbusStudio', 'auto_separate');
+end
+
 % --- SMIB cases through the Run dispatcher ---
 all_items = app.case_dropdown.Items;
 smib_idx = find(~cellfun(@isempty, regexpi(all_items, 'Kundur SMIB')));
@@ -100,13 +129,19 @@ results = check(results, exist(fullfile(outdir,'SMIB_Model_A_splane.png'),'file'
 results = check(results, exist(fullfile(outdir,'SMIB_Model_A_step_response.png'),'file')==2, 'export: step PNG written');
 
 % --- Standalone SMIB figures (Separate Plots path) ---
+% Run invisible.  Closing popped-up windows afterwards is NOT equivalent: a
+% visible figure still steals focus and repaints before it is closed, which is
+% the nuisance the owner reported.  So the assertion is that nothing became
+% VISIBLE -- findall returns invisible figures too, so filter on Visible.
 app = fig.UserData.app;
+before = find_visible_figs();
 try
-    pfapp.open_smib_figure(app);
+    pfapp.open_smib_figure(app, 'off');
     results = check(results, true, 'open_smib_figure: no throw');
-    % close any popped-up figures
-    figs = findall(0, 'Type', 'figure');
-    close(figs(figs ~= app.fig));
+    leaked = setdiff(find_visible_figs(), before);
+    results = check(results, isempty(leaked), ...
+        sprintf('open_smib_figure(off) left %d visible figure(s) on screen', numel(leaked)));
+    close(findall(0, 'Type', 'figure', 'Visible', 'on'));
 catch e
     results = check(results, false, sprintf('open_smib_figure threw: %s', e.message));
 end
@@ -124,4 +159,11 @@ else
     r.fail = r.fail + 1;
     fprintf('  FAIL  %s\n', msg);
 end
+end
+
+function f = find_visible_figs()
+%FIND_VISIBLE_FIGS  Figures actually on screen.
+%   findall(0,'Type','figure') also returns invisible ones, so counting it
+%   would report a leak for a figure nobody can see.  Filter on Visible.
+f = findall(0, 'Type', 'figure', 'Visible', 'on');
 end

@@ -1,4 +1,6 @@
 function plot_empty_state(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %PLOT_EMPTY_STATE Clear all axes with placeholder messages.
 
 axes_cfg = {

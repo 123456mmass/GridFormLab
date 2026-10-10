@@ -1,4 +1,6 @@
 function data = collect_export_data(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %COLLECT_EXPORT_DATA Gather structured data from last result for JSON/HTML export.
 
 data = [];

@@ -1,8 +1,17 @@
 function tests = test_ibr_equilibrium_initializer()
 %TEST_IBR_EQUILIBRIUM_INITIALIZER  Exact device-equilibrium inversion tests.
 %   These tests independently reconstruct terminal current/internal voltage
-%   from S=V*conj(I), then falsify the GFL, GFM and dual-mode initializer API.
+%   from S=V*conj(I), then falsify the GFL and dual-mode initializer API.
 %   The initializer is device-local: passing f=0 is not a network-KCL claim.
+%
+%   Retired-family coverage removed 2026-09-26: the three REGFM_B1 G2 tests
+%   and the two retired-20-state-dual tests pinned a 13-state GFM and a
+%   20-state WECC/GFM superset that no longer exist.  The surviving
+%   eecon49_dual family inherits the dual-mode mode-dispatch, tripped and
+%   fail-closed coverage below.  The standalone WECC GFL dispatcher tests
+%   (ibr.gfl_model / ibr.wecc_regca_reeca_model) were removed 2026-10-08 with
+%   the dispatcher itself: no production path called it, and the surviving
+%   SMIB grid-following model (ibr.gfl_rms10_model) is reached directly.
 tests = functiontests(localfunctions);
 end
 
@@ -12,128 +21,44 @@ pf_init_paths();
 end
 
 % =========================================================================
-function test_gfm_exact_equilibrium_kappa_one(testCase)
-V = 1.03*exp(1i*0.17);
-P = 0.60; Q = 0.20;
-ids = [1 2];
-dev = ibr.regfm_b1_vsg_model('GFM_T', 2, 2, ids, V, ...
-    struct('Mbase',100), P, abs(V));
-x = dev.equilibrium_initialize(V, P, Q, struct());
-y = bus_y(V, 2, 2);
-dx = dev.f(0, x, y, [P;abs(V)], struct());
-I = dev.current_injection(0, x, y, [P;abs(V)], struct());
-S = V*conj(I);
-
-testCase.verifyEqual(numel(x), 13, 'AbsTol', 0);
-testCase.verifyLessThan(norm(dx,inf), 1e-10);
-testCase.verifyEqual(real(S), P, 'AbsTol', 1e-12);
-testCase.verifyEqual(imag(S), Q, 'AbsTol', 1e-12);
-testCase.verifyEqual(x(7), P, 'AbsTol', 1e-12);   % kappa=1
-testCase.verifyEqual(x(9), Q, 'AbsTol', 1e-12);
-testCase.verifyEqual(x(10), abs(V), 'AbsTol', 1e-12);
-testCase.verifyFalse(dev.reconstruct(0,x,y,[P;abs(V)],struct()).I_limited);
-end
-
-% =========================================================================
-function test_gfm_exact_equilibrium_kappa_not_one(testCase)
-% Independent system/inverter-base oracle for IBR2 (Mbase=140 MVA).
-V = 1.045*exp(-1i*0.0869625858016);
-P = 1.097; Q = 0.435571;
-kappa = 100/140;
-Zsys = kappa*(1i*0.1);
-Iref = conj((P + 1i*Q)/V);
-Eref = V + Zsys*Iref;
-Idq = Iref*exp(-1i*angle(V));
-xE = (abs(Eref) - abs(V) + 0.05*kappa*Q)/5.0;
-delta_max = asin(0.1);
-expected = [0; wrap_pi(angle(Eref)-angle(V)); 0; xE; angle(V); 0; ...
-    kappa*P; kappa*real(Idq); kappa*Q; abs(V); kappa*imag(Idq); ...
-    delta_max; -delta_max];
-
-dev = ibr.regfm_b1_vsg_model('IBR2', 2, 2, [1 2], V, ...
-    struct('Mbase',140), P, abs(V));
-x = dev.equilibrium_initialize(V, P, Q, struct());
-y = bus_y(V, 2, 2);
-testCase.verifyEqual(x, expected, 'AbsTol', 2e-12);
-testCase.verifyLessThan(norm(dev.f(0,x,y,[P;abs(V)],struct()),inf), 1e-10);
-I = dev.current_injection(0,x,y,[P;abs(V)],struct());
-testCase.verifyEqual(I, Iref, 'AbsTol', 2e-12);
-testCase.verifyLessThan(x(11), 0, 'Positive Q must give negative Iq at PLL lock.');
-end
-
-% =========================================================================
-function test_gfm_initializer_fails_closed(testCase)
-ids = [1 2]; V = 1+0i;
-dev = ibr.regfm_b1_vsg_model('GFM_T',2,2,ids,V,struct(),0.4,1.0);
-
-testCase.verifyError(@() dev.equilibrium_initialize(0,0.4,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumBadVoltage');
-testCase.verifyError(@() dev.equilibrium_initialize(NaN,0.4,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumBadVoltage');
-testCase.verifyError(@() dev.equilibrium_initialize(V,NaN,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumBadPower');
-testCase.verifyError(@() dev.equilibrium_initialize(0.03,0.01,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumPLLFreezeNonunique');
-testCase.verifyError(@() dev.equilibrium_initialize(0.99,0.4,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumVoltageReferenceMismatch');
-% kappa=1 and |V|=1: P=1.5 is exactly the sourced ImaxF boundary.
-testCase.verifyError(@() dev.equilibrium_initialize(V,1.5,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumClampBoundary');
-testCase.verifyError(@() dev.equilibrium_initialize(V,1.6,0,struct()), ...
-    'ibr:regfm_b1_vsg_model:equilibriumCurrentLimit');
-end
-
-% =========================================================================
-function test_gfl_exact_equilibrium_and_rotation(testCase)
-V = 1.02*exp(1i*0.20); P = 0.40; Q = 0.10;
-dev = ibr.gfl_model('GFL_T',2,2,[1 2],V,struct(),P,Q);
-x = dev.equilibrium_initialize(V,P,Q,struct());
-y = bus_y(V,2,2);
-testCase.verifyLessThan(norm(dev.f(0,x,y,[P;Q],struct()),inf), 1e-12);
-I = dev.current_injection(0,x,y,[P;Q],struct());
-testCase.verifyEqual(V*conj(I), P+1i*Q, 'AbsTol', 1e-12);
-
-alpha = -0.37;
-Vr = V*exp(1i*alpha);
-xr = dev.equilibrium_initialize(Vr,P,Q,struct());
-yr = bus_y(Vr,2,2);
-Ir = dev.current_injection(0,xr,yr,[P;Q],struct());
-testCase.verifyLessThan(norm(dev.f(0,xr,yr,[P;Q],struct()),inf), 1e-12);
-testCase.verifyEqual(Ir, I*exp(1i*alpha), 'AbsTol', 1e-12);
-testCase.verifyEqual(xr,x,'AbsTol',1e-12, ...
-    'WECC REGC_A/REEC_A states are rotationally invariant (no PLL state).');
-end
-
-% =========================================================================
-function test_gfl_initializer_fails_closed(testCase)
-dev = ibr.gfl_model('GFL_T',2,2,[1 2],1+0i,struct(),0.4,0.0);
-testCase.verifyError(@() dev.equilibrium_initialize(0,0.4,0,struct()), ...
-    'ibr:wecc_regca_reeca_model:equilibriumInput');
-testCase.verifyError(@() dev.equilibrium_initialize(1,Inf,0,struct()), ...
-    'ibr:wecc_regca_reeca_model:equilibriumInput');
-end
-
-% =========================================================================
 function test_dual_runtime_mode_shared_by_all_closures(testCase)
+% Ported from the retired 20-state dual family onto the surviving
+% eecon49_dual family (2026-09-26).  The PROPERTY under test is unchanged and
+% is the point of the test: the constructor records a static GFL partition, and
+% every closure (equilibrium_initialize, f, electrical_power,
+% current_injection, reconstruct) must re-resolve the mode from the runtime
+% hybrid state instead of using the constructor's.  Only the indices move,
+% because the superset is 16 states here (GFL 4:9, GFM 10:16) rather than the
+% retired 20 (GFL 14:20, GFM 1:13).
+%
+% Independent oracle: the branch factories ibr.gfl_eecon49_full_model and
+% ibr.gfm_eecon49_full_model, called directly on the sliced state, which the
+% dual wrapper must assemble without perturbing a bit.  (A retired test used a
+% standalone leaf for this; that leaf is gone as of 2026-10-08.)
 V = 1.02*exp(1i*0.12); P = 0.40; Q = 0.10;
 ids = [1 2];
-dual = ibr.dual_mode_ibr_model('IBR2',2,2,ids,V,struct('Mbase',140), ...
+params = struct('Sbase',100,'Mbase',100,'fbase',60, ...
+    'dc_source',struct('Tdc',0.10));
+dual = ibr.eecon49_dual_mode_model('IBR2',2,2,ids,V,params, ...
     P,Q,abs(V),'gfl');
 y = bus_y(V,2,2);
 u = [P;Q;abs(V)];
-testCase.verifyEqual(dual.active_state_indices,14:20, ...
+% Constructor mode is gfl, so the static partition is the GFL branch.
+testCase.verifyEqual(dual.active_state_indices,1:9, ...
     'AbsTol',0,'Static compatibility metadata reflects constructor GFL mode.');
 
 % Constructor says gfl, runtime hybrid state says GFM.
 ec_gfm = mode_context('IBR2','GFM');
-testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfm),1:13, ...
+testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfm),[1:3 10:16], ...
     'AbsTol',0,'Runtime GFM partition comes from the device-owned resolver.');
 x_gfm = dual.equilibrium_initialize(V,P,Q,ec_gfm);
-standalone_gfm = ibr.regfm_b1_vsg_model('IBR2',2,2,ids,V, ...
-    struct('Mbase',140),P,abs(V));
-xgfm_expected = standalone_gfm.equilibrium_initialize(V,P,Q,ec_gfm);
-gfm_idx = 1:13;
+gfm_branch = ibr.gfm_eecon49_full_model('IBR2',2,2,ids,V,params,P,Q);
+xgfm_expected = gfm_branch.equilibrium_initialize(V,P,Q,ec_gfm);
+% GFM block is [plant 1:3, controller 10:16]; the GFL block 4:9 is frozen.
+gfm_idx = [1:3 10:16];
 testCase.verifyEqual(x_gfm(gfm_idx), xgfm_expected, 'AbsTol', 1e-12);
+testCase.verifyEqual(x_gfm(4:9), dual.x0(4:9), 'AbsTol', 0, ...
+    'The inactive GFL block must stay at its warm-start anchor.');
 testCase.verifyLessThan(norm(dual.f(0,x_gfm,y,u,ec_gfm),inf), 1e-10);
 testCase.verifyEqual(dual.electrical_power(0,x_gfm,y,u,ec_gfm),P,'AbsTol',1e-12);
 testCase.verifyEqual(V*conj(dual.current_injection(0,x_gfm,y,u,ec_gfm)), ...
@@ -146,12 +71,18 @@ testCase.verifyFalse(isfield(r_gfm,'gfl'));
 % Runtime GFL dispatch uses the same mode resolution in every closure.
 ec_gfl = mode_context('IBR2','gfl');
 testCase.verifyEqual(dual.active_state_indices_for_context(ec_gfl), ...
-    14:20,'AbsTol',0);
+    1:9,'AbsTol',0);
 x_gfl = dual.equilibrium_initialize(V,P,Q,ec_gfl);
-standalone_gfl = ibr.gfl_model('IBR2',2,2,ids,V,struct('Mbase',140),P,Q);
-xgfl_expected = standalone_gfl.equilibrium_initialize(V,P,Q,ec_gfl);
-gfl_idx = 14:20;
-testCase.verifyEqual(x_gfl(gfl_idx),xgfl_expected,'AbsTol',1e-12);
+gfl_branch = ibr.gfl_eecon49_full_model('IBR2',2,2,ids,V,params,P,Q);
+xgfl_expected = gfl_branch.equilibrium_initialize(V,P,Q,ec_gfl);
+% The branch factory publishes 10 coordinates: the 9 GFL states plus a
+% trailing algebraic DC-source placeholder (state_names{10}='z_pad') that the
+% dual superset does not carry, because in the dual the DC source is shared
+% across both branches.  The dual's GFL block is therefore the branch's first 9.
+gfl_idx = 1:9;
+testCase.verifyEqual(gfl_branch.state_names(10),{'z_pad'}, ...
+    'The branch oracle must still expose exactly one trailing pad state.');
+testCase.verifyEqual(x_gfl(gfl_idx),xgfl_expected(gfl_idx),'AbsTol',1e-12);
 testCase.verifyLessThan(norm(dual.f(0,x_gfl,y,u,ec_gfl),inf),1e-12);
 testCase.verifyEqual(V*conj(dual.current_injection(0,x_gfl,y,u,ec_gfl)), ...
     P+1i*Q,'AbsTol',1e-12);
@@ -160,13 +91,18 @@ testCase.verifyEqual(r_gfl.mode,'gfl');
 testCase.verifyTrue(isfield(r_gfl,'gfl'));
 testCase.verifyFalse(isfield(r_gfl,'gfm'));
 
-testCase.verifyEqual(dual.nx,20,'AbsTol',0);
+testCase.verifyEqual(dual.nx,16,'AbsTol',0, ...
+    ['16 published coordinates: the fixture passes dc_source without ' ...
+     'source_state, so the Thevenin current stays algebraic and no 17th ' ...
+     'state is appended.']);
 end
 
 % =========================================================================
 function test_dual_tripped_and_invalid_runtime_modes_fail_closed(testCase)
+% Ported onto eecon49_dual (2026-09-26); the retired family's identifiers are
+% replaced by this family's, which are the ones the code actually throws.
 V = 1+0i;
-dev = ibr.dual_mode_ibr_model('IBR2',2,2,[1 2],V,struct(),0.4,0,1,'gfl');
+dev = ibr.eecon49_dual_mode_model('IBR2',2,2,[1 2],V,struct(),0.4,0,1,'gfl');
 y = bus_y(V,2,2); u = [0.4;0;1];
 ec_trip = mode_context('IBR2','tripped');
 testCase.verifyEmpty(dev.active_state_indices_for_context(ec_trip));
@@ -175,14 +111,14 @@ testCase.verifyEqual(dev.current_injection(0,x,y,u,ec_trip),0,'AbsTol',0);
 testCase.verifyEqual(dev.electrical_power(0,x,y,u,ec_trip),0,'AbsTol',0);
 testCase.verifyTrue(dev.reconstruct(0,x,y,u,ec_trip).tripped);
 testCase.verifyError(@() dev.equilibrium_initialize(V,0.1,0,ec_trip), ...
-    'ibr:dual_mode_ibr_model:trippedEquilibriumPower');
+    'ibr:eecon49_dual_mode_model:offlineEquilibriumPower');
 ec_bad = mode_context('IBR2','not_a_mode');
 testCase.verifyError(@() dev.equilibrium_initialize(V,0,0,ec_bad), ...
-    'ibr:dual_mode_ibr_model:badRuntimeMode');
+    'ibr:eecon49_dual_mode_model:badRuntimeMode');
 testCase.verifyError(@() dev.current_injection(0,x,y,u,ec_bad), ...
-    'ibr:dual_mode_ibr_model:badRuntimeMode');
+    'ibr:eecon49_dual_mode_model:badRuntimeMode');
 testCase.verifyError(@() dev.active_state_indices_for_context(ec_bad), ...
-    'ibr:dual_mode_ibr_model:badRuntimeMode');
+    'ibr:eecon49_dual_mode_model:badRuntimeMode');
 end
 
 % =========================================================================
@@ -196,8 +132,20 @@ testCase.verifyTrue(all(arrayfun(@(d)isfield(d,'equilibrium_initialize'),devices
 testCase.verifyTrue(all(arrayfun(@(d)isfield(d,'active_state_indices_for_context'),devices)));
 sg = devices(strcmp({devices.device_id},'SG1'));
 ibrs = devices(~strcmp({devices.device_id},'SG1'));
-testCase.verifyEmpty(sg.equilibrium_initialize, ...
-    'SG explicitly advertises the optional initializer as unsupported.');
+% The SG assertion here formerly required sg.equilibrium_initialize to be EMPTY
+% ("SG explicitly advertises the optional initializer as unsupported").  That
+% stopped being true when stability.sg_composite_device gained a real
+% equilibrium_initialize (commit 649e168, "Add mixed-resource PF/SSSA/TS
+% comparison products and RMS10 corrections"); the stale claim was left red and
+% is corrected here rather than deleted, because the field's PRESENCE is exactly
+% what this test is about.  Derivation of the new expectation: the SG publishes
+% its own 6-state EMF6 vector from that initializer, so the handle must be real
+% and must return one state per sg.nx -- not a stub.
+testCase.verifyTrue(isa(sg.equilibrium_initialize,'function_handle'), ...
+    'SG advertises a real equilibrium initializer.');
+x_sg = sg.equilibrium_initialize(1.04,0.4,0.1,struct());
+testCase.verifyEqual(numel(x_sg),sg.nx, ...
+    'The SG initializer must return one state per sg.nx.');
 testCase.verifyEmpty(sg.active_state_indices_for_context, ...
     'Fixed-layout SG explicitly advertises no runtime partition resolver.');
 testCase.verifyTrue(all(arrayfun(@(d)isa(d.equilibrium_initialize,'function_handle'),ibrs)));

@@ -1,4 +1,6 @@
 function append_log(app, message)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %APPEND_LOG Timestamp and append a message to the log area.
 
 timestamp = char(datetime('now', 'Format', 'HH:mm:ss'));

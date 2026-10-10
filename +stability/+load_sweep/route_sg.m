@@ -5,7 +5,7 @@ function point = route_sg(scaled_case, scenario, opt)
 %   thin adapter that normalizes the output to the common load-sweep point
 %   schema. No edits to multicase_sssa.m / multimachine_ssa.m.
 %
-%   The REF bus injection balances PF mismatch (PF contract). Tm/Efd are
+%   The SLACK bus injection balances PF mismatch (PF contract). Tm/Efd are
 %   equilibrium initialization inputs, NOT a PF redispatch policy.
 
 point = struct();
@@ -16,7 +16,7 @@ point.failure_reason = '';
 
 % --- PF diagnostics -------------------------------------------------------
 % Project-owned Newton PF; composite_dae is NOT the PF solver, it consumes
-% the PF result. The REF bus injection balances the network mismatch (PF
+% the PF result. The SLACK bus injection balances the network mismatch (PF
 % contract); Tm/Efd initialize the SG dynamic equilibrium and must NOT be
 % described as the PF load-balancing policy.
 try

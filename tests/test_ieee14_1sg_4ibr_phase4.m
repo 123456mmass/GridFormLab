@@ -85,7 +85,7 @@ testCase.verifyLessThan(r.residual_norm, 1e-6, 'residual within tolerance.');
 testCase.verifyGreaterThan(r.rcond, 1e-10, 'reduced Jacobian well-conditioned.');
 testCase.verifyLessThan(r.physical_kcl_norm,1e-6,'Every SG_ON KCL row passes.');
 testCase.verifyEqual(r.vcon_vars,[1 2],'AbsTol',0, ...
-    'REF bus fixes both Vm and angle in rectangular coordinates.');
+    'SLACK bus fixes both Vm and angle in rectangular coordinates.');
 testCase.verifyEqual(r.vcon_ref,[1.06;0],'AbsTol',0);
 testCase.verifyEqual(r.reference.slack_input_names,{'Tm','Efd'});
 end
@@ -185,7 +185,7 @@ cfg_off = struct('devices', devs_off, ...
 r_on = stability.mixed_equilibrium_solve(c, cfg_on, struct('verbose',false));
 r_off = stability.mixed_equilibrium_solve(c, cfg_off, struct('verbose',false));
 testCase.verifyEqual(r_on.vcon_vars,[1 2],'AbsTol',0, ...
-    'SG REF fixes Re(V1)=Vm and Im(V1)=0 while Tm/Efd are solved.');
+    'SG SLACK fixes Re(V1)=Vm and Im(V1)=0 while Tm/Efd are solved.');
 testCase.verifyEqual(r_on.vcon_ref,[1.06;0],'AbsTol',0);
 testCase.verifyLessThan(r_on.physical_kcl_norm,1e-6);
 testCase.verifyEqual(r_off.vcon_vars,4,'AbsTol',0,'IBR2 bus-2 gauge.');

@@ -1,4 +1,6 @@
 function fig = create_figure(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (studio.launch).
+%   Header banner only; behavior unchanged.
 %CREATE_FIGURE  Create the base-MATLAB wizard figure.
 %   fig = wizard.create_figure(app) creates a classic figure (NOT uifigure,
 %   per the user decision: base-MATLAB throughout, do not mix) with the

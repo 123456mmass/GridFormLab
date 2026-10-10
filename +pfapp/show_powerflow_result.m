@@ -1,4 +1,6 @@
 function show_powerflow_result(app, result, tolerance)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SHOW_POWERFLOW_RESULT Display NR/GS results in table and plots.
 
 axis_info = pf_bus_axis_info(result.external_bus_ids);

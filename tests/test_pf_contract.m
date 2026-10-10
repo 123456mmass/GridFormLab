@@ -1,6 +1,6 @@
 function tests = test_pf_contract()
 %TEST_PF_CONTRACT  Power-flow numerical contract tests: state/mismatch
-%   ordering, REF/PV/PQ handling, sign conventions, power balance, Ybus
+%   ordering, SLACK/PV/PQ handling, sign conventions, power balance, Ybus
 %   contract, reference-angle and bus-row permutation invariance, and PF
 %   failure semantics. Uses existing case loaders plus minimal inline cases
 %   constructed via cases.standardize_case. Tolerances are declared BEFORE
@@ -27,14 +27,14 @@ end
 % =====================================================================
 
 function test_state_excludes_ref_angle(testCase)
-% The Newton state vector must NOT contain the slack/REF bus angle.
+% The Newton state vector must NOT contain the SLACK bus angle.
     c = case_ieee14bus();
     model = pf_prepare_case(c);
     x = pf_initial_state(model);
     % x has n_delta angle entries (PV+PQ) and n_V voltage entries (PQ).
     testCase.verifyEqual(numel(x), model.n_total);
     testCase.verifyEqual(numel(x), model.n_delta + model.n_V);
-    % REF bus is not in delta_idx.
+    % SLACK bus is not in delta_idx.
     testCase.verifyTrue(~ismember(model.slack_buses, model.delta_idx));
 end
 
@@ -50,7 +50,7 @@ end
 
 function test_mismatch_excludes_ref_p_includes_pv_pq(testCase)
 % The mismatch vector: P mismatch for PV+PQ buses, Q mismatch for PQ only.
-% REF P and REF Q and PV Q are NOT in the mismatch.
+% SLACK P and SLACK Q and PV Q are NOT in the mismatch.
     c = case_ieee14bus();
     model = pf_prepare_case(c);
     x = pf_initial_state(model);
@@ -63,19 +63,19 @@ function test_mismatch_excludes_ref_p_includes_pv_pq(testCase)
 end
 
 % =====================================================================
-% REF / PV / PQ handling
+% SLACK / PV / PQ handling
 % =====================================================================
 
 function test_ref_pv_pq_reconstruction(testCase)
-% After solve: REF angle/V fixed from spec, PV V fixed from spec, PQ both
-% solved. Calculated generation reconstructed for REF+PV buses.
+% After solve: SLACK angle/V fixed from spec, PV V fixed from spec, PQ both
+% solved. Calculated generation reconstructed for SLACK+PV buses.
     c = case_ieee5bus();
     r = pfsolver.powerflow_newton_raphson(c, quiet_pf());
     testCase.verifyTrue(r.converged);
-    % REF bus voltage magnitude equals spec.
+    % SLACK bus voltage magnitude equals spec.
     ref = find(r.bus_type == 1);
     testCase.verifyEqual(r.bus_voltage(ref), c.bus_data(ref, 3), 'AbsTol', 1e-10);
-    % REF angle equals spec (0 deg by convention).
+    % SLACK angle equals spec (0 deg by convention).
     testCase.verifyEqual(r.bus_angle_deg(ref), c.bus_data(ref, 4), 'AbsTol', 1e-10);
     % PV bus voltage magnitudes equal spec.
     pv = find(r.bus_type == 2);
@@ -153,7 +153,7 @@ function test_reference_angle_invariance(testCase)
     % Power flows unchanged.
     testCase.verifyEqual(r2.line_flow_P, r1.line_flow_P, 'AbsTol', 1e-9);
     testCase.verifyEqual(r2.P_generation, r1.P_generation, 'AbsTol', 1e-9);
-    % Angles differ by exactly the constant shift (align by REF, not raw).
+    % Angles differ by exactly the constant shift (align by SLACK, not raw).
     shift = r2.bus_angle_deg(find(r2.bus_type==1)) - r1.bus_angle_deg(find(r1.bus_type==1));
     angle_diff = (r2.bus_angle_deg - r1.bus_angle_deg) - shift;
     testCase.verifyLessThan(max(abs(angle_diff)), 1e-9, ...
@@ -217,7 +217,7 @@ end
 % =====================================================================
 
 function test_ybus_two_bus_analytic(testCase)
-% 2-bus: bus 1 REF, bus 2 PQ, one line R+jX, no shunt, no tap.
+% 2-bus: bus 1 SLACK, bus 2 PQ, one line R+jX, no shunt, no tap.
 % Y11 = Y22 = y_series, Y12 = Y21 = -y_series.
     c = build_2bus_case();
     model = pf_prepare_case(c);
@@ -347,13 +347,13 @@ function test_failure_invalid_bus_type_errors(testCase)
 end
 
 function test_failure_missing_ref_errors(testCase)
-% Missing REF bus must throw a stable error (C1).
+% Missing SLACK bus must throw a stable error (C1).
     c = build_2bus_case();
-    c.bus_data(1, 2) = 3;  % both PQ, no REF
+    c.bus_data(1, 2) = 3;  % both PQ, no SLACK
     c = cases.standardize_case(c);
     try
         pf_prepare_case(c);
-        testCase.verifyTrue(false, 'Missing REF must throw.');
+        testCase.verifyTrue(false, 'Missing SLACK must throw.');
     catch
         testCase.verifyTrue(true);
     end
@@ -378,7 +378,7 @@ function c = build_2bus_case()
     c.system_name = '2-bus analytic';
     c.base_values = struct('S_base_MVA', 100, 'V_base_kV', 1, 'frequency_Hz', 60);
     c.bus_data = [ ...
-        1  1  1.0  0   0   0   0   0   0  0   -Inf Inf;  % REF
+        1  1  1.0  0   0   0   0   0   0  0   -Inf Inf;  % SLACK
         2  3  1.0  0   0   0   1.0 0.5 0   0   -Inf Inf]; % PQ
     c.line_data = [1 2  0.01  0.1  0  1  0];
     c = cases.standardize_case(c);

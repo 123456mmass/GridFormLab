@@ -1,4 +1,6 @@
 function suite = run_suite_headless(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_SUITE_HEADLESS Run NR + GS + CPF-LS + CPF-PC on IEEE 5-bus.
 
 case_data = case_ieee5bus();

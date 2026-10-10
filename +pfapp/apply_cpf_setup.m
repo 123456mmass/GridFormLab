@@ -1,4 +1,6 @@
 function apply_cpf_setup(app, setup)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %APPLY_CPF_SETUP Push auto-calibrated CPF values back into UI fields.
 
 app.target_bus_field.Value = setup.target_bus;

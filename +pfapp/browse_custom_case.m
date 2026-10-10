@@ -1,4 +1,6 @@
 function app = browse_custom_case(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %BROWSE_CUSTOM_CASE File-picker for custom .m/.mat cases. Returns modified app.
 
 [file, path] = uigetfile( ...

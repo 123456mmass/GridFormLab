@@ -3,11 +3,11 @@ function [devices, dev_meta] = build_ieee14_ibr_devices(case_data, device_modes,
 %
 %   [DEVICES, DEV_META] = build_ieee14_ibr_devices(CASE_DATA, DEVICE_MODES,
 %       DISPATCH_MW) builds the 4 real IBR devices (IBR2@bus2, IBR3@bus3,
-%       IBR6@bus6, IBR8@bus8) using +ibr/dual_mode_ibr_model, with PF
+%       IBR6@bus6, IBR8@bus8) using +ibr/eecon49_dual_mode_model, with PF
 %       warm-start V0 per bus and CASE_DEFINED Mbase per IBR.
 %
 %   SG1 (bus 1) is NOT a device in this list — when online its slack is the
-%   PF (bus 1=REF); when tripped, no SG device. This mirrors the Phase 4
+%   PF (bus 1=SLACK); when tripped, no SG device. This mirrors the Phase 4
 %   synthetic fixture contract, but uses REAL +ibr models (not synthetic).
 %
 %   Inputs:
@@ -53,7 +53,7 @@ end
 % --- PF warm-start (in-house Newton) for V0 per bus ------------------------
 % This mirrors composite_dae's internal PF so device constructors get the
 % correct complex V0 (angle + magnitude) for initialization. The PF is run
-% on the unmodified MATPOWER14 network (bus 1 = REF, V=1.06).
+% on the unmodified MATPOWER14 network (bus 1 = SLACK, V=1.06).
 pf = pfsolver.powerflow_newton_raphson(case_data, struct('verbose',false, ...
     'plot_results',false,'max_iter',50,'tolerance',1e-10,'enforce_q_limits',false));
 if ~pf.converged
@@ -94,10 +94,10 @@ for k = 1:numel(ibr_ids)
     end
     P_ref_pu = dispatch_MW.(did) / Sbase;   % MW -> pu (system base)
     Q_ref_pu = 0.0;                          % unity PF default
-    V_ref_pu = abs(V0);                      % voltage setpoint = PF magnitude
+    E_ref_pu = abs(V0);                      % voltage setpoint = PF magnitude
     mode = mode_lookup.(did);
-    dev = ibr.dual_mode_ibr_model(string(did), bus, bp, bus_ids(:)', V0, params, ...
-        P_ref_pu, Q_ref_pu, V_ref_pu, string(mode));
+    dev = ibr.eecon49_dual_mode_model(string(did), bus, bp, bus_ids(:)', V0, params, ...
+        P_ref_pu, Q_ref_pu, E_ref_pu, string(mode));
     if k == 1
         devices = dev;
     else
@@ -114,6 +114,6 @@ dev_meta.Sbase = Sbase;
 dev_meta.kappa_per_ibr = struct('IBR2', Sbase/Mbase_map.IBR2, ...
     'IBR3', Sbase/Mbase_map.IBR3, 'IBR6', Sbase/Mbase_map.IBR6, ...
     'IBR8', Sbase/Mbase_map.IBR8);
-dev_meta.source = 'Real +ibr/dual_mode_ibr_model devices; Mbase=CASE_DEFINED nameplate proxy';
+dev_meta.source = 'Real +ibr/eecon49_dual_mode_model devices; Mbase=CASE_DEFINED nameplate proxy';
 dev_meta.no_synthetic = true;
 end

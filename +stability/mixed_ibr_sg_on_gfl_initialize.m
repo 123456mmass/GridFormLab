@@ -162,7 +162,11 @@ for kk = find(online(:))'
     x(xr) = x_dev(:);
     if ~is_ibr(kk)
         names = string(dev.input_names);
-        if any(strcmpi(names,'Pm')) && any(strcmpi(names,'Emag'))
+        has_classical_pair = any(strcmpi(names,'Pm')) && any(strcmpi(names,'Emag'));
+        % Opt-in reclose plant: the declared pair is the ELECTRICAL reference
+        % command [P_ref,Emag_ref], not the actual shaft state Pm.
+        has_reclose_pair = any(strcmpi(names,'P_ref')) && any(strcmpi(names,'Emag_ref'));
+        if has_classical_pair || has_reclose_pair
             % Classical machine: controls [Pm, |E|], two states, no field-flux
             % state.  Its factory already seeds u0 from the case power flow, and
             % the mode-aware PF reproduces that operating point (the IBR buses are
@@ -170,6 +174,9 @@ for kk = find(online(:))'
             % controls are LEFT as the factory set them.  The EMF6 [Tm,Efd]
             % sensitivity solve below does NOT apply, and evaluating f with a zero
             % |E| second input would be invalid.
+            % The opt-in 7-state reclose plant declares [P_ref,Emag_ref] with the
+            % same property: u0 is the healthy PF reference pair, so it is left
+            % untouched as well -- no shaft power is pushed through u(1).
         else
             ur = dae.u_offsets(kk)+1:dae.u_offsets(kk)+dev.nu;
             yv = y_from_voltage(V);

@@ -1,4 +1,6 @@
 function update_dashboard_metrics(app, titles, values, captions, colors)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %UPDATE_DASHBOARD_METRICS Refresh the four dashboard metric cards.
 
 if nargin < 5 || isempty(colors)

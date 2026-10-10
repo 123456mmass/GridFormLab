@@ -1,8 +1,11 @@
 function tests = test_ibr_smib_sssa_oracle()
 %TEST_IBR_SMIB_SSSA_ORACLE One converter against an algebraic infinite bus.
 %   This isolates IBR equations/network signs/Schur reduction from the
-%   already-verified SG analysis path. REGFM_B1 results are legacy-with-PLL
-%   comparison evidence only, not validation of the future no-PLL GFM.
+%   already-verified SG analysis path.
+%
+%   The two legacy-REGFM tests ("legacy-with-PLL comparison evidence") were
+%   removed on 2026-09-26 with that family.  The GFL-RMS10 oracle itself is
+%   live and keeps its full coverage below.
 tests = functiontests(localfunctions);
 end
 
@@ -86,23 +89,6 @@ end
 testCase.verifyLessThan(tds1.perturbation_halving_ratio,1e-3);
 end
 
-function test_legacy_regfm_smib_is_explicitly_not_no_pll(testCase)
-[dev,x,V,u,E,Z] = legacy_gfm_fixture();
-s = ibr.smib_sssa_oracle(dev,x,V,u,E,Z);
-testCase.verifyLessThan(norm(s.f0,inf),1e-8);
-testCase.verifyLessThan(norm(s.g0,inf),1e-10);
-testCase.verifyEqual(s.eigenvalue_count,numel(dev.active_state_indices));
-testCase.verifyTrue(any(strcmp(dev.state_names,'delta_PLL')));
-testCase.verifyTrue(any(strcmp(dev.state_names,'x_PLL_int')));
-testCase.verifyTrue(all(isfinite(s.eigenvalues)));
-end
-
-function test_legacy_regfm_schur_matches_resolved_kcl_oracle(testCase)
-[dev,x,V,u,E,Z] = legacy_gfm_fixture();
-s = ibr.smib_sssa_oracle(dev,x,V,u,E,Z);
-testCase.verifyLessThan(s.schur_direct_relative_error,5e-5);
-end
-
 function test_oracle_rejects_nonstandalone_bus_position(testCase)
 dev = ibr.gfl_rms10_model("GFL_BAD",2,2,[1 2],1,struct(),0.4,0.0);
 x = dev.equilibrium_initialize(1,0.4,0.0,struct());
@@ -122,13 +108,4 @@ end
 function [dev,x,V,u,E,Z,s] = gfl_fixture_with_sssa()
 [dev,x,V,u,E,Z] = gfl_fixture();
 s = ibr.smib_sssa_oracle(dev,x,V,u,E,Z);
-end
-
-function [dev,x,V,u,E,Z] = legacy_gfm_fixture()
-V = 1.0+0i; P = 0.40; Q = 0.00; Z = 0.02+0.20i;
-dev = ibr.regfm_b1_vsg_model("GFM_LEGACY_SMIB",1,1,1,V,struct(),P,abs(V));
-x = dev.equilibrium_initialize(V,P,Q,struct());
-u = dev.u0;
-I = dev.current_injection(0,x,[real(V);imag(V)],u,struct());
-E = V-Z*I;
 end

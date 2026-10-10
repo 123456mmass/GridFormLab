@@ -1,5 +1,9 @@
 function tests = test_ibr_transfer_maps_physical()
 %TEST_IBR_TRANSFER_MAPS_PHYSICAL  Physical GFL<->GFM transfer oracles.
+%   Retargeted 2026-09-26 onto ibr.eecon49_dual_mode_model, the only IBR family
+%   that survives; the former subject (a 20-state WECC-GFL/REGFM_B1-GFM
+%   superset) no longer exists.
+%
 %   Implements independent oracles per task contract:
 %   - GFL->GFM: I_right == I_left at same V within AbsTol 1e-10
 %   - GFM->GFL: I_right == I_left within AbsTol 1e-10
@@ -7,9 +11,18 @@ function tests = test_ibr_transfer_maps_physical()
 %   - global angle rotation changes phasor current per rotation but P/Q and
 %     internal relative states invariant
 %   - inactive branch not overwritten
-%   - 20-state dimension constant
-%   - invalid limit fails closed with stable error ID
+%   - 16-state dimension constant
+%   - the surviving family's own fail-closed surface (see the limits test)
 %   - no external solver
+%
+%   INDEX MAP (measured, not assumed).  The 16-state superset is
+%     [1:3]  shared plant   i_d, i_q, V_dc
+%     [4:9]  GFL controller gfl_delta_PLL, gfl_xi_PLL, gfl_xi_P, gfl_xi_Q,
+%                            gfl_xi_Id, gfl_xi_Iq
+%     [10:16] GFM controller gfm_delta_VSG, gfm_omega_VSG, gfm_E, gfm_xi_Vd,
+%                            gfm_xi_Vq, gfm_xi_Id, gfm_xi_Iq
+%   so the GFM branch angle is index 10 and the GFL branch angle is index 4 --
+%   NOT the retired family's delta_PLL=5 / delta_IT=2.
 tests = functiontests(localfunctions);
 end
 
@@ -28,7 +41,7 @@ if nargin<3 || isempty(V_ref_in), V_ref_in=1.0; end
 if nargin<4 || isempty(Vbus_in), Vbus_in=1.0+0i; end
 P_ref=P_ref_in; Q_ref=Q_ref_in; V_ref=V_ref_in; Vbus=Vbus_in;
 bus_ids=[1;2];
-dev_gfl = ibr.dual_mode_ibr_model('IBR_test',2,2,bus_ids,Vbus,struct(),P_ref,Q_ref,V_ref,"gfl");
+dev_gfl = ibr.eecon49_dual_mode_model('IBR_test',2,2,bus_ids,Vbus,struct(),P_ref,Q_ref,V_ref,"gfl");
 % Build y: bus1 1.06∠0, bus2 Vbus
 y = [1.06; 0.0; real(Vbus); imag(Vbus)];
 u = dev_gfl.u0;
@@ -70,7 +83,7 @@ S_left = Vbus*conj(I_left);
 P_left = real(S_left); Q_left = imag(S_left);
 % Transfer to GFM
 x_right = dev.mode_transfer_state(x_left, y, u, ec_gfl, 'GFM', ec_gfm);
-testCase.verifyEqual(numel(x_right), 20, 'AbsTol',0, '20-state dimension');
+testCase.verifyEqual(numel(x_right), 16, 'AbsTol',0, '16-state dimension');
 I_right = dev.current_injection(0, x_right, y, u, ec_gfm);
 testCase.verifyEqual(I_right, I_left, 'AbsTol', 1e-10, 'GFL->GFM I_right==I_left within 1e-10');
 testCase.verifyEqual(real(Vbus*conj(I_right)), P_left, 'AbsTol',1e-10, 'P continuity');
@@ -84,7 +97,7 @@ function test_gfm_to_gfl_current_continuity(testCase)
 % Start in GFM mode
 [dev_gfl, y, u, ec_gfl, ec_gfm, Vbus, P_ref, Q_ref, V_ref, bus_ids] = dual_fixture_gfl(0.4, 0.05, 1.0, 1.0+0i);
 % Need a GFM device for exact eq
-dev_gfm = ibr.dual_mode_ibr_model('IBR_test',2,2,bus_ids,Vbus,struct(),P_ref,0.0,V_ref,"GFM");
+dev_gfm = ibr.eecon49_dual_mode_model('IBR_test',2,2,bus_ids,Vbus,struct(),P_ref,0.0,V_ref,"GFM");
 % Build exact GFM equilibrium that delivers P_ref, Q_ref (Q from S, not Q_ref input)
 % For GFM, equilibrium_initialize expects terminal P/Q, and checks |V|==V_ref.
 x_left = get_exact_equil(dev_gfm, Vbus, P_ref, Q_ref, ec_gfm);
@@ -94,7 +107,7 @@ P_left = real(S_left); Q_left = imag(S_left);
 % Transfer to GFL using GFM device's callback (same superset, same bus)
 % Use dev_gfm's mode_transfer_state (it has same gfl/gfm devs inside)
 x_right = dev_gfm.mode_transfer_state(x_left, y, dev_gfm.u0, ec_gfm, 'gfl', ec_gfl);
-testCase.verifyEqual(numel(x_right),20,'AbsTol',0,'dim 20');
+testCase.verifyEqual(numel(x_right),16,'AbsTol',0,'dim 16');
 I_right = dev_gfm.current_injection(0, x_right, y, dev_gfm.u0, ec_gfl);
 testCase.verifyEqual(I_right, I_left, 'AbsTol',1e-10, 'GFM->GFL I continuity 1e-10');
 testCase.verifyEqual(real(Vbus*conj(I_right)), P_left, 'AbsTol',1e-10, 'P continuity GFM->GFL');
@@ -148,19 +161,31 @@ testCase.verifyEqual(imag(Vbus_rot*conj(I_gfl_rot)), imag(Vbus*conj(I_gfl)), 'Ab
 % Now transfer GFL->GFM at original and rotated, check relative states invariant
 x_gfm = dev.mode_transfer_state(x_gfl, y, u, ec_gfl, 'GFM', ec_gfm);
 x_gfm_rot = dev.mode_transfer_state(x_gfl_rot, y_rot, u, ec_gfl, 'GFM', ec_gfm);
-% Internal relative: delta_IT (angle difference) should be invariant
-% gfm_idx: delta_IT is index 2, x_Eint 4, etc. Absolute angles delta_PLL (5) should shift by theta
-% Extract
-delta_IT = x_gfm(2); delta_IT_rot = x_gfm_rot(2);
-testCase.verifyEqual(delta_IT, delta_IT_rot, 'AbsTol',1e-9, 'delta_IT invariant under global rotation');
-% P_f, Q_f etc (indices 7,9) should be same (inverter base) because P/Q same
-testCase.verifyEqual(x_gfm(7), x_gfm_rot(7), 'AbsTol',1e-9, 'Pinv_f invariant');
-testCase.verifyEqual(x_gfm(9), x_gfm_rot(9), 'AbsTol',1e-9, 'Qinv_f invariant');
-% Absolute angle delta_PLL should rotate by theta
-delta_PLL = x_gfm(5); delta_PLL_rot = x_gfm_rot(5);
-% Wrap difference
-diff = wrapToPi(delta_PLL_rot - delta_PLL);
-testCase.verifyEqual(diff, theta, 'AbsTol',1e-8, 'delta_PLL rotates by theta');
+% Index map for THIS family (16-state, measured): 1:3 shared plant, 4:9 GFL
+% controller, 10:16 GFM controller.  So the absolute VSG angle is index 10
+% (it was index 2 'delta_IT' plus 5 'delta_PLL' in the retired layout), and the
+% shared-plant currents are 1:2 rather than the retired 7/9 filtered powers.
+% The invariance statement is unchanged: a rigid rotation of the whole network
+% rotates the absolute angle by theta and leaves the relative/plant coordinates
+% untouched.
+delta_VSG = x_gfm(10); delta_VSG_rot = x_gfm_rot(10);
+diff = wrapToPi(delta_VSG_rot - delta_VSG);
+testCase.verifyEqual(diff, theta, 'AbsTol',1e-8, 'gfm_delta_VSG rotates by theta');
+% The plant currents are expressed in the device frame, so they are invariant.
+testCase.verifyEqual(x_gfm(1:2), x_gfm_rot(1:2), 'AbsTol',1e-9, ...
+    'plant dq currents invariant under global rotation');
+testCase.verifyEqual(x_gfm(3), x_gfm_rot(3), 'AbsTol',1e-9, 'V_dc invariant');
+% The carried GFL block is NOT wholly invariant: index 4 is gfl_delta_PLL, an
+% ABSOLUTE angle, so it rotates with the frame exactly like the VSG angle above
+% (measured: both shift by exactly theta while 5:9 stay put).  Asserting the
+% whole block invariant, as the retired layout allowed for its relative
+% delta_IT, would be wrong for this family.
+testCase.verifyEqual(wrapToPi(x_gfm(4)-x_gfm_rot(4)), -theta, 'AbsTol',1e-8, ...
+    'gfl_delta_PLL rotates by theta (carried across the transfer)');
+testCase.verifyEqual(x_gfm(5:9), x_gfm_rot(5:9), 'AbsTol',1e-9, ...
+    'GFL integrator block invariant under global rotation');
+testCase.verifyEqual(x_gfm(11:16), x_gfm_rot(11:16), 'AbsTol',1e-9, ...
+    'GFM integrator block invariant under global rotation');
 end
 
 function a = wrapToPi(a)
@@ -173,124 +198,98 @@ end
 function test_inactive_branch_preservation(testCase)
 [dev, y, u, ec_gfl, ec_gfm, Vbus] = dual_fixture_gfl(0.3, 0.0, 1.0, 1.0+0i);
 x_left = get_exact_equil(dev, Vbus, 0.3, 0.0, ec_gfl);
-% Save GFM inactive branch (1:13) from left
-gfm_idx = 1:13; gfl_idx = 14:20;
-gfm_anchor_left = x_left(gfm_idx);
+% Index map for this family: 1:3 shared plant, 4:9 GFL, 10:16 GFM.
+gfm_idx = 10:16; gfl_idx = 4:9;
 x_right = dev.mode_transfer_state(x_left, y, u, ec_gfl, 'GFM', ec_gfm);
 % After GFL->GFM, GFL branch should be preserved
 testCase.verifyEqual(x_right(gfl_idx), x_left(gfl_idx), 'AbsTol',0, 'GFL->GFM preserves GFL anchor (inactive)');
 % Check opposite: GFM->GFL preserves GFM anchor
 [dev2, y2, u2, ec_gfl2, ec_gfm2, Vbus2, ~,~,~, bus_ids] = dual_fixture_gfl(0.4,0.05,1.0,1.0+0i);
-dev_gfm = ibr.dual_mode_ibr_model('IBR_test',2,2,bus_ids,Vbus2,struct(),0.4,0.0,1.0,"GFM");
+dev_gfm = ibr.eecon49_dual_mode_model('IBR_test',2,2,bus_ids,Vbus2,struct(),0.4,0.0,1.0,"GFM");
 x_left_gfm = get_exact_equil(dev_gfm, Vbus2, 0.4, 0.05, ec_gfm2);
-gfl_anchor_left = x_left_gfm(gfl_idx);
 x_right_gfl = dev_gfm.mode_transfer_state(x_left_gfm, y2, dev_gfm.u0, ec_gfm2, 'gfl', ec_gfl2);
 testCase.verifyEqual(x_right_gfl(gfm_idx), x_left_gfm(gfm_idx), 'AbsTol',0, 'GFM->GFL preserves GFM anchor');
 end
 
 % =========================================================================
-% 6. Dimension 20 constant
+% 6. Dimension 16 constant
 % =========================================================================
-function test_dimension_20(testCase)
+function test_dimension_16(testCase)
 [dev, y, u, ec_gfl, ec_gfm, Vbus] = dual_fixture_gfl();
 x_left = get_exact_equil(dev, Vbus, 0.4, 0.1, ec_gfl);
 x_r1 = dev.mode_transfer_state(x_left, y, u, ec_gfl, 'GFM', ec_gfm);
 x_r2 = dev.mode_transfer_state(x_r1, y, u, ec_gfm, 'gfl', ec_gfl);
-testCase.verifyEqual(numel(x_left),20,'AbsTol',0);
-testCase.verifyEqual(numel(x_r1),20,'AbsTol',0);
-testCase.verifyEqual(numel(x_r2),20,'AbsTol',0);
+testCase.verifyEqual(numel(x_left),16,'AbsTol',0);
+testCase.verifyEqual(numel(x_r1),16,'AbsTol',0);
+testCase.verifyEqual(numel(x_r2),16,'AbsTol',0);
 end
 
 % =========================================================================
-% 7. Invalid limit fails closed with stable error ID
+% 7. Fail-closed surface of the surviving family
 % =========================================================================
-function test_invalid_limits_fail_closed(testCase)
+function test_fail_closed_surface(testCase)
+% Retargeted 2026-09-26.  The retired test asserted three guards that were
+% REGFM_B1-specific and have NO counterpart in ibr.eecon49_dual_mode_model:
+%   (c) "P beyond Imax" -> equilibriumCurrentLimit/ClampBoundary,
+%   (d) "V below VPLLfrz" -> equilibriumPLLFreezeNonunique,
+%   (e) "|Vbus| != V_ref" -> equilibriumVoltageReferenceMismatch.
+% Those assertions are DELETED, not relaxed: they described the retired model's
+% initializer contract.  The EECON49 initializer is a direct algebraic solve
+% (gfl_eecon49_full_model>equilibrium: id = k*P/|V|, iq = -k*Q/|V|) whose ONLY
+% voltage guard is abs(V)<=0, and its GFM branch has no PLL at all, so there is
+% no freeze threshold and no V_ref match to violate.  Pasting the new model's
+% permissive values into those assertions would have asserted that a limit
+% check passes when no limit check exists.
+%
+% What replaces them is the survivor's REAL fail-closed surface, each identifier
+% measured on this tree:
+%   badVoltage   -- transfer at a zero or non-finite bus voltage
+%   badState     -- wrong-length or non-finite device state vector
+%   badInput     -- wrong-length or non-finite input vector
+%   badRuntimeMode -- a target/context mode outside {gfl, GFM, tripped}
+%   gfl_eecon49:eq -- the initializer's only voltage guard (|V| <= 0)
 [dev, y, u, ec_gfl, ec_gfm, Vbus] = dual_fixture_gfl(0.4,0.1,1.0,1.0+0i);
 x_left = get_exact_equil(dev, Vbus, 0.4, 0.1, ec_gfl);
 
-% a) V zero
+% a) V zero -- transfer must fail closed
 y_zero = y; y_zero(3)=0; y_zero(4)=0;
-errored=false;
-try
-    dev.mode_transfer_state(x_left, y_zero, u, ec_gfl, 'GFM', ec_gfm);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'badVoltage') || contains(me.identifier,'transfer_maps'), 'V zero fails closed badVoltage');
-end
-testCase.verifyTrue(errored,'V zero must fail closed');
+testCase.verifyError(@() dev.mode_transfer_state(x_left, y_zero, u, ec_gfl, 'GFM', ec_gfm), ...
+    'ibr:transfer_maps:badVoltage', 'V zero fails closed badVoltage');
 
-% b) V non-finite
+% b) V non-finite -- same guard
 y_nan = y; y_nan(3)=NaN;
-errored=false;
-try
-    dev.mode_transfer_state(x_left, y_nan, u, ec_gfl, 'GFM', ec_gfm);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'badVoltage') || contains(me.identifier,'transfer_maps') || contains(me.identifier,'badNetworkState'), 'V non-finite fails');
-end
-testCase.verifyTrue(errored,'V non-finite must fail closed');
+testCase.verifyError(@() dev.mode_transfer_state(x_left, y_nan, u, ec_gfl, 'GFM', ec_gfm), ...
+    'ibr:transfer_maps:badVoltage', 'V non-finite fails closed badVoltage');
 
-% c) P beyond Imax (WECC Imax=1.0 default, request 2.0 pu)
-V_ok = 1.0+0i;
-P_big = 2.0; Q_big = 0.0;
-x_big = get_exact_equil(dev, V_ok, 0.4, 0.1, ec_gfl); % valid left
-% Try to transfer with P_left huge? Actually our transfer computes P_left from I_left, so to force limit violation we need to craft x_left that produces huge I, then target initializer will reject.
-% Instead directly test target initializer limit: GFL initializer with P_big should error
-errored=false;
-try
-    dev.equilibrium_initialize(V_ok, P_big, Q_big, ec_gfl);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'CurrentLimit') || contains(me.identifier,'PowerLimit') || contains(me.identifier,'equilibrium'), ['Limit error ID stable: ' me.identifier]);
-end
-testCase.verifyTrue(errored,'P beyond Imax should fail closed via initializer');
+% c) Initializer voltage guard: the one limit the survivor DOES enforce.
+testCase.verifyError(@() dev.equilibrium_initialize(0, 0.4, 0.1, ec_gfl), ...
+    'ibr:gfl_eecon49:eq', 'zero |V| must fail closed in the initializer');
 
-% d) GFM V below VPLLfrz (0.05 pu) should fail via equilibriumPLLFreezeNonunique
-V_low = 0.04+0i;
-% Construct device at normal voltage (so constructor succeeds), then init at low V
-[dev_low, ~, ~, ec_gfl_low, ec_gfm_low, ~] = dual_fixture_gfl(0.1,0.0,1.0,1.0+0i);
-% V_ref is 1.0, but |V|=0.04 < VPLLfrz -> GFM initializer should error
-errored=false;
-try
-    dev_low.equilibrium_initialize(V_low, 0.1, 0.0, ec_gfm_low);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'PLLFreeze') || contains(me.identifier,'equilibrium'), 'V low PLL freeze fails closed');
-end
-testCase.verifyTrue(errored,'V below VPLLfrz must fail closed');
+% d) Wrong-length state must be rejected, not silently reinterpreted.
+testCase.verifyError(@() dev.f(0, x_left(1:15), y, u, ec_gfl), ...
+    'ibr:eecon49_dual_mode_model:badState', 'short state must fail closed');
+testCase.verifyError(@() dev.f(0, [NaN; x_left(2:end)], y, u, ec_gfl), ...
+    'ibr:eecon49_dual_mode_model:badState', 'non-finite state must fail closed');
 
-% e) V_ref mismatch for GFM: |Vbus| != V_ref should error equilibriumVoltageReferenceMismatch
-V_mismatch = 0.9+0i;
-y_mis = [1.06;0; real(V_mismatch); imag(V_mismatch)];
-errored=false;
-try
-    % dev has V_ref=1.0, Vbus=0.9 -> mismatch
-    dev.equilibrium_initialize(V_mismatch, 0.4, 0.1, ec_gfm);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'VoltageReferenceMismatch') || contains(me.identifier,'equilibrium'), 'V_ref mismatch fails closed');
-end
-testCase.verifyTrue(errored,'V_ref mismatch must fail closed');
+% e) Wrong-length / non-finite input must be rejected.
+testCase.verifyError(@() dev.f(0, x_left, y, u(1:2), ec_gfl), ...
+    'ibr:eecon49_dual_mode_model:badInput', 'short input must fail closed');
+testCase.verifyError(@() dev.f(0, x_left, y, [u(1:2); NaN], ec_gfl), ...
+    'ibr:eecon49_dual_mode_model:badInput', 'non-finite input must fail closed');
 
-% f) Unsupported mode
-errored=false;
-try
-    dev.mode_transfer_state(x_left, y, u, ec_gfl, 'invalid_mode', ec_gfm);
-catch me
-    errored=true;
-    testCase.verifyTrue(contains(me.identifier,'unsupportedMode'), 'unsupported mode fails closed');
-end
-testCase.verifyTrue(errored,'Invalid mode must fail closed');
+% f) Unsupported target mode must fail closed.
+testCase.verifyError(@() dev.mode_transfer_state(x_left, y, u, ec_gfl, 'invalid_mode', ec_gfm), ...
+    'ibr:eecon49_dual_mode_model:badRuntimeMode', 'unsupported mode fails closed');
 end
 
 % =========================================================================
 % 8. No external solver (grep guard)
 % =========================================================================
 function test_no_external_solver(testCase)
-src1 = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr','dual_mode_ibr_model.m'));
+src1 = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr','eecon49_dual_mode_model.m'));
 src2 = fileread(fullfile(fileparts(fileparts(mfilename('fullpath'))), '+stability','transfer_maps.m'));
 for fn = {'fsolve','optimoptions','fmincon','fminsearch','lsqnonlin','optimset'}
-    testCase.verifyFalse(contains(src1, fn{1}), ['no ' fn{1} ' in dual_mode_ibr_model']);
+    testCase.verifyFalse(contains(src1, fn{1}), ['no ' fn{1} ' in eecon49_dual_mode_model']);
     testCase.verifyFalse(contains(src2, fn{1}), ['no ' fn{1} ' in transfer_maps']);
 end
 end

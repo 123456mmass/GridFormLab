@@ -1,4 +1,6 @@
 function app = toggle_log_panel(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %TOGGLE_LOG_PANEL Show or hide the run log panel.
 
 if ~isfield(app, 'log_visible') || isempty(app.log_visible)

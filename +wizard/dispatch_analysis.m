@@ -855,7 +855,7 @@ else
     ids = arrayfun(@(k) sprintf('G%d',k), 1:numel(gen_pos), 'UniformOutput', false);
     rb = bus_ids(gen_pos).';
     modes = repmat({'SG'}, 1, numel(rb));
-    fprintf('Resources: SG=%d, GFM=0, GFL=0 (REF/PV generator-bus mapping)\n', numel(rb));
+    fprintf('Resources: SG=%d, GFM=0, GFL=0 (SLACK/PV generator-bus mapping)\n', numel(rb));
 end
 psum = 0; qsum = 0;
 for k = 1:numel(rb)

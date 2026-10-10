@@ -645,10 +645,10 @@ P_{ei}=V_{di}I_{di}+V_{qi}I_{qi}+R_a(I_{di}^2+I_{qi}^2),
 
 \subsubsection{Bus Data และ Bus Types}
 
-Table~\ref{tab:ieee14-bus-data} บันทึก source bus operating entries และ aggregated source generation ส่วน Table~\ref{tab:ieee14-bus-parameters} เก็บ remaining MATPOWER bus-matrix fields รวมถึง bus type, shunt, area, voltage limits และ initial voltage ค่า source $P_G/Q_G$ entries คือ case data; การตีความ input/output ของมันเป็นไปตาม effective REF, PV และ PQ bus types
+Table~\ref{tab:ieee14-bus-data} บันทึก source bus operating entries และ aggregated source generation ส่วน Table~\ref{tab:ieee14-bus-parameters} เก็บ remaining MATPOWER bus-matrix fields รวมถึง bus type, shunt, area, voltage limits และ initial voltage ค่า source $P_G/Q_G$ entries คือ case data; การตีความ input/output ของมันเป็นไปตาม effective SLACK, PV และ PQ bus types
 
 \begin{table}[H]\centering\small
-\caption{IEEE14 bus-type assignment รวมถึง MATPOWER type codes และ buses ในแต่ละ REF, PV และ PQ group}
+\caption{IEEE14 bus-type assignment รวมถึง MATPOWER type codes และ buses ในแต่ละ SLACK, PV และ PQ group}
 \label{tab:ieee14-bus-types}
 \resizebox{.78\textwidth}{!}{\input{figures/padiyar_two_area/table_ieee14_bus_types.tex}}
 \end{table}

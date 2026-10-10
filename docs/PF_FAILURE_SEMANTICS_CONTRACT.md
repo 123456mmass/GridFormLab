@@ -20,7 +20,7 @@ throws a stable error identifier; it never returns a plausible result.
 | Missing `bus_data` / `line_data` | `case_data.* is required.` | -- |
 | Wrong column count | `bus_data must have 8, 10, or 12 columns.` | -- |
 | Duplicate bus IDs | `bus_data contains duplicate bus numbers.` | -- |
-| REF count != 1 | `Exactly one slack bus is required for this solver.` | -- |
+| SLACK count != 1 | `Exactly one slack bus is required for this solver.` | -- |
 | Invalid bus type | `Bus types must be 1 (Slack), 2 (PV), or 3 (PQ).` | -- |
 | Non-positive V spec | `Initial/specified voltage magnitudes must be positive.` | -- |
 | Qmin > Qmax | `Qmin must be less than or equal to Qmax for every bus.` | -- |
@@ -58,7 +58,7 @@ strict order so that finiteness is checked before conditioning:
 8. Check Newton step finite -> `nonfinite_newton_step` if not.
 9. Update state `x = x + delta_x`.
 10. Check updated state finite -> `nonfinite_state` if not.
-11. Enforce fixed REF/PV quantities (non-positive V reset to 0.1).
+11. Enforce fixed SLACK/PV quantities (non-positive V reset to 0.1).
 
 If `max_iter` is reached without convergence, `reason = 'max_iterations'`.
 

@@ -1,4 +1,6 @@
 function refresh_display(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %REFRESH_DISPLAY Re-render the last result into the rebuilt GUI.
 %   pfapp.refresh_display(app) is called after an in-place theme rebuild so
 %   the user does not lose the currently displayed result. It inspects the

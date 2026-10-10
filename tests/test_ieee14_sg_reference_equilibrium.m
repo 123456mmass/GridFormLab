@@ -1,6 +1,6 @@
 function tests = test_ieee14_sg_reference_equilibrium
-%TEST_IEEE14_SG_REFERENCE_EQUILIBRIUM  Physical SG REF/all-KCL contract.
-%   The REF bus fixes |V| and angle. Tm/Efd are equilibrium-solved control
+%TEST_IEEE14_SG_REFERENCE_EQUILIBRIUM  Physical SG SLACK/all-KCL contract.
+%   The SLACK bus fixes |V| and angle. Tm/Efd are equilibrium-solved control
 %   outputs, then held constant by TS/SSSA. No physical KCL row is removed.
 tests = functiontests(localfunctions);
 end
@@ -31,12 +31,17 @@ testCase.verifyEqual(eq.vcon_ref,[1.06;0],'AbsTol',0);
 testCase.verifyEqual(eq.y0(1:2),[1.06;0],'AbsTol',0);
 testCase.verifyEqual(eq.reference.slack_input_names,{'Tm','Efd'});
 testCase.verifyEqual(eq.partition.slack_input_unknowns,2,'AbsTol',0);
-% The previous literal 57 encoded the retired six-state GFL layout. Derive
-% the square all-KCL dimension from the audited current state contract:
-% 5 active SG states + 4*7 active WECC GFL states + all 28 KCL rows = 61
-% residuals; unknowns replace two REF-voltage coordinates with Tm/Efd.
+% ใช้ EECON49 GFL ที่ active: shared plant 3 + PLL/PI 6 states
+% และ I_dc อีกหนึ่ง state เฉพาะ source ที่มี dynamics ไม่ใช้ WECC layout เดิม.
+% Unknowns แทนสอง SLACK-voltage coordinates ด้วย Tm/Efd โดยคง KCL ครบ.
 nb=size(testCase.TestData.case_data.mpc.bus,1);
-expected_active=5+4*7;
+expected_active=5;
+for k=2:numel(eq.devices)
+    dev=eq.devices(k);
+    testCase.verifyEqual(dev.device_type,'ibr_eecon49_dual');
+    expected_active=expected_active+9+sum(strcmp(dev.state_names,'I_dc'));
+end
+testCase.verifyEqual(numel(eq.active_state_indices),expected_active);
 expected_rows=expected_active+2*nb;
 expected_unknowns=expected_active+(2*nb-numel(eq.vcon_vars))+ ...
     eq.partition.slack_input_unknowns;

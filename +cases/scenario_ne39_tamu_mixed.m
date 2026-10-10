@@ -1,8 +1,24 @@
 function scenario = scenario_ne39_tamu_mixed(case_data, scenario_opt)
 %SCENARIO_NE39_TAMU_MIXED resource table ร่วมสำหรับ TAMU ทั้งสอง composition.
+%   scenario_opt.sg_reclose_plant (opt-in, default absent/false) เปลี่ยน SG31
+%   ใน composition SG31 + 9 IBR ให้ใช้ 7-state reclose plant
+%   ('sg_classical_reclose') แทน 2-state classical. ค่าเริ่มต้นไม่เปลี่ยน byte.
 arguments
     case_data struct
     scenario_opt struct = struct()
+end
+sg_reclose_plant = false;
+if isfield(scenario_opt,'sg_reclose_plant') && ~isempty(scenario_opt.sg_reclose_plant)
+    flag = scenario_opt.sg_reclose_plant;
+    validateattributes(flag,{'logical','double'},{'scalar','finite'});
+    if ~ismember(flag,[0 1])
+        error('cases:ne39SgReclosePlant:flag','sg_reclose_plant ต้องเป็น boolean');
+    end
+    sg_reclose_plant = logical(flag);
+end
+if sg_reclose_plant && ~(numel(case_data.sg_buses)==1 && case_data.sg_buses(1)==31)
+    error('cases:ne39SgReclosePlant:unsupportedComposition', ...
+        'sg_reclose_plant รองรับเฉพาะ SG31 + 9 IBR (case_ne39_1sg_9ibr) เท่านั้น');
 end
 if isfield(scenario_opt,'study_capability')
     flag = scenario_opt.study_capability;
@@ -34,7 +50,12 @@ spec = [];
 for k = 1:numel(case_data.sg_buses)
     bus = case_data.sg_buses(k);
     u = case_data.machines.units([case_data.machines.units.bus]==bus);
-    r = entry(sprintf('SG%d',bus),bus,'sg','sg_classical');
+    sg_model = 'sg_classical';
+    if sg_reclose_plant
+        % Opt-in เท่านั้น: SG31 ใช้โรงงาน 7-state; composition อื่นไม่ถูกแตะ.
+        sg_model = 'sg_classical_reclose';
+    end
+    r = entry(sprintf('SG%d',bus),bus,'sg',sg_model);
     r.supported_modes = ["synchronous","breaker_open"];
     r.voltage_forming_modes = "synchronous";
     r.initial_mode = "synchronous";
@@ -42,9 +63,20 @@ for k = 1:numel(case_data.sg_buses)
     if isfield(case_data,'study_capability')
         r.limits.Pmax_MW = case_data.dispatch_contract.pmax_MW.(r.resource_id);
     end
-    r.provenance = struct('model','sg_classical','source',case_data.reference.sg_dynamics, ...
-        'classification','PROJECT_DERIVED_CLASSICAL_REDUCTION', ...
-        'details','TAMU GENROU H/Xdp; system-base swing; frozen internal EMF; no AVR/PSS dynamics');
+    if sg_reclose_plant
+        % H/D/X'd และ classical port ยังเป็น source reduction เดิม; ส่วนที่เพิ่ม
+        % (governor/field/PLL/rating) เป็น PROJECT_DERIVED ไม่ใช่ข้อมูล TAMU.
+        r.provenance = struct('model','sg_classical_reclose_project_derived', ...
+            'source',case_data.reference.sg_dynamics, ...
+            'classification','PROJECT_DERIVED', ...
+            'details',['opt-in scenario_opt.sg_reclose_plant: 7-state ' ...
+            '[delta,omega,Psv,Pm,Emag,theta_hat,nu_hat]; H/Xdp/D และ classical port ' ...
+            'มาจาก source reduction เดิม; governor/field/PLL/rating เป็น PROJECT_DERIVED']);
+    else
+        r.provenance = struct('model','sg_classical','source',case_data.reference.sg_dynamics, ...
+            'classification','PROJECT_DERIVED_CLASSICAL_REDUCTION', ...
+            'details','TAMU GENROU H/Xdp; system-base swing; frozen internal EMF; no AVR/PSS dynamics');
+    end
     spec = [spec,r]; %#ok<AGROW>
 end
 for k = 1:numel(case_data.ibr_buses)

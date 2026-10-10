@@ -1,4 +1,6 @@
 function app = run_smib_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_SMIB_ACTION Run SMIB small-signal stability analysis for the selected
 %   case and stash the result on app.last_smib. Dispatches to the right
 %   Kundur model (A/B/C/D) based on the case's .model field and mirrors the

@@ -109,7 +109,7 @@ transaction out of five.
 
 | | |
 |---|---|
-| **Power flow** | in-house Newton–Raphson; bus-type semantics enforced (REF fixes \|V\| and angle, PV fixes P and \|V\|, PQ fixes P and Q); PV→PQ limit switching |
+| **Power flow** | in-house Newton–Raphson; bus-type semantics enforced (SLACK fixes \|V\| and angle, PV fixes P and \|V\|, PQ fixes P and Q); PV→PQ limit switching |
 | **Small-signal stability** | full-KCL state-space assembly, network-angle quotient for both machine-online and all-converter cases, participation factors, finite-difference-robust damping margins |
 | **Transient stability** | coupled differential-algebraic implicit trapezoidal kernel with domain-preserving Newton globalisation, bounded step subdivision, and an opt-in adaptive stepper that is byte-identical to the fixed path when disabled |
 | **Converter models** | grid-following with PLL, grid-forming virtual synchronous machine without PLL, dual-mode devices with bumpless transfer maps, circular current-reference limiting with per-axis anti-windup, DC-source dynamics |
@@ -220,6 +220,8 @@ resynchronises as shown above, with the two behaviours marked opt-in in
 equilibrium result and does not by itself certify transient stability;
 operational readiness is tracked separately from numerical completion, and the
 open items are listed in the handoff rather than hidden.
+
+Visual language after PGAz v1.3, © 2024 PSDSC Research Center, KMITL — used with acknowledgement; this application is an independent implementation.
 
 ## License
 

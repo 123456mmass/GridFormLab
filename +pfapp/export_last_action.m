@@ -1,4 +1,6 @@
 function app = export_last_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %EXPORT_LAST_ACTION Export button callback. Returns modified app.
 
 app = pfapp.set_busy(app, true);

@@ -1,4 +1,6 @@
 function app = run_selected_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_SELECTED_ACTION Main Run button dispatch. Returns modified app.
 
 app = pfapp.set_busy(app, true);

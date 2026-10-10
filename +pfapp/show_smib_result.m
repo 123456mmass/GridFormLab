@@ -1,4 +1,6 @@
 function show_smib_result(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SHOW_SMIB_RESULT Render the SMIB stability result into the GUI.
 %   Populates the SMIB Stability tab (s-plane eigenvalues + impulse step
 %   response + eigenvalue table) and the dashboard metric cards, then

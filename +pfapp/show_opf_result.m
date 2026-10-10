@@ -1,4 +1,6 @@
 function show_opf_result(app, result)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SHOW_OPF_RESULT Display OPF results in table and plots.
 
 if isfield(result, 'Q_generation_MVAr')

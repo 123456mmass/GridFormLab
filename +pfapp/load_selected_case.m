@@ -1,4 +1,6 @@
 function case_data = load_selected_case(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %LOAD_SELECTED_CASE Look up the selected case from the dropdown.
 
 idx = find(strcmp(app.case_labels, app.case_dropdown.Value), 1);

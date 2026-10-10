@@ -1,4 +1,6 @@
 function open_benchmark_3d_plots(case_labels, case_loaders, base_options, acceleration)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 method_labels = {'NR', 'GS'};
 num_cases = numel(case_labels);
 num_methods = numel(method_labels);

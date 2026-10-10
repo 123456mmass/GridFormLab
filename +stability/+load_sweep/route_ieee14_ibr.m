@@ -10,7 +10,7 @@ point = stability.load_sweep.ibr_sssa_route(scaled_case, scenario, opt);
 point.route = 'ieee14_ibr';
 
 % Record PF diagnostics from the equilibrium's internal composite_dae PF.
-% composite_dae is NOT the PF solver; it consumes the PF result. The REF bus
+% composite_dae is NOT the PF solver; it consumes the PF result. The SLACK bus
 % injection balances PF mismatch (PF contract). Tm/Efd are equilibrium
 % initialization inputs, NOT a PF redispatch policy.
 if isfield(point,'equilibrium') && isstruct(point.equilibrium)

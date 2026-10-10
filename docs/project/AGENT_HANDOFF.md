@@ -1,5 +1,11 @@
 # Agent handoff — IEEE14 mixed-resource IBR validation closure
 
+> ## 2026-10-10 current snapshot — read this first
+>
+> The current worktree state is **not** the `main` branch described below. Actual branch is **`checkpoint/ne39-160s-20261009`**, whose main primitive checkpoint is **committed and remote-verified**: `81462daa643e73de633081e26bbdb1828eeee920` (7 files, 1832+/6-). Everything from the old header down is **historical**, including the old HEAD/main and IEEE14 sections.
+> Current-state documents: [WORKTREE_CHECKPOINT_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/WORKTREE_CHECKPOINT_20261010.md>) (grouping, tested counts, exclusions, next steps) and [NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md>) (NE39 primitive evidence and its limits).
+> A broad source/tests/docs **WIP** commit (which contains these pointer docs) is **prepared, not a release**; the **16 staged deletions are protected**, the old real-160 raw was **not rerun**, and **no new actual SG reclose is validated**.
+
 Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization; 2026-07-20 GFM-VSG-no-PLL SMIB-first characterization; 2026-07-21 SSSA load sweep (SMIB loaded-IBR)
 Branch: `main`
 Tested working tree: `ea7150f` (uncommitted domain-preserving Newton fix on top of all-GFL equilibrium)
@@ -1554,7 +1560,7 @@ SG1 plus four GFL-RMS10 resources and active order 45.
 The report operating-point tables were subsequently unified. Bus voltages,
 bus generation/load/net injection, all 20 branch flows, and device injections
 are now reconstructed from the same accepted SG1 plus four-GFL equilibrium
-used by SSSA and TS. The source REF/PV/PQ PF is retained only as the frozen
+used by SSSA and TS. The source SLACK/PV/PQ PF is retained only as the frozen
 constant-admittance load anchor and is not published beside the equilibrium
 tables. The report producer independently checks
 `Sgen + Sshunt - Sload - Sbranch_loss`; the regenerated balance norm is
@@ -2376,7 +2382,7 @@ Started from HEAD `126ae57`. Committed `a2d346a` (pushed, local==remote).
   phi=0.508383707164714 (positive-Q root, residual -1.1e-15 on
   |S_SG1|-1.3462), lost_sg_MW=133.190444. Bus 6 solves at 1.0575 pu (above
   Vmax) and is reported, not tuned.
-- **Phase E**: bus_role labelling descriptor (REF/PV/PQ/GFM/GFL); PF
+- **Phase E**: bus_role labelling descriptor (SLACK/PV/PQ/GFM/GFL); PF
   bit-identical, 12-col contract intact.
 - **Phase F**: Qmin/Qmax registered from mpc.gen into bus_data 11/12
   (SOURCE_DEFINED); enforce_q_limits enabled in both builders. P-limit

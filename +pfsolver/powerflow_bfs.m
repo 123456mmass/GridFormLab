@@ -12,7 +12,7 @@ function results = powerflow_bfs(case_data, options)
 %   DEFERRED; uses constant-power injections only (Si = P_net + j*Q_net).
 %
 %   Phase-1 capability contract (binding, per user correction 5):
-%     - exactly one REF bus; all remaining buses PQ;
+%     - exactly one SLACK bus; all remaining buses PQ;
 %     - connected radial tree (num_lines == num_buses - 1);
 %     - no parallel branches;
 %     - unity taps, zero phase shifts;
@@ -135,7 +135,7 @@ for iter = 1:max_iter
 
     % --- Full AC mismatch convergence check (recomputed each iteration) ---
     % Mismatch over the UNKNOWN buses only (delta_idx for P, V_idx for Q).
-    % REF/slack P and Q are outputs (slack), not scheduled inputs, so they are
+    % SLACK P and Q are outputs (slack), not scheduled inputs, so they are
     % NOT part of the convergence check (matches NR's pf_calculate_mismatch).
     V_complex = V_new;
     [P_calc, Q_calc] = pf_calculate_power_injections(abs(V_complex), angle(V_complex), model.Ybus);

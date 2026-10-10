@@ -1,9 +1,15 @@
 function tests = test_ieee14_1sg_4ibr_phaseC()
 %TEST_IEEE14_1SG_4IBR_PHASEC  Phase C transfer maps + frozen anchor tests.
-%   Verifies: dimension constant (20 across modes), live mode switch preserves
+%   Verifies: dimension constant (16 across modes), live mode switch preserves
 %   state dimension, transfer_maps builds per-device maps, hybrid_state_init
 %   includes device_frozen_anchor, current continuity across GFL<->GFM,
 %   inactive frozen at anchor, repeated switching, invalid mode fail-closed.
+%
+%   Retargeted 2026-09-26 onto ibr.eecon49_dual_mode_model, the only IBR family
+%   that survives.  Every assertion below is a property of the shared machinery
+%   (transfer_maps, ts_hybrid_state_init, the generic builder) or of the
+%   surviving constructor's own published contract, so none of it was tuned to
+%   a new number.
 %
 %   Source: execution plan §C; corrections 3, 4.
 tests = functiontests(localfunctions);
@@ -16,16 +22,19 @@ end
 
 % =========================================================================
 function test_dimension_constant_across_modes(testCase)
-% Source-model superset is REGFM_B1 G2(13) + WECC GFL(7) = 20.
+% Retargeted 2026-09-26 onto ibr.eecon49_dual_mode_model.  The surviving
+% superset is common plant 3 + GFL controller 6 + GFM controller 7 = 16
+% (published in that constructor's own header), not the retired family's
+% REGFM_B1 G2(13) + WECC GFL(7) = 20.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 bus_ids = c.mpc.bus(:,1)';
 for mode = ["gfl","GFM","tripped"]
-    dev = ibr.dual_mode_ibr_model("IBR2", 2, 2, bus_ids, 1.04, ...
+    dev = ibr.eecon49_dual_mode_model("IBR2", 2, 2, bus_ids, 1.04, ...
         struct('Mbase',140), 0.4, 0.0, 1.04, mode);
-    testCase.verifyEqual(dev.nx, 20, 'AbsTol', 0, ...
-        sprintf('nx=20 in mode "%s".', mode));
-    testCase.verifyEqual(numel(dev.x0), 20, 'AbsTol', 0, ...
-        sprintf('x0 length 20 in mode "%s".', mode));
+    testCase.verifyEqual(dev.nx, 16, 'AbsTol', 0, ...
+        sprintf('nx=16 in mode "%s".', mode));
+    testCase.verifyEqual(numel(dev.x0), 16, 'AbsTol', 0, ...
+        sprintf('x0 length 16 in mode "%s".', mode));
 end
 end
 
@@ -52,7 +61,7 @@ for k = 1:numel(devices)
     testCase.verifyTrue(isfield(maps, key), ...
         sprintf('transfer_maps has entry for %s.', mid));
     % Dual-mode IBRs should have gfl_to_gfm + gfm_to_gfl
-    if strcmp(devices(k).device_type, 'ibr_dual_mode')
+    if strcmp(devices(k).device_type, 'ibr_eecon49_dual')
         testCase.verifyTrue(maps.(key).available, ...
             sprintf('%s transfer map available.', mid));
         testCase.verifyTrue(isfield(maps.(key), 'gfl_to_gfm'), ...
@@ -83,12 +92,15 @@ end
 
 % =========================================================================
 function test_invalid_mode_fail_closed(testCase)
-% Invalid mode must fail closed in dual_mode_ibr_model.
+% Invalid mode must fail closed in eecon49_dual_mode_model.  Retargeted
+% 2026-09-26: the surviving constructor validates its mode argument with an
+% arguments-block mustBeMember, so the error identity is MATLAB's validator
+% (measured), not a family-specific ibr:* identifier.
 c = cases.case_ieee14_1sg_4ibr_auto_vsg();
 bus_ids = c.mpc.bus(:,1)';
 errored = false;
 try
-    ibr.dual_mode_ibr_model("IBR2", 2, 2, bus_ids, 1.04, ...
+    ibr.eecon49_dual_mode_model("IBR2", 2, 2, bus_ids, 1.04, ...
         struct('Mbase',140), 0.4, 0.0, 1.04, "invalid_mode");
 catch me
     errored = true;

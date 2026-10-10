@@ -66,7 +66,7 @@ end
 
 function write_case_tables(c,out)
 bus=c.mpc.bus;
-type_names={ 'PQ','PV','REF','ISOLATED' };
+type_names={ 'PQ','PV','SLACK','ISOLATED' };
 t=table(bus(:,1),string(type_names(bus(:,2))).',bus(:,3),bus(:,4), ...
     bus(:,5),bus(:,6),bus(:,8),bus(:,9),bus(:,10),bus(:,12),bus(:,13), ...
     'VariableNames',{'bus_id','type','Pd_MW','Qd_MVAr','Gs_MW','Bs_MVAr', ...
@@ -83,7 +83,7 @@ end
 function metrics=write_equilibrium_tables(eq,pf_anchor,c,out)
 V=complex(eq.y0(1:2:end),eq.y0(2:2:end));
 bus_ids=c.mpc.bus(:,1); nb=numel(bus_ids); base=c.mpc.baseMVA;
-type=repmat("PQ",nb,1); type(c.mpc.bus(:,2)==3)="REF";
+type=repmat("PQ",nb,1); type(c.mpc.bus(:,2)==3)="SLACK";
 t=table((1:nb).',bus_ids,string(type),abs(V),69*abs(V),rad2deg(angle(V)), ...
     'VariableNames',{'bus_position','bus_id','type','V_pu','V_kV','angle_deg'});
 writetable(t,fullfile(out,'normal_pf_bus.csv'));

@@ -20,7 +20,7 @@ case_data.system_name = 'Padiyar two-area 4-machine model 1.1 with AVR';
 case_data.base_values = struct('S_base_MVA',100,'V_base_kV',1,'frequency_Hz',60);
 
 % [bus type V angle Pg Qg Pl Ql Gsh Bsh Qmin Qmax]
-% Internal project bus types: 1=REF, 2=PV, 3=PQ. Bus 11 is the printed
+% Internal project bus types: 1=SLACK, 2=PV, 3=PQ. Bus 11 is the printed
 % angle reference and therefore the PF slack. Printed angles are supplied
 % as initial values only; the in-house PF recomputes the operating point.
 %

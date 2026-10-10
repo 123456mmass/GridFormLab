@@ -62,7 +62,7 @@ while true
     model = pf_prepare_case(working_case);
     [Bp_full, Bpp_full] = pf_build_b_matrices(model, variant);
 
-    % Reduced matrices: B' on delta_idx (REF excluded); B'' on V_idx (PV excluded).
+    % Reduced matrices: B' on delta_idx (SLACK excluded); B'' on V_idx (PV excluded).
     Bp_red  = Bp_full(model.delta_idx, model.delta_idx);
     Bpp_red = Bpp_full(model.V_idx, model.V_idx);
 

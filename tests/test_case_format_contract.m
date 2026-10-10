@@ -14,7 +14,7 @@ loaders={ ...
     @cases.case_saadat_example_6_8,@cases.case_saadat_ieee30bus, ...
     @cases.case_template_nbus,@cases.case_kundur_two_area_classical, ...
     @cases.kundur_ex126_book_case,@cases.case_matpower6_case9, ...
-    @cases.case_matpower6_case14};
+    @cases.case_matpower6_case14,@cases.case_ne39};
 for k=1:numel(loaders)
     c=loaders{k}();
     verifyEqual(testCase,c.case_kind,'network');
@@ -35,7 +35,7 @@ function test_bus_type_mapping_is_unambiguous(testCase)
 c=cases.kundur_ex126_book_case();
 verifyEqual(testCase,c.bus_data(:,2),[1;2;2;2;3;3;3;3;3;3;3]);
 verifyEqual(testCase,c.mpc.bus(:,2),[3;2;2;2;1;1;1;1;1;1;1]);
-verifyEqual(testCase,string(c.tables.bus.TypeName(1:4)),string({'REF';'PV';'PV';'PV'}));
+verifyEqual(testCase,string(c.tables.bus.TypeName(1:4)),string({'SLACK';'PV';'PV';'PV'}));
 end
 
 function test_all_study_loaders_use_study_case_v1(testCase)

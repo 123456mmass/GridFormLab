@@ -247,8 +247,15 @@ V = y(1:2:end) + 1i*y(2:2:end);
 x = dae.x0;
 for isg = 1:numel(sg_idx)
     k = sg_idx(isg);
-    rec=dae.devices(k).reconstruct(0,dae.x0(dae.device_offsets(k)+(1:2)), ...
-        y,dae.u0(dae.u_offsets(k)+(1:2)),eq_context);
+    devk = dae.devices(k);
+    xr = dae.device_offsets(k)+(1:devk.nx);
+    ur = dae.u_offsets(k)+(1:devk.nu);
+    % The FULL device state is passed to reconstruct: the opt-in reclose plant
+    % has nx=7 and validates all seven coordinates.  Only the solved rotor angle
+    % (local 1, scaled by X'd exactly as in the reduced residual) and omega
+    % (local 2) are overwritten; Psv/Pm/Emag/theta_hat/nu_hat keep their x0
+    % values.  The legacy nx==2 classical machine behaves exactly as before.
+    rec=devk.reconstruct(0,x(xr),y,dae.u0(ur),eq_context);
     x(dae.device_offsets(k)+1) = sg_delta(isg)*max(rec.Xdp,1e-6);
     x(dae.device_offsets(k)+2) = 1;
 end

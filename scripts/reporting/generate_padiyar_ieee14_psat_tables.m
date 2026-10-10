@@ -562,7 +562,7 @@ fprintf(fid,'Item & Value & Contract note \\\\ \\midrule\n');
 fprintf(fid,'Case & {MATPOWER 6.0 IEEE 14-bus} & Converted from the supplied case14.m \\\\ \n');
 fprintf(fid,'Power base & %.0f MVA & MATPOWER mpc.baseMVA \\\\ \n',mpc.baseMVA);
 fprintf(fid,'Nominal frequency & %.0f Hz & Project dynamic base \\\\ \n',c.base_values.frequency_Hz);
-fprintf(fid,'Bus rows & %d & %d REF, %d PV, %d PQ \\\\ \n',size(bus,1),n_ref,n_pv,n_pq);
+fprintf(fid,'Bus rows & %d & %d SLACK, %d PV, %d PQ \\\\ \n',size(bus,1),n_ref,n_pv,n_pq);
 fprintf(fid,'Online generators & %d & Buses %s \\\\ \n',sum(online_gen),vector_text(gen_bus));
 fprintf(fid,'Online branches & %d & %d transformer-tap branches \\\\ \n',sum(online_branch),n_transformer);
 fprintf(fid,'Total specified demand & %.1f MW, %.1f MVAr & Sum of bus Pd and Qd \\\\ \n',sum(bus(:,3)),sum(bus(:,4)));
@@ -571,7 +571,7 @@ fprintf(fid,'\\bottomrule\\end{tabular}\n');
 end
 
 function write_bus_types(c,path_out)
-bus=c.mpc.bus; codes=[3 2 1]; labels={'REF','PV','PQ'};
+bus=c.mpc.bus; codes=[3 2 1]; labels={'SLACK','PV','PQ'};
 fid=open_text(path_out); z=onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid,'%% Fresh bus-type assignment from the exact IEEE14 bus matrix.\n');
 fprintf(fid,'\\begin{tabular}{l r l r}\\toprule\n');
@@ -593,7 +593,7 @@ for k=1:size(gen,1)
     idx = find(bus(:,1)==gen(k,1),1);
     Pg(idx)=Pg(idx)+gen(k,2); Qg(idx)=Qg(idx)+gen(k,3);
 end
-types = {'PQ','PV','REF'};
+types = {'PQ','PV','SLACK'};
 fid = open_text(path_out); z=onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid,'%% Fresh source-data table generated in the same invocation as the IEEE14 simulations.\n');
 fprintf(fid,'\\begin{tabular}{r l r r r r r r}\\toprule\n');
@@ -608,7 +608,7 @@ fprintf(fid,'\\bottomrule\\end{tabular}\n');
 end
 
 function write_bus_parameters(c,path_out)
-bus=c.mpc.bus; types={'PQ','PV','REF'};
+bus=c.mpc.bus; types={'PQ','PV','SLACK'};
 fid=open_text(path_out); z=onCleanup(@() fclose(fid)); %#ok<NASGU>
 fprintf(fid,'%% Fresh MATPOWER bus-matrix fields from the case used in this invocation.\n');
 fprintf(fid,'\\begin{tabular}{r l r r r r r r r r r r r}\\toprule\n');

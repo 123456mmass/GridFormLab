@@ -1,4 +1,6 @@
 function [lambda_step, lambda_max, min_voltage, max_steps] = load_scaling_defaults(num_buses)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %LOAD_SCALING_DEFAULTS CPF load-scaling parameters by system size.
 
 if num_buses <= 5

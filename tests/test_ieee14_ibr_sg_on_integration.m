@@ -300,8 +300,8 @@ end
 
 function test_reference_owner_schema_generic_eligibility(tc)
 % F3: reference owner eligibility is generic (online, voltage-forming,
-% capability-permitted, island membership), NOT tied to PF/MATPOWER REF bus.
-% Build a synthetic devices array where an IBR (not the REF bus) owns the
+% capability-permitted, island membership), NOT tied to PF/MATPOWER SLACK bus.
+% Build a synthetic devices array where an IBR (not the SLACK bus) owns the
 % reference.
 devs = synthetic_dual_island_devices();
 hs = make_hybrid_state(devs);
@@ -312,7 +312,7 @@ hs.reference_island_ids = 1;
 norm = stability.reference_owner_schema(hs, devs, struct());
 tc.verifyEqual(norm.reference_owner_indices, 2, 'AbsTol', 0);
 tc.verifyEqual(norm.gfm_reference_resource_indices, 2, 'AbsTol', 0);
-% The owner is an IBR, not the PF REF bus -> generic eligibility holds.
+% The owner is an IBR, not the PF SLACK bus -> generic eligibility holds.
 tc.verifyTrue(~strcmpi(char(devs(2).device_type), 'sg'));
 end
 

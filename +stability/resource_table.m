@@ -16,7 +16,7 @@ function [resources, schema] = resource_table(case_data, resource_spec, scenario
 %     bus_id             - external network bus ID (network mapping ONLY;
 %                          never used as selector identity)
 %     resource_type      - "sg" | "ibr"
-%     model_id           - device factory key: "sg_emf6" | "regfm_b1_dual" |
+%     model_id           - device factory key: "sg_emf6" | "eecon49_dual" |
 %                          future single-mode factory keys
 %     supported_modes    - string vector the resource may take:
 %                          sg:   ["synchronous","breaker_open"]

@@ -1,0 +1,1399 @@
+%=============================================================================
+%  report_ieee14_switching_decision_basis_th.tex
+%  รายงานภาษาไทย: ฐานการตัดสินใจของ supervisor ที่สลับโหมด GFL/GFM
+%  บนระบบ IEEE-14 ที่มี SG 1 เครื่อง + IBR 4 ตัว
+%
+%  ฉบับแปลของ report_ieee14_switching_decision_basis_en.tex
+%  ตัวเลขทุกตัวอ่านจาก artefact ที่ระบุชื่อได้ ไม่มีการประมาณหรือเติมแต่ง
+%
+%  BUILD:  xelatex report_ieee14_switching_decision_basis_th.tex   (2 ครั้ง)
+%          ต้องรันจาก docs/source/ เพราะ path ของฟอนต์เป็น relative
+%=============================================================================
+\documentclass[12pt,a4paper]{article}
+\usepackage[a4paper,top=1.9cm,bottom=1.7cm,left=1.85cm,right=1.85cm]{geometry}
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\setmainfont[Path={fonts/TH Sarabun PSK V-1/},Extension=.ttf,
+  UprightFont={THSarabun},BoldFont={THSarabun Bold},
+  ItalicFont={THSarabun Italic},BoldItalicFont={THSarabun BoldItalic}]{THSarabun}
+\usepackage{amsmath,amssymb,graphicx,booktabs,tabularx,array,longtable,float}
+\usepackage{amsthm}
+\usepackage[table]{xcolor}
+\usepackage{enumitem,fancyhdr,caption,titlesec}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
+
+\definecolor{navy}{RGB}{25,55,95}
+\definecolor{ok}{RGB}{0,110,70}
+\definecolor{no}{RGB}{170,40,35}
+\definecolor{warn}{RGB}{175,110,0}
+\definecolor{pale}{RGB}{240,244,249}
+\definecolor{gray}{RGB}{90,98,108}
+
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\color{navy}\textbf{การสลับ GFL/GFM บน IEEE-14: ฐานการตัดสินใจ}}
+\fancyhead[R]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\setlength{\headheight}{16pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlist[itemize]{leftmargin=1.7em,itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{leftmargin=1.9em,itemsep=3pt,topsep=3pt}
+\captionsetup{font=small,labelfont=bf,skip=3pt}
+\renewcommand{\figurename}{รูปที่}
+\renewcommand{\tablename}{ตารางที่}
+\renewcommand{\abstractname}{บทคัดย่อ}
+\renewcommand{\contentsname}{สารบัญ}
+\renewcommand{\proofname}{บทพิสูจน์}
+
+\newtheorem{proposition}{ข้อเสนอ}
+\theoremstyle{remark}
+\newtheorem{remark}{หมายเหตุ}
+
+\newcommand{\pu}{\,\mathrm{pu}}
+\newcommand{\zmin}{\zeta_{\min}}
+\newcommand{\zworst}{\zeta_{\mathrm{worst}}}
+\newcommand{\greq}{\gamma_{\mathrm{req}}}
+\newcommand{\Ssev}{S}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\measured}{\textcolor{ok}{\textbf{[วัดแล้ว]}}}
+\newcommand{\derived}{\textcolor{warn}{\textbf{[อนุมาน]}}}
+\newcommand{\proposed}{\textcolor{navy}{\textbf{[ข้อเสนอ]}}}
+
+\title{\bfseries ความเป็นไปได้ของคอนฟิกูเรชัน ค่า damping margin\\[2pt]
+และความแข็งของเกาะ ในงานศึกษา GFL/GFM บน IEEE-14\\[8pt]
+\large ทำไมการสลับจึงเพิ่มคอนเวอร์เตอร์หนึ่งหรือสองตัว\\
+และข้อเสนอ index สลับโหมดเพิ่มเติมสองตัว: RoCoF และ RoCoV}
+\author{ชุดเครื่องมือวิเคราะห์ระบบไฟฟ้ากำลังภายใน}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+โครงข่าย IEEE-14 ที่ใช้ศึกษามีเครื่องกำเนิดซิงโครนัสหนึ่งเครื่องที่บัส 1 และ
+คอนเวอร์เตอร์สองโหมดสี่ตัวที่บัส 2, 3, 6 และ 8 ซึ่งรันแบบ grid-following (GFL)
+หรือ grid-forming (GFM) ได้ เมื่อเครื่องกำเนิดหลุดออกจากระบบ supervisor
+ต้องตัดสินใจว่าจะเลื่อนคอนเวอร์เตอร์ขึ้นเป็น GFM กี่ตัวและตัวไหน รายงานนี้พิสูจน์
+จากโค้ดที่ส่งมอบและ cache ผลลัพธ์ที่ส่งมอบว่า จำนวนที่เลื่อนขึ้นไม่ได้เลือกจาก
+เป้าหมายเสถียรภาพ และไม่ได้ใช้หลัก ``ยิ่งมากยิ่งปลอดภัย'' แต่คือ
+\emph{superset เชิงเข้มที่มี cardinality ต่ำที่สุด} ของเซตที่กำลัง form อยู่
+ซึ่งปรากฏในตารางความเป็นไปได้ที่ authenticate ไว้ล่วงหน้า และตารางนั้น
+\emph{ไม่ monotone} ในจำนวนสมาชิก เซตที่เป็นไปได้ทั้ง 15 แบบมีเพียง 7 แบบที่
+ยอมรับได้ และ\emph{ทุก}เซตที่มีสามตัวไม่มี equilibrium เลย (residual ของ
+coupled Newton $3.28$--$3.61\times10^{2}$) เกณฑ์การยอมรับคือ damping-ratio floor
+ที่ทนทาน $\zmin = 0.05$ ประเมินที่ finite-difference step สามค่าที่ freeze ไว้
+และเซตสี่ตัวยอมรับได้แต่มี damping น้อยที่สุดในเจ็ดเซต
+($\zworst = 0.1223$ เทียบกับ $0.2549$--$0.2676$) ค่า short-circuit ratio
+ที่บัสคอนเวอร์เตอร์อยู่ในช่วง $2.30$--$2.73$ ทุกหน้าต่างเวลาที่เป็นเกาะ
+ต่ำกว่า WECC strong-grid floor ที่ 3 บน $98.61\%$ ของ converter-sample ทั้งหมด
+และต่ำกว่าทั้ง $100\%$ ของหน้าต่างหลังทริปและหลัง reclose ลำดับเหตุการณ์
+adaptive ที่ส่งมอบเลื่อนขึ้นครั้งละหนึ่งตัว ถือสองตัวเป็นส่วนใหญ่ของหน้าต่าง
+ที่เป็นเกาะ และไปถึงสี่ตัวเฉพาะเมื่อไม่มีตัวเลือกที่เล็กกว่านั้นยอมรับได้
+สุดท้าย รายงานวัด mode ความล้มเหลวของ index สลับโหมดสองเทอม (แรงดัน/ความถี่)
+ที่ใช้อยู่ได้ห้าแบบ บน run ที่ส่งมอบ --- หนึ่งในนั้นคือครึ่งความถี่ของ index
+\emph{เหมือนกันทั้งสี่คอนเวอร์เตอร์} ตลอด $3679$ sample --- และออกแบบ index
+เพิ่มเติมสองตัว --- RoCoF ($df/dt$) และ RoCoV ($d|V|/dt$) --- ซึ่งแต่ละตัว
+เข้าเงื่อนไขของตัวเองแทนการถ่วงน้ำหนักรวมเป็นสเกลาร์เดียว
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+%=============================================================================
+\section{ขอบเขต คำถาม และฐานของหลักฐาน}
+%=============================================================================
+
+\subsection{คำถามทั้งห้า}
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{จำนวนที่เลื่อนขึ้น} ในโค้ดโมเดลล่าสุด ทำไมการสลับไม่ได้ทำให้
+      คอนเวอร์เตอร์ทุกตัวเป็น grid-forming แต่เลือกแค่หนึ่งหรือสองตัว
+\item \textbf{Damping margin} คำนวณจากปริมาณอะไร คำนวณอย่างไร และทำไมจึงใช้
+      ปริมาณนั้น
+\item \textbf{ความแข็งของเกาะ} ค่า short-circuit ratio (SCR) ที่บัสคอนเวอร์เตอร์
+      เป็นเท่าไรเมื่อเครื่องกำเนิดซิงโครนัสถูกทริปออก
+\item \textbf{ทั้งสี่ตัวเป็น GFM} จะเกิดอะไรขึ้น ทำไมจึงไม่ดี และกริดแข็งไม่ดีหรือ
+\item \textbf{Index ที่ใช้สลับ} ปัจจุบันใช้แค่แรงดันกับความถี่ ซึ่งเห็นว่าน้อยเกินไป
+      และทำให้เกิด false decision ได้ ข้อเสนอคือ index เพิ่มเติมสามตัว
+\end{enumerate}
+
+\subsection{คำว่า ``พิสูจน์'' ในรายงานนี้หมายถึงอะไร และไม่หมายถึงอะไร}
+
+รายงานนี้พิสูจน์ข้อความสองชนิดที่ต่างกัน และแยกมันออกจากกันตลอด
+
+\paragraph{ข้อความภายในโมเดล} พิสูจน์ได้โดยอ่านโค้ด production ที่ run ที่ส่งมอบ
+รันจริง ``การเลื่อนขึ้นคือ superset เชิงเข้มที่มี cardinality ต่ำที่สุด'' เป็น
+ข้อความชนิดนี้ มันเป็นสมบัติของ \code{select\_support\_augmentation\_candidate.m}
+และของตารางที่ run นั้นบริโภค จึงเป็นจริงกับทุกรันของโค้ดนี้ ไม่ใช่แค่ run ที่ส่งมอบ
+
+\paragraph{ข้อความเกี่ยวกับวิถีคำตอบ} พิสูจน์โดยการวัดบน artefact ที่ระบุชื่อได้
+``SCR ของเกาะเป็น 2.53 เมื่อเครื่องกำเนิดออก'' เป็นข้อความชนิดนี้ จริงสำหรับ
+\code{adaptive\_250s.mat} และโครงข่ายกับ dispatch ที่ cache นั้นสร้างขึ้นมา
+และไม่ได้อ้างว่าเป็นจริงโดยทั่วไป
+
+ไม่มีข้อความใดในรายงานนี้พิสูจน์ด้วยการให้เหตุผลอย่างเดียว ที่ใดเสนอ
+กลไกเป็นคำอธิบายมากกว่าการวัด จะกำกับไว้ ณ จุดนั้น และหัวข้อ~\ref{sec:notclaimed}
+ระบุสิ่งที่\emph{ไม่}ได้อ้าง
+
+\subsection{Artefact}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+\textbf{Artefact} & \textbf{บทบาทในรายงานนี้}\\
+\midrule
+\code{+stability/ts\_simulate\_ibr\_hybrid.m} &
+  ตัว supervisor: การสร้าง severity, hysteresis, dwell และการเรียกเข้าสู่การเลือก
+  candidate กับ support transaction\\
+\code{+stability/select\_support\_augmentation\_candidate.m} &
+  กฎการจัดอันดับที่เปลี่ยน ``severity บอกว่าต้องการ support เพิ่ม'' ให้เป็น
+  เซต forming หนึ่งเซตที่ระบุชื่อได้\\
+\code{+stability/ibr\_candidate\_evaluate.m} &
+  เกณฑ์การยอมรับ: equilibrium, KCL, สเปกตรัม small-signal แบบ full-KCL
+  และ damping-ratio gate ที่ทนทาน\\
+\code{+stability/ibr\_scr\_metrics.m} &
+  ตัวชี้วัด short-circuit ratio และ gate ของมัน\\
+\code{+stability/agsi\_reference\_terms.m} &
+  reference sub-index ที่ประกาศคู่กับ run รวมถึงสามตัวที่การตัดสินใจไม่ได้บริโภค\\
+\code{+cases/scenario\_ieee14\_1sg\_4ibr.m} &
+  เคส, dispatch contract และ selector contract ที่ freeze ไว้\\
+\code{run\_ieee14\_gfm\_lock\_comparison.m} &
+  การศึกษาแบบหก arm และชุด option ร่วมที่ทุก arm เริ่มจาก\\
+\code{ieee14\_gfm\_lock\_compare\_zeta/adaptive\_250s.mat} &
+  ลำดับเหตุการณ์ adaptive 250\,s ที่ส่งมอบ ตัวเลขวิถีคำตอบทุกตัวในรายงาน
+  อ่านจากไฟล์นี้\\
+\code{ieee14\_gfm\_lock\_compare\_zeta/summary.mat} &
+  การแจกแจงความเป็นไปได้ในหัวข้อ~\ref{sec:admissibility}\\
+\code{docs/project/defects/2026-08-14-all4-gfm-commit-outside-basin.md} &
+  สาเหตุที่วัดได้ของ mode ความล้มเหลวของการเป็น GFM ทั้งสี่ตัว\\
+\bottomrule
+\end{tabularx}
+\caption{Artefact ที่รายงานนี้อ่าน ไม่มีไฟล์ใดถูกเขียนโดยการอ่าน}
+\end{table}
+
+\subsection{ผลลัพธ์ที่ส่งมอบ สำหรับใช้กำกับ}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}lrX@{}}
+\toprule
+\textbf{ปริมาณ} & \textbf{ค่า} & \textbf{แหล่งที่มา}\\
+\midrule
+horizon ที่ไปถึง & $250.000000$ s & \code{result.t(end)}\\
+sample ที่ยอมรับ & $3679$ & \code{numel(result.t)}\\
+step ที่ปฏิเสธ / ความพยายาม & $161$ / $3824$ & \code{rejected\_steps}, \code{ts\_step\_attempts}\\
+KCL residual สูงสุดที่ยอมรับ & $9.972081\times10^{-9}$ & \code{max(accepted\_residual\_per\_step)}\\
+$f_{\mathrm{COI}}$ ขั้นสุดท้าย & $60.000001128$ Hz & \code{coi\_frequency\_Hz(end)}\\
+SG reclose & $159.2519$ s, \code{SUCCESS} & \code{actual\_reclose\_time}\\
+reference handback เสร็จ & $173.1271$ s, \code{C1\_COMPLETE} & \code{handback\_complete\_time}\\
+\bottomrule
+\end{tabularx}
+\caption{ลำดับเหตุการณ์ adaptive ที่ส่งมอบ เจ็ดค่านี้คือ regression gate ของ
+โปรเจกต์สำหรับ result set นี้}
+\end{table}
+
+%=============================================================================
+\section{ระบบที่ศึกษา และ supervisor มีไว้ทำอะไร}
+%=============================================================================
+
+\subsection{โครงข่ายและทรัพยากร}
+
+เคสคือ \code{case\_profile} $=$ \code{'eecon49\_figure4'} บนโครงข่าย IEEE-14
+resolve เป็น \code{ibr\_model\_id} $=$ \code{'eecon49\_dual'} ตารางทรัพยากรถูก
+ตรึงไว้ และลำดับของมันคือ identity เดียวที่ selector ใช้
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}clrlrrl@{}}
+\toprule
+\textbf{Index} & \textbf{Id} & \textbf{บัส} & \textbf{ชนิด} & \textbf{Base (MVA)} & \textbf{เริ่มต้น} & \textbf{โมเดล}\\
+\midrule
+1 & SG1  & 1 & synchronous & 615 & online & \code{sg\_emf6}\\
+2 & IBR2 & 2 & converter   & 100 & GFL    & \code{eecon49\_dual}\\
+3 & IBR3 & 3 & converter   & 100 & GFL    & \code{eecon49\_dual}\\
+4 & IBR6 & 6 & converter   & 100 & GFL    & \code{eecon49\_dual}\\
+5 & IBR8 & 8 & converter   & 100 & GFL    & \code{eecon49\_dual}\\
+\bottomrule
+\end{tabular}
+\caption{ตารางทรัพยากร หมายเลขบัสและชื่ออุปกรณ์ไม่เคยเป็น key ของการตัดสินใจ
+index ของตารางทรัพยากรต่างหากที่เป็น}
+\end{table}
+
+เครื่องกำเนิดให้ $H = 2.5$\,s และ $D = 1.0\pu$ ในชุด option ที่ส่งมอบ
+คอนเวอร์เตอร์แต่ละตัวมีฟิลเตอร์ $L_f = 0.15\pu$, $R_f = 0.015\pu$,
+DC link $C_{dc} = 0.10$ และเพดานกระแส $I_{\max} = 1.2\pu$ บนฐาน 100\,MVA ร่วม
+กิ่ง grid-forming เป็น virtual synchronous machine ที่มี swing coefficient
+$M = 0.08$ และ damping coefficient $D_v = 20.0$ ส่วนกิ่ง grid-following เป็น
+ตัวควบคุมกระแสแบบ PLL ที่ $k_{p,\mathrm{PLL}} = 1.20$ และ
+$k_{i,\mathrm{PLL}} = 5.00$ สัมประสิทธิ์ $D_v$ ตัวเดียวกันนี้กำหนดทั้ง
+droop $P$--$f$ และ swing damping ซึ่งเป็นสมบัติของ VSG แบบสัมประสิทธิ์เดียว
+ไม่ใช่ความผิดพลาดในการสร้างโมเดล
+
+\subsection{เครื่องกำเนิดแบกอะไรไว้ และการทริปยกอะไรต่อ}
+
+ที่ power flow ก่อนเหตุการณ์ เครื่องกำเนิดจ่าย $1.3319\pu$ และคอนเวอร์เตอร์
+สี่ตัวรวมกันจ่าย $1.3176\pu$ เทียบกับโหลดรวม $2.59\pu$ ของกำลังไฟฟ้าจริง
+และ $0.735\pu$ ของกำลังไฟฟ้ารีแอกทีฟ dispatch contract ของเคสบันทึกผลของ
+การเปิดเบรกเกอร์เครื่องกำเนิดไว้เป็น \code{deficit\_MW} $= 133.1904$ และ
+\code{lost\_sg\_Q\_MVAr} $= -19.5666$ \measured
+
+เมื่อเปิดที่ $t = 20$\,s เบรกเกอร์นั้นทิ้งเกาะที่มีไฟเลี้ยงซึ่งมีแรงดัน
+ก่อตัวจากคอนเวอร์เตอร์เพียงอย่างเดียว และบังคับให้ supervisor ตอบคำถามสองข้อ
+ที่แยกจากกัน: \emph{เมื่อไร} ต้องการ forming support เพิ่ม และ \emph{ตัวไหน}
+ควรให้ โค้ดตอบสองข้อนี้คนละที่ และการแยกนั้นคือหัวข้อ~\ref{sec:pipeline}
+
+\subsection{ลำดับการสลับที่ส่งมอบ}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}rlrll@{}}
+\toprule
+$t$ (s) & \textbf{เหตุการณ์} & \textbf{เซตที่ form} & \textbf{การเปลี่ยน} & \textbf{variant}\\
+\midrule
+$0.0000$    & เริ่มต้น              & $\{\}$               & GFL ทั้งหมด, SG ต่ออยู่ & ---\\
+$20.0000$   & SG ทริป               & $\{2\}$              & IBR2 $\to$ GFM     & ---\\
+$22.0887$   & augment              & $\{2,4\}$            & $+$IBR6            & unconditioned\\
+$25.3026$   & release              & $\{2\}$              & $-$IBR6            & unconditioned\\
+$50.0000$   & load step $+20\%$    & $\{2\}$              & ---                & ---\\
+$51.3403$   & augment              & $\{2,4\}$            & $+$IBR6            & unconditioned\\
+$53.3795$   & augment              & $\{2,3,4,5\}$        & $+$IBR3, $+$IBR8   & \textbf{conditioned}\\
+$85.0000$   & fault บัส 9          & $\{2,3,4,5\}$        & ---                & ---\\
+$85.1500$   & เคลียร์ fault        & $\{2,3,4,5\}$        & ---                & ---\\
+$110.0000$  & ทริปสาย 6--13        & $\{2,3,4,5\}$        & ---                & ---\\
+$145.0000$  & คืน topology, ขอ reclose & $\{2,3,4,5\}$    & ---                & ---\\
+$146.2782$  & release              & $\{2\}$              & $-$IBR3,\,IBR6,\,IBR8 & unconditioned\\
+$148.2811$  & augment              & $\{2,4\}$            & $+$IBR6            & unconditioned\\
+$152.4017$  & release              & $\{2\}$              & $-$IBR6            & unconditioned\\
+$159.2519$  & \textbf{SG reclose}  & $\{2\}$              & \code{SUCCESS}     & ---\\
+$173.1271$  & handback, IBR2 $\to$ GFL & $\{\}$           & ---                & ---\\
+\bottomrule
+\end{tabular}
+\caption{ทุก transaction ของโหมดในลำดับเหตุการณ์ adaptive ที่ส่งมอบ อ่านจาก
+\code{result.device\_modes\_history} และ \code{result.event\_log} \measured}
+\label{tab:timeline}
+\end{table}
+
+ให้อ่านคอลัมน์ ``การเปลี่ยน'' เป็นคำตอบของข้อ 1 ในรูปที่ตรงที่สุด
+ภายใน 250\,s เกิด augment หรือ release ห้าเหตุการณ์ และ\emph{ทุกเหตุการณ์
+ขยับหนึ่งหรือสองตัว} เซตไม่เคยกระโดดจาก $\{2\}$ ไป $\{2,3,4,5\}$ ใน
+transaction เดียว หัวข้อ~\ref{sec:count} แสดงว่านี่เป็นเชิงโครงสร้าง ไม่ใช่
+เรื่องบังเอิญ
+
+%=============================================================================
+\section{เส้นทางการตัดสินใจ}\label{sec:pipeline}
+%=============================================================================
+
+supervisor คือสามขั้นต่ออนุกรม และแต่ละขั้นปฏิเสธได้เท่านั้น
+ไม่มีขั้นใดหักล้างการปฏิเสธของอีกขั้นได้
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small,>=Latex,
+  box/.style={draw=navy,rounded corners=2pt,fill=pale,minimum height=8mm,
+              text width=4.75cm,align=center,inner sep=2pt},
+  gate/.style={draw=navy,diamond,aspect=2.7,fill=white,text width=2.9cm,
+               align=center,inner sep=0pt,font=\scriptsize},
+  arr/.style={->,thick,draw=navy},
+  ref/.style={->,thick,draw=no,dashed}]
+\node[box] (s1) at (0,0) {\textbf{ขั้น 1 --- WHEN}\\severity $\Ssev_i$ จากแรงดันบัส
+  และความถี่ centre-of-inertia};
+\node[gate] (g1) at (0,-1.95) {มี GFL ตัวใด\\$\Ssev_i \ge 0.65$\\นาน $0.10$\,s?};
+\node[box] (s2) at (0,-3.85) {\textbf{ขั้น 2 --- WHICH}\\superset เชิงเข้มที่เล็กที่สุด
+  ในตารางที่ authenticate};
+\node[box] (s3) at (0,-5.55) {\textbf{ขั้น 3 --- HOW}\\transfer map, KCL ทั้งโครงข่าย,
+  forward certificate};
+\node[gate] (g2) at (0,-7.45) {ยอมรับได้\\และ certified?};
+\node[box] (cm) at (0,-9.35) {\textbf{commit}\\atomic; ถ้าไม่ สถานะที่ยอมรับ
+  ก่อนหน้าคงเดิม};
+\node[draw=no,rounded corners=2pt,fill=white,minimum height=72mm,
+      text width=2.6cm,align=center,inner sep=3pt] (hold) at (5.9,-4.65)
+  {\color{no}\textbf{hold}\\[2pt] เซตปัจจุบันคงเดิม ไม่มี transaction ถูกประกาศ
+   และไม่มีการรับ right sample};
+\draw[arr] (s1)--(g1);
+\draw[arr] (g1)--node[right,font=\scriptsize]{ใช่}(s2);
+\draw[arr] (s2)--(s3);
+\draw[arr] (s3)--(g2);
+\draw[arr] (g2)--node[right,font=\scriptsize]{ใช่}(cm);
+\draw[ref] (g1.east)--node[above,font=\scriptsize]{ไม่}(g1.east -| hold.west);
+\draw[ref] (g2.east)--node[above,font=\scriptsize]{ไม่}(g2.east -| hold.west);
+\end{tikzpicture}
+\caption{สามขั้นของ supervisor ขั้น 1 ตัดสินใหม่ทุก sample ส่วนขั้น 2 และ 3 เป็น
+การค้นตารางและการทดสอบกับหลักฐานที่ freeze ไว้ก่อน run เริ่ม}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{ขั้น 1 --- เมื่อไรจึงขอ support}
+
+สำหรับคอนเวอร์เตอร์ที่สลับโหมดได้และออนไลน์ทุกตัว ตัวขับสร้าง
+
+\begin{equation}
+\Ssev_i \;=\; \operatorname{sat}\!\left(\tfrac{1}{2}J_{V,i} + \tfrac{1}{2}J_f\right),
+\qquad
+J_{V,i} = \frac{|V_i - V_{i,\text{healthy}}|}{0.10},
+\qquad
+J_f = \frac{|f_{\mathrm{COI}} - 60|}{0.50},
+\label{eq:severity}
+\end{equation}
+
+โดย $\operatorname{sat}(x) = \min(1,\max(0,x))$
+\code{(ts\_simulate\_ibr\_hybrid.m:3631)} ฐาน $0.10\pu$ และ $0.50$\,Hz
+ตรึงไว้ที่ \code{:1675--1677} และ $V_{i,\text{healthy}}$ คือแรงดัน power flow
+ก่อนเหตุการณ์ของบัสคอนเวอร์เตอร์ตัวนั้นเอง เงื่อนไขการเลื่อนขึ้นและปลดลงคือ
+
+\begin{equation}
+\text{augment} \;=\; \bigl|\{\,i \in \text{GFL} : \Ssev_i \ge 0.65\,\}\bigr| > 0,
+\qquad
+\text{release} \;=\; \forall i,\; \Ssev_i < 0.35,
+\label{eq:triggers}
+\end{equation}
+
+โดยต้องคงอยู่นาน $T_{d,\mathrm{on}} = 0.10$\,s และ $T_{d,\mathrm{off}} = 1.00$\,s
+ตามลำดับ \code{(:852--900)} และค่า threshold ตั้งไว้ที่ \code{:1664--1667}
+สมบัติสามข้อของ~\eqref{eq:triggers} มีความสำคัญในหัวข้อถัด ๆ ไป
+
+\begin{itemize}
+\item เทอม augment เป็น \code{any} เหนือ\emph{ตัวที่ตามอยู่} index จึงถามว่า
+      ``มีคอนเวอร์เตอร์ grid-following ตัวใดกำลังเครียดหรือไม่'' ไม่ได้ถามว่า
+      ``ระบบเสถียรหรือไม่'' และไม่ได้ถามว่า ``ตัวไหนเป็นต้นเหตุ''
+\item เทอม release เป็น \code{all} hysteresis ไม่สมมาตรโดยเจตนา: เพิ่ม support
+      เมื่อตัวตามตัวแรกมีปัญหา และถอนออกเมื่อทุกตัวสบายครบหนึ่งวินาทีเต็ม
+\item ไม่มีเทอมใดใน~\eqref{eq:severity} เป็นปริมาณเสถียรภาพ ความเป็นไปได้
+      small-signal margin เพดานกระแส และความเป็นเจ้าของ reference อยู่ที่อื่น
+      ทั้งหมด และหัวข้อ~\ref{sec:indices} จะโต้ว่านี่ถูกต้อง --- แต่
+      \emph{ชุด} ปริมาณที่เข้าสู่ขั้น 1 นั้นเล็กเกินไป
+\end{itemize}
+
+\subsection{ขั้น 2 --- ตัวไหน}
+
+ขั้น 1 ให้ทิศทาง ไม่เคยให้เซต เซตมาจากตารางคอนฟิกูเรชัน candidate ที่คำนวณ
+ก่อน simulation เริ่ม (\code{ibr\_selector\_table}) และกฎขณะรันคือ
+\code{select\_support\_augmentation\_candidate}
+
+\begin{proposition}[superset ที่ยอมรับได้และมี cardinality ต่ำที่สุด]
+\label{prop:superset}
+ให้ $\mathcal{F}$ เป็นเซตที่ form อยู่ ณ ขณะตัดสินใจ และ $\mathcal{T}$ เป็นเซตของ
+แถวตารางที่ทั้ง \code{feasible} และ \code{ready\_to\_commit} เป็นจริง
+ปลายทางที่คืนกลับคือแถว $c \in \mathcal{T}$ ที่เล็กที่สุดตามลำดับ (i)
+$|\mathrm{selected}(c)|$; (ii) $-\mathrm{margin}(c)$; (iii) index tuple ที่เลือก
+แบบ lexicographic; (iv) reference index --- ภายใต้เงื่อนไข
+$\mathcal{F} \subsetneq \mathrm{selected}(c)$ กล่าวคือปลายทางต้องเป็น superset
+\emph{เชิงเข้ม} ของเซตปัจจุบัน
+\code{(select\_support\_augmentation\_candidate.m:54--58, 101--112)}
+ถ้าไม่มีแถวเช่นนั้น ฟังก์ชันคืน \code{found=false} และ supervisor คงเซตเดิมไว้
+มันไม่สร้าง candidate ขึ้นเองและไม่ผ่อน gate ใด ๆ
+\end{proposition}
+
+ผลที่ตามมาสองข้อทันที และเป็นคำตอบตรงของข้อ 1
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{เป้าประสงค์ cardinality เป็นการหาค่าน้อยสุด ไม่ใช่มากสุด}
+      ไม่มีสิ่งใดในข้อเสนอ~\ref{prop:superset} ให้รางวัลกับการเพิ่มคอนเวอร์เตอร์
+      ปลายทางสามตัวจะถูกเลือกเหนือสองตัวก็ต่อเมื่อไม่มี superset สองตัวใด
+      ที่ยอมรับได้
+\item \textbf{การเลือกไม่ใช่การเลือกใหม่โดยอิสระ} เพราะปลายทางต้องมีเซตปัจจุบันอยู่ด้วย
+      supervisor จึงตอบว่า ``เกาะต้องใช้สี่ตัว'' ด้วยการเลื่อนสี่ตัวพร้อมกันจาก
+      ตัวเดียวไม่ได้ มันเพิ่มได้เฉพาะจากที่มีอยู่ และเพิ่มน้อยที่สุดเท่าที่ตารางอนุญาต
+\end{enumerate}
+
+\subsection{ขั้น 3 --- เปลี่ยนอย่างไร}
+
+การเปลี่ยนโหมดผ่าน transfer map ที่อุปกรณ์เป็นเจ้าของ จากนั้นแก้ Kirchhoff
+ทั้งโครงข่ายที่จุดทำงานใหม่ แล้ว --- เพราะ option นี้เปิดในงานศึกษานี้ ---
+จำลองล่วงหน้าถึงสถานะที่จะ commit ด้วย kernel การอินทิเกรตตัวเดียวกัน
+เป็น horizon ที่ได้จาก settling time ของปลายทางเอง การปฏิเสธเป็นแบบ atomic:
+ไม่มี right sample ถูกประกาศ สถานะที่ยอมรับก่อนหน้าคงอยู่ และมี identifier
+พร้อม lockout ถูกบันทึก ตลอด 250\,s ที่ส่งมอบ certificate ถูกปรึกษาสี่ครั้ง
+และเปลี่ยนผลลัพธ์ที่หนึ่งในนั้น (ตาราง~\ref{tab:timeline} ที่ $t = 53.3795$\,s:
+การมาถึงแบบไม่ปรับสภาพถูกปฏิเสธ และ variant ที่ปรับสภาพถูก commit ที่ค่า
+เบี่ยงสูงสุด $15.495^{\circ}$) \measured
+
+%=============================================================================
+\section{การแจกแจงความเป็นไปได้}\label{sec:admissibility}
+%=============================================================================
+
+ขั้น 2 ไม่มีอะไรให้เลือกถ้าไม่มีตาราง และตารางไม่ใช่พิธีการ คอนเวอร์เตอร์ห้าตัว
+ซึ่งสลับได้สี่ตัว ยอมให้เกิดเซต forming ที่ไม่ว่าง $2^4 - 1 = 15$ เซต
+โปรเจกต์คำนวณไว้ทุกเซต
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}clrrcl@{}}
+\toprule
+\textbf{เซต} & \textbf{Ref} & $\omega$ (rad/s) & $\mathrm{margin}$ & $\zworst$ & \textbf{ผลลัพธ์}\\
+\midrule
+$\{5\}$        & 5 & $-0.155437$ & $+0.055437$ & $0.2676$ & ยอมรับได้\\
+$\{4\}$        & 4 & $-0.252025$ & $+0.152025$ & $0.2629$ & ยอมรับได้\\
+$\{3\}$        & 3 & $-0.316711$ & $+0.216711$ & $0.2618$ & ยอมรับได้\\
+$\{2\}$        & 2 & $-0.328014$ & $+0.228014$ & $0.2569$ & ยอมรับได้\\
+$\{2,4\}$      & 2 & $-0.561723$ & $+0.461723$ & $0.2549$ & ยอมรับได้\\
+$\{3,4\}$      & 3 & $\mathbf{-0.568138}$ & $\mathbf{+0.468138}$ & $0.2560$ & ยอมรับได้ (damping ดีที่สุด)\\
+\midrule
+$\{2,3\}$      & --- & --- & --- & --- & ไม่มี equilibrium: IBR6 ละเมิดขีดจำกัด\\
+$\{2,5\}$      & --- & --- & --- & --- & ไม่มี equilibrium: IBR6 ละเมิดขีดจำกัด\\
+$\{3,5\}$      & --- & --- & --- & --- & ไม่มี equilibrium: IBR6 ละเมิดขีดจำกัด\\
+$\{4,5\}$      & --- & --- & --- & --- & ไม่มี equilibrium: IBR3 ละเมิดขีดจำกัด\\
+\midrule
+$\{2,3,4\}$    & --- & --- & --- & --- & ไม่มี equilibrium, residual $3.279\times10^{2}$\\
+$\{2,3,5\}$    & --- & --- & --- & --- & ไม่มี equilibrium, residual $3.605\times10^{2}$\\
+$\{2,4,5\}$    & --- & --- & --- & --- & ไม่มี equilibrium, residual $3.561\times10^{2}$\\
+$\{3,4,5\}$    & --- & --- & --- & --- & ไม่มี equilibrium, residual $3.346\times10^{2}$\\
+\midrule
+$\{2,3,4,5\}$  & 2 & $-0.482909$ & $+0.382909$ & $\mathbf{0.1223}$ & ยอมรับได้, damping น้อยที่สุด\\
+\bottomrule
+\end{tabular}
+\caption{การแจกแจงความเป็นไปได้แบบครบถ้วนเมื่อ SG หลุด อ่านจาก
+\code{summary.shared.sg\_off\_candidates} ใน
+\code{ieee14\_gfm\_lock\_compare\_zeta/summary.mat} สิบห้าเซตยอมรับได้เจ็ดเซต
+นี่คือ\emph{ตารางโหลดฐานที่ freeze ไว้ก่อนการประเมิน candidate} ความไวต่อระดับโหลด
+ในหัวข้อ~\ref{sec:allfour} เป็นการวัดแยกที่โหลด $+20\%$ และไม่แก้แถวเหล่านี้
+$\omega$ คือสมาชิกที่หน่วงน้อยที่สุดของชุด finite-difference ที่ freeze ไว้
+$\omega = \max(\texttt{cand.fd\_omegas})$ \code{(ibr\_candidate\_evaluate.m:447)}
+ไม่ใช่ค่าที่ step เดียว, $\mathrm{margin} = -\omega - \greq$ และ $\zworst$ คือ
+damping ratio ที่แย่ที่สุดเหนือสเปกตรัมและเหนือสมาชิก finite-difference
+ทั้งสามตัวเดียวกัน \measured}
+\label{tab:adm}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize,x=1cm,y=0.88cm]
+\node[font=\bfseries] at (0.42,0.95) {หนึ่งตัว};
+\node[font=\bfseries] at (2.82,0.95) {สองตัว};
+\node[font=\bfseries] at (5.22,0.95) {สามตัว};
+\node[font=\bfseries] at (7.62,0.95) {สี่ตัว};
+\foreach \x in {1.62,4.02,6.42} \draw[gray!45,dashed] (\x,0.7)--(\x,-4.15);
+\fill[ok] (0,0) circle (2.6pt);      \node[anchor=west] at (0.2,0)      {$\{2\}$};
+\fill[ok] (0,-0.7) circle (2.6pt);   \node[anchor=west] at (0.2,-0.7)   {$\{3\}$};
+\fill[ok] (0,-1.4) circle (2.6pt);   \node[anchor=west] at (0.2,-1.4)   {$\{4\}$};
+\fill[ok] (0,-2.1) circle (2.6pt);   \node[anchor=west] at (0.2,-2.1)   {$\{5\}$};
+\fill[ok] (2.4,0) circle (2.6pt);    \node[anchor=west] at (2.6,0)      {$\{2,4\}$};
+\fill[ok] (2.4,-0.7) circle (2.6pt); \node[anchor=west] at (2.6,-0.7)   {$\{3,4\}$};
+\fill[no] (2.4,-1.4) circle (2.6pt); \node[anchor=west] at (2.6,-1.4)   {$\{2,3\}$};
+\fill[no] (2.4,-2.1) circle (2.6pt); \node[anchor=west] at (2.6,-2.1)   {$\{2,5\}$};
+\fill[no] (2.4,-2.8) circle (2.6pt); \node[anchor=west] at (2.6,-2.8)   {$\{3,5\}$};
+\fill[no] (2.4,-3.5) circle (2.6pt); \node[anchor=west] at (2.6,-3.5)   {$\{4,5\}$};
+\fill[no] (4.8,0) circle (2.6pt);    \node[anchor=west] at (5.0,0)      {$\{2,3,4\}$};
+\fill[no] (4.8,-0.7) circle (2.6pt); \node[anchor=west] at (5.0,-0.7)   {$\{2,3,5\}$};
+\fill[no] (4.8,-1.4) circle (2.6pt); \node[anchor=west] at (5.0,-1.4)   {$\{2,4,5\}$};
+\fill[no] (4.8,-2.1) circle (2.6pt); \node[anchor=west] at (5.0,-2.1)   {$\{3,4,5\}$};
+\fill[navy] (7.2,0) circle (3.3pt);  \node[anchor=west] at (7.48,0)     {$\{2,3,4,5\}$};
+\node[anchor=north west,align=left,text=no] at (4.02,-2.75)
+  {ไม่มีเซตใด\\ยอมรับได้ที่สามตัว};
+\fill[ok] (0,-5.0) circle (2.6pt);
+\node[anchor=west] at (0.2,-5.0) {ยอมรับได้ \ (7)};
+\fill[no] (2.4,-5.0) circle (2.6pt);
+\node[anchor=west] at (2.6,-5.0) {ไม่มี equilibrium \ (8)};
+\fill[navy] (5.4,-5.0) circle (3.3pt);
+\node[anchor=west] at (5.68,-5.0) {สี่ตัว: damping น้อยที่สุดในเจ็ดเซต};
+\end{tikzpicture}
+\caption{แผนที่ความเป็นไปได้ ความเป็นไปได้\emph{ไม่} monotone ตามจำนวน
+คอนเวอร์เตอร์ที่ form เซตที่ยอมรับได้อยู่ต่ำกว่าหรือสูงกว่าแถวสามตัวเสมอ ไม่เคยอยู่บนนั้น}
+\label{fig:map}
+\end{figure}
+
+\subsection{การแจกแจงพิสูจน์อะไร}
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{``forming มากขึ้น'' ไม่ใช่การปรับปรุงที่ monotone และโปรเจกต์
+      วัดข้อนี้แทนที่จะสมมติ} กลางแผนที่ว่างเปล่า สามตัวไม่ใช่ทางประนีประนอม
+      ระหว่างสองกับสี่ แต่เป็นคอนฟิกูเรชันที่ coupled Newton หาจุดทำงานไม่เจอเลย
+      ทั้งสี่วิธีในการเลือกสามตัว
+\item \textbf{สาเหตุคือปัญหาการแบ่งกัน ไม่ใช่จำนวน} แถวที่ใช้ไม่ได้ทั้งแปดล้มเหลว
+      ด้วยเหตุเชิงกลไก: ไม่มีคอนเวอร์เตอร์ที่เหลืออยู่ฝั่ง grid-following
+      ตัวใดตัวหนึ่งถูกละเมิดขีดจำกัดการทำงาน ($\{2,3\}$, $\{2,5\}$, $\{3,5\}$,
+      $\{4,5\}$) หรือสมดุลกำลังสี่ทางไม่มีคำตอบ (สี่เซตที่มีสามตัว)
+      ทั้งสองตระกูลรายงานความล้มเหลวด้วยชื่อ ไม่ใช่ด้วย margin ต่ำ
+\item \textbf{เซตสี่ตัวยอมรับได้แต่เป็นตัว outlier} damping ratio ที่แย่ที่สุด
+      $0.1223$ น้อยกว่าครึ่งของทุกเซตที่ยอมรับได้อื่น หัวข้อ~\ref{sec:damping}
+      แสดงว่าตัวเลขนั้นมาจากไหนและทำไมจึงเป็นสิ่งที่ถูกต้องที่จะ gate
+\end{enumerate}
+
+\begin{remark}[ทำไมใช้ตารางที่คำนวณล่วงหน้า ไม่ค้นหาขณะรัน]
+candidate จะถูกยอมรับก็ต่อเมื่อแก้ equilibrium ของตัวเองแล้วและประกอบสเปกตรัม
+full-KCL ของตัวเองที่ขนาด perturbation สามค่าครบ กระบวนการนั้นใช้เวลาหลายวินาที
+ต่อ candidate และวางไว้ใน time step ที่ยอมรับแล้วไม่ได้ การคำนวณจักรวาลทั้งหมด
+ล่วงหน้ายังทำให้การตัดสินใจขณะรันเป็นการค้นหลักฐานล้วน ๆ ที่ run ไม่อาจมีอิทธิพลได้
+ซึ่งเป็นสิ่งที่ทำให้ข้อเสนอ~\ref{prop:superset} กล่าวถึงโค้ดได้ ไม่ใช่กล่าวถึง
+วิถีคำตอบใดวิถีคำตอบหนึ่ง
+\end{remark}
+
+%=============================================================================
+\section{Damping margin: คำนวณอย่างไร และทำไมใช้ค่านี้}\label{sec:damping}
+%=============================================================================
+
+\subsection{การคำนวณ ทีละขั้น}
+
+สำหรับแต่ละเซต candidate ตัวประเมิน
+(\code{+stability/ibr\_candidate\_evaluate.m}) รันลำดับต่อไปนี้ ไม่มีขั้นใดถูกข้าม
+และการล้มเหลวที่ขั้นใดก็หยุดการประเมินพร้อม identifier ที่ระบุชื่อได้
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{Freeze เกณฑ์} $\zmin$ อ่านจาก contract ของเคสเอง
+      \code{case\_data.selector.zeta\_min\_damping} ไม่ใช่จากผู้เรียก และถูก
+      ตรวจว่าอยู่ใน $(0,1)$ \code{(:83--93)} สำหรับเคสนี้ $\zmin = 0.05$
+\item \textbf{แก้ equilibrium ของปลายทาง} การกำหนดโหมดที่แน่นอนของ candidate
+      ถูกสร้างเข้าสู่ชุดอุปกรณ์และสถานะ hybrid แล้วแก้ด้วย coupled Newton
+      ที่ tolerance $10^{-8}$ และ 300 รอบ \code{(:314, :326)} เบรกเกอร์เครื่องกำเนิด
+      ถูกถือว่าเปิดตลอด เพราะ selector เป็นเจ้าของสัญญาคอนฟิกูเรชันหลังทริป
+      และการประเมิน candidate ที่เครื่องกำเนิดต่ออยู่จะ certify ระบบทางกายภาพ
+      คนละระบบ \code{(:220--228)}
+\item \textbf{บังคับสมการโครงข่าย} KCL residual แบบทุกแถวจริงต้องมี
+      $\lVert \cdot\rVert \le 10^{-6}$ \code{(:340--345)} residual ที่วัดได้ของแถว
+      ที่ยอมรับได้อยู่ระหว่าง $3.6\times10^{-15}$ ถึง $1.4\times10^{-14}$ \measured
+\item \textbf{ประกอบ decision spectrum} โมเดล state-space แบบ full-KCL ประกอบ
+      ที่ equilibrium ที่ยอมรับแล้ว ด้วย input $u_{eq}$ ที่แน่นอน, event context
+      และชุด active-state index \code{(:355--395)} พิกัด gauge ของมุมโครงข่าย
+      ถูกกำจัดด้วย centre-of-inertia $T$-matrix และไม่มี eigenvalue ใดถูกลบ
+      หลังการเรียก eigenvalue \code{(:398--400)}
+\item \textbf{Damping ratio ต่อ mode} eigenvalue แต่ละตัวของ decision spectrum
+      ทางกายภาพลดรูปเป็น
+      \begin{equation}
+      \zeta_i = \frac{-\operatorname{Re}\lambda_i}{|\lambda_i|}.
+      \label{eq:zeta}
+      \end{equation}
+      รากจริงลบให้ $\zeta = 1$ จึงไม่มีทางเป็น mode ที่จำกัด ราก\emph{ที่}จุดกำเนิด
+      มี ratio ไม่นิยาม จึงแมปเป็น $-\infty$ แทนที่จะข้าม เพื่อให้ mode ที่ marginal
+      ตกทุก floor ที่เป็นบวกแทนที่จะผ่านอย่างเงียบ ๆ สเปกตรัมว่างก็คืน $-\infty$
+      เช่นกัน เพราะการไม่มีหลักฐานไม่ใช่หลักฐานว่ามี damping \code{(:492--516)}
+\item \textbf{แย่ที่สุดเหนือสเปกตรัม ไม่ใช่ตัวขวาสุด} ปริมาณที่รายงานคือค่าต่ำสุด
+      ของ~\eqref{eq:zeta} เหนือ decision spectrum ทั้งหมด นี่เป็นการเบี่ยงจาก
+      การอ่าน margin จาก $\max\operatorname{Re}\lambda$ โดยเจตนา: mode ที่
+      damping แย่ที่สุดโดยทั่วไปไม่ใช่ตัวขวาสุด และการอ่าน ratio จาก eigenvalue
+      ตัวขวาสุดจะพลาดมันไป \code{(:402--410)}
+\item \textbf{ทำซ้ำที่ขนาด perturbation สามค่า} การประกอบทั้งหมดทำใหม่ที่
+      finite-difference step $\varepsilon \in \{1.5,\,3,\,6\}\times10^{-6}$
+      (ฐานที่ audit ไว้คูณ $0.5$, $1$, $2$) และทดสอบที่\emph{ทุก}สมาชิก
+      \code{(:412--448)}
+\item \textbf{gate} candidate ยอมรับได้เมื่อ
+      \begin{equation}
+      \forall \varepsilon \in \mathcal{E}:\quad
+      \max\operatorname{Re}\lambda(\varepsilon) < 0
+      \quad\text{และ}\quad
+      \min_i \zeta_i(\varepsilon) \;\ge\; \zmin,
+      \label{eq:gate}
+      \end{equation}
+      กล่าวคือทั้งสามขนาด perturbation ต้องตรงกันทั้งเรื่องเสถียรภาพและ
+      ratio floor ความไม่ตรงกันล้มเหลวแบบปิด (fail closed) สำหรับตารางที่ส่งมอบ
+      ทั้งสามตรงกัน และ $\zworst$ ที่รายงานคือค่าที่แย่ที่สุดในสาม
+\end{enumerate}
+
+\subsection{ทำไมใช้ damping \emph{ratio} ไม่ใช่อัตราการสลาย}
+
+โค้ดยังเก็บปริมาณที่สองซึ่งเก่ากว่า: $\greq = 0.1$\,rad/s ซึ่งเป็น reference
+decay rate แล้วให้
+\begin{equation}
+\mathrm{margin} = -\max\operatorname{Re}\lambda - \greq .
+\label{eq:margin}
+\end{equation}
+มันถูกใช้ และใช้เป็น\emph{ordering key} อย่างเดียวในบรรดา candidate ที่ยอมรับได้
+\code{(:452--462)} ความแตกต่างนี้ไม่ใช่เรื่องผิวเผิน
+
+rate floor สัมบูรณ์ถามว่า $\operatorname{Re}\lambda \le -\gamma$ จึงผูกกับ
+ความถี่โดยผล: $\gamma$ ค่าเดียวกันเป็นข้อเรียกร้องที่ไม่หนักสำหรับ mode เร็ว
+และเป็นไปไม่ได้สำหรับ mode ช้า ส่วน ratio floor ขอให้ mode สลายภายใน
+$\zeta^{-1}$ ของหนึ่งเรเดียน และไม่แปรตามการเปลี่ยนสเกลเวลา ทั้งสองตระกูล
+บรรจบกันที่ความถี่เดียวเท่านั้น
+
+\begin{equation}
+f^{*} = \frac{\greq}{2\pi\zmin} = \frac{0.1}{2\pi(0.05)} = 0.3183\ \mathrm{Hz},
+\label{eq:fstar}
+\end{equation}
+
+ซึ่งเป็นค่าที่สัญญาของเคบบันทึกไว้เป็น \code{equivalence\_frequency\_Hz}
+ห่างจาก $f^{*}$ ออกไปทั้งสองตระกูลเป็นข้อเรียกร้องที่ต่างกัน \code{(:402--410)}
+plant นี้มี mode ตั้งแต่ราว $0.02$\,Hz --- swing เชิงกลไฟฟ้าของเกาะที่ถูกทำให้ช้า
+ด้วยความเฉื่อยน้อยของคอนเวอร์เตอร์ --- ขึ้นไปถึงแถบ current loop ซึ่งกว้างกว่า
+สามทศวรรษ ดังนั้นไม่มีอัตราสัมบูรณ์ค่าใดที่เป็น floor ที่มีความหมายตลอดช่วง
+
+\subsection{ทำไมจึงเป็น 0.05}
+
+ค่านี้ถูกประกาศโดยเคส ไม่ได้ถูกรายงานเลือก
+
+\begin{quote}\small
+\begin{tabular}{@{}ll@{}}
+\code{acceptance\_criterion} & \code{'damping\_ratio\_floor'}\\
+\code{derivation} & \code{'5\% damping at the 1\,Hz electromechanical mode:}\\
+                 & \code{zeta >= 0.05 for every mode of the physical decision spectrum'}\\
+\code{gamma\_req\_role} & \code{'candidate ordering key and reference decay rate; NOT the acceptance gate'}\\
+\code{frozen\_before\_candidate\_eval} & \code{1}\\
+\end{tabular}
+\end{quote}
+
+ที่มาจึงมีสามชั้น และควรกล่าวให้ชัด \emph{ตัวเลข} $0.05$ คือเกณฑ์ damping
+เชิงกลไฟฟ้าแบบฉบับ ใช้ที่นี่เป็น acceptance floor ระดับเคสไม่ใช่เป็นเป้า
+ของ simulation \emph{ขอบเขต} --- ``ทุก mode ของ physical decision spectrum
+ที่ทุกขนาด perturbation'' --- เป็นการเสริมความของโปรเจกต์เอง: กลุ่ม mode
+ที่มีสมาชิกหนึ่งตัวแทบไม่มี damping ไม่ได้รับการช่วยเหลือจากการที่ตัวอื่นสบาย
+และ margin ที่มีที่ finite-difference step หนึ่งแต่ไม่มีที่ step ถัดไป
+ก็ไม่ใช่ margin \emph{ธง frozen} ทำให้เกณฑ์เป็นสมบัติของไฟล์เคส ตรึงก่อน
+candidate ใดถูกประเมิน จึงปรับใหม่ให้เข้ากับผลลัพธ์ไม่ได้ นี่คือกลไกที่ทำให้
+candidate ยอมรับได้ทั้งที่ $\mathrm{margin} < 0$: $\mathrm{margin}$ เป็น
+คะแนนจัดอันดับเทียบ reference rate ส่วน gate คือ ratio
+
+\begin{remark}[gate ไม่ใช่อะไร]
+ความเป็นไปได้เป็นสมบัติของ\emph{equilibrium} ที่ establish ด้วยการ linearise
+รอบมัน ไม่ได้กล่าวถึงว่าวิถีคำตอบที่มาถึง equilibrium นั้นอยู่ใน
+region of attraction ของมันหรือไม่ หัวข้อ~\ref{sec:allfour} แสดงกรณีที่วัดได้
+ซึ่ง equilibrium ยอมรับได้แต่การมาถึงไม่
+\end{remark}
+
+\subsection{margin ที่วัดได้}
+
+ตาราง~\ref{tab:adm} ให้ทั้งเจ็ดเซต มีสามข้อสังเกตที่ควรกล่าวชัด
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{ทุกเซตที่ยอมรับได้ผ่าน floor อย่างสบาย} $\zworst$ ที่ต่ำที่สุดคือ
+      $0.1223$ ซึ่งเป็น $2.45\times$ ของ floor $0.05$ ข้อจำกัดที่ผูกจริงในเคสนี้
+      จึงไม่ใช่~\eqref{eq:gate} เลย แต่คือการมีอยู่ของ equilibrium ซึ่งตัด
+      $8$ จาก $15$ เซต
+\item \textbf{damping ratio กับ decay rate ไม่ตรงกัน และ gate ใช้ ratio}
+      บน $\omega$ ลำดับคือ $\{3,4\} > \{2,4\} > \{2,3,4,5\} > \{2\} > \cdots$
+      เซตสี่ตัวจึงเป็นเซตที่สลายเร็วเป็น\emph{อันดับสอง} บน $\zworst$ มันแย่ที่สุด
+      ด้วยปัจจัยสอง gate ทำตาม $\zworst$
+\item \textbf{เซตสองตัวเป็นจุดที่ดีที่สุดเชิง small-signal และ $\{3,4\}$ ดีที่สุด
+      ในนั้น} $\{3,4\}$ มีทั้ง $\omega$ ติดลบมากที่สุด ($-0.568138$) และ ratio
+      ระดับหัวแถว ($0.2560$) นี่คือเหตุผลที่การศึกษาแบบ pinned arm ใช้ $\{3,4\}$
+      เป็นคู่แข่งคอนฟิกูเรชันตรึงกับนโยบาย adaptive
+\end{enumerate}
+
+%=============================================================================
+\section{ทำไมการสลับจึงเลื่อนขึ้นหนึ่งหรือสองตัว ไม่ใช่สี่}\label{sec:count}
+%=============================================================================
+
+\subsection{กลไก}
+
+ข้อเสนอ~\ref{prop:superset} ตรึงจำนวนไว้ ลองไล่ลำดับเหตุการณ์ที่ส่งมอบผ่านมัน
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}rllll@{}}
+\toprule
+$t$ (s) & \textbf{เซตปัจจุบัน $\mathcal{F}$} & \textbf{superset ที่เป็น candidate} & \textbf{ยอมรับได้} & \textbf{ที่เลือก}\\
+\midrule
+$22.0887$ & $\{2\}$ & $\{2,3\},\{2,4\},\{2,5\},\{2,3,4\},\{2,3,5\},\{2,4,5\},\{2,3,4,5\}$
+          & $\{2,4\},\{2,3,4,5\}$ & $\{2,4\}$\\
+$51.3403$ & $\{2\}$ & (เหมือนข้างบน) & $\{2,4\},\{2,3,4,5\}$ & $\{2,4\}$\\
+$53.3795$ & $\{2,4\}$ & $\{2,3,4\},\{2,4,5\},\{2,3,4,5\}$ & $\{2,3,4,5\}$ เท่านั้น & $\{2,3,4,5\}$\\
+$148.2811$& $\{2\}$ & (เหมือน $22.0887$) & $\{2,4\},\{2,3,4,5\}$ & $\{2,4\}$\\
+\bottomrule
+\end{tabular}
+\caption{ทุก augment ในตาราง~\ref{tab:timeline} แก้ผ่านข้อเสนอ~\ref{prop:superset}
+โดยใช้ความเป็นไปได้จากตาราง~\ref{tab:adm}}
+\label{tab:resolution}
+\end{table}
+
+ที่ $t = 22.0887$\,s และ $t = 51.3403$\,s มีปลายทางสองแบบและตัวที่เล็กกว่าชนะ
+ตามเกณฑ์ (i) ที่ $t = 53.3795$\,s --- ซึ่งอยู่หลัง load step $+20\%$ โดยเกาะ
+แบก deficit $133.19$\,MW ของเครื่องกำเนิดไว้ --- superset สองตัวคือ
+$\{2,3,4\}$ และ $\{2,4,5\}$ อยู่ในแปดแถวที่ไม่มี equilibrium ดังนั้นปลายทาง
+ที่ยอมรับได้มีเพียงเซตสี่ตัว และเกณฑ์ (i) ไม่มีอะไรให้เลือก
+\emph{การที่สี่ตัว form ไม่ใช่ความชอบเชิงนโยบาย มันคือส่วนที่เหลือของ
+การแจกแจงหลัง load step}
+
+\begin{quote}\itshape
+การเลื่อนขึ้นสี่ตัวเกิดขึ้นเพราะที่โหลด $+20\%$ ไม่มีอะไรที่เล็กกว่านั้น
+certify ได้ --- ไม่ใช่เพราะสี่ถูกตัดสินว่าดีกว่าสอง
+\end{quote}
+
+\subsection{แก้ premise แล้วจึงตอบ}
+
+คำถามตามที่ตั้งไว้ --- ``ไม่เคยไปถึงสี่ ไปแค่หนึ่งหรือสอง'' --- เป็นจริง
+\emph{บางส่วน} สำหรับลำดับเหตุการณ์ที่ส่งมอบ และเป็นจริงชัดเจนสำหรับ
+scenario suite ทั้งสองครึ่งควรอยู่ในบันทึก
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+\textbf{Arm} & \textbf{horizon} & \textbf{forming สูงสุด} & \textbf{forming ตอนจบ} & \textbf{reclose}\\
+\midrule
+chronology, adaptive      & $250$\,s & $4$ & $0$ & \code{SUCCESS} $159.2519$\,s\\
+suite, \code{sg\_load\_step30}  & $150$\,s & $4$ & $4$ & \code{SUCCESS} $81.1500$\,s\\
+suite, \code{sg\_fault\_bus9}   & $150$\,s & $\mathbf{2}$ & $0$ & \code{SUCCESS} $81.8627$\,s\\
+suite, \code{line\_fault\_9\_14}& $150$\,s & $\mathbf{2}$ & $0$ & \code{SUCCESS} $92.4126$\,s\\
+suite, \code{former\_outage}    & $150$\,s & $\mathbf{2}$ & $2$ & \code{SUCCESS} $90.3374$\,s\\
+suite, \code{sg\_fault\_cycle160}& $160$\,s & $\mathbf{2}$ & $0$ & \code{SUCCESS} $102.3627$\,s\\
+\bottomrule
+\end{tabular}
+\caption{forming สูงสุดต่อ arm ที่ส่งมอบ อ่านจาก \code{device\_modes\_history}
+ของแต่ละ arm สี่ในห้า arm ของ suite ไม่เคยเกินสองตัว forming สอง arm ที่ไปถึงสี่
+คือสอง arm ที่แบก load step หนัก ด้วยเหตุผลในตาราง~\ref{tab:resolution} \measured}
+\label{tab:arms}
+\end{table}
+
+ดังนั้นข้อความที่ถูกต้องคือ
+
+\begin{itemize}
+\item \emph{ต่อเหตุการณ์} การเลื่อนขึ้นเป็นหนึ่งหรือสองตัวเสมอ โดยเชิงโครงสร้าง
+      ด้วยเหตุผลที่พิสูจน์ข้างบน ในลำดับเหตุการณ์ที่ส่งมอบ จำนวน forming
+      รับค่า $1 \to 2 \to 1 \to 2 \to 4 \to 1 \to 2 \to 1$ ตลอดหน้าต่างที่เป็นเกาะ
+      ด้วยระยะเวลา $36.98$\,s, $9.37$\,s และ $92.90$\,s สำหรับหนึ่ง สอง และสี่ตัว
+      ตามลำดับ \measured
+\item \emph{ต่อ arm} สี่ในห้า arm ของ suite ที่ส่งมอบไปสูงสุดที่สอง ลำดับเหตุการณ์
+      250\,s ที่ส่งมอบและ \code{sg\_load\_step30} ไปถึงสี่ และทั้งคู่เป็น arm
+      ที่มี load step หนัก
+\item \emph{ไม่มี arm ใด} ที่ supervisor กระโดดจากหนึ่งตัวไปสี่ตัวใน
+      transaction เดียว เพราะไม่มี transaction เช่นนั้นอยู่ในความสัมพันธ์
+      superset เชิงเข้มในหนึ่ง step
+\end{itemize}
+
+\subsection{ทำไม release เร็วกว่า promotion}
+
+ความไม่สมมาตรใน~\eqref{eq:triggers} ($T_{d,\mathrm{on}} = 0.10$\,s เทียบกับ
+$T_{d,\mathrm{off}} = 1.00$\,s) เป็นเจตนา: เพิ่ม support เมื่อมีหลักฐานแรก
+ถอนออกเมื่อสงบครบหนึ่งวินาที ราคาที่วัดได้ปรากฏที่ $t = 146.2782$\,s
+ซึ่งอุปกรณ์สามตัวกลับไป grid-following $1.28$\,s หลังคำขอ reclose และเกาะ
+รันด้วย forming ตัวเดียวอีกครั้งจาก $152.4017$\,s จนถึง reclose ที่
+$159.2519$\,s นั่นคือการออกแบบที่ทำงาน: supervisor ยอมรันเกาะแบบบางระหว่าง
+ที่เครื่องกำเนิดถูกดึงเข้าฟส เพราะการเปลี่ยนโหมดระหว่างหน้าต่าง synchronising
+เป็นความเสี่ยงในตัวเอง \measured
+
+%=============================================================================
+\section{ความแข็งของเกาะ (SCR) หลังเครื่องกำเนิดถูกทริป}\label{sec:scr}
+%=============================================================================
+
+\subsection{โปรเจกต์นิยาม SCR อย่างไร}
+
+\code{+stability/ibr\_scr\_metrics.m} นิยามต่อคอนเวอร์เตอร์ที่ออนไลน์แต่ละตัว
+
+\begin{equation}
+\mathrm{SCR}_i = \frac{S_{sc,i}}{S_{\mathrm{rated},i}},
+\qquad
+S_{sc,i} = \frac{|V_i|^2}{|Z_{th,ii}|}\,S_{\text{base}},
+\qquad
+Z_{th,ii} = \left[\,\mathbf{Y}^{-1}\mathbf{e}_i\,\right]_i ,
+\label{eq:scr}
+\end{equation}
+
+โดย $\mathbf{Y}$ สร้างจากข้อมูลสาย --- รวม tap และ phase shift และ bus shunt
+แต่\emph{ไม่}รวม admittance ของโหลด เพื่อให้ผลวัดความแข็งของโครงข่าย
+ไม่ใช่การโหลด --- และ bus อ้างอิงถูกถือว่า grounded เพื่อให้ Thevenin equivalent
+คิดโดยลัดวงจรแหล่งแรงดัน rating คือ MVA base ของคอนเวอร์เตอร์เอง ถ้าขาดไป
+การประเมินล้มเหลวแบบปิดแทนที่จะอนุมาน rating ขึ้นมา threshold คือ
+$\mathrm{SCR} > 3$ จากสัญญา WECC REGC\_A strong-grid และการเปรียบเทียบเป็น
+เชิงเข้ม: $\mathrm{SCR} \le 3$ คือการปฏิเสธ
+
+\subsection{gate นี้ใช้กับตระกูลโมเดลนี้ไม่ได้}
+
+ต้องกล่าวก่อนตัวเลขใด ๆ เพราะเข้าใจผิดได้ง่ายว่า diagnostic ที่ประกาศอยู่
+คือ gate ที่ทำงาน ใน \code{ibr\_scr\_metrics.m:266--276} screening profile
+ถูกบังคับสำหรับตระกูล dual แบบ full-state ของโปรเจกต์
+
+\begin{quote}\small
+\code{scr\_profile = 'not\_applicable\_full\_state\_source\_model'}\quad สำหรับ
+\code{model\_id} $\in$ \{\code{eecon49\_dual}, \code{decoupled\_dual}\}
+\end{quote}
+
+ผลที่ตามมาคือ \code{eligible\_for\_scr = false} และ \code{pass = true}
+พร้อมเหตุผลที่บันทึกไว้
+
+\begin{quote}\itshape
+``SCR threshold not applicable to this full-state model; equilibrium, limits and
+full-KCL SSSA remain mandatory''
+\end{quote}
+
+\measured{} --- ตรวจแล้วกับคอนเวอร์เตอร์ทั้งสี่ตัวในเคสที่ส่งมอบ ทุก entry ใน
+\code{per\_resource} รายงาน \code{eligible\_for\_scr = 0}, \code{SCR = NaN},
+\code{pass = 1} เหตุผลสมเหตุสมผล: screening ของ REGC\_A มีไว้สำหรับโมเดล plant
+แบบ current-source แบบย่อ ส่วน \code{eecon49\_dual} แบก AC filter, DC link,
+PLL/VSG และ loop ควบคุมทั้งสองไว้เป็น state ชัดแจ้ง ความล้มเหลวบนกริดอ่อน
+ที่ screening ป้องกันจึงถูกแทนในโมเดลแล้ว ไม่ได้ถูกสมมติทิ้ง กระนั้นตัวเลข SCR
+ก็ยังเป็นข้อความ\emph{ทางกายภาพ} ที่มีความหมายเกี่ยวกับเกาะ และ run ประกาศมัน
+เป็น diagnostic ราย sample
+
+\subsection{SCR ของเกาะที่วัดได้}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{หน้าต่าง} & $n$ & \textbf{ต่ำสุด} & \textbf{เฉลี่ย} & \textbf{สูงสุด} & \textbf{ต่ำกว่า 3}\\
+\midrule
+ก่อนทริป, เครื่องกำเนิดต่ออยู่ & $168$ & $2.0892$ & $2.3439$ & $2.4803$ & $100.00\%$\\
+หลังทริป, เป็นเกาะ      & $2760$ & $0.6501$ & $2.3015$ & $2.8147$ & $100.00\%$\\
+หลัง load step          & $3152$ & $1.5411$ & $2.6899$ & $3.2908$ & $95.53\%$\\
+fault บัส 9, $85.00$--$85.15$ & $164$ & $0.2944$ & $1.2954$ & $6.6726$ & $97.56\%$\\
+สาย 6--13 หลุด          & $2160$ & $2.0718$ & $2.7319$ & $6.6184$ & $97.96\%$\\
+คืนสภาพถึง reclose      & $4384$ & $1.8361$ & $2.5914$ & $3.5322$ & $99.64\%$\\
+หลัง reclose            & $1928$ & $1.9104$ & $2.3291$ & $2.4833$ & $100.00\%$\\
+\midrule
+ทั้ง run, คอนเวอร์เตอร์สี่ตัว & $14716$ & $0.2944$ & $2.5271$ & $6.6726$ & $\mathbf{98.61\%}$\\
+\bottomrule
+\end{tabular}
+\caption{SCR ราย sample ที่บัสคอนเวอร์เตอร์ จาก diagnostic
+\code{agsi\_reference.scr} ของ run เอง การจำแนกเป็น \code{ASSUMED\_DIAGNOSTIC}
+ratio ใช้ rated MVA ของคอนเวอร์เตอร์แต่ละตัวบนฐานระบบ (100\,MVA)
+และตัวเศษใช้แรงดันบัสที่วัดได้ของ sample นั้น \measured}
+\label{tab:scr}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize,x=0.0425cm,y=0.95cm]
+\foreach \y in {1,2,4,5} \draw[gray!35] (0,\y)--(252,\y);
+\draw[no,thick,dashed] (0,3)--(252,3);
+\foreach \y in {0,1,2,3,4,5} \node[left,font=\scriptsize] at (0,\y) {\y};
+\draw[->] (0,0)--(258,0) node[right,font=\scriptsize]{$t$ (s)};
+\draw[->] (0,0)--(0,5.5) node[above,font=\scriptsize]{SCR};
+\foreach \x in {20,50,85,110,145,159.25}
+  \draw[gray!65,dotted] (\x,0)--(\x,5);
+\draw[navy,very thick]
+  (0,2.3439)--(20,2.3439)--(20,2.3015)--(50,2.3015)--(50,2.6899)
+  --(85,2.6899)--(85,1.2954)--(85.15,1.2954)--(85.15,2.7319)
+  --(110,2.7319)--(110,2.5914)--(159.25,2.5914)
+  --(159.25,2.3291)--(250,2.3291);
+\node[no,anchor=south west,font=\scriptsize] at (163,3.10)
+  {WECC strong-grid floor, SCR $=3$};
+\node[anchor=west,font=\scriptsize,align=left] at (88,1.25)
+  {fault บัส 9\\เฉลี่ย $1.2954$, ต่ำสุด $0.2944$};
+\node[anchor=north,font=\scriptsize] at (20,-0.14) {SG ทริป};
+\node[anchor=north,font=\scriptsize] at (85,-0.14) {fault บัส 9};
+\node[anchor=north,font=\scriptsize] at (159.25,-0.14) {reclose};
+\node[anchor=north,font=\scriptsize] at (48,-0.62) {โหลด $+20\%$};
+\node[anchor=north,font=\scriptsize] at (110,-0.62) {สาย 6--13 หลุด};
+\end{tikzpicture}
+\caption{SCR เฉลี่ยของคอนเวอร์เตอร์ทั้งสี่ เป็น step plot ของค่าเฉลี่ยรายหน้าต่าง
+จากตาราง~\ref{tab:scr} เส้นประคือ WECC strong-grid floor เกาะไม่เคยออกจาก
+โซนกริดอ่อน และการจมที่ลึกที่สุดเกิดพร้อม fault ไม่ใช่ตอนเครื่องกำเนิดทริป}
+\label{fig:scrplot}
+\end{figure}
+
+\subsection{อ่านตัวเลข}
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{การทริปเครื่องกำเนิดแทบไม่ขยับ SCR} $2.3439 \to 2.3015$ บนค่าเฉลี่ย
+      หน้าต่าง นี่ไม่ใช่ความผิดพลาด: $Z_{th}$ ใน~\eqref{eq:scr} สร้างจาก
+      โครงข่ายแบบพาสซีฟ และเครื่องกำเนิดไม่ใช่เทอมในนั้น สิ่งที่เปลี่ยนตอนทริป
+      คือตัวเศษ --- แรงดันบัสที่วัดได้ --- และที่สำคัญกว่า คือ\emph{แหล่งใด
+      อยู่เบื้องหลังบัส} ก่อนทริปคอนเวอร์เตอร์เป็นตัวตามบนโครงข่ายที่ถูกค้ำด้วย
+      เครื่องกำเนิด 615\,MVA หลังทริปมันเป็นแหล่งเดียวบนโครงข่ายเดิม
+      impedance ที่มองเห็นเท่าเดิม แต่ support ที่อยู่ข้างหลังไม่เท่า
+\item \textbf{ทุกอย่างบนเกาะนี้อ่อนตามนิยามของ WECC} ตัวเลข $98.61\%$
+      คือตัวที่ชัดที่สุด: ตลอด run ที่ส่งมอบ ยกเว้น $1.39\%$ ของ converter-sample
+      short-circuit ratio ที่บัสคอนเวอร์เตอร์อยู่ที่หรือต่ำกว่า floor ที่ REGC\_A
+      ใช้ \emph{ปฏิเสธ} grid-following plant ค่าที่ต่ำที่สุด $0.2944$ เกิดระหว่าง
+      fault ซึ่งแรงดันบัสที่จมคือตัวเศษทั้งหมด สองแถวถัดไปของตาราง~\ref{tab:scr}
+      ทำให้ชัดขึ้น: ทั้งหน้าต่างหลังทริปและทั้งหน้าต่างหลัง reclose ต่ำกว่า floor
+      $100\%$ และไม่มีหน้าต่างใดที่มีค่าเฉลี่ยไปถึง
+\item \textbf{load step \emph{ยก} SCR} ค่าเฉลี่ยหน้าต่างขึ้นจาก $2.3015$ เป็น
+      $2.6899$ หลัง step $+20\%$ admittance ของโหลดถูกตัดออกจาก $\mathbf{Y}$
+      แต่กระแสโหลดยกแรงดันบัส และ $|V|^2$ เป็นตัวเศษ นี่เป็นเครื่องเตือนว่า
+      \eqref{eq:scr} ตามที่ implement เป็นปริมาณที่อ้างอิงแรงดัน ไม่ใช่ค่าคงตัว
+      ของโครงข่ายล้วน ๆ และควรเปรียบเทียบภายในหน้าต่างเดียวกัน ไม่ใช่ข้ามหน้าต่าง
+\item \textbf{ข้อควรระวังเรื่อง convention ของ rating กล่าวไว้เพื่อไม่ให้อ่านเกิน}
+      diagnostic แยกอีกตัวใน \code{build\_ieee14\_switch\_system.m:159}
+      คำนวณ $|V|^2/|Z_{th}|$ เหมือนกันแต่หารด้วย $\max(|S_{\text{bus}}|, 0.20)$
+      แทน rating ของคอนเวอร์เตอร์ และรายงาน $4.78$--$7.19$ สำหรับสี่บัสเดียวกัน
+      ขณะเครื่องกำเนิดต่ออยู่ impedance เดียวกัน ตัวหารต่างกัน ตัวเลขที่ยกมา
+      ในตาราง~\ref{tab:scr} คือตัวที่ diagnostic ของ supervisor ที่กำลังรัน
+      ผลิตออกมา บน convention rated-MVA
+\end{enumerate}
+
+%=============================================================================
+\section{ถ้าคอนเวอร์เตอร์ทั้งสี่ตัวเป็น GFM จะเกิดอะไรขึ้น}\label{sec:allfour}
+%=============================================================================
+
+การศึกษานี้รันหก arm จากชุด option ร่วมชุดเดียว: นโยบาย adaptive ที่ส่งมอบ
+สาม arm ที่ตรึงจำนวน forming ไว้ที่ค่าหนึ่งตลอดหน้าต่างที่เป็นเกาะ arm ที่ปิด
+adaptation และ arm ที่ถือคอนเวอร์เตอร์ทุกตัวเป็น grid-following
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Arm} & \textbf{horizon ที่ไปถึง} & \textbf{sample} & \textbf{การสิ้นสุด}\\
+\midrule
+\code{locked\_gfl}     & $20.0000$\,s & $43$       & \code{noVoltageFormingSource}\\
+\code{pinned\_gfm4}    & $\mathbf{25.4852}$\,\textbf{s} & $837$ & \code{adaptiveDtMin}, $\Delta t_{\min}=6.104\times10^{-6}$\\
+\code{no\_adaptation}  & $250.0000$\,s & $1565$   & \code{SUCCESS}, reclose $151.1321$\,s\\
+\code{pinned\_gfm1}    & $250.0000$\,s & $1766$   & \code{SUCCESS}, reclose $151.1321$\,s\\
+\code{pinned\_gfm2}    & $250.0000$\,s & $1761$   & \code{SUCCESS}, reclose $154.0244$\,s\\
+\code{adaptive}        & $250.0000$\,s & $3679$   & \code{SUCCESS}, reclose $159.2519$\,s\\
+\bottomrule
+\end{tabular}
+\caption{หก arm ที่ส่งมอบ \code{pinned\_gfm4} ตรึงเซต forming ไว้ที่คอนเวอร์เตอร์
+ทั้งสี่ตัว มันตาย $5.49$\,s หลังเครื่องกำเนิดทริป ก่อน load step และก่อน fault ใด ๆ
+\measured}
+\label{tab:armcmp}
+\end{table}
+
+\subsection{arm สี่ตัวไม่อยู่รอดบนเกาะ}
+
+สถานะสุดท้ายของ \code{pinned\_gfm4} ไม่ใช่การสูญเสีย damping แบบเฉียดฉิว
+ใน sample ที่ยอมรับเป็นตัวสุดท้าย คอนเวอร์เตอร์ทั้งสี่แยกความถี่ออกจากกัน:
+IBR2 วิ่งที่ $64.9947$\,Hz ขณะที่ IBR3, IBR6 และ IBR8 วิ่งที่ $59.1383$,
+$59.1809$ และ $59.1946$\,Hz --- แยกกัน $5.86$\,Hz โดยคอนเวอร์เตอร์ตัวหนึ่ง
+วิ่งหนีอีกสามตัว ตัวควบคุม step รายงาน Newton ไม่ลู่เข้า 398 ครั้งติดกัน
+แล้วสิ้นสุดที่ step ต่ำสุด $6.104\times10^{-6}$\,s ไม่มีการขอ reclose เลย \measured
+
+นั่นคือคำตอบของ ``ถ้าทั้งสี่ตัวเป็น GFM จะเกิดอะไรขึ้น'' แต่ยังไม่ใช่คำอธิบาย
+เพราะหัวข้อ~\ref{sec:damping} certify ว่าทั้งสี่ตัวยอมรับได้ ทั้งสองข้อเป็นจริง
+และทางออกคือข้อที่บันทึกไว้ใน
+\code{docs/project/defects/2026-08-14-all4-gfm-commit-outside-basin.md}
+
+\subsection{ทำไมเซตที่ยอมรับได้จึงยังล้มเหลวได้}
+
+gate การยอมรับใน~\eqref{eq:gate} เป็นข้อความเกี่ยวกับ\emph{equilibrium}
+มันถูก establish โดยการ linearise รอบจุดทำงานที่แก้ได้ และไม่ได้กล่าวถึง
+วิถีคำตอบที่มาถึงจุดนั้น บันทึก defect วัดช่องว่างนั้นตรง ๆ บนการเปลี่ยนเป็น
+สี่ตัว โดยรัน input เดิมใหม่จากสถานะอุปกรณ์เริ่มต้นสองแบบที่ต่างกัน
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+\textbf{arm ของการทดลองใน defect} & \textbf{สถานะอุปกรณ์เริ่มต้น} & \textbf{ผล} & \textbf{การเบี่ยง}\\
+\midrule
+ARM A & สถานะที่ run จริงมาถึงจริง & SLIPS & $4358^{\circ}$\\
+ARM B & สถานะ equilibrium ที่ certified ของคอนฟิกูเรชันเดียวกัน & SYNC & $6.6^{\circ}$\\
+\bottomrule
+\end{tabular}
+\caption{คอนฟิกูเรชันที่ commit เดียวกัน input เดียวกัน สถานะอุปกรณ์เริ่มต้น
+สองแบบ จากสถานะที่ run จริงมาถึงเกาะเสียความ synchronism จาก equilibrium
+ที่ certified มันเสถียร \measured}
+\label{tab:arm}
+\end{table}
+
+พิกัดที่แบกความต่างคือ integrator ของ outer voltage loop ของ former ที่ครองอยู่
+สำหรับ IBR2 ค่า $gfm\_xi\_Vd/xi\_Vq$ อยู่ที่ $0.144253$ ในการมาถึงจริง เทียบกับ
+$0.199658$ ที่ equilibrium ที่ certified --- เลื่อนไป $28\%$ ในสถานะอุปกรณ์
+ที่ปริมาณบัสใดก็ไม่สะท้อน คอนฟิกูเรชันที่ commit เสถียร
+แต่\emph{สถานะที่มาถึงอยู่นอก basin of attraction ของมัน}
+
+\begin{remark}[สอง mode ความล้มเหลว และมันต่างกัน]
+แถวสี่ตัวในตาราง~\ref{tab:adm} ตกการทดสอบที่เข้มกว่าของหัวข้อ 8.1 (วิถีคำตอบ)
+ขณะที่แถวสามตัวตกการทดสอบที่อ่อนกว่าในหัวข้อ~\ref{sec:admissibility}
+(equilibrium ไม่มีอยู่) นโยบายที่ถามแค่ ``ปลายทางเสถียรหรือไม่'' จะยอมรับ
+สี่ตัวและเสียเกาะ นี่คือเหตุผลที่ขั้น 3 ของไปป์ไลน์จำลองซ้ำก่อน commit และ
+เหตุผลที่ certificate เป็น forward trial ไม่ใช่การตรวจ eigenvalue ครั้งที่สอง
+\end{remark}
+
+\subsection{ทำไมสี่ตัวจึงแย่กว่า --- สามข้อ แต่ละข้อมีขอบเขต}
+
+ข้อความที่ซื่อตรงแคบกว่า ``สี่ตัวแย่'' สามข้อแยกกัน แต่ละข้อมีหลักฐานของตัวเอง
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{มันเป็นคอนฟิกูเรชันที่ยอมรับได้แต่ damping น้อยที่สุด}
+      $\zworst = 0.1223$ เทียบกับ $0.2549$--$0.2676$ ของอีกหกเซต ต่างกันราว
+      สองเท่า วัดแล้ว และเป็นสมบัติของ equilibrium (ตาราง~\ref{tab:adm})
+\item \textbf{การมาถึงของมันไม่ทนทาน} วัดแล้ว และเป็นสมบัติของวิถีคำตอบ
+      (ตาราง~\ref{tab:arm}) นี่คือ mode ความล้มเหลวที่จบ arm แบบ pinned จริง
+\item \textbf{มันถูกเลือกในฐานะส่วนที่เหลือ ไม่ใช่การตัดสิน} ที่ $t = 53.3795$\,s
+      เซตสี่ตัวเป็นปลายทางที่ยอมรับได้\emph{เพียง}แบบเดียว
+      (ตาราง~\ref{tab:resolution}) นโยบายไม่ได้ชอบสี่เหนือสอง มันไม่มีทางเลือกอื่น
+\end{enumerate}
+
+เทียบกับสามข้อนั้น มีข้อความที่วัดได้หนึ่งข้อชี้ไปทางตรงข้าม และควรอยู่ใน
+รายการเดียวกัน เพราะรายงานที่ละมันไว้ไม่ใช่การพิสูจน์
+
+\begin{quote}
+ในการทดลองเรื่องความรุนแรงของโหลดในบันทึก defect คอนฟิกูเรชันสี่ตัว
+รับ load deficit $2.0\pu$ ได้ ขณะที่คอนฟิกูเรชันสองตัวรับไม่ได้ ---
+สองตัว slips ที่ deficit เดียวกัน \measured
+\end{quote}
+
+ข้อสรุปที่ป้องกันได้จึงไม่ใช่ ``forming น้อยกว่าดีกว่า'' แต่คือ
+
+\begin{quote}\itshape
+จำนวนคอนเวอร์เตอร์ที่ form ไม่ใช่พารามิเตอร์อิสระ และเสถียรภาพไม่ monotone
+ตามมัน ปลายทั้งสองข้างผิด: เมื่อไม่มี former เลยเกาะตายใน $20$\,s และเมื่อตรึง
+สี่ตัวเกาะตายใน $25.5$\,s จำนวนต้องถูกเลือกต่อคอนฟิกูเรชัน จาก margin ที่
+certified และจากการมาถึง และการจัดอันดับต้องได้รับอนุญาตให้ชอบสองเหนือสี่
+เมื่อสองถูก certify
+\end{quote}
+
+\subsection{กริดแข็งไม่ดีหรือ}\label{sec:stronggrid}
+
+ดี และเกาะนี้ไม่มี --- ซึ่งเป็นข้อโต้แย้ง\emph{สนับสนุน} grid-forming
+ไม่ใช่ต่อต้าน ความยากคือ ``กริดแข็ง'' กับ ``คอนเวอร์เตอร์ grid-forming มากขึ้น''
+เป็นสองปริมาณที่ต่างกัน และมีสี่ข้อที่กั้นมันไว้
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{ในตัวชี้วัดของโปรเจกต์นี้ จำนวน forming ไม่เข้าไปใน ratio เลย}
+      $\mathbf{Y}$ ใน~\eqref{eq:scr} สร้างจากข้อมูลสาย, bus shunt และ
+      การ ground บัสอ้างอิง และจากอย่างอื่นไม่ได้ SCR ที่ประกาศจึงไม่แปรตาม
+      จำนวนคอนเวอร์เตอร์ที่ form การเลื่อนคอนเวอร์เตอร์ขึ้นจึงยก SCR ของ
+      โครงข่ายที่มันอยู่ไม่ได้ ไม่ว่ามันจะทำอะไรได้อย่างอื่น
+\item \textbf{เกาะที่วัดได้อ่อนในทุก sample ที่มีความหมาย} $98.61\%$ ของ
+      converter-sample อยู่ที่หรือต่ำกว่า floor 3 ของ WECC และค่าเฉลี่ยหลังทริป
+      เป็น $2.30$ premise ข้างหลังคำถามถูกต้อง: นี่คือกริดอ่อน นั่นคือเหตุผล
+      ที่เกาะต้องการแหล่งก่อรูปแรงดัน --- และเหตุผลที่คำถามที่น่าสนใจคือกี่ตัว
+      ไม่ใช่หรือไม่
+\item \textbf{เหนือจำนวนที่ไม่มีตัวตามเหลืออยู่ เกณฑ์ก็หมดประธาน}
+      REGC\_A screen plant แบบ grid-following เพราะ PLL ต้องมีบัสที่แข็ง
+      เพื่อล็อก เมื่อทั้งสี่ตัว form ไม่มี PLL เหลือให้ป้องกัน และคำถามของ
+      screening ก็ว่างเปล่า ปัญหาเปลี่ยนชนิด: ไม่ใช่ ``ตัวตามล็อกได้ไหม''
+      อีกต่อไป แต่เป็น ``ตัวควบคุมแหล่งแรงดันสี่ตัวแบ่งกระแสร่วมกันบนโครงข่าย
+      ที่ไม่มีตัวใดเปลี่ยน impedance ของมันได้หรือไม่'' หัวข้อ~\ref{sec:admissibility}
+      แสดงว่านั่นคือคำถามที่โครงข่ายนี้ตอบได้แย่พอดี --- การแบ่งกันแบบสามตัว
+      ทั้งสี่แบบไม่มี equilibrium และการแบ่งกันแบบสี่ตัวมี margin บางที่สุด
+\item \textbf{ความแข็งในที่นี้ได้มาจากความเป็นเจ้าของ ไม่ใช่จากการนับจำนวน}
+      former หนึ่งตัวที่ voltage loop ของมันเป็นเจ้าของบัสของมัน ให้บัสนั้น
+      แรงดันที่นิยามไว้ สิ่งที่อีกสามตัวต้องการไม่ใช่เจ้าของอีกคน แต่เป็น
+      แรงดันที่นิยามไว้ที่บัสของตัวเอง โดยเซตที่โครงข่ายแก้ได้จริง
+\end{enumerate}
+
+\begin{remark}[สัญชาตญาณถูก แต่ข้อสรุปที่ดึงจากมันไม่ถูก]
+``กริดอ่อน $\Rightarrow$ form มากขึ้น'' ฟังดูสมเหตุสมผลในขั้นแรก แต่ล้มที่ขั้นสอง
+เพราะจำนวนไม่ใช่ความแข็ง ขอบล่างวัดได้และแข็ง: arm \code{locked\_gfl}
+ที่คอนเวอร์เตอร์ทั้งสี่เป็นตัวตาม ตายที่ $t = 20.0000$\,s ---
+ขณะทริปนั้นเอง --- ด้วย \code{noVoltageFormingSource} หลัง 43 sample
+ต้องมีอะไรสักอย่าง form ขอบบนก็วัดได้เช่นกัน และมันไม่ใช่สี่
+\end{remark}
+
+%=============================================================================
+\section{จุดที่ index สองเทอมปัจจุบันล้มเหลว}\label{sec:indices}
+%=============================================================================
+
+ขั้น 1 ของไปป์ไลน์บริโภคปริมาณเพียงสองตัว คือ~\eqref{eq:severity}:
+ความคลาดเคลื่อนแรงดันบัส และความคลาดเคลื่อนความถี่ centre-of-inertia
+ข้อตัดสินว่าแคบเกินไปนั้นถูกต้อง และ run ที่ส่งมอบวัดได้ห้าวิธีที่มันแคบ
+ทั้งห้าวัดกับ \code{adaptive\_250s.mat} สามข้อแรกเป็นสมบัติเชิงโครงสร้างของ
+\eqref{eq:severity} และเป็นจริงกับทุกรันของโค้ดนี้
+
+\subsection{เทอมความถี่ไม่แบก identity ของอุปกรณ์}
+
+\begin{equation}
+\max_t \Bigl[\max_i J_{f}(t) - \min_i J_{f}(t)\Bigr] \;=\; 0.000\times10^{0}
+\qquad\text{ตลอด } 3679 \text{ sample}.
+\label{eq:commonmode}
+\end{equation}
+
+$J_f$ สร้างจาก $f_{\mathrm{COI}}$ ซึ่งโดยการสร้างเป็นสเกลาร์ระดับโครงข่ายตัวเดียว
+คอนเวอร์เตอร์ทุกตัวอ่านค่าเดียวกันในทุกขณะ ครึ่งหนึ่งของ $\Ssev_i$ ใน
+\eqref{eq:severity} จึงเป็นเทอม common-mode ที่แยกคอนเวอร์เตอร์ตัวหนึ่งจากอีกตัว
+ไม่ได้ ผลที่ตามมาเป็นรูปธรรม: index ตอบได้ว่า ``เกาะถูกรบกวนหรือไม่''
+แต่โดยโครงสร้างตอบไม่ได้ว่า ``\emph{ตัวไหน} มีปัญหา'' --- และนั่นคือคำถามที่สอง
+ที่ supervisor ต้องตอบ ขั้น 2 ปิดช่องว่างด้วยการจัดอันดับเชิงสถิตที่คำนวณล่วงหน้า
+ซึ่งสมเหตุสมผลแต่ตาบอดต่อการรบกวนที่เกิดขึ้นจริง \measured
+
+\subsection{มันอิ่มตัวก่อนจะให้ข้อมูล}
+
+$\Ssev$ ถูก clip ที่ $1$ และไปถึง clip เมื่อ $J_V + J_f \ge 2$ โดยฐานทั้งสอง
+ตรึงที่ $0.10\pu$ และ $0.50$\,Hz นั่นคือความคลาดเคลื่อนแรงดันบัสราว $0.2\pu$
+ที่ความถี่ nominal ค่าสูงสุดที่วัดได้ตลอด run ที่ส่งมอบคือ
+$J_V^{\max} = 7.671$ และ $J_f^{\max} = 2.322$: index ถูกดันไปที่เพดานด้วย
+ความคลาดเคลื่อนแรงดันที่เกือบสี่เท่าของ threshold การอิ่มตัว ระหว่าง fault
+บัส 9 ($t = 85.0000$--$85.1500$\,s) คอนเวอร์เตอร์ทั้งสี่อยู่ที่ $\Ssev = 1.0000$
+นาน $0.147$--$0.151$\,s --- เพียงประมาณ $1.5$ เท่าของ dwell $0.10$\,s
+ช่วงการเบี่ยงตลอด run คือ $|V| \in [0.0369,\,1.5232]\pu$ และ
+$f_{\mathrm{COI}} \in [58.8391,\,61.1385]$\,Hz
+
+ผลที่ตามมาสองข้อ ข้อแรก ในย่านที่การตัดสินใจเกิดขึ้นจริง index เสื่อมจาก
+การวัดแบบมีระดับเป็นธงบอกการรบกวนแบบทวิภาค ข้อสอง fault ที่ยาว
+$1.5\times$ ของ dwell คือ transaction ที่รอจะเกิดขึ้น และใน run ที่ส่งมอบ
+เหตุผลเดียวที่มันไม่เกิดคือเกาะอยู่ในเซตสูงสุดอยู่แล้ว ---
+ซึ่งเป็นการป้องกันโดยบังเอิญ ไม่ใช่โดยการออกแบบ บนเกาะที่เล็กกว่า
+fault เดียวกันจะเลื่อนคอนเวอร์เตอร์ขึ้นตอบสนองต่อ transient ที่คำตอบที่ถูก
+คือการ ride through \measured
+
+\subsection{มันมองไม่เห็นสถานะอุปกรณ์ และความล้มเหลวของการเป็นสี่ตัวอยู่ที่นั่น}
+
+หัวข้อ~\ref{sec:allfour} แสดงให้เห็นว่าการเสีย synchronism ของการเป็นสี่ตัว
+ถูกแบกด้วยปริมาณภายในอุปกรณ์ $gfm\_xi\_Vd/xi\_Vq$ ซึ่งเลื่อนไป $28\%$
+ระหว่างการมาถึงจริงกับ equilibrium ที่ certified สมการ~\eqref{eq:severity}
+ไม่มีสถานะอุปกรณ์เลย ไม่มีน้ำหนัก ฐาน หรือ threshold ใดที่ใช้กับ
+$(|V_i|, f_{\mathrm{COI}})$ ตรวจจับการเลื่อนนั้นได้ เพราะการเลื่อนนั้น
+ไม่ใช่ฟังก์ชันของปริมาณเหล่านั้น \measured
+
+\subsection{PLL lock margin ถูกวัด ถูกประกาศ และไม่ถูกใช้}
+
+run ประกาศ index การล็อกของ PLL อยู่แล้ว คือ $J_{\text{lock}} = |v_q|/0.10$
+บนคอนเวอร์เตอร์ grid-following \code{(agsi\_reference\_terms.m:200--208)}
+บน run ที่ส่งมอบ มันเกิน $1$ เป็นช่วงยาว $1.3$--$2.7$\,s ด้วยยอด $4.6$--$8.0$
+ซ้ำแล้วซ้ำอีก กรณีที่ชัดที่สุดคือ $t = 146.3127$--$147.6730$\,s ด้วยยอด
+$7.9894$, $8.0431$ และ $7.8085$ บนสามคอนเวอร์เตอร์ --- PLL ที่วิ่งราว
+$80$ เท่าของขีด linearise มุมเล็ก ประมาณสองวินาที\emph{ก่อน} ที่ index
+แรงดัน/ความถี่จะขับ augment เดียวกันที่ $148.2811$\,s supervisor ลงมือ
+และลงมือช้า ด้วยเหตุผลที่ diagnostic ของตัวเองบันทึกไว้แล้ว \measured
+
+\subsection{Current headroom ถูกวัด ถูกประกาศ และไม่ถูกใช้}
+
+ปริมาณระดับอุปกรณ์อีกตัวที่ run ประกาศคือขนาดกระแส ratio $|I|/I_{\max}$
+ที่วัดได้ไปถึง $1.0047$--$1.0068$ บนคอนเวอร์เตอร์ทั้งสี่ระหว่าง fault
+โดย current clamp ทำงาน การเบี่ยงเกิน $0.95$ ครั้งอื่นเพียงครั้งเดียวใน
+ทั้ง run คือ IBR6 ที่ $t = 51.54$--$51.71$\,s สูงสุด $0.9636$
+เพดานกระแสเป็น nonlinearity แข็งตัวเดียวในอุปกรณ์ และเป็นสาเหตุตรงของ
+แรงดันที่จมซึ่ง index สังเกตเห็น --- แต่~\eqref{eq:severity} เห็นผล
+ไม่เห็นเหตุ และแยก ``ตัวตามติดเพดานและต้องการความช่วยเหลือ''
+จาก ``former ติดเพดานและต้องไม่ถูกปลด'' ไม่ออก \measured
+
+\subsection{สรุปช่องว่าง}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}lXl@{}}
+\toprule
+\textbf{ข้อบกพร่อง} & \textbf{สิ่งที่วัดได้} & \textbf{ทิศทาง}\\
+\midrule
+$J_f$ เป็น common-mode & spread $0.000\times10^{0}$ ระหว่างอุปกรณ์ ตลอด $3679$ sample & ระบุตัวไม่ได้\\
+อิ่มตัว & ทั้งสี่ตัวที่ $1.0000$ นาน $0.147$--$0.151$\,s ระหว่าง fault & false positive\\
+ไม่มีสถานะอุปกรณ์ & การเลื่อน $28\%$ ใน $gfm\_xi\_Vd/xi\_Vq$ มองไม่เห็น & false negative\\
+ไม่ได้ใช้ PLL lock & ยอด $7.99/8.04/7.81$ ที่ $t=146.31$--$147.67$\,s แต่ลงมือ $148.28$\,s & ช้า\\
+ไม่ได้ใช้ current headroom & $|I|/I_{\max}$ ถึง $1.0068$ โดย clamp ทำงาน & ระบุตัวไม่ได้\\
+\bottomrule
+\end{tabularx}
+\caption{mode ความล้มเหลวห้าแบบของ~\eqref{eq:severity} ที่วัดได้บน run ที่ส่งมอบ}
+\label{tab:gaps}
+\end{table}
+
+%=============================================================================
+\section{index สลับโหมดเพิ่มเติมสองตัว: RoCoF และ RoCoV}\label{sec:newindices}
+%=============================================================================
+
+\subsection{ข้อจำกัดการออกแบบที่กำหนดทั้งสองตัว}
+
+โมดูล reference ที่มีอยู่คำนวณ sub-index ไว้แล้วหกตัว คือ $J_V$, $J_f$, $J_R$
+(ซึ่งเป็นอัตราการเปลี่ยนความถี่ของมัน), $J_P$, $J_{\text{SCR}}$,
+$J_{\text{lock}}$ \code{(agsi\_reference\_terms.m:113)} และสัญญาการตัดสินใจของ
+มันเองระบุว่า \emph{switching consumes $J_V$ and $J_f$ only; every other term
+published here is reference-only and enters no gate} \code{(:52--53)}
+index สองตัวที่เสนอข้างล่างเป็น\emph{อัตรา}ทั้งคู่: อัตราการเปลี่ยนความถี่
+(RoCoF) และอัตราการเปลี่ยนแรงดัน (RoCoV) ไม่มีตัวใดถูกบวกเข้าไปในผลรวมของ
+\eqref{eq:severity} ด้วยเหตุผลเชิงโครงสร้าง ไม่ใช่เชิงลีลา: อัตรากับส่วนเบี่ยง
+แลกเปลี่ยนกันไม่ได้ที่ชุดน้ำหนักใด ๆ การแลก $10\%$ ของ margin ฝั่งอัตรากับ
+$10\%$ ของ margin ฝั่งส่วนเบี่ยงไม่ใช่การกระทำที่มีความหมาย และสเกลาร์ที่ทำ
+เช่นนั้นจะ certify คอนฟิกูเรชันที่หนึ่งในสองนั้นยอมรับไม่ได้
+
+การจับคู่ทั้งสองเป็นเจตนา และตอบความล้มเหลวที่วัดไว้ในหัวข้อ~\ref{sec:indices}:
+\eqref{eq:severity} อิ่มตัวระหว่าง fault ดังนั้นในย่านที่การตัดสินใจเกิดขึ้นจริง
+มันเสื่อมเป็นธงบอกการรบกวนแบบทวิภาคไปแล้ว อัตราคือปริมาณที่รอดจากการเสื่อมนั้น
+มันมากที่สุดพอดีตอนที่ส่วนเบี่ยงยังเล็กและกำลังเคลื่อนเร็วที่สุด และกลับเป็นศูนย์
+เมื่อการรบกวนสงบลง ซึ่งตอนนั้นส่วนเบี่ยงยังมากที่สุด คู่นี้จึงแยกสามสถานะที่
+ส่วนเบี่ยงอย่างเดียวสับสนได้: ผิด nominal และยังเคลื่อนอยู่, ผิด nominal และนิ่งแล้ว,
+และ nominal
+
+ดังนั้น index ที่เสนอแต่ละตัวจึงเข้า\emph{เงื่อนไขของตัวเอง} ขนานกับ
+\eqref{eq:triggers} และไม่มีตัวใดถูกบวกเข้าไปในผลรวมของ~\eqref{eq:severity}
+นี่เป็นกฎที่โปรเจกต์ประกาศไว้เอง ไม่ใช่สิ่งที่รายงานนี้คิดขึ้น
+
+\begin{quote}\small
+``Short-circuit strength, device current limits, and reference ownership are
+separate non-tradeable gates, never traded off against each other inside one
+scalar.'' \code{\hfill(README.md:84--86)}
+\end{quote}
+\proposed
+
+\subsection{Index A --- RoCoF: อัตราการเปลี่ยนความถี่ต่ออุปกรณ์}
+
+\paragraph{นิยาม} สำหรับคอนเวอร์เตอร์แต่ละตัว $\mathrm{RoCoF}_i = df_i/dt$
+จากสถานะความเร็วของคอนเวอร์เตอร์ตัวนั้นเอง ปริมาณนี้มีอยู่แล้วในโมดูล reference:
+\code{agsi\_reference\_terms.m:153} คำนวณมันต่ออุปกรณ์เป็น \code{dfdev(k)}
+แล้ว \code{:165} \emph{ทิ้ง} ค่าต่ออุปกรณ์นั้นโดยยุบทุกอุปกรณ์เป็นสเกลาร์
+centre-of-inertia แบบถ่วงน้ำหนักความเฉื่อยที่ประกาศเป็น $J_R$ ข้อเสนอจึงไม่ใช่
+การวัดใหม่ แต่คือการเลิกทิ้งค่าต่ออุปกรณ์
+
+\paragraph{ฐาน} $1$\,Hz/s ซึ่งเป็น \code{agsi\_rocof\_base\_Hz\_s} ที่โปรเจกต์
+ประกาศไว้ ฐานนั้นถูกจำแนกเป็น \code{ASSUMED\_DIAGNOSTIC} และผู้เรียกแทนค่าได้
+และโมดูล reference ระบุไว้เองในฟิลด์ \code{base\_classification} การสร้างแบบที่
+ใช้กับฐานอื่นในรายงานนี้จะให้
+$\text{df\_base}/T_{d,\mathrm{on}} = 0.50/0.10 = 5$\,Hz/s ฐานที่ประกาศจึงไว
+กว่าอีกแบบ ช่องว่างที่มาของค่านี้ถูกระบุไว้ ไม่ได้ถูกซ่อน \proposed
+
+\paragraph{ขอบเขต และทำไมไม่ใช่ตัวกระตุ้น augment} ความถี่ต่ออุปกรณ์ถูกบันทึก
+เป็น NaN บน $100.0\%$ ของ sample ที่เป็น grid-following และบน $0.0\%$ ของ sample
+ที่เป็น grid-forming \measured{} --- สถานะความเร็วของคอนเวอร์เตอร์มีอยู่พอดีและ
+เฉพาะขณะที่เครื่องกำลัง form เพราะกิ่ง grid-following ในโมเดลนี้ไม่แบก swing state
+index จึงนิยามบน\emph{เซตที่ form อยู่} เท่านั้น มันขอเลื่อนขึ้นไม่ได้
+และไม่ได้ถูกเสนอให้ทำ
+
+\paragraph{หลักฐานที่วัดได้} สามผล บน run ที่ส่งมอบทั้งหมด
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{มันบอกชื่อคอนเวอร์เตอร์ที่รับแรงกระแทกจากการเปลี่ยนโหมด}
+      ที่ฐาน $1$\,Hz/s กับ on-dwell ของโปรเจกต์ มี excursion ที่ผ่านเกณฑ์แปดครั้ง
+      ใน run และ\emph{เจ็ดในแปดเริ่มภายใน $2$\,ms ของ transaction ที่ supervisor ทำ}
+      ที่การเลื่อนขึ้นทั้งสามครั้ง ตัวที่ยิงคือตัวที่เพิ่งถูกเลื่อนขึ้น:
+      IBR6 ที่ $t = 22.0888$\,s (เลื่อนขึ้นที่ $22.0887$\,s),
+      IBR6 ที่ $t = 51.3404$\,s (เลื่อนขึ้นที่ $51.3403$\,s),
+      IBR3 กับ IBR8 ที่ $t = 53.3797$\,s (เลื่อนขึ้นที่ $53.3795$\,s),
+      IBR6 ที่ $t = 148.2812$\,s (เลื่อนขึ้นที่ $148.2811$\,s) ครั้งที่แปดคือ IBR2
+      ซึ่งเป็น former ที่เหลือตัวเดียว ตอน release ที่ $146.2782$\,s \measured
+\item \textbf{สเกลาร์ที่ประกาศอยู่แทนมันไม่ได้} ในแปดหน้าต่างเดียวกัน ค่าสูงสุด
+      ต่ออุปกรณ์อยู่ในช่วง $0.13\times$ ถึง $2.01\times$ ของค่าสูงสุด
+      centre-of-inertia --- ไม่มีตัวใดเป็นขอบเขตของอีกตัว ความล้มเหลวรุนแรงที่สุด
+      พอดีที่การเลื่อนขึ้น: ที่ $t = 53.3795$\,s ค่า $J_R$ ที่ประกาศสูงสุดที่
+      $123.04$\,Hz/s ขณะที่สองตัวที่\emph{เข้าใหม่}ไปถึงเพียง $26.16$ และ
+      $15.95$\,Hz/s เพราะการถ่วงน้ำหนักความเฉื่อยถูกครอบโดยตัวที่ครองอยู่ซึ่ง
+      \emph{ไม่ได้}เปลี่ยนโหมด สเกลาร์รายงานแรงกระแทกของตัวครอง
+      และเงียบเรื่องตัวเข้าใหม่ \measured
+\item \textbf{ตอน fault เคลียร์ มันแยก former ออกจากกัน} ที่ $t = 85.1500$\,s
+      คอนเวอร์เตอร์ที่ form ทั้งสี่ไปถึง $-1050.98$, $-1016.92$, $-1106.62$
+      และ $-1212.91$\,Hz/s --- spread $196.0$\,Hz/s หรือ $17.9\%$ ของขนาดเฉลี่ย
+      และบอกชื่อ IBR8 ว่าได้รับกระแทกมากที่สุด ขณะที่ $J_R$ ที่ประกาศมี spread
+      เท่ากับ $0.000\times10^{0}$ ระหว่างคอนเวอร์เตอร์ทั้ง $3679$ sample \measured
+\end{enumerate}
+
+\paragraph{กฎที่เสนอ} RoCoF ไม่สร้าง trigger มันเข้าเป็น\emph{ตัวกันการ release}
+และเป็นตัวระบุของ transaction
+\begin{equation}
+\text{ห้าม release ถ้า } \exists i \in \mathrm{GFM}:\;
+\mathrm{RoCoF}_i \ge 1\ \mathrm{Hz/s},
+\qquad
+\text{และบันทึก } \operatorname*{arg\,max}_i |\mathrm{RoCoF}_i|
+\text{ ต่อ transaction}.
+\label{eq:ruleA}
+\end{equation}
+ทิศทางปลอดภัยโดยโครงสร้าง: index มีอยู่เฉพาะบนคอนเวอร์เตอร์ที่ form จึงไม่มีทาง
+ขอเลื่อนขึ้น และการกัน release คือทิศทางที่อนุรักษ์นิยม
+
+\paragraph{เส้นทางตรวจสอบ} เล่นลำดับเหตุการณ์ซ้ำ แล้วยืนยันว่า (ก)
+\eqref{eq:ruleA} ไม่กัน release ใดที่โยบาย adaptive ทำจริง --- วัดแล้ว
+ทั้งสามครั้งเกิดที่ $|\mathrm{RoCoF}| \le 0.066$\,Hz/s จึงไม่มีครั้งใดถูกกัน ---
+และ (ข) การระบุที่บันทึกไว้บอกชื่อตัวที่ถูกเลื่อนขึ้นในการเลื่อนขึ้นทั้งสามครั้ง
+
+\subsection{Index B --- RoCoV: อัตราการเปลี่ยนขนาดแรงดันที่บัสคอนเวอร์เตอร์}
+
+\paragraph{นิยาม} $\mathrm{RoCoV}_i = d|V_i|/dt$ ที่บัสของคอนเวอร์เตอร์เอง
+
+\paragraph{ฐาน ที่มาจากการสร้างไม่ใช่การ tune} โมดูล reference ไม่มีฐานสำหรับ
+ปริมาณนี้ รายงานนี้สร้างฐานขึ้นด้วยวิธีเดียวกับที่โปรเจกต์สร้างฐานอื่น ๆ
+คืออัตราที่ส่วนเบี่ยงฐานจะถูก traversed ภายในหนึ่ง on-dwell
+\begin{equation}
+\mathrm{RoCoV}_{\text{base}} \;=\;
+\frac{\texttt{severity\_dV\_base}}{\texttt{severity\_T\_d\_on}}
+\;=\; \frac{0.10\pu}{0.10\ \mathrm{s}} \;=\; 1.0\ \mathrm{pu/s}.
+\label{eq:rocovbase}
+\end{equation}
+
+\paragraph{ขอบเขต} ขนาดแรงดันบัสถูกบันทึกด้วยสัดส่วน NaN $0.00\%$ ตลอด $3679$
+sample \measured{} --- มีอยู่ทั้งสองโหมดและทุกคอนเวอร์เตอร์ ต่างจาก RoCoF
+RoCoV จึงระบุตัวได้ทั้งฝั่งตัวตามและฝั่ง former และเป็นตัวเดียวในสองตัวที่
+\emph{อาจ} รับหน้าที่ฝั่ง augment ได้
+
+\paragraph{หลักฐานที่วัดได้} สองผลเป็นตัวกำหนดบทบาทของมัน
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{มันไม่เคยถึง dwell ที่โปรเจกต์ต้องการ} ตอน fault บัส 9 เคลียร์
+      อัตราไปถึง $998.2$, $975.7$, $1028.5$ และ $1026.7$\,pu/s บนคอนเวอร์เตอร์
+      สี่ตัว ($p_{99}$ ตลอด run คือ $81.7$--$86.6$\,pu/s) แต่
+      \emph{excursion ที่ต่อเนื่องยาวที่สุดเหนือฐานที่สร้างขึ้น ในที่ใดก็ตามใน run
+      คือ $0.0369$\,s} --- $0.37$ เท่าของ on-dwell $0.10$\,s ด้วย dwell ของโปรเจกต์
+      RoCoV จึงมี excursion ที่ผ่านเกณฑ์ \emph{ศูนย์ครั้ง} ใน run นี้ การวัดบอก
+      เช่นนี้ก่อนที่ใครจะลงมือ implement และรายงานนี้ไม่เสนอให้ลด on-dwell
+      เพื่อให้มันยิง \measured
+\item \textbf{มันแยก index สองเทอมที่ค้างจากความเครียดที่ยังมีชีวิต}
+      ตลอด $t = 110.0021 \to 145.0000$\,s --- $34.998$\,s --- การทดสอบ release
+      ถูกกันไว้เพราะ $\Ssev_i$ บางตัวยืนที่ค่าไม่เกิน $0.4301$ ซึ่งสูงกว่า
+      threshold การ release ที่ $0.35$ ตลอดช่วงเดียวกันนั้น ทุกบัสหยุดเคลื่อนแล้ว:
+      $|\mathrm{RoCoV}|$ ที่มากที่สุดบนเกาะคือ $0.6451$\,pu/s ต่ำกว่าฐานที่สร้างขึ้น
+      ส่วนเบี่ยงนั้นเป็น offset ที่\emph{นิ่งแล้ว}จากแรงดัน healthy ก่อนเหตุการณ์
+      ที่ตรึงไว้ ซึ่งเกิดจากการทริปสาย 6--13 ที่ $t = 110$\,s ไม่ใช่ความเครียดที่
+      กำลังวิวัฒน์ ตลอดทั้ง run มี $2239$ จาก $3679$ sample ($60.9\%$) ที่มี
+      $\Ssev_i \ge 0.35$ บางตัวขณะที่ทุกบัสนิ่งแล้ว สาเหตุเป็นเชิงโครงสร้าง:
+      $J_V$ อ้างอิงกับแรงดัน healthy ก่อนเหตุการณ์ที่ตรึงไว้
+      \code{(agsi\_reference\_terms.m:183--188)} การเปลี่ยน topology ใด ๆ
+      จึงทิ้ง offset ถาวรที่ index แยกจากความเครียดไม่ออก RoCoV เป็นปริมาณ
+      ที่ประกาศอยู่ตัวเดียวที่แยกสองสิ่งนั้น \measured
+\end{enumerate}
+
+\paragraph{กฎที่เสนอ} RoCoV ไม่สร้าง trigger เช่นกัน มันเป็นตัวคุณสมบัติของ
+การทดสอบ release และของ reference ของเทอมส่วนเบี่ยง
+\begin{equation}
+\text{sample จะนับเข้า release dwell ก็ต่อเมื่อ }
+\max_i |\mathrm{RoCoV}_i| < 1.0\ \mathrm{pu/s},
+\label{eq:ruleB}
+\end{equation}
+และช่วงที่นิ่งแล้วขณะผิด nominal จะถูก \emph{re-reference} --- แทนที่แรงดัน
+healthy ที่ตรึงไว้ด้วยค่าที่นิ่งแล้ว --- แทนที่จะถูกแบกไว้เป็นความเครียด
+ไม่จำกัดเวลา ทั้งสองส่วนเป็นการเปลี่ยนเชิงโครงสร้างของสิ่งที่เทอมส่วนเบี่ยง
+ถูกวัดเทียบด้วย ไม่ใช่การเปลี่ยน threshold $0.35$ และรายงานนี้ไม่เสนอให้ปรับ
+threshold นั้นใหม่
+
+\paragraph{เส้นทางตรวจสอบ} เล่น run ซ้ำ แล้วยืนยันว่า (ก) ไม่มี release ใด
+ถูกให้ขณะที่บัสใดเคลื่อนเร็วกว่าฐาน --- วัดแล้ว การ release ทั้งสามครั้งเกิดที่
+$|\mathrm{RoCoV}| \le 0.019$\,pu/s จึงไม่มีครั้งใดได้รับผล --- และ (ข) ช่วงที่นิ่ง
+ยาว ๆ ที่ระบุข้างบนยุบเป็นการ re-reference แทนที่จะเป็นการ release ที่ถูกกัน
+
+\subsection{สิ่งที่จงใจไม่เสนอ}
+
+$J_{\text{SCR}}$ (สูงสุดที่วัดได้ $9.191$) และ $J_P$ (สูงสุดที่วัดได้ $6.158$)
+ยังคงเป็น reference-only $J_{\text{SCR}}$ เป็นค่าคงตัวของโครงข่ายซึ่งตามที่
+หัวข้อ~\ref{sec:stronggrid} แสดงไว้ ไม่ตอบสนองต่อจำนวน forming เลย จึงแยกแยะ
+ระหว่างปลายทางที่การตัดสินใจเลื่อนขึ้นต้องเลือกไม่ ได้ ส่วน $J_P$ วัด
+tracking error เทียบกับ reference ที่ supervisor สั่งเอง จึงรายงานผลที่ตามมา
+ของการตัดสินใจเลือกโหมด ไม่ใช่สถานะอิสระของ plant การยกตัวใดขึ้นจะเพิ่มเทอม
+โดยไม่เพิ่มความแตกต่าง \proposed
+
+\begin{remark}[ผลรวมต่อการตัดสินใจ]
+ไม่มีข้อเสนอใดเปลี่ยน\emph{เมื่อไร} ที่ augment ถูกขอ และไม่มีข้อใดแตะเกณฑ์
+การยอมรับใน~\eqref{eq:gate} RoCoF (A) กันการ release ของ former และระบุ
+แรงกระแทกจากการเปลี่ยนโหมดให้คอนเวอร์เตอร์ที่มีชื่อ RoCoV (B) เป็นตัวคุณสมบัติ
+ของการ release dwell และ re-reference offset แรงดันที่นิ่งแล้ว ทั้งคู่ทำงานฝั่ง
+handback ของโยบาย --- ฝั่งที่หัวข้อ~\ref{sec:count} แสดงว่าเป็นฝั่งที่อนุรักษ์นิยม
+กว่าโดยเจตนา และเป็นฝั่งที่ run ที่ส่งมอบถือคอนฟิกูเรชันที่ยอมรับได้แต่ damping
+น้อยที่สุดนาน $92.90$\,s ซึ่งในนั้นวัดได้ $34.998$\,s เป็น offset ที่นิ่งแล้ว
+ไม่ใช่ความเครียดที่ยังมีชีวิต
+\end{remark}
+
+%=============================================================================
+\section{สิ่งที่รายงานนี้ไม่ได้อ้าง}\label{sec:notclaimed}
+%=============================================================================
+
+\begin{enumerate}[leftmargin=1.9em]
+\item \textbf{ไม่ได้อ้างว่านโยบายที่ส่งมอบดีที่สุด} มันอ้างว่ามัน implement
+      ข้อเสนอ~\ref{prop:superset} และพิสูจน์ว่าข้อเสนอ~\ref{prop:superset}
+      มีผลที่สังเกตได้เหล่านั้น นโยบายที่จัดอันดับต่างออกไปและยังอยู่ใน gate
+      ความเป็นไปได้ชุดเดียวกันไม่ถูกกีดกัน
+\item \textbf{ไม่ได้อ้างว่าสองตัวดีกว่าสี่เสมอ} บันทึก defect มีกรณีที่วัดได้
+      ซึ่งสี่ตัวรับ deficit $2.0\pu$ ได้แต่สองตัวรับไม่ได้ ข้ออ้างคือเสถียรภาพ
+      และความทนทานไม่ monotone ตามจำนวน ทั้งสองทิศทาง
+\item \textbf{ไม่ได้อ้างว่าค่า SCR เป็น rating ความแข็งของ plant}
+      สมการ~\eqref{eq:scr} ตามที่ implement อ้างอิงแรงดัน gate ถูกยกเว้นสำหรับ
+      ตระกูลโมเดลนี้ และ diagnostic ตัวที่สองใน repository ให้ $4.78$--$7.19$
+      สำหรับบัสเดียวกันภายใต้ convention ของ rating ที่ต่างกัน การเปรียบเทียบ
+      ใช้ได้ภายใน convention ของตาราง~\ref{tab:scr}
+\item \textbf{ไม่ได้อ้างว่าตารางความเป็นไปได้ไม่ขึ้นกับโหลด} ตาราง~\ref{tab:adm}
+      คือตารางฐานที่ freeze ไว้ ข้อค้นพบเรื่องโหลด $+20\%$ ที่ยกใน
+      หัวข้อ~\ref{sec:allfour} เป็นการวัดแยกจากบันทึก defect ที่ระดับโหลดอื่น
+\item \textbf{ไม่ได้อ้างว่า index ทั้งสองถูก implement แล้ว} มันเป็นข้อเสนอ
+      การออกแบบ แต่ละตัวมีเส้นทางตรวจสอบที่ระบุไว้และยังไม่มีผลการวัด
+      ไม่มีผลลัพธ์ใดในรายงานนี้ที่ขึ้นกับมัน
+\item \textbf{ไม่ได้อ้างว่าข้อความเรื่อง basin เป็นการทั่วไป} การเทียบ
+      $4358^{\circ}$ กับ $6.6^{\circ}$ วัดบนคู่การเปลี่ยนหนึ่งคู่ กลไกถูกเสนอ
+      เป็นคำอธิบายของคู่นั้น ไม่ใช่เป็นกฎ
+\end{enumerate}
+
+%=============================================================================
+\section{การทำซ้ำ}\label{sec:repro}
+%=============================================================================
+
+result set ที่ส่งมอบและการ build รายงาน คำสั่งทั้งหมดรันจาก root ของ repository
+คำสั่งแรกสร้าง arm ทั้งหกที่ตารางความเป็นไปได้อ้างถึง คำสั่งที่เหลือ build
+รายงานนี้ ซึ่งต้องรันจาก \code{docs/source/} เพราะ path ของฟอนต์เป็น relative
+
+\begin{quote}\small
+\begin{verbatim}
+matlab -batch "run('scripts/reporting/run_ieee14_gfm_lock_comparison.m')"
+
+cd docs/source
+xelatex report_ieee14_switching_decision_basis_th.tex
+xelatex report_ieee14_switching_decision_basis_th.tex
+\end{verbatim}
+\end{quote}
+
+\noindent
+regression gate ของ arm ที่ส่งมอบคือแถวเจ็ดค่าของตารางที่ 2:
+horizon $250.000000$\,s, $3679$ sample, $161$ step ที่ปฏิเสธ,
+KCL residual สูงสุดที่ยอมรับ $9.972081\times10^{-9}$,
+$f_{\mathrm{COI}}$ ขั้นสุดท้าย $60.000001128$\,Hz, เวลา reclose $159.2519$\,s
+พร้อมสถานะ \code{SUCCESS} และ handback เสร็จที่ $173.1271$\,s
+ถ้าการรันซ้ำไม่ reproduce ทั้งเจ็ดค่า ตัวเลขในรายงานนี้ใช้กับมันไม่ได้
+
+\end{document}

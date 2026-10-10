@@ -60,7 +60,7 @@ function test_jacobian_dimensions_match(testCase)
 end
 
 function test_jacobian_2bus_flat_start_fd_agree(testCase)
-    % Minimal 2-bus hand-checkable case: bus 1 = REF, bus 2 = PQ, one line.
+    % Minimal 2-bus hand-checkable case: bus 1 = SLACK, bus 2 = PQ, one line.
     c = build_2bus_case();
     [pass, report] = check_jacobian_fd(testCase, c, '2-bus analytic');
     testCase.verifyTrue(pass, report);
@@ -153,7 +153,7 @@ function c = build_2bus_case()
     c.system_name = '2-bus analytic';
     c.base_values = struct('S_base_MVA', 100, 'V_base_kV', 1, 'frequency_Hz', 60);
     c.bus_data = [ ...
-        1  1  1.0  0   0   0   0   0   0  0   -Inf Inf;  % REF
+        1  1  1.0  0   0   0   0   0   0  0   -Inf Inf;  % SLACK
         2  3  1.0  0   0   0   1.0 0.5 0   0   -Inf Inf]; % PQ
     c.line_data = [1 2  0.01  0.1  0  1  0];
     c = cases.standardize_case(c);

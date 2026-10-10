@@ -1,4 +1,6 @@
 function [case_labels, case_loaders] = discover_cases(cases_dir)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %DISCOVER_CASES Auto-discover case functions in +cases/ package.
 %   Scans the +cases/ directory for functions matching case_*.m pattern.
 %   Returns cell arrays of human-readable labels and function handles.

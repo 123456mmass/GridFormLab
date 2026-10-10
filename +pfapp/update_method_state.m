@@ -1,4 +1,6 @@
 function app = update_method_state(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %UPDATE_METHOD_STATE Enable/disable UI fields based on selected method.
 %   Sets reasonable default max_iter per method when method changes and
 %   keeps SMIB analysis isolated from the steady-state solver controls.

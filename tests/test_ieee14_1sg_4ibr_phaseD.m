@@ -28,13 +28,21 @@ eq = stability.mixed_equilibrium_solve(c, config, struct('verbose',false));
 testCase.verifyTrue(eq.converged, 'Equilibrium must converge.');
 
 sssa = stability.composite_sssa_model(devices, eq.x0, eq.y0, c);
-% Total states: SG1(6) + 4*(REGFM_B1 G2(13)+WECC GFL(7)) = 86
-% Frozen: SG1 Edp(1) = 1
-% Legacy full-state path excludes only the sourced SG singular state.
-testCase.verifyEqual(sssa.nx_total, 86, 'AbsTol', 0, 'nx_total = 86.');
-testCase.verifyEqual(sssa.nx_active, 85, 'AbsTol', 0, 'nx_active = 85 (Edp excluded).');
-testCase.verifyEqual(size(sssa.A), [85, 85], 'AbsTol', 0, 'A is 85x85.');
-testCase.verifyEqual(numel(sssa.eigenvalues), 85, 'AbsTol', 0, '85 eigenvalues.');
+% Retargeted 2026-09-26 onto ibr.eecon49_dual_mode_model.  The totals below are
+% re-derived from the surviving devices' own nx, not copied from the retired
+% family's numbers: SG1 = 6 (sg_emf6_composite) and 4 IBRs x 16
+% (ibr_eecon49_dual) = 64, so nx_total = 70.  Frozen is SG1 Edp(1) = 1, so
+% nx_active = 69 and A is 69x69 with 69 eigenvalues.  The retired expectation
+% was 86/85 because the retired superset was 20 states per IBR.
+testCase.verifyEqual(sssa.nx_total, 6 + 4*16, 'AbsTol', 0, 'nx_total = 70.');
+testCase.verifyEqual(sssa.nx_active, 6 + 4*16 - 1, 'AbsTol', 0, ...
+    'nx_active = 69 (Edp excluded).');
+testCase.verifyEqual(size(sssa.A), [69, 69], 'AbsTol', 0, 'A is 69x69.');
+testCase.verifyEqual(numel(sssa.eigenvalues), 69, 'AbsTol', 0, '69 eigenvalues.');
+% The reduction must actually drop the SG Edp state: nx_total - nx_active is
+% exactly the frozen count, not an arbitrary difference.
+testCase.verifyEqual(sssa.nx_total - sssa.nx_active, 1, 'AbsTol', 0, ...
+    'Exactly one frozen state (SG1 Edp) is removed before eig.');
 end
 
 % =========================================================================
@@ -92,9 +100,9 @@ sg1 = struct('resource_id','SG1','bus_id',1,'resource_type','sg','model_id','sg_
     'dynamic_params',struct(),...
     'provenance',struct('model','sg_emf6','source','Kodsi','classification','CASE_DEFINED','details',''));
 spec = sg1;
-ids = {'IBR2','IBR3','IBR6','IBR8'}; buses = [2,3,6,8]; mbases = [140,100,100,100];
+ids = {'IBR2','IBR3','IBR6','IBR8'}; buses = [2,3,6,8]; mbases = [100,100,100,100];
 for k = 1:4
-    r = struct('resource_id',ids{k},'bus_id',buses(k),'resource_type','ibr','model_id','regfm_b1_dual',...
+    r = struct('resource_id',ids{k},'bus_id',buses(k),'resource_type','ibr','model_id','eecon49_dual',...
         'supported_modes',["gfl","gfm","tripped"],'voltage_forming_modes',"gfm",...
         'initial_mode',"gfl",'initial_online',true,...
         'can_switch_mode',true,'can_switch_online',true,...
@@ -102,7 +110,7 @@ for k = 1:4
         'limits',struct('ImaxSS',1,'ImaxF',1.5,'Pmax_MW',mbases(k),'Qmax_MVAr',mbases(k),'Emax',1.2,'Emin',0.8),...
         'ratings',struct('Mbase',mbases(k),'Sbase',Sbase,'default_P_MW',0),...
         'dynamic_params',struct('Mbase',mbases(k)),...
-        'provenance',struct('model','regfm_b1_dual','source','REGFM_B1','classification','CASE_DEFINED','details',''));
+        'provenance',struct('model','eecon49_dual','source','EECON49','classification','CASE_DEFINED','details',''));
     spec(end+1) = r; %#ok<AGROW>
 end
 end

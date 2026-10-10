@@ -1,4 +1,6 @@
 function open_cpf_reference_figure(cpf)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 [plot_bus_id, plot_voltage, note_text] = pfapp.choose_reference_pv_series(cpf);
 figure('Name', 'CPF Predictor-Corrector Reference Plot', 'Color', 'w', 'Position', [160 80 980 680]);
 plot(cpf.lambdas, plot_voltage, 'k-', 'LineWidth', 2.2);

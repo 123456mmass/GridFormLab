@@ -1,4 +1,6 @@
 function style_result_table(app, mode)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %STYLE_RESULT_TABLE Apply lightweight table styling for common result modes.
 
 try

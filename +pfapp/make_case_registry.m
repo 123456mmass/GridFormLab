@@ -1,4 +1,6 @@
 function [case_labels, case_loaders] = make_case_registry()
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %MAKE_CASE_REGISTRY Build the case dropdown list. Uses auto-discovery with hardcoded fallback.
 
 % Try auto-discovery first

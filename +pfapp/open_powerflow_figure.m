@@ -1,4 +1,6 @@
 function open_powerflow_figure(result)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 axis_info = pf_bus_axis_info(result.external_bus_ids);
 figure('Name', sprintf('%s - %s', result.system_name, result.method), ...
     'Color', 'w', 'Position', [100 70 1160 760]);

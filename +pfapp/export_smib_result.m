@@ -1,4 +1,6 @@
 function app = export_smib_result(app, output_dir)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %EXPORT_SMIB_RESULT Write the SMIB eigenvalue table + plots to disk.
 %   Saves a CSV eigenvalue table and PNGs of the s-plane and impulse
 %   response figures currently rendered in the SMIB Stability tab.

@@ -1,4 +1,6 @@
 function line = smib_summary_line(res)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SMIB_SUMMARY_LINE One-line log summary of an SMIB analysis result.
 
 r = res.analyze;

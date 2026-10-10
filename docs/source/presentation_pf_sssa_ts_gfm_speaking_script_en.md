@@ -12,7 +12,7 @@ A grid-following converter needs an existing voltage-angle reference. A grid-for
 
 ## Slide 3 — Mathematical analysis chain
 
-The analysis begins with the AC power-flow residual and the correct REF, PV, and PQ specifications. The solved equilibrium then defines the differential-algebraic model. Small-signal stability follows from the Schur complement, while transient stability uses an implicit trapezoidal residual for the differential and algebraic variables together. A mode change is treated separately from time integration: the destination controller coordinates are assigned at the current operating point, and the terminal-current discontinuity must remain below (10^{-10}) per unit.
+The analysis begins with the AC power-flow residual and the correct SLACK, PV, and PQ specifications. The solved equilibrium then defines the differential-algebraic model. Small-signal stability follows from the Schur complement, while transient stability uses an implicit trapezoidal residual for the differential and algebraic variables together. A mode change is treated separately from time integration: the destination controller coordinates are assigned at the current operating point, and the terminal-current discontinuity must remain below (10^{-10}) per unit.
 
 ## Slide 4 — Defensible parameter choices
 

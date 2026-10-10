@@ -1,7 +1,16 @@
-function open_smib_figure(app)
+function open_smib_figure(app, visible)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %OPEN_SMIB_FIGURE Open standalone SMIB figures for the last result.
 %   Delegates to the internal/plotting/smib_plot_* functions, picking the
 %   set of plots most relevant to the active Kundur model.
+%
+%   VISIBLE is 'on' (default) for the GUI button this is named after.  A test
+%   passes 'off' so it can exercise the path without throwing figure windows
+%   over the screen -- closing them afterwards is not the same as not showing
+%   them, because a visible figure still steals focus and repaints first.
+
+if nargin < 2 || isempty(visible), visible = 'on'; end
 
 res = app.last_smib;
 if isempty(res)
@@ -10,7 +19,7 @@ if isempty(res)
 end
 
 model = res.model;
-vis = struct('visible', 'on');
+vis = struct('visible', char(visible));
 c = res.case;
 machine = c.machine;
 

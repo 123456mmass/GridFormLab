@@ -64,7 +64,11 @@ The focused suite is **43 tests**: plant 14, rating 15, legacy prospective 2, sp
 
 ## 4a. Commit state of this document
 
-This handoff is **Prepared for committed checkpoint** — it is written but **not committed**, and no commit hash is asserted here. The main checkpoint manifest (the 7 files in §1), the broad source/tests/docs backup the user approved (which may include the WIP but must keep the **16 staged deletions**), and the manifest review are all still pending on the parent side; the parent appends the actual receipt hash after the commit. Other checkpoint scopes will follow the pending review-child notes.
+**Main checkpoint committed:** `81462daa643e73de633081e26bbdb1828eeee920` — `checkpoint(ne39): preserve governed SG primitives and reviewed reclose handoff` — carrying the 7 files of §1 (diffstat **1832 insertions / 6 deletions**). This document is inside that commit; read `git log` forward from it for anything later. The 16 staged deletions still matched their baseline patch exactly after the commit.
+
+- **Push VERIFIED:** `pwsh-255` collected **exit 0** and the exact remote hash matches `81462daa643e73de633081e26bbdb1828eeee920` — the main checkpoint is published. The index's 16 staged deletions still matched their baseline patch after the commit.
+- **Frozen:** the ledger [docs/project/NE39_TAMU_MIGRATION.md](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_TAMU_MIGRATION.md>) is part of the committed main checkpoint and is **not edited again** for this work.
+- **Next (broad WIP commit):** the remaining source/tests/docs work, including the four wiring patches and the new wiring test with the **major review finding still open**, with no new actual close. Its tested basis is `pwsh-244` offline contracts **116/116 PASS** plus `pwsh-215` primitive **43/43 PASS**. Global grouping, exclusions and next-session limitations live in [WORKTREE_CHECKPOINT_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/WORKTREE_CHECKPOINT_20261010.md>).
 
 ## 5. Explicit non-claims
 
@@ -90,11 +94,15 @@ plus [tests/test_ne39_sg_reclose_wiring.m](<C:/Users/User/Desktop/Power-flow/tes
 
 ## 7. Next steps for another session
 
-1. **Parent first:** the 43-test suite plus the real online-factory closure check are green (`pwsh-215`, §4). Finish the remaining lint item (the `unused tf=false` warning in the metrics helper) without changing equations.
-2. **Wiring:** resolve the `deviceLimit` review finding, then parent-test the four wiring files and their wiring test; keep them out of any checkpoint until that review closes.
-3. **Then integration and evidence order:** guards/ratings authority; all-state online plus offline root accounting; only after those pass, a **new** timestamped short run with actual applied reclose and dwell (no reset), followed by the new full chronology under the `.001` cap — never by rerunning the old 160.
-4. **If asked to resume the paused goal:** the goal is paused at **revision 2** and the harness **model-resume action is unavailable**; re-arm only by an explicit human request, and never mark it complete on the strength of this document.
+1. **Parent first:** the 43-test suite plus the real online-factory closure check are green (`pwsh-215`, §4); the broader offline contracts are also green (`pwsh-244`, 116/116 — see §8). Finish the remaining lint item (the `unused tf=false` warning in the metrics helper) without changing equations.
+2. **Wiring:** resolve the `deviceLimit` acceptance-fixture finding, then parent-test the **five** wiring core files ([+cases/scenario_ne39_tamu_mixed.m](<C:/Users/User/Desktop/Power-flow/+cases/scenario_ne39_tamu_mixed.m>), [+stability/build_mixed_resource_devices.m](<C:/Users/User/Desktop/Power-flow/+stability/build_mixed_resource_devices.m>), [+stability/mixed_equilibrium_solve.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_equilibrium_solve.m>), [+stability/mixed_ibr_reduced_initialize.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_ibr_reduced_initialize.m>), [+stability/mixed_ibr_sg_on_gfl_initialize.m](<C:/Users/User/Desktop/Power-flow/+stability/mixed_ibr_sg_on_gfl_initialize.m>)) and [tests/test_ne39_sg_reclose_wiring.m](<C:/Users/User/Desktop/Power-flow/tests/test_ne39_sg_reclose_wiring.m>); the broad WIP commit may carry them but **labelled not validated**.
+3. **Real engineering work before any reclose claim:** proper capability acceptance instead of a `deviceLimit` acceptance; all-state SG_ON/SG_OFF SSSA, refinement, synchronism geometry and voltage terminal measurement; **no fake `Pm`/rotor/gate** manipulation; then an **applied `sg_reclose`** with finite actual time, dwell and post-close constraints; a **new 160-s** run under the `.001` cap **only when ready** — never by rerunning the old 160.
+4. **Goal state:** general NE39 reclose goal at **revision 2**, paused for the human and requiring a **human resume through the GUI**; the model-resume tool is **not available**, so a model retry would be a false claim. Never mark the goal complete and never repeatedly instruct a model resume.
 
-## 8. Sources for this handoff
+## 8. Global checkpoint chapter (approved scope)
+
+The checkpoint is not only this primitive. The approved global grouping, tested counts, exclusions, EOL handling and follow-ups are recorded in [WORKTREE_CHECKPOINT_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/WORKTREE_CHECKPOINT_20261010.md>). In brief: group 1 = this main 7-file primitive commit (43/43 + online closure); group 2 = the broad source/tests/docs WIP commit, which carries the broader offline contracts **116/116 PASS** (`pwsh-244`: events 26, AI 80 with `force_fallback` and no outbound, studio-no-wizard 2, case visibility 5, inventory fail-closed 3) and still-unvalidated wiring; group 3 = the separate DSH installer WIP, never executed. That document also holds the exclusion list (`bin`/`obj` payloads, `*.fig`/`*.nav`/`*.snm`, `*_review*.png`, `backup_slides_v15.*`/`ref_v15*`/`presentation.backup.*`), the **54-file LF-vs-CRLF "save as found"** rule, the three unfixed TeX whitespace warnings, the stale-not-run `test_ieee14_multi_gfm_equilibrium`, and the warning that plain `ne39` is the 10-SG RTS-derived case, **not** this TAMU 1SG+9IBR case. No actual reclose is claimed by any group.
+
+## 9. Sources for this handoff
 
 Written from the actual new files and the parent's messages, not from the older continuation note ([tmp/ne39-reclose-pm-continuation-20261010.md](<C:/Users/User/Desktop/Power-flow/tmp/ne39-reclose-pm-continuation-20261010.md>)), whose statuses are historical. This writer ran no MATLAB, started no jobs or agents, and made no git/index/process changes.

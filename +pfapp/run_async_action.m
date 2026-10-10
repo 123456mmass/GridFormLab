@@ -1,4 +1,6 @@
 function app = run_async_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_ASYNC_ACTION Run selected solver asynchronously using parfeval (if PCT available).
 %   Falls back to synchronous execution if Parallel Computing Toolbox is unavailable.
 

@@ -278,11 +278,19 @@ try
     meta = ibr.device_contract_metadata(dev);
     ok = true;
 catch err
-    if contains(err.identifier,'unknownContract')
-        ok = false;   % non-IBR device: legitimate skip
-    else
+    if ~contains(err.identifier,'unknownContract')
         rethrow(err);
     end
+    % FAIL CLOSED for an IBR-typed device: an IBR that carries no registered
+    % contract is a defect (e.g. an unsupported state count), not a
+    % non-participant. Skipping it would silently drop real IBR states from the
+    % inventory. Only a NON-IBR device (e.g. a synchronous machine) is a
+    % legitimate skip in IBR_ONLY scope.
+    if isfield(dev,'device_type') && ~isempty(dev.device_type) && ...
+            startsWith(char(string(dev.device_type)),'ibr_')
+        rethrow(err);
+    end
+    ok = false;   % non-IBR device: legitimate skip
 end
 end
 
@@ -349,8 +357,7 @@ if ~isnan(pos)
     return;
 end
 % Not active. Distinguish inactive-mode anchor vs source-frozen.
-if any(strcmp(char(dev.device_type),{'ibr_dual_mode','ibr_dual_mode_rms10', ...
-        'ibr_eecon49_dual','ibr_decoupled_dual'}))
+if any(strcmp(char(dev.device_type),{'ibr_eecon49_dual'}))
     % Dual-mode: the non-selected branch is an inactive-mode anchor.
     active_branch = branch_from_mode(mode);
     if strcmp(branch, active_branch)

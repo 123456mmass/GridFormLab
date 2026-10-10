@@ -1,0 +1,240 @@
+%=============================================================================
+%  report_ieee14_switching_proof_summary_th.tex
+%  บทสรุปเชิงเทคนิค 1--2 หน้า: ทำไมจึงไม่ตรึง GFM ทั้ง 4 ตัวบน IEEE-14
+%  ตัวเลขทุกตัวคัดจาก report_ieee14_switching_decision_basis_th.tex
+%
+%  BUILD:  xelatex report_ieee14_switching_proof_summary_th.tex   (2 ครั้ง)
+%          ต้องรันจาก docs/source/ เพราะ path ของฟอนต์เป็น relative
+%=============================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[a4paper,top=1.3cm,bottom=1.2cm,left=1.6cm,right=1.6cm]{geometry}
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\setmainfont[Path={fonts/TH Sarabun PSK V-1/},Extension=.ttf,
+  UprightFont={THSarabun},BoldFont={THSarabun Bold},
+  ItalicFont={THSarabun Italic},BoldItalic={THSarabun BoldItalic}]{THSarabun}
+\usepackage{amsmath,amssymb,booktabs,array,float}
+\usepackage[table]{xcolor}
+\usepackage{enumitem,fancyhdr,caption,titlesec}
+
+\definecolor{navy}{RGB}{25,55,95}
+\definecolor{ok}{RGB}{0,110,70}
+\definecolor{no}{RGB}{170,40,35}
+\definecolor{gray}{RGB}{90,98,108}
+
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\color{navy}\textbf{บทสรุปเชิงเทคนิค: ทำไมไม่ตรึง GFM ทั้ง 4 ตัว}}
+\fancyhead[R]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\setlength{\headheight}{14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlist[itemize]{leftmargin=1.4em,itemsep=0pt,topsep=2pt}
+\setlist[enumerate]{leftmargin=1.6em,itemsep=0pt,topsep=2pt}
+\captionsetup{font=small,labelfont=bf,skip=1pt}
+\renewcommand{\tablename}{ตารางที่}
+\titleformat{\section}{\normalfont\normalsize\bfseries\color{navy}}{\thesection}{0.6em}{}
+\titlespacing{\section}{0pt}{6pt}{2pt}
+\titleformat{\subsection}{\normalfont\small\bfseries\color{navy}}{\thesubsection}{0.5em}{}
+\titlespacing{\subsection}{0pt}{4pt}{1pt}
+
+\newcommand{\pu}{\,\mathrm{pu}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\zworst}{\zeta_{\mathrm{worst}}}
+\newcommand{\zmin}{\zeta_{\min}}
+\newcommand{\mes}{\textcolor{ok}{\textbf{[วัดแล้ว]}}}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries\color{navy} บทสรุปเชิงเทคนิค: ทำไม IEEE-14 จึงไม่ตรึง GFM ทั้ง 4 ตัวหลัง SG ทริป}\\[2pt]
+{\small\color{gray} หลักฐานจาก \code{report\_ieee14\_switching\_decision\_basis\_th} — ทุกตัวเลขอ่านจาก artefact ที่ระบุชื่อได้}
+\end{center}
+
+\vspace{-4pt}
+\noindent
+เมื่อ SG ที่บัส 1 ทริป เหลือ IBR 4 ตัวที่บัส 2, 3, 6, 8 ซึ่งเป็น dual-mode
+GFL/GFM ได้ทั้งหมด เหตุใดจึงไม่ตรึง GFM ทั้ง 4 ตัวตั้งแต่ต้นจนจบ แต่เลือก 1--2 ตัว
+แบบ adaptive คำตอบมีสองข้อพิสูจน์ที่วัดได้จริง
+
+%=============================================================================
+\section{ข้อพิสูจน์ที่ 1: SCR ไม่ตอบสนองต่อจำนวนตัวที่ form}
+%=============================================================================
+
+\noindent
+โครงการนิยาม (\code{+stability/ibr\_scr\_metrics.m})
+\begin{equation}
+\mathrm{SCR}_i = \frac{|V_i|^2}{|Z_{th,ii}|\,S_{\mathrm{rated},i}},
+\qquad
+Z_{th,ii} = \bigl[\,\mathbf{Y}^{-1}\mathbf{e}_i\,\bigr]_i ,
+\label{eq:scr}
+\end{equation}
+โดย $\mathbf{Y}$ สร้างจากข้อมูลสาย (รวม tap และ phase shift) บวก shunt ที่บัส
+\emph{ไม่}รวม admittance ของโหลด และ bus อ้างอิงถูกต่อลงดิน ไม่มีเทอมใดใน
+$\mathbf{Y}$ ที่ขึ้นกับว่ามีคอนเวอร์เตอร์กี่ตัวกำลัง form \mes
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{หน้าต่าง} & $n$ & \textbf{min} & \textbf{mean} & \textbf{max} & \textbf{$<3$}\\
+\midrule
+ก่อนทริป (SG ยังอยู่)   & $168$   & $2.0892$ & $2.3439$ & $2.4803$ & $100.00\%$\\
+เกาะหลังทริป (SG หลุด) & $2760$  & $0.6501$ & $\mathbf{2.3015}$ & $2.8147$ & $\mathbf{100.00\%}$\\
+ทั้ง run               & $14716$ & $0.2944$ & $2.5271$ & $6.6726$ & $\mathbf{98.61\%}$\\
+\bottomrule
+\end{tabular}
+\caption{SCR ต่อ sample ที่บัสคอนเวอร์เตอร์ ช่วงเกาะเฉลี่ย $2.3015$ และต่ำกว่า
+WECC strong-grid floor ที่ $3$ อยู่ $100.00\%$ ของเวลาเปิดเกาะ (ทั้ง run $98.61\%$)
+ค่าต่ำสุด $0.2944$ เกิดตอน fault บัส 9 ไม่ใช่ตอน SG ทริป \mes}
+\end{table}
+
+\noindent
+แถวแรกกับแถวที่สองคือข้อสังเกตที่สำคัญ: ค่าเฉลี่ยขยับจาก $2.3439$ เป็น $2.3015$
+เท่านั้น SG ทริปแทบไม่ขยับ SCR เพราะ $Z_{th}$ ไม่รู้จักเครื่องกำเนิด
+สิ่งที่เปลี่ยนคือ\emph{ใครอยู่หลังบัส} ไม่ใช่อิมพีแดนซ์
+
+\begin{enumerate}
+\item \textbf{การสลับเป็น GFM ทำให้โครงข่ายแข็งขึ้นไม่ได้} พจน์อิมพีแดนซ์ใน
+      \eqref{eq:scr} สร้างจากข้อมูลสาย shunt ที่บัส และการต่อลงดินของ bus อ้างอิง
+      เท่านั้น การเพิ่ม former จึงเปลี่ยน $Z_{th}$ ไม่ได้เลย การเคลื่อนของ SCR
+      เกิดได้ทางตัวเศษ $|V_i|^2$ ที่วัดได้เท่านั้น ไม่ใช่ทางจำนวนตัว
+      (ข้อสรุปนี้ไม่กล่าวว่า SCR ไม่ขยับเลย)
+\item \textbf{โจทย์เปลี่ยนชนิด ไม่ใช่เปลี่ยนระดับ} REGC\_A คัดกรอง plant แบบ
+      current-source เพราะ PLL ต้องมีบัสที่แข็งพอจะล็อก เมื่อทั้งสี่ตัว form
+      ไม่เหลือ PLL ให้ป้องกัน คำถามกลายเป็นว่า \emph{voltage source 4 ตัว
+      แชร์กระแสบนโครงข่ายอิมพีแดนซ์สูงได้หรือไม่} ซึ่งเป็นคำถามที่เครือข่ายนี้
+      ตอบได้แย่ (ข้อพิสูจน์ที่ 2)
+\item \textbf{ขอบเขตที่ต้องกำกับ} ใน \code{ibr\_scr\_metrics.m:266--276} gate
+      ถูกบังคับเป็น profile \code{not\_applicable\_\allowbreak full\_state\_\allowbreak source\_model}
+      สำหรับ \code{eecon49\_dual} ให้ \code{eligible\_for\_scr = false},
+      \code{pass = true} ตัวเลขข้างบนจึงเป็น diagnostic ที่รันเผยแพร่ทุก sample
+      ไม่ใช่ gate ที่กำลังทำงาน \mes{} ข้อสรุปเรื่อง network invariance
+      ไม่ขึ้นกับข้อนี้ เพราะมันเป็นสมบัติของสมการ ไม่ใช่ของสถานะของ gate
+\end{enumerate}
+
+%=============================================================================
+\section{ข้อพิสูจน์ที่ 2: Damping Margin และความล้มเหลวเชิงพลวัต}
+%=============================================================================
+
+\noindent
+โครงการแจกแจงเซต forming ทั้งหมด $2^4-1 = 15$ เซต และแก้ equilibrium พร้อม
+ประกอบ full-KCL spectrum ของแต่ละเซต ผลคือ\textbf{มีเพียง 7 เซตจาก 15
+ที่ยอมรับได้} และ\textbf{เซตที่มี 3 ตัวทั้งสี่เซตไม่มีจุดสมดุลเลย} (coupled
+Newton ไม่ลู่เข้า residual $3.279$, $3.605$, $3.561$, $3.346\times10^{2}$)
+สิ่งที่ gate จริงคือการมีอยู่ของ equilibrium + ขีดจำกัดอุปกรณ์ + full-KCL SSSA
+ด้วย damping-ratio floor $\zmin = 0.05$ ที่ทุก mode ของ decision spectrum
+ประเมินที่ finite-difference step สามค่าที่ freeze ไว้ ส่วน
+$\gamma_{\mathrm{req}} = 0.1$\,rad/s เป็น\emph{ตัวจัดอันดับ}ของ candidate
+ที่ admissible แล้วเท่านั้น ไม่ใช่ gate --- margin ติดลบได้ขณะยัง admissible
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{เซต forming} & $\omega$ (rad/s) & $\zworst$ & \textbf{ผล}\\
+\midrule
+$\{5\}$, $\{4\}$, $\{3\}$, $\{2\}$ (1 ตัว) & $-0.1554$ ถึง $-0.3280$ & $0.2569$--$0.2676$ & ยอมรับได้\\
+$\{2,4\}$, $\{3,4\}$ (2 ตัว) & $-0.5617$, $\mathbf{-0.5681}$ & $0.2549$, $0.2560$ & ยอมรับได้ (หน่วงดีที่สุด)\\
+$\{2,3,4\}$, $\{2,3,5\}$, $\{2,4,5\}$, $\{3,4,5\}$ & --- & --- & \textcolor{no}{\textbf{ไม่มี equilibrium}}\\
+$\{2,3,4,5\}$ (4 ตัว) & $-0.4829$ & \textcolor{no}{$\mathbf{0.1223}$} & ยอมรับได้ แต่หน่วงแย่ที่สุด\\
+\bottomrule
+\end{tabular}
+\caption{$\zworst$ ของอีกหกเซตที่ยอมรับได้ (หนึ่งตัวทั้งสี่ บวก $\{2,4\}$
+และ $\{3,4\}$) อยู่ที่ $0.2549$--$0.2676$ ส่วนเซต 4 ตัวที่เจ็ดอยู่ที่
+$\mathbf{0.1223}$ คือ\textbf{ลดลงเกินครึ่ง} ทั้งที่ยังผ่าน floor $0.05$ \mes}
+\end{table}
+
+\noindent
+floor $0.05$ เป็นข้อกำหนดขั้นต่ำ ไม่ใช่เป้าหมาย เซต 4 ตัว\emph{ผ่าน} gate
+แต่แย่ที่สุดในบรรดาเซตที่รอดทั้งหก และการเพิ่มจาก 2 ตัวเป็น 3 ตัวไม่ใช่การ
+ประนีประนอม แต่คือการตกไปที่บริเวณที่แก้สมการไม่ได้เลย
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+\textbf{Arm} & \textbf{ไปถึง} & \textbf{sample} & \textbf{reclose} & \textbf{การสิ้นสุด}\\
+\midrule
+\code{locked\_gfl}  & $20.0000$\,s & $43$   & ---        & \code{noVoltageFormingSource}\\
+\code{pinned\_gfm4} & \textcolor{no}{$\mathbf{25.4852}$\,\textbf{s}} & $837$ & ไม่เคยขอ & \code{adaptiveDtMin}\\
+\code{pinned\_gfm2} & $250.0000$\,s & $1761$ & $154.0244$ & \code{SUCCESS}\\
+\code{adaptive}     & $250.0000$\,s & $3679$ & $159.2519$ & \code{SUCCESS}\\
+\bottomrule
+\end{tabular}
+\caption{หก arm จาก option set เดียวกัน \code{pinned\_gfm4} ตายที่ $25.4852$\,s
+คือ\textbf{รอดได้เพียง $5.4852$ วินาทีหลัง SG ทริป} ก่อนถึง load step และก่อน
+fault ใด ๆ \mes{} ตารางนี้ยังแสดงว่า\emph{การตรึง}ไม่ใช่ตัวปัญหา:
+\code{pinned\_gfm2} ตรึงสองตัวแล้วไปถึง $250$\,s หลักฐานจึงชี้ที่\emph{จำนวนสี่}
+ไม่ใช่ที่โหมด pinned}
+\end{table}
+
+\noindent
+สภาพ terminal ของ \code{pinned\_gfm4} ไม่ใช่การสูญเสีย damping แบบค่อยเป็นค่อยไป
+แต่คือ \textbf{frequency splitting}: ใน sample ที่ยอมรับได้ครั้งสุดท้าย IBR2
+วิ่งที่ $64.9947$\,Hz ขณะที่ IBR3, IBR6, IBR8 อยู่ที่ $59.1383$, $59.1809$,
+$59.1946$\,Hz --- \textbf{ฉีกห่างกัน $5.86$\,Hz} ตัวหนึ่งหลุดออกไปจากอีกสามตัว
+จากนั้น step controller รายงาน \textbf{Newton ไม่ลู่เข้าติดกัน $398$ ครั้ง}
+และยุติที่ $\Delta t_{\min} = 6.104\times10^{-6}$\,s \mes
+
+\textbf{ทำไมเซตที่ admissible ยังตายได้:} gate การยอมรับเป็นข้อความเกี่ยวกับ
+\emph{equilibrium} พิสูจน์ด้วยการ linearise รอบจุดปฏิบัติการ และไม่พูดถึงวิถีที่
+เดินทางมาถึงเลย บันทึก defect วัดช่องว่างนี้ด้วยการรันอินพุตเดียวกันจากสอง
+initial device state
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Arm} & \textbf{initial device state} & \textbf{ผล} & \textbf{excursion}\\
+\midrule
+ARM A & สถานะที่ production run มาถึงจริง & \textcolor{no}{\textbf{SLIPS}} & $4358^{\circ}$\\
+ARM B & สถานะ equilibrium ที่ certified ของคอนฟิกูเรชันเดียวกัน & \textbf{SYNC} & $6.6^{\circ}$\\
+\bottomrule
+\end{tabular}
+\caption{คอนฟิกูเรชันเดียวกัน อินพุตเดียวกัน ต่างแค่สถานะตั้งต้น พิกัดที่แบก
+ความต่างคือ integrator ของ outer voltage loop $gfm\_xi\_Vd/xi\_Vq$ ของ IBR2
+ซึ่งยืนที่ $0.144253$ ตอนมาถึง เทียบกับ $0.199658$ ที่ equilibrium ที่ certified
+--- \textbf{เคลื่อนหลุด $28\%$} ในพิกัดที่ปริมาณบัสใดก็ไม่สะท้อน \mes}
+\end{table}
+
+\noindent
+\textbf{ขอบเขตของตารางนี้} การทดลอง ARM A/B วัดบน all-four transition คนละครั้ง
+กับที่ทำให้ \code{pinned\_gfm4} ตาย คือวัดที่ load-step commit $t = 53.4025$\,s
+ใน baseline ก่อนมี certificate ไม่ใช่ที่ $25.4852$\,s ทั้งสองเป็นความล้มเหลว
+\emph{ประเภทเดียวกัน} (equilibrium ที่ยอมรับได้ แต่วิถีที่มาถึงอยู่นอก basin of
+attraction ของมัน) แต่ไม่ใช่เหตุการณ์เดียวกัน และบันทึกนั้นไม่ได้ root-cause
+การตายของ arm ที่ตรึงไว้ สรุปเชิงโครงสร้างคือ เซต 3 ตัวล้ม test ที่\emph{อ่อนกว่า}
+(equilibrium ไม่มีอยู่เลย) ส่วนเซต 4 ตัวผ่าน test ของ equilibrium แต่ล้ม test ของ
+\emph{วิถี} ซึ่งเป็นการตรวจที่ eigenvalue มองไม่เห็น
+
+%=============================================================================
+\section{บทสรุปสำหรับตอบปากเปล่า}
+%=============================================================================
+
+\begin{itemize}
+\item \textbf{``More GFM is NOT safer'' — จริงทั้งสองทาง} ขอบล่างวัดได้และแข็ง:
+      \code{locked\_gfl} (ไม่มี former เลย) ตายที่ $t = 20.0000$\,s คือวินาทีที่
+      SG ทริปเลย ขอบบนก็วัดได้ และมันไม่ใช่สี่: \code{pinned\_gfm4} ตายที่
+      $25.4852$\,s
+\item \textbf{การเพิ่ม GFM ไม่ได้ทำให้กริดแข็งขึ้น} พจน์อิมพีแดนซ์ในสมการ SCR
+      สร้างจากข้อมูลสาย shunt และการต่อลงดินของ bus อ้างอิงเท่านั้น จำนวนตัว
+      เปลี่ยนมันไม่ได้ ช่วงเกาะเฉลี่ย $2.3015$ ต่ำกว่าเกณฑ์ $3$ อยู่ $100.00\%$ ของเวลา
+      เปิดเกาะ ($98.61\%$ ของทั้ง run) การเปิดครบ 4 ตัวจึงไม่ได้แก้ปัญหา weak grid
+      แต่ย้ายปัญหาไปเป็นการให้ voltage source 4 ตัวแชร์กระแสกันเอง
+\item \textbf{จำนวนที่ถูกต้องคือจำนวนที่ต่ำที่สุดที่ยัง admissible} เซต 2 ตัว
+      \emph{หน่วงดีกว่า}เซต 4 ตัวเกือบเท่าตัว ($\zworst$ $0.2549$--$0.2676$
+      เทียบกับ $0.1223$) และเซต 3 ตัวไม่มี equilibrium เลย ทางออกเดียวที่
+      สอดคล้องกับหลักฐานคือเริ่มจาก 1 ตัวแล้วขยายเป็น 2 ตัวเมื่อจำเป็นจริง
+      ซึ่งเป็นสิ่งที่ \emph{minimum-cardinality admissible set} ทำ
+\item \textbf{ข้อโต้แย้งที่ตรงข้ามและต้องยกมาด้วย} บันทึก defect มีกรณีที่วัดได้
+      ซึ่งคอนฟิกูเรชัน 4 ตัวรับ load deficit $2.0\pu$ ได้แต่ 2 ตัวรับไม่ได้
+      (load-severity sweep ในบันทึก defect ที่ระดับโหลดอื่น ไม่ใช่ run ที่ส่งมอบ
+      และไม่ใช่ตารางโหลดฐานที่ freeze ไว้)
+      ข้อสรุปที่ป้องกันได้จึงไม่ใช่ ``น้อยกว่าดีกว่า'' แต่คือ
+      \textbf{จำนวนไม่ใช่พารามิเตอร์อิสระ และเสถียรภาพไม่ monotone ในจำนวน}
+      จึงต้องเลือกเป็นรายคอนฟิกูเรชันจาก margin ที่ certified และจากวิถีที่มาถึง
+\end{itemize}
+
+\end{document}

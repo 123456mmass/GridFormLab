@@ -1,4 +1,6 @@
 function tf = is_smib_case(case_data)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %IS_SMIB_CASE True if a case struct is a Kundur SMIB stability case.
 %   SMIB cases carry a .model field ('A'/'B'/'C'/'D') and machine/network
 %   structs but no bus_data/line_data, so they cannot be solved by the

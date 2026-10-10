@@ -1,4 +1,6 @@
 function app = toggle_theme(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %TOGGLE_THEME Switch between light and dark themes by rebuilding in place.
 %   The whole interface is re-created inside the existing figure so that
 %   every widget picks up the new palette, the live app/fig references stay

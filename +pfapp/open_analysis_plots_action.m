@@ -1,4 +1,6 @@
 function app = open_analysis_plots_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %OPEN_ANALYSIS_PLOTS_ACTION Build 3D benchmark and CPF reference figures.
 %   Returns modified app struct.
 

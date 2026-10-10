@@ -3,6 +3,11 @@ function tests = test_ieee14_1sg_4ibr_phase8_real()
 %   Verifies real production devices (SG1 + 4 dual-mode IBRs) integrate with
 %   mixed_equilibrium_solve using index-based config (no sg_status global rule).
 %   Updated for Phase B1: uses build_ieee14_sg_ibr_devices (SG+IBR together).
+%
+%   Retargeted 2026-09-26: the production builder now emits the surviving
+%   ibr_eecon49_dual family (nx=16) rather than the retired 20-state dual.
+%   The device-identity assertions below were re-derived from the builder's own
+%   output contract, and the source guard now names files that exist.
 tests = functiontests(localfunctions);
 end
 
@@ -95,18 +100,21 @@ testCase.verifyEqual(numel(devices), 5, '5 devices (SG1 + 4 IBRs).');
 testCase.verifyEqual(devices(1).device_type, 'sg_emf6_composite', 'SG1 is real EMF6.');
 testCase.verifyEqual(devices(1).nx, 6, 'AbsTol', 0, 'SG1 nx=6.');
 for k = 2:numel(devices)
-    testCase.verifyEqual(devices(k).device_type, 'ibr_dual_mode', ...
-        'IBR is real dual_mode.');
-    testCase.verifyEqual(devices(k).nx, 20, 'AbsTol', 0, 'real IBR nx=20.');
+    testCase.verifyEqual(devices(k).device_type, 'ibr_eecon49_dual', ...
+        'IBR is the real surviving dual family.');
+    testCase.verifyEqual(devices(k).nx, 16, 'AbsTol', 0, ...
+        'real IBR nx=16 (common plant 3 + GFL 6 + GFM 7).');
 end
 end
 
 % =========================================================================
 function test_no_external_solver(testCase)
+% Retargeted 2026-09-26: the two retired files are gone from +ibr/, so the
+% guard covers the builder plus the one surviving IBR device model instead of
+% paths that no longer exist (fileread would have errored rather than checked).
 paths = { ...
     fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr', 'build_ieee14_sg_ibr_devices.m'), ...
-    fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr', 'dual_mode_ibr_model.m'), ...
-    fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr', 'regfm_b1_vsg_model.m')};
+    fullfile(fileparts(fileparts(mfilename('fullpath'))), '+ibr', 'eecon49_dual_mode_model.m')};
 for p = 1:numel(paths)
     src = fileread(paths{p});
     for fn = {'fsolve','optimoptions','fmincon','fminsearch','lsqnonlin','optimset'}

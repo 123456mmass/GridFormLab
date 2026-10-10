@@ -77,9 +77,15 @@ verifyLessThanOrEqual(testCase,audit.max_current_jump,1e-10);
 end
 
 function test_other_family_is_bit_identical_noop(testCase)
+% The conditioning helper must no-op for any device that is not an EECON49
+% dual.  Retargeted 2026-09-26: the probe previously relabelled the device as
+% a retired decoupled family's device_type; a name no longer produced by any
+% factory.  A synthetic unregistered name is the stronger probe, because it
+% cannot accidentally coincide with a family the helper might later learn to
+% support.
 dae = testCase.TestData.dae;
 k = testCase.TestData.dual(1);
-dae.devices(k).device_type = 'ibr_decoupled_dual';
+dae.devices(k).device_type = 'ibr_not_an_eecon49_family';
 [before,after] = all_gfl_modes(dae);
 before{k} = 'GFM'; after{k} = 'GFM';
 ec = right_context(dae,after);

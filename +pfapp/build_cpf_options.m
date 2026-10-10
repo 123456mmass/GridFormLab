@@ -1,4 +1,6 @@
 function options = build_cpf_options(app, case_data, method)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %BUILD_CPF_OPTIONS Build CPF options struct with optional auto-calibration.
 
 if nargin < 2 || isempty(case_data)

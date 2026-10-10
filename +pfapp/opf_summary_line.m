@@ -1,4 +1,6 @@
 function line = opf_summary_line(result)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 if isfield(result, 'max_power_balance_mismatch')
     if isfield(result, 'line_loading_percent') && ~isempty(result.line_loading_percent)
         line_text = sprintf('max line=%.1f%%', max(result.line_loading_percent));

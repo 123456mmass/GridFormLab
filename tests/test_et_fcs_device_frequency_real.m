@@ -14,13 +14,14 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(tc)
+p=path; tc.addTeardown(@()path(p));
 addpath(fileparts(fileparts(mfilename('fullpath'))));
 pf_init_paths();
-sc = cases.scenario_ne39_5sg_5ibr();
+sc = cases.scenario_ne39_5sg_5ibr(struct('study_capability',true));
 devs = stability.build_mixed_resource_devices(sc.case_data, sc.resources, sc.scenario_opt);
 eq = stability.mixed_equilibrium_solve(sc.case_data, struct('devices',devs), ...
     struct('verbose',false));
-tc.assumeTrue(eq.converged, eq.failure_reason);
+tc.assertTrue(eq.converged, eq.failure_reason);
 % Offsets.
 offs = zeros(1,numel(devs)); uoffs = offs;
 xo=0; uo=0;
@@ -28,12 +29,13 @@ for k=1:numel(devs)
     offs(k)=xo; uoffs(k)=uo; xo=xo+devs(k).nx; uo=uo+devs(k).nu;
 end
 % A GFM variant: rebuild with IBR30 starting grid-forming.
-res2 = sc.resources;
-gi = find(cellfun(@(r) strcmp(char(r),'IBR30'), {res2.resource_id}),1);
-res2(gi).initial_mode = 'gfm';
-devs2 = stability.build_mixed_resource_devices(sc.case_data, res2, sc.scenario_opt);
-eq2 = stability.mixed_equilibrium_solve(sc.case_data, struct('devices',devs2), ...
+sc2 = cases.scenario_ne39_5sg_5ibr(struct('study_capability',true, ...
+    'initial_modes',struct('device_id','IBR30','mode','gfm')));
+gi = find(strcmp({sc2.resources.resource_id},'IBR30'),1);
+devs2 = stability.build_mixed_resource_devices(sc2.case_data,sc2.resources,sc2.scenario_opt);
+eq2 = stability.mixed_equilibrium_solve(sc2.case_data, struct('devices',devs2), ...
     struct('verbose',false));
+tc.assertTrue(eq2.converged,eq2.failure_reason);
 tc.TestData.sc = sc; tc.TestData.devs = devs; tc.TestData.eq = eq;
 tc.TestData.offs = offs; tc.TestData.uoffs = uoffs;
 tc.TestData.devs2 = devs2; tc.TestData.eq2 = eq2; tc.TestData.gi = gi;
@@ -103,7 +105,7 @@ end
 
 function test_gfm_reads_vsg_omega(tc)
 sc=tc.TestData.sc; devs2=tc.TestData.devs2; eq2=tc.TestData.eq2;
-tc.assumeTrue(eq2.converged, eq2.failure_reason);
+tc.assertTrue(eq2.converged, eq2.failure_reason);
 gi=tc.TestData.gi;
 o=0; uo=0;
 for k=1:gi-1, o=o+devs2(k).nx; uo=uo+devs2(k).nu; end

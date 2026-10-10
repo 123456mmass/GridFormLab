@@ -24,7 +24,13 @@ pf_init_paths();
 
 max_iter = pf_get_option(options, 'max_iter', 20);
 tolerance = pf_get_option(options, 'tolerance', 1e-6);
-plot_results = pf_get_option(options, 'plot_results', true);
+% Plots are OPT-IN.  This used to default true, so every caller that did not
+% pass the option -- test-suite solves, batch scripts, full-test runs -- threw
+% a figure window per call (the owner, 2026-09-26: "รำคาญกราฟเด้งไม่หยุด";
+% the windows were also stale portrait plots, not requested output).  Every
+% caller that wants the figure already asks for it by name: +examples/ pass
+% true explicitly and the pfapp GUI is wired through its own checkbox.
+plot_results = pf_get_option(options, 'plot_results', false);
 verbose = pf_get_option(options, 'verbose', true);
 enforce_q_limits = pf_get_option(options, 'enforce_q_limits', true);
 q_limit_tolerance = pf_get_option(options, 'q_limit_tolerance', 1e-6);
@@ -132,7 +138,7 @@ function results = solve_model(model, max_iter, tolerance, verbose)
 %     8. check Newton step finite
 %     9. update state
 %    10. check updated state finite
-%    11. enforce fixed REF/PV quantities (non-positive V reset)
+%    11. enforce fixed SLACK/PV quantities (non-positive V reset)
 rcond_threshold = 1e-13;   % declared upfront; matches nonlinear_newton.m:28
 
 x = pf_initial_state(model);
@@ -240,7 +246,7 @@ while iter < max_iter
         return;
     end
 
-    % (10) Enforce fixed REF/PV quantities (non-positive V reset). Runs only
+    % (10) Enforce fixed SLACK/PV quantities (non-positive V reset). Runs only
     % when x is finite, which is now guaranteed by step (9).
     for i = 1:model.n_V
         v_pos = model.n_delta + i;

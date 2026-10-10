@@ -6,6 +6,11 @@ function tests = test_ieee14_ibr_switching_comparison()
 %   deterministic repeat, sample-key uniqueness) and then executes the real
 %   15 s runner ONCE as acceptance evidence.
 %
+%   Retargeted 2026-09-26: the mission profile now builds the surviving
+%   eecon49_dual family, so the C arms reach their reclose request instead of
+%   dying at 5.09 s. The C-arm expectations were re-measured from the surviving
+%   model's own trajectory; see the two C tests for what changed and why.
+%
 %   All assertions go through PUBLIC entry points only:
 %     stability.run_hybrid_case, stability.plot_ibr_switching_comparison,
 %     scripts/run_ieee14_ibr_switching_comparison.
@@ -178,29 +183,32 @@ tc.verifyEqual(r.failure_id, ...
 end
 
 function test_c_workflow_fails_closed_at_non_synchronous_state(tc)
-% C-workflow must FAIL CLOSED on the mission-profile (regfm_b1_dual) network.
-% It does, and the mechanism MEASURED on the current tree is the composite
-% Newton step, not the reclose transaction: the run stops at
-% ts_simulate_ibr_hybrid:stepNewton at t=5.09 s, 90 ms after the SG trip at
-% 5.0 s, with residual 5.898e-05. The reclose request is scheduled for 8.0 s and
-% is therefore never reached -- reclose_status stays NOT_REQUESTED and no
-% sg_reclose event is logged.
+% The relaxed synchronism override must NOT be able to buy a converged run.
+% That is the property this test protects, and it is unchanged.
 %
-% This test previously asserted ts_simulate_ibr_hybrid:recloseTransaction plus a
-% reclose_diag payload, i.e. it asserted that the run survived to 8.0 s and was
-% refused AT the breaker close. On this tree it does not get there, so those
-% assertions were describing a trajectory the code no longer produces. The
-% fail-closed property the test exists to protect -- the relaxed synchronism
-% override must NOT be able to produce a converged run -- is unchanged and is
-% what is asserted below, together with the actual stop and the fact that the
-% relaxed guard never got the chance to pass a close.
+% RETARGETED 2026-09-26 (mission profile moved from the retired 20-state
+% WECC/REGFM_B1 dual shell to the surviving 16-state eecon49_dual family).
+% MEASURED on the current tree: the run now survives the SG trip AND reaches
+% its reclose request, committing sg_reclose at t=8.04 s, then stops at
+% ts_simulate_ibr_hybrid:stepNewton at t=8.13 s with converged=false.
 %
-% The transaction-level reclose mechanics remain covered by
-% test_ieee14_ibr_sg_reclose_workflow (right_kcl_norm < 1e-6 from a synchronous
-% state). The stop itself is the wall class recorded as TS-2026-08-13-03 /
-% TS-2026-09-03-01; the suite's eecon49 arms carry the anti_windup_blend
-% regularization of TS-2026-09-04-01, this mission-profile arm does not.
-% Labelled ASSUMED_DIAGNOSTIC.
+% Reaching the reclose is what this arm is FOR, not a leak: the runner header
+% documents C-workflow as "relaxed test-guard; exercises reclose/handback/
+% reselection; labeled ASSUMED_DIAGNOSTIC". The previous revision of this test
+% asserted NOT_REQUESTED / isnan(actual_reclose_time) / no sg_reclose logged,
+% because on the retired model the run died at 5.09 s -- 90 ms after the trip --
+% and never got as far as the request. Those three assertions described that
+% trajectory, not the synchronism contract, so they are dropped here rather
+% than inverted into new expectations.
+%
+% What replaces them is the honest reading of a relaxed guard: a close accepted
+% under dV_max=10 / df_max=10 / dtheta_max=180 is the DEFINED behaviour of an
+% override that deliberately admits everything, so the test asserts the close
+% was taken and that the run STILL failed closed afterwards. The refusal of a
+% non-synchronous close by the PHYSICAL guard is covered by
+% test_c_natural_sync_timeout_physical_evidence in this file (SYNC_TIMEOUT, no
+% close accepted), and the transaction-level reclose mechanics by
+% test_ieee14_ibr_sg_reclose_workflow. Labelled ASSUMED_DIAGNOSTIC.
 s = cases.scenario_ieee14_1sg_4ibr();
 [scenario, selection] = stability.ibr_configure_scenario(s, struct());
 tc.assertTrue(selection.ready);
@@ -217,19 +225,22 @@ r = stability.run_hybrid_case(scenario, opt);
 tc.verifyFalse(r.converged, ...
     'C-workflow must fail closed under the relaxed synchronism override.');
 tc.verifyEqual(r.failure_id, 'ts_simulate_ibr_hybrid:stepNewton');
-% The stop is after the trip and before the scheduled reclose request.
+% The stop is after the trip AND after the reclose request it reached.
 tc.verifyGreaterThan(r.t(end), 5.0);
-tc.verifyLessThan(r.t(end), 8.0);
-% The three scheduled events up to the stop DID execute, so the fail-closed is
-% not a refusal to start.
+tc.verifyGreaterThan(r.t(end), 8.0);
+% The scheduled events DID execute, including the reclose, so the fail-closed
+% is neither a refusal to start nor a run that never exercised the workflow.
 applied_types = string({r.event_log(logical([r.event_log.applied])).type});
-tc.verifyTrue(all(ismember(["fault_on","fault_clear","sg_trip"],applied_types)), ...
-    'fault_on, fault_clear and sg_trip must all have been applied.');
-% No reclose was attempted, so no close can have been wrongly accepted.
-tc.verifyEqual(char(string(r.reclose_status)),'NOT_REQUESTED');
-tc.verifyTrue(isnan(r.actual_reclose_time));
-tc.verifyFalse(any(strcmp({r.event_log.type},'sg_reclose')), ...
-    'No sg_reclose may be logged when the run stops before the request.');
+tc.verifyTrue(all(ismember(["fault_on","fault_clear","sg_trip","sg_on"],applied_types)), ...
+    'fault_on, fault_clear, sg_trip and sg_on must all have been applied.');
+% The relaxed guard admitted the close (its defined behaviour); the run still
+% did not converge, which is the fail-closed claim.
+tc.verifyEqual(char(string(r.reclose_status)), 'SUCCESS', ...
+    'The relaxed override admits the close by construction.');
+tc.verifyTrue(any(strcmp({r.event_log.type}, 'sg_reclose')), ...
+    'The reclose transaction must have been attempted and logged.');
+tc.verifyLessThan(r.actual_reclose_time, r.t(end), ...
+    'The stop is after the accepted close, not at it.');
 end
 
 function test_c_natural_sync_timeout_physical_evidence(tc)
@@ -237,21 +248,27 @@ function test_c_natural_sync_timeout_physical_evidence(tc)
 % 3.0/3.1, trip 5.0, sg_on 8.0, t_end 15.0, NO synchronism_overrides, NO
 % delays_overrides.
 %
-% MEASURED on the current tree: this arm does not reach its reclose request. It
-% stops at ts_simulate_ibr_hybrid:stepNewton at t=5.09 s -- the same stop, at the
-% same time and residual (5.898e-05), as the relaxed-override arm above, which is
-% itself the evidence that the stop is upstream of the synchronism guard and
-% independent of it. reclose_status is NOT_REQUESTED and no sg_reclose_timeout is
-% logged, because the timeout can only be reported by a run that survives to
-% 8.0 s and then waits out its 5.0 s window.
+% RETARGETED 2026-09-26 (mission profile moved from the retired 20-state
+% WECC/REGFM_B1 dual shell to the surviving 16-state eecon49_dual family).
+% MEASURED on the current tree, and this is the outcome the runner header has
+% always documented for this arm: the run survives to the request at 8.0 s,
+% waits out the case-owned 5.0 s window (case_ieee14_1sg_4ibr_auto_vsg
+% synchronism.timeout_s = 5.0), and at t=13.0 s logs an unapplied
+% sg_reclose_timeout with reclose_status=SYNC_TIMEOUT and
+% actual_reclose_time=NaN. No close is accepted. The run itself converges to
+% t_end=15.0 s: the SG simply stays disconnected.
 %
-% This test previously asserted SYNC_TIMEOUT and a timeout event at ~13.0 s. That
-% describes a 15 s trajectory this mission-profile arm no longer produces, so it
-% was asserting an outcome the code cannot reach rather than a property of the
-% synchronism logic. What is asserted now is the honest pair: the run does NOT
-% converge, and it does NOT fabricate a reclose -- neither an accepted one nor a
-% timeout it never measured. The timeout mechanism itself is covered on a
-% surviving trajectory in test_ieee14_ibr_sg_reclose_workflow.
+% The previous revision asserted converged=false at
+% ts_simulate_ibr_hybrid:stepNewton, NOT_REQUESTED and t(end) in (5,8), because
+% on the retired model the run died at 5.09 s and never reached the request.
+% Those assertions described that trajectory, not the synchronism logic, so
+% they are replaced here by the measured contract above -- the PHYSICAL guard
+% refusing a non-synchronous close is exactly what this arm exists to show, and
+% the timeout is the mechanism that refuses it.
+%
+% The transaction-level reclose mechanics remain covered by
+% test_ieee14_ibr_sg_reclose_workflow (right_kcl_norm < 1e-6 from a synchronous
+% state).
 s = cases.scenario_ieee14_1sg_4ibr();
 [scenario, selection] = stability.ibr_configure_scenario(s, struct());
 tc.assertTrue(selection.ready);
@@ -262,21 +279,24 @@ opt = struct('t_end', 15.0, 'dt', 0.01, 'verbose', false, ...
     'automatic_gfm_switching', true), 'plot_results', false);
 % NO synchronism_overrides, NO delays_overrides.
 r = stability.run_hybrid_case(scenario, opt);
-tc.verifyFalse(r.converged);
-tc.verifyEqual(r.failure_id, 'ts_simulate_ibr_hybrid:stepNewton');
 % The request is still recorded as scheduled, and no close is claimed.
 tc.verifyEqual(r.requested_sg_on_time, 8.0);
-tc.verifyEqual(char(string(r.reclose_status)), 'NOT_REQUESTED');
-tc.verifyTrue(isnan(r.actual_reclose_time));
-% The stop lands between the trip and the request, so no timeout can have been
-% measured -- and none may be reported.
-tc.verifyGreaterThan(r.t(end), 5.0);
-tc.verifyLessThan(r.t(end), 8.0);
-tc.verifyFalse(any(strcmp({r.event_log.type}, 'sg_reclose_timeout')), ...
-    'A timeout must not be logged by a run that never reached its request.');
-% Identical stop with and without the relaxed override is what shows the stop is
-% not the synchronism guard: the guard cannot act before the request exists.
-tc.verifyTrue(all(ismember(["fault_on","fault_clear","sg_trip"], ...
+tc.verifyEqual(char(string(r.reclose_status)), 'SYNC_TIMEOUT');
+tc.verifyTrue(isnan(r.actual_reclose_time), ...
+    'A timed-out request must not record a reclose time.');
+% The timeout is measured: it lands one full case-owned window after the
+% request (8.0 + 5.0 = 13.0), not at some earlier or later point.
+tc.verifyGreaterThan(r.t(end), 13.0);
+tc.verifyTrue(any(strcmp({r.event_log.type}, 'sg_reclose_timeout')), ...
+    'The timeout must be logged.');
+timeout_entry = r.event_log(strcmp({r.event_log.type}, 'sg_reclose_timeout'));
+tc.verifyFalse(timeout_entry.applied, 'A timeout is not a committed close.');
+tc.verifyEqual(timeout_entry.t, 13.0, 'AbsTol', 1e-9, ...
+    'Timeout fires at the request plus the case-owned 5.0 s window.');
+tc.verifyFalse(any(strcmp({r.event_log.type}, 'sg_reclose')), ...
+    'No sg_reclose may be logged when the physical guard refuses the close.');
+% The scheduled events DID execute, so the timeout is not a refusal to start.
+tc.verifyTrue(all(ismember(["fault_on","fault_clear","sg_trip","sg_on"], ...
     string({r.event_log(logical([r.event_log.applied])).type}))));
 end
 
@@ -529,20 +549,21 @@ tc.verifyTrue(isfield(results, 'C_natural') && isfield(results, 'C_workflow'));
 % Scenario B must fail closed (exact failure, C6).
 tc.verifyEqual(metrics.B.failure_id, ...
     'ts_simulate_ibr_hybrid:noVoltageFormingSource');
-% C-natural does NOT reach its reclose request on this tree: it stops at
-% ts_simulate_ibr_hybrid:stepNewton at t=5.09 s, before the 8.0 s request, so its
-% synchronization_outcome cannot be SYNC_TIMEOUT (a timeout is only measurable by
-% a run that survives its request plus the 5 s window). Asserting SYNC_TIMEOUT
-% here was asserting a trajectory the mission-profile arm no longer produces --
-% see test_c_natural_sync_timeout_physical_evidence in this file for the measured
-% values and why the stop is upstream of the synchronism guard. What this
-% acceptance run must show is that the arm fails closed and claims no close.
-tc.verifyFalse(metrics.C_natural.converged, ...
-    'C-natural must not converge on this tree.');
-tc.verifyEqual(metrics.C_natural.failure_id, ...
-    'ts_simulate_ibr_hybrid:stepNewton');
+% C-natural reaches its reclose request and is refused by the PHYSICAL guard:
+% MEASURED on this tree (2026-09-26, mission profile on the surviving
+% eecon49_dual family) it runs to t_end=15.0 s, logs an unapplied
+% sg_reclose_timeout at t=13.0 s and reports synchronization_outcome
+% SYNC_TIMEOUT with no close accepted. That is the contract the runner header
+% documents for this arm. The acceptance run must show the physical guard
+% refused the close -- not that the run died early.
+tc.verifyEqual(metrics.C_natural.synchronization_outcome, 'SYNC_TIMEOUT', ...
+    'The physical synchronism guard must time out rather than accept a close.');
 tc.verifyFalse(strcmp(metrics.C_natural.synchronization_outcome,'SUCCESS'), ...
-    'No successful reclose may be claimed by a run that stops before its request.');
+    'No successful reclose may be claimed by the physical arm.');
+% C-workflow (relaxed test-guard) is documented to exercise the reclose path,
+% and still must not converge.
+tc.verifyFalse(metrics.C_workflow.converged, ...
+    'The relaxed test-guard arm must still fail closed.');
 tc.verifyTrue(isfield(plot_paths, 'main') && isfile(char(plot_paths.main)));
 tc.verifyTrue(isfield(plot_paths, 'workflow') && isfile(char(plot_paths.workflow)));
 tc.verifyTrue(isfield(plot_paths, 'delay') && isfile(char(plot_paths.delay)));

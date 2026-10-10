@@ -1,8 +1,9 @@
-function folder = probe_ne39_short_trip(composition,initial_gfm_ids)
+function folder = probe_ne39_short_trip(composition,initial_gfm_ids,target_gfm_ids)
 %PROBE_NE39_SHORT_TRIP ทดสอบ production trip จริงก่อนขยาย horizon.
 arguments
     composition (1,1) string = "1sg_9ibr"
     initial_gfm_ids (1,:) string = "IBR32"
+    target_gfm_ids (1,:) string = strings(1,0)
 end
 root=pf_init_paths();
 folder=fullfile(root,'output','diagnostics', ...
@@ -17,6 +18,18 @@ if composition=="5sg_5ibr", s=cases.scenario_ne39_5sg_5ibr(so);
 else, s=cases.scenario_ne39_1sg_9ibr(so); end
 e=struct('enabled',true,'event_profile','sg_cycle','sg_trip',.02, ...
     'sg_on',.1,'automatic_gfm_switching',true);
+if ~isempty(target_gfm_ids)
+    ids=string({s.resources.resource_id});
+    if numel(unique(target_gfm_ids))~=numel(target_gfm_ids) || ...
+            ~all(ismember(target_gfm_ids,ids(strcmp({s.resources.resource_type},'ibr'))))
+        error('probe_ne39_short_trip:target','target ต้องเป็นชุด online IBR ที่ไม่ซ้ำ');
+    end
+    selected=find(ismember(ids,target_gfm_ids));
+    e.gfm_selection_mode='manual_override';
+    e.selected_gfm_indices=selected;
+    e.n_gfm_required=numel(selected);
+    e.reference_resource_index=selected(1);
+end
 op=struct('t_end',.12,'dt',.005,'verbose',false,'ibr_events',e, ...
     'lazy_gfm_search',true,'budget',struct('max_full_evaluations',40, ...
     'stop_on_first_certified',true),'progress_every',.01, ...

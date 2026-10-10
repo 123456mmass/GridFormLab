@@ -1,4 +1,6 @@
 function [fig, app] = create_gui_layout(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %CREATE_GUI_LAYOUT Modern professional layout for the n-bus studio.
 %   [FIG, APP] = CREATE_GUI_LAYOUT(APP) builds (or, if APP.FIG already
 %   holds a valid figure, REBUILDS IN PLACE) the full themed interface.
@@ -252,7 +254,13 @@ app.auto_cpf_checkbox = uicheckbox(controls, 'Text', 'Auto CPF setup from base N
 app.auto_cpf_checkbox.Layout.Row = 22;
 style_checkbox(app.auto_cpf_checkbox, theme);
 
-app.auto_separate_checkbox = uicheckbox(controls, 'Text', 'Auto open plots after Run', 'Value', true);
+% Plots are ON DEMAND.  This used to default true, which made every Run --
+% PF, TS and each of the four SMIB models -- throw figure windows over the
+% screen (the owner: "ทำไมมันโชว์น่ารำคาญ", "อะไรขึ้นมาเยอะแยะวะ").  The
+% "Separate Plots" button already opens exactly these figures on request, so
+% auto-opening them was a second path to the same plots.  load_preferences may
+% still restore a user's saved choice.
+app.auto_separate_checkbox = uicheckbox(controls, 'Text', 'Auto open plots after Run', 'Value', false);
 app.auto_separate_checkbox.Layout.Row = 23;
 style_checkbox(app.auto_separate_checkbox, theme);
 

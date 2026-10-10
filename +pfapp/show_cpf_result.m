@@ -1,4 +1,6 @@
 function show_cpf_result(app, cpf)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SHOW_CPF_RESULT Display CPF results in table and PV-curve plots.
 
 if isfield(cpf, 'bus_angle_deg') && size(cpf.bus_angle_deg, 2) == numel(cpf.lambdas)

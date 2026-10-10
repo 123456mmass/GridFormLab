@@ -28,7 +28,7 @@ function [Bp, Bpp] = pf_build_b_matrices(model, variant)
 %          series resistance per variant (retain for XB, omit for BX).
 %
 %   Row/column sets (matches NR partitioning):
-%     B'  unknowns: delta_idx = [pv_buses; pq_buses] (P-theta; REF excluded)
+%     B'  unknowns: delta_idx = [pv_buses; pq_buses] (P-theta; SLACK excluded)
 %     B'' unknowns: V_idx = pq_buses (Q-V; PV excluded)
 %   The FULL matrices (all buses) are returned; the caller indexes the
 %   reduced sets. This keeps the construction readable and matches the

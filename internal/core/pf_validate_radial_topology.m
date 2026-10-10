@@ -10,7 +10,7 @@ function [parent, children, root_idx] = pf_validate_radial_topology(model)
 %   and a tree topology (n nodes, b=n-1 branches).
 %
 %   Phase-1 minimal capability contract (binding, per user correction 5):
-%     - exactly one REF bus (type 1);
+%     - exactly one SLACK bus (type 1);
 %     - ALL remaining buses are PQ (type 3) — any PV bus fails closed;
 %     - connected radial tree: num_lines == num_buses - 1 (no mesh);
 %     - no parallel branches (same from-to pair);
@@ -24,7 +24,7 @@ function [parent, children, root_idx] = pf_validate_radial_topology(model)
 %   Outputs:
 %     PARENT   : (num_buses x 1) parent bus index for each bus (root = 0)
 %     CHILDREN : cell array (num_buses x 1) of child bus index lists per bus
-%     ROOT_IDX : the root (REF) bus index
+%     ROOT_IDX : the root (SLACK) bus index
 
 bus_data = model.bus_data;
 line_data = model.line_data;
@@ -32,11 +32,11 @@ nb = model.num_buses;
 nl = model.num_lines;
 bus_type = model.bus_type;
 
-% --- exactly one REF bus ---
+% --- exactly one SLACK bus ---
 ref_idx = find(bus_type == 1);
 if numel(ref_idx) ~= 1
     error('pf_validate_radial_topology:multiRef', ...
-        'Phase-1 BFS requires exactly one REF bus; found %d.', numel(ref_idx));
+        'Phase-1 BFS requires exactly one SLACK bus; found %d.', numel(ref_idx));
 end
 root_idx = ref_idx(1);
 

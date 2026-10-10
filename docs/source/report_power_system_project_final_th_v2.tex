@@ -310,7 +310,7 @@ Power Flow ใช้หาขนาดแรงดันและมุมขอ
 P_i+jQ_i=V_i\left(\sum_{j=1}^{N}Y_{ij}V_j\right)^{*}.
 \label{eq:pfpower}
 \end{equation}
-บัสถูกแบ่งเป็น REF, PV และ PQ ตามตัวแปรที่กำหนดและตัวแปรที่ต้องแก้ โดยบัส REF กำหนด $|V|$ และ $\theta$, บัส PV กำหนด $P$ และ $|V|$, ส่วนบัส PQ กำหนด $P$ และ $Q$ ตัวแก้แบบ Newton--Raphson สร้างค่าคลาดเคลื่อน $\Delta P,\Delta Q$ แล้วแก้ระบบเชิงเส้น
+บัสถูกแบ่งเป็น SLACK, PV และ PQ ตามตัวแปรที่กำหนดและตัวแปรที่ต้องแก้ โดยบัส SLACK กำหนด $|V|$ และ $\theta$, บัส PV กำหนด $P$ และ $|V|$, ส่วนบัส PQ กำหนด $P$ และ $Q$ ตัวแก้แบบ Newton--Raphson สร้างค่าคลาดเคลื่อน $\Delta P,\Delta Q$ แล้วแก้ระบบเชิงเส้น
 \begin{equation}
 \begin{bmatrix}\Delta P\\ \Delta Q\end{bmatrix}=
 \begin{bmatrix}J_{P\theta}&J_{PV}\\J_{Q\theta}&J_{QV}\end{bmatrix}
@@ -329,7 +329,7 @@ P_i+jQ_i=V_i\left(\sum_{j=1}^{N}Y_{ij}V_j\right)^{*}.
 \toprule
 \tableheader Bus & \tableheader Type & \tableheader $|V|$ & \tableheader $\theta$ & \tableheader $P_{gen}$ & \tableheader $Q_{gen}$ & \tableheader $P_{load}$ & \tableheader $Q_{load}$ \\
 \midrule
-1  & REF & $1.0000$ & $0.0000$ & $1.3319$ & $-0.1957$ & $0.0000$ & $0.0000$ \\
+1  & SLACK & $1.0000$ & $0.0000$ & $1.3319$ & $-0.1957$ & $0.0000$ & $0.0000$ \\
 2  & GFL & $0.9914$ & $-3.2585$ & $0.3172$ & $0.1767$ & $0.2170$ & $0.1270$ \\
 3  & GFL & $0.9667$ & $-8.6921$ & $0.2884$ & $0.1607$ & $0.9420$ & $0.1900$ \\
 4  & PQ  & $0.9832$ & $-6.7064$ & $0.0000$ & $0.0000$ & $0.4780$ & $-0.0390$ \\
@@ -347,8 +347,8 @@ P_i+jQ_i=V_i\left(\sum_{j=1}^{N}Y_{ij}V_j\right)^{*}.
 \end{tabular}
 \end{center}
 \end{table}
-\resultbox{Power Flow ลู่เข้าโดยใช้บัส 1 เป็น REF; IBR อยู่ที่บัส 2, 3, 6 และ 8 และค่ากำลังฉีดของทุกอุปกรณ์ถูกส่งต่อไปสร้าง DAE equilibrium โดยไม่สร้าง operating point ชุดใหม่}
-การตรวจสอบผล Power Flow ไม่ได้ดูเพียงว่าตัวแก้รายงานว่าลู่เข้า แต่ตรวจสมดุลกำลังของทุกบัส การไหลและกำลังสูญเสียของทุกกิ่ง และค่ากระแสที่คำนวณย้อนกลับจาก $S=VI^{*}$ จากนั้นเมื่อแปลงผล Power Flow ไปเป็น DAE equilibrium จะคง KCL ของทุกบัสไว้ครบ ไม่ตัด KCL ของบัส REF ออกเพื่อทำให้ระบบสมการเป็นสี่เหลี่ยมจัตุรัส แต่ใช้การตรึงพิกัดอ้างอิงและแก้ค่าคำสั่งควบคุมที่เหมาะสมแทน เหตุผลของการเลือกวิธีนี้คือ การตัด KCL หนึ่งแถวทำให้ reduced residual มีค่าเล็กได้แม้ KCL ทางกายภาพยังไม่สมดุล ซึ่งเป็นความผิดพลาดที่ตรวจไม่พบจากค่า residual เพียงอย่างเดียว
+\resultbox{Power Flow ลู่เข้าโดยใช้บัส 1 เป็น SLACK; IBR อยู่ที่บัส 2, 3, 6 และ 8 และค่ากำลังฉีดของทุกอุปกรณ์ถูกส่งต่อไปสร้าง DAE equilibrium โดยไม่สร้าง operating point ชุดใหม่}
+การตรวจสอบผล Power Flow ไม่ได้ดูเพียงว่าตัวแก้รายงานว่าลู่เข้า แต่ตรวจสมดุลกำลังของทุกบัส การไหลและกำลังสูญเสียของทุกกิ่ง และค่ากระแสที่คำนวณย้อนกลับจาก $S=VI^{*}$ จากนั้นเมื่อแปลงผล Power Flow ไปเป็น DAE equilibrium จะคง KCL ของทุกบัสไว้ครบ ไม่ตัด KCL ของบัส SLACK ออกเพื่อทำให้ระบบสมการเป็นสี่เหลี่ยมจัตุรัส แต่ใช้การตรึงพิกัดอ้างอิงและแก้ค่าคำสั่งควบคุมที่เหมาะสมแทน เหตุผลของการเลือกวิธีนี้คือ การตัด KCL หนึ่งแถวทำให้ reduced residual มีค่าเล็กได้แม้ KCL ทางกายภาพยังไม่สมดุล ซึ่งเป็นความผิดพลาดที่ตรวจไม่พบจากค่า residual เพียงอย่างเดียว
 
 \section{DAE equilibrium และแบบจำลอง Synchronous Generator}
 หลัง PF ได้แรงดันและกำลังของแต่ละอุปกรณ์ จะสร้าง state เริ่มต้นและแก้สมการ $f=0$ ร่วมกับ KCL $g=0$ อีกครั้ง จุดสมดุลนี้เป็นจุดเริ่มต้นร่วมของ SSSA และ TS สำหรับ SG ที่บัส 1 ใช้แบบจำลอง round-rotor sixth-order ตามที่ Kundur~\ref{ref:kundur} กับ Sauer และ Pai~\ref{ref:sauerpai} วางไว้ และตามแนวปฏิบัติของ IEEE Std 1110~\ref{ref:ieee1110} โดย state ที่เก็บคือ
@@ -696,7 +696,7 @@ $\max\Re\{\lambda\}$ (s$^{-1}$) & $-11.23383$ & $-0.554663$ \\
 ส่วนที่ตรวจ & วิธีตรวจ & เกณฑ์/หลักฐานสำคัญ \\
 \midrule
 Power Flow & Newton mismatch, bus/branch power balance & operating point ต้องลู่เข้าและกำลังที่คำนวณกลับจาก $V,I$ ต้องสอดคล้อง \\
-DAE equilibrium & แก้ $f=0$ พร้อม KCL ทุกแถว & ไม่ตัด physical KCL ของ REF bus; state และ input ชุดนี้ถูก reuse ใน SSSA/TS \\
+DAE equilibrium & แก้ $f=0$ พร้อม KCL ทุกแถว & ไม่ตัด physical KCL ของ SLACK bus; state และ input ชุดนี้ถูก reuse ใน SSSA/TS \\
 SSSA & linearize full-KCL DAE และจัดการ gauge ก่อน eig & physical eigenvalues finite; candidate ต้องมี damping margin ตามเกณฑ์ที่ freeze ไว้ \\
 IBR model & equilibrium residual, mode ownership, frame covariance & GFM branch ไม่มี PLL; GFL PLL ต้องตอบสนองต่อ $v_q$; inactive state ต้อง hold \\
 DC source & equilibrium, stable DC pair, capacitance sensitivity & $V_{dc},I_{dc}$ เป็น equilibrium ที่ dispatch และคู่ DC eigenvalue อยู่ left-half plane \\

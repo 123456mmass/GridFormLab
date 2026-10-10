@@ -1,46 +1,22 @@
 function loc = ts_fd_y_locality(dae, x, u, event_context, t)
-%TS_FD_Y_LOCALITY  Structural y-locality proof for the FD Jacobian y columns.
+%TS_FD_Y_LOCALITY ตรวจ registered structural locality และ probe ต่างบัส.
 %
-%   LOC = ts_fd_y_locality(DAE, X, U, EVENT_CONTEXT, T) proves, by direct
-%   perturbation of the assembled device callbacks, that every device reads the
-%   shared algebraic vector Y ONLY at the two entries of its OWN mapped bus
-%   (bus_position -> y(2*b-1), y(2*b)).  The result authorises
-%   stability.ts_fd_column_groups to group algebraic (y) columns whose closed
-%   network neighbourhoods are disjoint: if device k reads only its own bus
-%   voltage, perturbing y at bus b changes only (i) device k's differential
-%   rows when bus_map(k)==b and (ii) the KCL rows {i : Ynet(i,b)~=0}.  Both are
-%   exact, so the grouped forward-difference Jacobian equals the per-column one
-%   BIT-FOR-BIT (the caller re-checks this with fd_structure_check).
+% ทุก device ต้องมี structural declaration ว่าอ่าน y เฉพาะ PCC ของตัวเอง.
+% probe ที่ state เดียวไม่พิสูจน์ locality ทั่ว nonlinear domain จึงใช้เป็น
+% negative cross-check เพิ่มเท่านั้น: perturb Re/Im ต่างบัสแยกกันและต้องได้
+% output เดิมทุก bit. หากไม่มี declaration หรือพบ foreign response ให้ fallback.
 %
-%   WHY A PROBE AND NOT AN ASSUMPTION
-%   ---------------------------------
-%   The device ABI hands each device the WHOLE y vector, so locality is a
-%   property of every device implementation, not of the engine.  A probe over
-%   the real callbacks (with the real control inputs U and the real event
-%   context) is therefore the only sound proof.  Perturbing bus b in BOTH its
-%   real and imaginary entries exercises the two couplings a device could hide:
-%   the terminal voltage phasor it forms, and any current/PLL/limiter/DC branch
-%   that reads V.  Any device that responds to a foreign bus fails the proof and
-%   the caller must fall back to the historical per-column FD.
+% เมื่อ locality contract เป็นจริง differential rows ขึ้นกับ PCC เดิมเท่านั้น;
+% KCL rows ของ y column ที่บัส b มาจาก {i:Ynet(i,b)~=0}. กลุ่มที่ row sets
+% ไม่ทับกันจึงสร้าง Jacobian เดียวกับ per-column FD; fd_structure_check ตรวจซ้ำได้.
 %
-%   COST / CACHING
-%   --------------
-%   The probe costs about nd*(nb-1) device evaluations, so it must be amortised
-%   across the steps of one run.  The caller caches LOC on a signature of the
-%   devices and the event context (stability.ts_fd_column_groups).  A different
-%   device set, mode/regime, or freeze context changes the signature and forces
-%   a re-probe, so a cached proof is never reused across a different device
-%   closure.  The topology (Ypre/Yfault/Ypost) does NOT enter the signature:
-%   device y-locality is a device property, independent of which network is
-%   stamped, while the KCL row sets are recomputed from the current Y every call
-%   by the caller.
+% probe ใช้ประมาณ 2*nd*(nb-1) evaluations. caller cache เฉพาะ entry ล่าสุดโดย
+% isequaln ของ devices/context จริง ไม่ hash สรุป captured workspace. cache ไม่
+% รวม x/u/time จึงอาศัย structural declaration ไม่ใช่ probe เป็น global proof.
+% topology ไม่อยู่ใน locality key; KCL row sets คำนวณจาก Ynet ปัจจุบันทุก call.
 %
-%   FAIL CLOSED: LOC.local is FALSE on any foreign-bus response, on a non-finite
-%   probe value, or on a malformed device table.  The caller then keeps the
-%   historical one-column-per-group construction.
-%
-%   Classification: PROJECT_DERIVED numerical proof over SOURCE_IMPLEMENTED
-%   device callbacks.  It changes no residual, tolerance, or state contract.
+% Classification: PROJECT_DERIVED cross-check บน SOURCE_IMPLEMENTED callbacks.
+% ไม่เปลี่ยน residual, tolerance หรือ state contract.
 
 arguments
     dae struct

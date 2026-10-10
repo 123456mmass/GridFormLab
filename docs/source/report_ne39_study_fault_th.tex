@@ -1,0 +1,104 @@
+% รายงานผล fault-only จาก cache จริง ไม่ใช่รายงาน switching comparison.
+\documentclass[12pt,a4paper]{article}
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\setmainfont[Path={fonts/TH Sarabun PSK V-1/},Extension=.ttf,UprightFont={*},BoldFont={* Bold},ItalicFont={* Italic},BoldItalicFont={* BoldItalic}]{THSarabun}
+\usepackage{amsmath,graphicx,float,booktabs,tabularx,geometry,hyperref}
+\usepackage{xurl}
+\geometry{margin=2cm}
+\graphicspath{{../figures/ne39_study_fault/}}
+\begin{document}
+\begin{center}
+{\Large\bfseries ผลการศึกษา New England IEEE 39-Bus System\\แบบ 5 SG + 5 IBR และ 1 SG + 9 IBR}\\[6pt]
+การตรวจต้นทาง ฐานหน่วย และผล fault-only\\
+วันที่ 9 ตุลาคม 2569
+\end{center}
+\section{ขอบเขตและข้อมูลต้นทาง}
+ใช้ RAW/DYR/EPC/DYD ของ New England IEEE 39-Bus System ที่เผยแพร่โดย Texas A\&M University (TAMU) เก็บต้นฉบับและตรวจ SHA256 ทั้งสี่ไฟล์ เครือข่ายมี 39 บัส 10 เครื่อง 46 branches บนฐาน 100 MVA และ60 Hz โหลดรวม6124.5 MW Slack คือ SG31 ที่1 pu และ0องศาเฉพาะ operating point ไม่ตรึงแรงดันหรือมุมตลอด transient
+
+แบบ5+5 คง SG ที่บัส31,32,35,38,39 แบบ1+9 คง SG31 เครื่องที่เหลือแทนด้วย IBR แบบ \texttt{eecon49\_dual} ซึ่งมี17 states คง non-reference active dispatch ต้นทาง และ derive Q จาก PF หลังปรับ Slack ไม่ใช้ Q=0 โดยไม่มีเหตุผล
+
+\section{แบบจำลองและข้อกำหนดที่โครงการออกแบบ}
+SG ใช้ classical reduction ของ GENROU โดยเก็บ H,D และ $X_d'$ จากต้นทาง แปลงฐานอย่างถูกต้อง:
+\[
+H_{sys}=H_{mach}\frac{M_{base}}{S_{base}},\qquad
+D_{sys}=D_{mach}\frac{M_{base}}{S_{base}},\qquad
+X_{sys}=X_{mach}\frac{S_{base}}{M_{base}}.
+\]
+แบบจำลองไม่ execute GENROU flux/damper, EXST1 หรือ IEEEST จึงไม่อ้างว่า transient voltage/fault-current เหมือนต้นทางเต็มรูปแบบ bus39 เป็น external-system equivalent ไม่ใช่เครื่องจริงหนึ่งเครื่อง
+
+ข้อมูล PT=9999.9 ในต้นทางเป็น sentinel ไม่ใช่ physical Pmax Default source profile จึงคง unknown limits ส่วน study profile กำหนดกำลังต้นทางที่ต้องจัดหาเพิ่มเป็นสมมติฐานโครงการ:
+\[
+P_{max}=10\left\lceil\frac{1.25P_0}{10}\right\rceil\ {\rm MW},\qquad
+S_{IBR}=10\left\lceil\frac{1.25\sqrt{P_0^2+Q_0^2}}{10}\right\rceil\ {\rm MVA}.
+\]
+Pmax เป็น active supply design ไม่ใช้ MVA หรือ machine MBASE เป็น active reserve ต้องจัดหา hardware ตาม design จึงจะนำไปอ้างกับระบบจริงได้ สำหรับ SG ไม่ใช่ capability curve หรือ governor response
+
+IBR ตรวจ current circle ที่ขอบ AC operating envelope0.9 pu (ไม่ใช่ protection setting) รวม filter loss ด้วย $R_f=0.015$ pu ใช้ Thevenin DC source และ source-current state จาก runtime:
+\[
+P_{ac,max}=\frac{P_{max}}{M_{base}}+R_f I_{need}^2,\quad
+E_{dc}=1+R_{dc}P_{ac,0},\quad
+V_{dc,+}=\frac{E_{dc}+\sqrt{E_{dc}^2-4R_{dc}P_{ac,max}}}{2}.
+\]
+กำหนด $I_{dc,design}=1.05P_{ac,max}/V_{dc,+}$ และ $P_{source,design}=E_{dc}I_{dc,design}M_{base}$ รวม source loss ตรวจ high-voltage branch และ determinant/trace ของ local DC block โดย $R_{dc}=0.1$, $C_{dc}=0.1$, $\tau_s=0.005$ บนฐาน model ที่ประกาศ ตรวจ Edc/Rdc กับ closures ทั้ง GFL/GFM จริง ไม่ใช้ discriminant เป็นหลักฐาน reserve เพียงอย่างเดียว และไม่ถือว่า local DC stability รับรอง full-system transition
+
+\section{การวัดและวิธีทดลอง}
+ใช้ production entry \texttt{stability.run\_hybrid\_case} เปิด study capability แต่ปิด switching ทั้งสองแบบ fault ที่บัส16 ใช้ $Z_f=j0.1$ pu ตั้งแต่0.5ถึง0.7s horizon1s และ timestep0.005s เป็น project scenario; fault bus อิงตัวอย่างต้นทาง ไม่อ้างว่าระยะเวลาและ impedance เป็นค่าของต้นทางทั้งหมด
+
+SI ที่พล็อตเป็น severity diagnostic ของการทดลองนี้:
+\[
+SI=\operatorname{sat}\left(0.5\frac{|V-1|}{0.1}+0.5\frac{|f-60|}{0.5}\right).
+\]
+ความถี่ SG/GFM อ่าน speed state ของ mode ที่ active และ ROCOF อ่าน RHS ของ speed state ส่วน GFL อ่าน PLL frequency แล้วหาผลต่างย้อนหลัง ROCOV ใช้ accepted samples ที่ dt จริง แยก raw continuous rate จาก causal filter $\tau=0.02$s และแยก left/right voltage jump ที่เวลาเดียวกัน ไม่หารด้วยศูนย์และไม่อ่านข้อมูลอนาคต กราฟในฉบับนี้ reconstruct หลังรัน ไม่ได้ใช้ตัดสิน switching; มี online measurement แบบ opt-in ที่ทดสอบว่าการเปิดวัดไม่เปลี่ยน trajectory
+
+\section{ผลการทดลอง fault-only}
+ตัวเลขจาก \texttt{output/diagnostics/ne39\_tamu/study\_fault\_summary.json} เป็นผลบน horizon1s ไม่ใช่ steady recovery หรือ switching benchmark
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+ค่าที่วัด &5 SG +5 IBR&1 SG +9 IBR\\
+\midrule
+แรงดันต่ำสุดทุกบัส (pu)&0.8716&0.9232\\
+แรงดันสูงสุดทุกบัส (pu)&1.0640&1.0993\\
+ความถี่ต่ำสุดของอุปกรณ์ (Hz)&59.9082&59.8426\\
+ความถี่สูงสุดของอุปกรณ์ (Hz)&60.3565&60.4634\\
+DC voltage ต่ำสุด (pu)&0.9985&0.9982\\
+DC voltage สูงสุด (pu)&1.0078&1.0075\\
+กระแส IBR สูงสุด (machine pu)&0.8674&0.8384\\
+ROCOF สูงสุดแบบ absolute (Hz/s)&2.1136&4.9835\\
+ROCOV กรองสูงสุดแบบ absolute (pu/s)&0.4393&0.8037\\
+\bottomrule
+\end{tabular}
+\end{center}
+ทั้งสองรัน converged และ traces ไม่เกิน AC current1.2pu หรือ DC design-current ที่กำหนด ไม่ได้หมายความว่าทุก constraints ผ่าน โดยเฉพาะแรงดันทุกบัสในแบบ5+5 ต่ำกว่า design envelope0.9pu ชั่วคราว ต้องตรวจ converter PCC แยกจาก minimum ทุกบัส ไม่ใช้ minimum รวมตัดสิน capability ของอุปกรณ์ใดโดยตรง
+
+\subsection{การตรวจ timestep}
+รันซ้ำพร้อม online accepted-step rates ที่ timestep0.005และ0.0025s โดยเทียบเฉพาะเวลาและ left/right event side เดียวกัน ไม่ interpolate ข้าม jump ผลต่างสูงสุดของ voltage magnitude เป็น0.00155pu ในแบบ5+5 และ0.00170pu ในแบบ1+9 ผลต่าง state สูงสุดเป็น0.00610และ0.0129 ซึ่งรวม states ต่างหน่วย จึงไม่ใช้เป็น relative error ของทุก state ผลสองกริดนี้ยังไม่ยืนยันอันดับ convergence หรือความแม่นยำของ switch time ต้องใช้กริดละเอียดเพิ่มและตรวจ metric เฉพาะ state ก่อนสรุปเชิงปริมาณ
+
+\section{รูปจากผลจริง}
+\begin{figure}[H]\centering
+\includegraphics[width=.95\textwidth]{study_fault_5sg_5ibr_SG31.png}
+\caption{SG31 ในแบบ5+5: แรงดัน ความถี่ severity ROCOF ROCOV และกำลังจริง}
+\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.95\textwidth]{study_fault_1sg_9ibr_SG31.png}
+\caption{SG31 ในแบบ1+9 บน fault และ timestep เดียวกัน ไม่ได้เปิด switching}
+\end{figure}
+\begin{figure}[H]\centering
+\includegraphics[width=.95\textwidth]{study_fault_5sg_5ibr_IBR30.png}
+\caption{IBR30 ในแบบ5+5 โดย panel สุดท้ายแสดง DC voltage ไม่ใช่กำลัง}
+\end{figure}
+รูปทุกอุปกรณ์ของทั้งสอง composition อยู่ใน \texttt{docs/figures/ne39\_study\_fault/} พร้อม PNG และ FIG ไม่มี synthetic traces
+
+\section{สิ่งที่ยังไม่รับรอง}
+ผล PF และ physical KCL residual อยู่ระดับประมาณ$10^{-13}$pu แต่ SSSA ใกล้ zero real part ไม่ใช่ damping certificate ยังไม่รับรอง automatic switching, predictive policy, transition energy, SG capability curve, hardware capacity, full scenario suite/chronology หรือ timestep sensitivity SCR แบบ source-aware ใช้ finite SG $X_d'$ บนฐานถูกต้อง เป็น transient-basis network-strength diagnostic ไม่ใช่ IEC60909 หรือ SG machine SCR จาก OCC/SCC ไม่ใช้ SCR threshold แทน full-KCL SSSA
+
+\section{เอกสารอ้างอิง}
+\begin{enumerate}
+\item Texas A\&M University, New England IEEE 39-Bus System distribution.\newline
+\url{https://electricgrids.engr.tamu.edu/electric-grid-test-cases/new-england-ieee-39-bus-system/}
+\item Athay, Podmore and Virmani (1979); Pai (1989), ตาม metadata ของชุดข้อมูลต้นทาง
+\item Source archive และวิธีแปลง: \texttt{docs/project/NE39\_TAMU\_MIGRATION.md}
+\end{enumerate}
+\end{document}

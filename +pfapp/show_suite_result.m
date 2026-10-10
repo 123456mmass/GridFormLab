@@ -1,4 +1,6 @@
 function show_suite_result(app, suite)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %SHOW_SUITE_RESULT Display full-suite comparison in table and plots.
 
 axis_info = pf_bus_axis_info(suite.newton_raphson.external_bus_ids);

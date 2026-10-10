@@ -1,4 +1,6 @@
 function app = cb(fig, action_fn, takes_fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %CB Central GUI callback dispatcher.
 %   Wired as the callback for every interactive widget. It fetches the live
 %   app struct from FIG.UserData.app, invokes the action function (which may

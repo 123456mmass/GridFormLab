@@ -1,4 +1,6 @@
 function app = export_json_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %EXPORT_JSON_ACTION Export last result as structured JSON.
 
 app = pfapp.set_busy(app, true);

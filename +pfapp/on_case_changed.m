@@ -1,4 +1,6 @@
 function app = on_case_changed(app)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %ON_CASE_CHANGED Keep the selected method compatible with the new case.
 %   When the user picks a Kundur SMIB case, auto-select the SMIB Stability
 %   Analysis method; when they pick a steady-state power-flow case while an

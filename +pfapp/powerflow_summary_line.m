@@ -1,4 +1,6 @@
 function line = powerflow_summary_line(result)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 if ~isempty(result.mismatch_history)
     final_mismatch = result.mismatch_history(end);
 else

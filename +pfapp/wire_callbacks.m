@@ -1,4 +1,6 @@
 function wire_callbacks(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %WIRE_CALLBACKS Attach all GUI callbacks after (re)building the layout.
 %   pfapp.wire_callbacks(app, fig) wires every interactive widget to its
 %   action function via the central pfapp.cb dispatcher. Callbacks capture

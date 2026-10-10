@@ -1,0 +1,247 @@
+%=============================================================================
+%  report_ieee14_switching_proof_summary_en.tex
+%  Technical proof summary, 1--2 pages: why IEEE-14 does not pin all four GFM.
+%  Every number is taken from report_ieee14_switching_decision_basis_en.tex.
+%
+%  BUILD:  xelatex report_ieee14_switching_proof_summary_en.tex   (twice)
+%=============================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[a4paper,top=1.3cm,bottom=1.2cm,left=1.7cm,right=1.7cm]{geometry}
+\usepackage{newtxtext,newtxmath}
+\usepackage{amsmath,booktabs,array,float}
+\usepackage[table]{xcolor}
+\usepackage{enumitem,fancyhdr,caption,titlesec,microtype}
+
+\definecolor{navy}{RGB}{25,55,95}
+\definecolor{ok}{RGB}{0,110,70}
+\definecolor{no}{RGB}{170,40,35}
+\definecolor{gray}{RGB}{90,98,108}
+
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\color{navy}\textbf{Technical proof summary: why not pin all four GFM}}
+\fancyhead[R]{\small\color{gray}\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\setlength{\headheight}{14pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlist[itemize]{leftmargin=1.4em,itemsep=0pt,topsep=2pt}
+\setlist[enumerate]{leftmargin=1.6em,itemsep=0pt,topsep=2pt}
+\captionsetup{font=small,labelfont=bf,skip=1pt}
+\titleformat{\section}{\normalfont\normalsize\bfseries\color{navy}}{\thesection}{0.6em}{}
+\titlespacing{\section}{0pt}{6pt}{2pt}
+\titleformat{\subsection}{\normalfont\small\bfseries\color{navy}}{\thesubsection}{0.5em}{}
+\titlespacing{\subsection}{0pt}{4pt}{1pt}
+
+\newcommand{\pu}{\,\mathrm{pu}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\zworst}{\zeta_{\mathrm{worst}}}
+\newcommand{\zmin}{\zeta_{\min}}
+\newcommand{\mes}{\textcolor{ok}{\textbf{[measured]}}}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries\color{navy} Technical proof summary: why IEEE-14 does not pin all four GFM after the SG trip}\\[2pt]
+{\small\color{gray} Evidence from \code{report\_ieee14\_switching\_decision\_basis\_en} --- every number read from a named artefact}
+\end{center}
+
+\vspace{-4pt}
+\noindent
+When the SG at bus 1 trips, four dual-mode GFL/GFM converters remain at buses
+2, 3, 6 and 8. Why is the forming set not pinned to all four from start to finish,
+but chosen adaptively at one or two? There are two measured proofs.
+
+%=============================================================================
+\section{Proof 1: SCR does not respond to the forming count}
+%=============================================================================
+
+\noindent
+The project defines (\code{+stability/ibr\_scr\_metrics.m})
+\begin{equation}
+\mathrm{SCR}_i = \frac{|V_i|^2}{|Z_{th,ii}|\,S_{\mathrm{rated},i}},
+\qquad
+Z_{th,ii} = \bigl[\,\mathbf{Y}^{-1}\mathbf{e}_i\,\bigr]_i ,
+\label{eq:scr}
+\end{equation}
+where $\mathbf{Y}$ is built from branch data (including tap and phase shift) plus
+bus shunts, \emph{excluding} load admittance, with reference buses grounded. No
+term in $\mathbf{Y}$ depends on how many converters are forming. \mes
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+\textbf{Window} & $n$ & \textbf{min} & \textbf{mean} & \textbf{max} & \textbf{$<3$}\\
+\midrule
+pre-trip (SG online)   & $168$   & $2.0892$ & $2.3439$ & $2.4803$ & $100.00\%$\\
+islanded (SG offline)  & $2760$  & $0.6501$ & $\mathbf{2.3015}$ & $2.8147$ & $\mathbf{100.00\%}$\\
+whole run, 4 converters & $14716$ & $0.2944$ & $2.5271$ & $6.6726$ & $\mathbf{98.61\%}$\\
+\bottomrule
+\end{tabular}
+\caption{Per-sample SCR at the converter buses. The islanded window averages
+$2.3015$ and sits below the WECC strong-grid floor of $3$ for $100.00\%$ of its
+samples ($98.61\%$ over the whole run). The minimum $0.2944$ occurs at the bus-9
+fault, not at the machine trip. \mes}
+\end{table}
+
+\noindent
+The first two rows carry the point: the window mean moves from $2.3439$ to
+$2.3015$. The machine trip barely moves SCR, because $Z_{th}$ does not know the
+machine exists. What changes is \emph{which sources sit behind the bus}, not the
+impedance.
+
+\begin{enumerate}
+\item \textbf{Promoting a converter cannot stiffen the network.} The impedance
+      term of~\eqref{eq:scr} is built from branch data, bus shunts and
+      reference-bus grounding only, so adding a former cannot change $Z_{th}$ at
+      all. SCR can move only through the measured numerator $|V_i|^2$, never
+      through the count. (This does not claim SCR never moves.)
+\item \textbf{The problem changes kind, not degree.} REGC\_A screens a
+      current-source plant because a PLL needs a stiff bus to lock to. With all
+      four forming there is no PLL left to protect, and the question becomes
+      whether four voltage sources can share current on a high-impedance network
+      --- a question this network answers badly (Proof 2).
+\item \textbf{Scope that must travel with the number.} In
+      \code{ibr\_scr\_metrics.m:266--276} the gate is forced to profile
+      \code{not\_applicable\_\allowbreak full\_state\_\allowbreak source\_model}
+      for \code{eecon49\_dual}, giving \code{eligible\_for\_scr = false} and
+      \code{pass = true}. The figures above are therefore a per-sample published
+      diagnostic, not an active gate. \mes{} The network-invariance conclusion
+      does not depend on this: it is a property of the equation, not of the
+      gate's state.
+\end{enumerate}
+
+%=============================================================================
+\section{Proof 2: damping margin and dynamic failure}
+%=============================================================================
+
+\noindent
+The project enumerates all $2^4-1 = 15$ forming sets, solves each equilibrium and
+assembles its full-KCL spectrum. \textbf{Only 7 of the 15 are admissible}, and
+\textbf{all four three-unit sets have no equilibrium at all} (the coupled Newton
+does not converge; residuals $3.279$, $3.605$, $3.561$, $3.346\times10^{2}$).
+What actually gates is equilibrium existence $+$ device limits $+$ full-KCL SSSA
+with a damping-ratio floor $\zmin = 0.05$ on every mode of the decision spectrum,
+evaluated at three frozen finite-difference steps. $\gamma_{\mathrm{req}} =
+0.1$\,rad/s is the \emph{ordering key} among already-admissible candidates only,
+not a gate --- the margin may be negative while a set is admissible.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{Forming set} & $\omega$ (rad/s) & $\zworst$ & \textbf{Outcome}\\
+\midrule
+$\{5\}$, $\{4\}$, $\{3\}$, $\{2\}$ (one) & $-0.1554$ to $-0.3280$ & $0.2569$--$0.2676$ & admissible\\
+$\{2,4\}$, $\{3,4\}$ (two) & $-0.5617$, $\mathbf{-0.5681}$ & $0.2549$, $0.2560$ & admissible (most damped)\\
+$\{2,3,4\}$, $\{2,3,5\}$, $\{2,4,5\}$, $\{3,4,5\}$ & --- & --- & \textcolor{no}{\textbf{no equilibrium}}\\
+$\{2,3,4,5\}$ (four) & $-0.4829$ & \textcolor{no}{$\mathbf{0.1223}$} & admissible, least damped\\
+\bottomrule
+\end{tabular}
+\caption{$\zworst$ for the other six admissible sets (all four singletons, plus
+$\{2,4\}$ and $\{3,4\}$) spans $0.2549$--$0.2676$; the seventh, the four-unit
+set, sits at $\mathbf{0.1223}$ --- \textbf{less than half} --- even though it
+still clears the $0.05$ floor. \mes}
+\end{table}
+
+\noindent
+The $0.05$ floor is a minimum, not a target. The four-unit set \emph{passes} the
+gate yet is the worst of the six survivors, and going from two units to three is
+not a compromise --- it lands where the equations have no solution at all.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+\textbf{Arm} & \textbf{horizon} & \textbf{samples} & \textbf{reclose} & \textbf{termination}\\
+\midrule
+\code{locked\_gfl}  & $20.0000$\,s & $43$   & ---        & \code{noVoltageFormingSource}\\
+\code{pinned\_gfm4} & \textcolor{no}{$\mathbf{25.4852}$\,\textbf{s}} & $837$ & never requested & \code{adaptiveDtMin}\\
+\code{pinned\_gfm2} & $250.0000$\,s & $1761$ & $154.0244$ & \code{SUCCESS}\\
+\code{adaptive}     & $250.0000$\,s & $3679$ & $159.2519$ & \code{SUCCESS}\\
+\bottomrule
+\end{tabular}
+\caption{Six arms from one shared option set. \code{pinned\_gfm4} dies at
+$25.4852$\,s --- \textbf{it survives $5.4852$\,s after the SG trip}, before the
+load step and before any fault. \mes{} The table also shows that \emph{pinning}
+is not the defect: \code{pinned\_gfm2} pins two and reaches $250$\,s. The
+evidence condemns the count of four, not the pinned mode.}
+\end{table}
+
+\noindent
+The terminal state of \code{pinned\_gfm4} is not a gradual loss of damping but
+\textbf{frequency splitting}: in its last accepted sample IBR2 runs at
+$64.9947$\,Hz while IBR3, IBR6 and IBR8 run at $59.1383$, $59.1809$ and
+$59.1946$\,Hz --- \textbf{a $5.86$\,Hz split}, one converter having run away from
+the other three. The step controller then reported \textbf{398 successive Newton
+non-convergences} and terminated at $\Delta t_{\min} = 6.104\times10^{-6}$\,s.
+\mes
+
+\textbf{Why an admissible set can still die:} the acceptance gate is a statement
+about an \emph{equilibrium}. It is proved by linearising about the solved
+operating point and says nothing about the trajectory that arrives there. The
+defect record measured that gap by re-running the same inputs from two different
+initial device states.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Arm} & \textbf{initial device state} & \textbf{outcome} & \textbf{excursion}\\
+\midrule
+ARM A & the state the production run actually arrives with & \textcolor{no}{\textbf{SLIPS}} & $4358^{\circ}$\\
+ARM B & the certified equilibrium state of the same configuration & \textbf{SYNC} & $6.6^{\circ}$\\
+\bottomrule
+\end{tabular}
+\caption{The same configuration, the same inputs, two initial states. The
+carrying coordinate is the outer voltage-loop integrator
+$gfm\_xi\_Vd/xi\_Vq$ of IBR2: $0.144253$ on arrival against $0.199658$ at the
+certified equilibrium --- a $\mathbf{28\%}$ displacement in a coordinate no bus
+quantity reflects. \mes}
+\end{table}
+
+\noindent
+\textbf{Scope of that table.} The ARM A/B experiment is measured on a different
+all-four transition from the one that kills \code{pinned\_gfm4}: it is the
+load-step commit at $t = 53.4025$\,s in the pre-certificate baseline, not the
+death at $25.4852$\,s. Both are the same \emph{class} of failure --- an admitting
+equilibrium whose arriving state lies outside its basin of attraction --- but they
+are not the same event, and the record does not root-cause the pinned arm's death.
+Structurally: the three-unit sets fail the \emph{weaker} test (no equilibrium
+exists), while the four-unit set passes the equilibrium test and fails the test of
+the \emph{trajectory} --- a failure no eigenvalue check can see.
+
+%=============================================================================
+\section{Executive conclusion}
+%=============================================================================
+
+\begin{itemize}
+\item \textbf{``More GFM is NOT safer'' --- in both directions.} The lower bound
+      is measured and hard: \code{locked\_gfl}, with no former at all, dies at
+      $t = 20.0000$\,s, the trip instant itself. The upper bound is measured too,
+      and it is not four: \code{pinned\_gfm4} dies at $25.4852$\,s.
+\item \textbf{Adding GFM does not stiffen the grid.} The impedance term of the
+      SCR equation is built from branch data, shunts and reference-bus grounding
+      only; the count cannot change it. The islanded window averages $2.3015$ and sits
+      below the threshold of $3$ for $100.00\%$ of the islanded time ($98.61\%$
+      over the whole run). Pinning all four therefore does not fix the weak grid;
+      it moves the problem to four voltage sources sharing current with each
+      other.
+\item \textbf{The right count is the smallest one still admissible.} Two-unit
+      sets are \emph{better damped} than the four-unit set by nearly a factor of
+      two ($\zworst$ $0.2549$--$0.2676$ against $0.1223$), and every three-unit
+      set has no equilibrium at all. The only exit consistent with the evidence is
+      to start at one and grow to two when it is genuinely required --- which is
+      what a \emph{minimum-cardinality admissible set} does.
+\item \textbf{The counter-evidence belongs in the same answer.} The defect record
+      contains a measured case where the four-unit configuration rides a
+      $2.0\pu$ load deficit that the two-unit configuration cannot (the defect
+      record's load-severity sweep, at a different load level --- a separate
+      measurement from the delivered run and from the frozen base-load table).
+      The defensible
+      conclusion is therefore not ``fewer is better'' but: \textbf{the count is
+      not a free parameter and stability is not monotone in it}. It has to be
+      chosen per configuration, from the certified margin and from the arrival.
+\end{itemize}
+
+\end{document}

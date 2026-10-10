@@ -1,4 +1,6 @@
 function html = build_html_report(data)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %BUILD_HTML_REPORT Generate a standalone HTML5 report from export data.
 
 sys_name = char(data.system_name);

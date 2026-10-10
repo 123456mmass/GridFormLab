@@ -1,4 +1,7 @@
 function result = show(varargin)
+%DEPRECATED (Phase C): superseded by the Studio GUI (studio.launch).
+%   Header banner only; behavior unchanged -- no runtime warning on purpose
+%   (tests call this in batch and assert the thrown id).
 %SHOW  Open the analysis wizard (base-MATLAB UI controller).
 %   result = wizard.show() opens the full analysis wizard with no
 %   pre-populated selections.

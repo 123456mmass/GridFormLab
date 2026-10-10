@@ -261,7 +261,7 @@ function write_pf_results(c,pf,path)
 % Detailed PF results. The cited case provides no physical voltage-base
 % assignment for every bus, so only per-unit voltage is reported.
 bd=c.bus_data; b=pf.external_bus_ids; V=pf.bus_voltage; th=pf.bus_angle_deg;
-typs={'REF','PV','PQ'};
+typs={'SLACK','PV','PQ'};
 fid=fopen(path,'w'); z=onCleanup(@()fclose(fid)); %#ok<NASGU>
 fprintf(fid,'\\begin{tabular}{rlrrrrrrrr}\\toprule\n');
 fprintf(fid,'{Bus} & {Type} & {$|V|$} & {$\\theta$} & {$P_G$} & {$Q_G$} & {$P_L$} & {$Q_L$} & {$P_{net}$} & {$Q_{net}$}\\\\\n');

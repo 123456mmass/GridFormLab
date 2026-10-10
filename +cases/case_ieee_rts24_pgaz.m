@@ -67,7 +67,7 @@ pg = cases.ieee_rts24_pgaz_raw();
 
 % =========================================================================
 % Build bus_data  [bus type Vm Va_deg Pg Qg Pd Qd Gsh Bsh Qmin Qmax]
-%   internal type: 1=REF/slack, 2=PV, 3=PQ
+%   internal type: 1=SLACK, 2=PV, 3=PQ
 %   P/Q in pu on the 100 MVA system base.
 % =========================================================================
 ABus   = pg.ABus_con;
@@ -88,7 +88,7 @@ bus_data(:,10)= 0;                  % Bsh
 bus_data(:,11)= -Inf;               % Qmin default
 bus_data(:,12)=  Inf;               % Qmax default
 
-% Map PGAz bus type: 1=Slack->1(REF), 2=PV->2, 0=PQ->3
+% Map PGAz bus type: 1=Slack->1(SLACK), 2=PV->2, 0=PQ->3
 bus_data(ABus(:,2)==1, 2) = 1;
 bus_data(ABus(:,2)==2, 2) = 2;
 bus_data(ABus(:,2)==0, 2) = 3;

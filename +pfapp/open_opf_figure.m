@@ -1,4 +1,6 @@
 function open_opf_figure(result)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 if isfield(result, 'bus_voltage')
     figure('Name', sprintf('%s - AC OPF', result.system_name), ...
         'Color', 'w', 'Position', [140 90 1080 620]);

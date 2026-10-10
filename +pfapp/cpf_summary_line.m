@@ -1,4 +1,6 @@
 function line = cpf_summary_line(cpf)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 if cpf.nose_detected && cpf.nose_index > 0
     line = sprintf('%s: points=%d, nose lambda=%.4f, nose V=%.4f pu, last lambda=%.4f, stop=%s', ...
         cpf.method, numel(cpf.lambdas), cpf.nose_lambda, cpf.nose_voltage, cpf.lambdas(end), cpf.stop_reason);

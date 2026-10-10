@@ -1,4 +1,6 @@
 function msg = thai_messages(key)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %THAI_MESSAGES Thai language error messages and UI strings.
 %   msg = thai_messages(key) returns the Thai translation for key.
 %   Falls back to English if key not found.

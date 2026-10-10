@@ -4,7 +4,7 @@ function write_pf_tables(pf,outdir,lim,bus_role)
 %   optional per-bus limit table from pf_limit_table; its Pmax_pu column is
 %   joined in, and Q_min/Q_max always come from the PF struct itself
 %   (SOURCE_DEFINED).  BUS_ROLE is the optional case bus_role descriptor
-%   (REF/PV/PQ/GFM/GFL); when supplied it labels the Type column so inverter
+%   (SLACK/PV/PQ/GFM/GFL); when supplied it labels the Type column so inverter
 %   buses read as GFL/GFM instead of collapsing to the numeric PQ type.
 %   Presentation only: numbers are the solved PF values and the case-defined
 %   limits, never tuned.
@@ -64,7 +64,7 @@ fprintf(fid,'\\bottomrule\\end{tabular*}\n'); clear cleaner
 end
 
 function s=type_name(t)
-if t==1, s='REF'; elseif t==2, s='PV'; elseif t==3, s='PQ'; else, s='?'; end
+if t==1, s='SLACK'; elseif t==2, s='PV'; elseif t==3, s='PQ'; else, s='?'; end
 end
 
 function s=fmt_limit(x)

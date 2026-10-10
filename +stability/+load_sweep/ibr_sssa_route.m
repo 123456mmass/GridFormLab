@@ -13,7 +13,7 @@ function point = ibr_sssa_route(case_data, scenario, opt)
 %     SSSA_LINEARIZATION -> stability.composite_sssa_model (full_kcl=true)
 %     MODAL_REPORTING   -> stability.modal_analysis
 %
-%   The REF bus injection balances PF mismatch (PF contract). Tm/Efd are
+%   The SLACK bus injection balances PF mismatch (PF contract). Tm/Efd are
 %   equilibrium initialization inputs, NOT a PF redispatch policy.
 
 point = struct();

@@ -1,4 +1,6 @@
 function [lambda_step, lambda_max, min_voltage, max_steps] = predictor_defaults(num_buses)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %PREDICTOR_DEFAULTS CPF predictor-corrector parameters by system size.
 
 if num_buses <= 5

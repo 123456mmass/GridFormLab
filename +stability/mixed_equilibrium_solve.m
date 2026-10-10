@@ -522,7 +522,8 @@ Ynet = dae.Ynet;
 u_base = u_eq_init;
 slack_u_index = [];
 slack_slots = [];
-ref_layout = '';   % 'emf6_tm_efd' | 'classical_pm_emag' (set for an SG slack)
+ref_layout = '';   % 'emf6_tm_efd' | 'classical_pm_emag' |
+                   % 'classical_reclose_pref_emag_ref' (set for an SG slack)
 if use_gfm_slack
     slack_slot = find(strcmpi(string(reference_device.input_names),'P_ref'),1);
     if isempty(slack_slot)
@@ -682,7 +683,9 @@ result.reference = struct( ...
     'Tm_scheduled_pu',NaN,'Tm_solved_pu',NaN, ...
     'Efd_scheduled_pu',NaN,'Efd_solved_pu',NaN, ...
     'Pm_scheduled_pu',NaN,'Pm_solved_pu',NaN, ...
-    'Emag_scheduled_pu',NaN,'Emag_solved_pu',NaN);
+    'Emag_scheduled_pu',NaN,'Emag_solved_pu',NaN, ...
+    'P_ref_scheduled_pu',NaN,'P_ref_solved_pu',NaN, ...
+    'Emag_ref_scheduled_pu',NaN,'Emag_ref_solved_pu',NaN);
 if use_gfm_slack
     result.reference.P_scheduled_pu = reduced_init.reference_p_scheduled_pu;
     result.reference.P_scheduled_MW = ...
@@ -703,7 +706,17 @@ elseif use_sg_slack
     sched = u_base(slack_u_index); solvd = u_sol(slack_u_index);
     result.reference.slack_controls_scheduled_pu = sched;
     result.reference.slack_controls_solved_pu = solvd;
-    if strcmp(ref_layout,'classical_pm_emag')
+    if strcmp(ref_layout,'classical_reclose_pref_emag_ref')
+        % Opt-in reclose plant: the two solved controls are the ELECTRICAL
+        % reference commands u=[P_ref,Emag_ref], not the actual shaft state.
+        % The device's actual shaft power is P_ref+L0 inside the plant; it is
+        % deliberately NOT written into Pm_solved_pu here (that field stays NaN
+        % so no consumer can mistake a reference for measured shaft power).
+        result.reference.P_ref_scheduled_pu = sched(1);
+        result.reference.P_ref_solved_pu = solvd(1);
+        result.reference.Emag_ref_scheduled_pu = sched(2);
+        result.reference.Emag_ref_solved_pu = solvd(2);
+    elseif strcmp(ref_layout,'classical_pm_emag')
         result.reference.Pm_scheduled_pu = sched(1);
         result.reference.Pm_solved_pu = solvd(1);
         result.reference.Emag_scheduled_pu = sched(2);
@@ -1320,16 +1333,22 @@ function [slots, layout, reason] = resolve_sg_reference_slots(dev)
 %   voltage Efd.  A device may declare its layout via
 %   dev.equilibrium_control_layout ('classical_pm_emag'); otherwise the EMF6
 %   [Tm, Efd] pair is assumed, which keeps every existing EMF6 contract intact.
+%   The opt-in reclose plant declares [P_ref, Emag_ref] -- electrical reference
+%   commands, NOT the actual shaft state Pm -- so its layout is matched FIRST:
+%   it has no Pm/Emag inputs and must never be relabelled as the classical pair.
 slots = []; layout = ''; reason = '';
 names = string(dev.input_names);
 has = @(n) any(strcmpi(names,n));
-if has('Pm') && has('Emag')
+if has('P_ref') && has('Emag_ref')
+    layout = 'classical_reclose_pref_emag_ref'; want = {'P_ref','Emag_ref'};
+elseif has('Pm') && has('Emag')
     layout = 'classical_pm_emag'; want = {'Pm','Emag'};
 elseif has('Tm') && has('Efd')
     layout = 'emf6_tm_efd'; want = {'Tm','Efd'};
 else
-    reason = sprintf(['Reference SG "%s" declares neither the classical ' ...
-        '[Pm,Emag] nor the EMF6 [Tm,Efd] equilibrium-input pair.'], ...
+    reason = sprintf(['Reference SG "%s" declares none of the classical ' ...
+        '[Pm,Emag], the opt-in reclose [P_ref,Emag_ref], or the EMF6 [Tm,Efd] ' ...
+        'equilibrium-input pair.'], ...
         char(dev.device_id));
     return;
 end

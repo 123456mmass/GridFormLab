@@ -1,4 +1,6 @@
 function [options, setup] = auto_calibrate_cpf(app, case_data, method)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %AUTO_CALIBRATE_CPF Run base NR, pick weakest bus, set CPF defaults.
 
 model = pf_prepare_case(case_data);

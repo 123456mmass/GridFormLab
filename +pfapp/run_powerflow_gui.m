@@ -1,4 +1,6 @@
 function app = run_powerflow_gui()
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %RUN_POWERFLOW_GUI Interactive GUI launcher for the n-bus power-flow toolkit.
 %   Builds the themed interface, wires every callback through
 %   pfapp.wire_callbacks (which captures the stable figure handle so the

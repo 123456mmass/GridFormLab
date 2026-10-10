@@ -1,4 +1,6 @@
 function open_separate_plots_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %OPEN_SEPARATE_PLOTS_ACTION Open standalone figures for the last result.
 
 try

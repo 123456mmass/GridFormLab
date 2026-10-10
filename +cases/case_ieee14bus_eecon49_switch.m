@@ -63,7 +63,7 @@ case_data.voltage_limit_contract = struct( ...
 % field that standardize_case keeps parallel to the numeric 12-column
 % bus_data; it never feeds the PF equations.
 case_data.bus_role = repmat("PQ",size(case_data.bus_data,1),1);
-case_data.bus_role(1) = "REF";
+case_data.bus_role(1) = "SLACK";
 case_data.bus_role(case_data.bus_data(:,2)==2) = "PV";
 ibr_buses = [2 3 6 8];
 for k = 1:numel(ibr_buses)

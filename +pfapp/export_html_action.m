@@ -1,4 +1,6 @@
 function app = export_html_action(app, fig)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 %EXPORT_HTML_ACTION Export last result as a standalone HTML report.
 
 app = pfapp.set_busy(app, true);

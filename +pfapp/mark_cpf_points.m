@@ -1,4 +1,6 @@
 function mark_cpf_points(cpf, plot_voltage)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 if cpf.nose_index > 0
     plot(cpf.nose_lambda, plot_voltage(cpf.nose_index), 'p', 'MarkerSize', 14, ...
         'MarkerFaceColor', [0.80 0.22 0.16], 'MarkerEdgeColor', [0.80 0.22 0.16]);

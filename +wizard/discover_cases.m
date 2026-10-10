@@ -20,6 +20,15 @@ function r = discover_cases(analysis_id)
 %     analysis    - the analysis this entry was discovered for
 %     schema      - expected schema version (filled lazily by caller if needed;
 %                   left empty here to avoid loading the case)
+%     gui_visible - whether the case-selection GUI offers this entry.  TRUE for
+%                   the IBR/scenario entries and for the catalog cases the
+%                   owner keeps in the working set; FALSE for a catalog case
+%                   that exists only so solve_case and the reporting scripts
+%                   can still resolve it by id.  THIS FUNCTION RETURNS THEM ALL
+%                   EITHER WAY -- the filter is applied at the display layer
+%                   (wizard.pages.p2_case), never here, because build_request,
+%                   validate_request and dispatch_analysis all resolve through
+%                   this list.
 %
 %   Compatibility: an entry is included only if its option field (or IBR
 %   specialization) is compatible with the analysis. Fail closed for duplicate
@@ -162,14 +171,18 @@ for k = 1:numel(catalog)
     if ~isfield(e, option_field)
         continue;  % entry has no options for this analysis -> skip
     end
+    vis = true;
+    if isfield(e, 'gui_visible'), vis = logical(e.gui_visible); end
     r(end+1,1) = item(lower(char(e.id)), char(e.label), e.loader, ...
-        e.(option_field), analysis_id); %#ok<AGROW>
+        e.(option_field), analysis_id, vis); %#ok<AGROW>
 end
 end
 
-function s = item(id, label, loader, options, analysis_id)
+function s = item(id, label, loader, options, analysis_id, gui_visible)
+if nargin < 6, gui_visible = true; end
 if nargin < 5, analysis_id = ''; end
 if nargin < 4, options = struct(); end
 s = struct('id', id, 'label', label, 'loader', loader, ...
-    'options', options, 'analysis', analysis_id, 'schema', '');
+    'options', options, 'analysis', analysis_id, 'schema', '', ...
+    'gui_visible', logical(gui_visible));
 end

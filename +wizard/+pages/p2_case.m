@@ -11,6 +11,16 @@ if isempty(app.analysis)
     return;
 end
 entries = wizard.discover_cases(app.analysis);
+% DISPLAY FILTER ONLY.  The owner keeps the offered working set to the two
+% production networks (2026-09-26); hidden catalog cases stay fully runnable
+% by id through solve_case, scripts/reporting/ and the routing tests.  Only
+% app.case_id flows to the later pages (p3 re-discovers the FULL list and
+% looks that id up), so trimming the listbox here cannot orphan anything.
+entries = entries([entries.gui_visible]);
+if isempty(entries)
+    error('wizard:pages:p2_case:noVisibleCases', ...
+        'Analysis %s offers no visible cases.', app.analysis);
+end
 app.cases = entries;
 setappdata(panel, 'case_ids', {entries.id});
 setappdata(panel, 'case_appfig', app.fig);

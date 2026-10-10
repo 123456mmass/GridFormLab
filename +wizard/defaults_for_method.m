@@ -17,7 +17,7 @@ function opt = defaults_for_method(analysis_id, case_entry)
 %   physical parameters, tolerances, or gates.
 %
 %   Defaults mirror the existing approved launcher defaults in solve_case.m:
-%     - PF:   verbose=true, plot_results=true, max_iter=50, tolerance=1e-10,
+%     - PF:   verbose=true, plot_results=false, max_iter=50, tolerance=1e-10,
 %             enforce_q_limits=true, q_limit_tolerance=1e-6,
 %             max_q_limit_switches=20  (solve_case.m:45-47)
 %     - SSSA: case-driven model + fd_eps/stability_tolerance/
@@ -52,7 +52,11 @@ end
 function opt = base_defaults(analysis_id)
 switch analysis_id
     case 'pf'
-        opt = struct('verbose', true, 'plot_results', true, ...
+        % Plots are opt-in here too.  The GUI Run button passes its own
+        % checkbox state, and +examples/ pass true explicitly, so a default
+        % true in the programmatic path only ever produced surprise figure
+        % windows during batch runs and the full-test suite.
+        opt = struct('verbose', true, 'plot_results', false, ...
             'max_iter', 50, 'tolerance', 1e-10, ...
             'enforce_q_limits', true, 'q_limit_tolerance', 1e-6, ...
             'max_q_limit_switches', 20);

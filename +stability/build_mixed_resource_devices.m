@@ -35,6 +35,10 @@ function [devices, dev_meta] = build_mixed_resource_devices(case_data, resources
 %     "sg_classical"   -> stability.sg_classical_device (2nd-order classical SG,
 %                          controls [Pm, Emag]; used by NE39 whose dynamics are
 %                          the classical RTS-1996-derived set)
+%     "sg_classical_reclose" -> stability.sg_classical_reclose_device (opt-in
+%                          7-state PROJECT_DERIVED reclose plant; parameters from
+%                          stability.ne39_sg_reclose_plant_params(case_data);
+%                          controls [P_ref, Emag_ref])
 %     "regfm_b1_dual"  -> ibr.dual_mode_ibr_model (20-state GFL/GFM/tripped)
 %     "eecon49_dual"    -> ibr.eecon49_dual_mode_model (16-state shared-plant dual)
 %     "decoupled_dual"  -> ibr.decoupled_dual_mode_model (17-state dual, decoupled
@@ -119,6 +123,19 @@ for k = 1:nr
             % EMF6 time constants exist.
             dev = stability.sg_classical_device(case_data, string(rid), ...
                 bus, bp, bus_ids(:)', V0, r.dynamic_params);
+            dev.mode = 'synchronous';
+            dev.initial_mode = 'synchronous';
+        case 'sg_classical_reclose'
+            % Opt-in 7-state SG31 reclose plant (scenario_opt.sg_reclose_plant).
+            % The frozen PROJECT_DERIVED record is rebuilt from case_data by
+            % stability.ne39_sg_reclose_plant_params (H/D/Xdp pass through
+            % unchanged; every added actuator/loss/PLL/rating value is
+            % PROJECT_DERIVED design data, not a TAMU controller mapping).  The
+            % factory carries that record inside provenance.params, which the
+            % uniform copier below preserves.
+            reclose_params = stability.ne39_sg_reclose_plant_params(case_data);
+            dev = stability.sg_classical_reclose_device(case_data, string(rid), ...
+                bus, bp, bus_ids(:)', V0, reclose_params);
             dev.mode = 'synchronous';
             dev.initial_mode = 'synchronous';
         case 'eecon49_dual'
@@ -264,6 +281,9 @@ for k = 1:nr
         dev.limiter_regime_key = '';
     end
     % คง provenance schema ร่วม แต่ไม่ทิ้ง parameters ของ closures ที่สร้างจริง.
+    % provenance.params ของโรงงานต้องรอดการ rewrite นี้: opt-in reclose plant
+    % เก็บ schema_id/S_rated_MVA ไว้ในนั้น (sg_prospective_close_metrics อ่านจาก
+    % path นี้) และต้องรอด struct-array vertcat ด้านล่างด้วย.
     actual = dev.provenance;
     params = struct(); branches = struct();
     if isfield(actual,'params'), params = actual.params; end

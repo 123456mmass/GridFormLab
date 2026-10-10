@@ -450,13 +450,13 @@ I_{net}=\frac{(i_d+ji_q)e^{j\delta_{PLL}}}{\kappa},\qquad S=VI_{net}^*.
 \subsection{Power flow}
 
 PF does not integrate converter or SG states.  For each non-reference bus it
-solves the specified active/reactive mismatch selected by the REF/PV/PQ
+solves the specified active/reactive mismatch selected by the SLACK/PV/PQ
 semantics.  In compact form, Newton iterations solve
 \[
 J_{PF}(z^{(m)})\Delta z^{(m)}=-F_{PF}(z^{(m)}),\qquad
 z^{(m+1)}=z^{(m)}+\Delta z^{(m)},
 \]
-until \(\|F_{PF}\|_\infty\) is below tolerance.  The source-case REF/PV/PQ PF
+until \(\|F_{PF}\|_\infty\) is below tolerance.  The source-case SLACK/PV/PQ PF
 is used only to freeze the constant-admittance load model.  The reported
 operating point instead uses the mode-aware warm-start, changes every online
 GFL terminal to its effective PQ semantics, and then accepts only the

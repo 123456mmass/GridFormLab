@@ -13,12 +13,12 @@ function scenario = scenario_ieee14_1sg_4ibr(scenario_opt)
 %
 %   Resource table (5 entries, IEEE14-specific):
 %     SG1  - sg_emf6, bus 1, Kodsi 615 MVA, supported {"synchronous","breaker_open"}
-%     IBR2/3/6/8 - profile-owned dual-mode IBRs at buses 2/3/6/8.
-%       mission: REGFM_B1 + WECC/RMS10 family and historical nameplates.
-%       eecon49_figure4: shared-plant GFL(PLL)/GFM(VSG, no PLL), 100 MVA each.
-%       decoupled_figure4: the same case and GFL branch with the project GFM
-%         swing whose droop, transient damping and inertia are independent
-%         (ibr.decoupled_dual_mode_model, 17 states).
+%     IBR2/3/6/8 - profile-owned dual-mode IBRs at buses 2/3/6/8, all built on
+%       the one surviving family ibr.eecon49_dual_mode_model
+%       (shared-plant GFL(PLL)/GFM(VSG, no PLL), 100 MVA each).
+%       mission: the same case, pre-fault dispatch and event contract.
+%       eecon49_figure4: the EECON49 Figure-4 source case, which additionally
+%         owns a nonzero GFL reactive-power schedule in bus_data(:,6).
 %
 %   STATUS: SOURCE_MODELS_IMPLEMENTED_PENDING_END_TO_END_GATES.
 %
@@ -39,14 +39,10 @@ switch case_profile
         case_data = cases.case_ieee14_1sg_4ibr_auto_vsg();
     case 'eecon49_figure4'
         case_data = cases.case_ieee14bus_eecon49_switch();
-    case 'decoupled_figure4'
-        % Same immutable network/base/dispatch/event case as the source
-        % profile, so the two GFM structures are compared on identical inputs.
-        % Only the IBR GFM swing model and its parameters differ.
-        case_data = cases.case_ieee14bus_eecon49_switch();
     otherwise
         error('cases:scenario_ieee14_1sg_4ibr:badCaseProfile', ...
-            'Unknown case_profile "%s".',case_profile);
+            'Unknown case_profile "%s". Valid profiles: mission, eecon49_figure4.', ...
+            case_profile);
 end
 
 % Normal operation uses the frozen pre-fault dispatch from the mission case.
@@ -95,23 +91,29 @@ end
 % factory does not silently replace the mapped PQ operating point by unity PF.
 % Other profiles retain their historical Q_ref=0 default exactly.
 q_default_MVAr = zeros(1,4);
-if any(strcmp(case_profile,{'eecon49_figure4','decoupled_figure4'}))
+if strcmp(case_profile,'eecon49_figure4')
     q_default_MVAr = case_ibr_q_dispatch_MVAr(case_data,[2 3 6 8]);
-    if strcmp(case_profile,'decoupled_figure4')
-        ibr_model_id = 'decoupled_dual';
-    else
-        ibr_model_id = 'eecon49_dual';
-    end
-    ibr_Mbase = [100 100 100 100];
     if ~isempty(gfl_family)
         error('cases:scenario_ieee14_1sg_4ibr:profileConflict', ...
             '%s owns its GFL/GFM branches; rms10_profile_b is incompatible.', ...
             case_profile);
     end
-else
-    ibr_model_id = 'regfm_b1_dual';
-    ibr_Mbase = [140 100 100 100];
 end
+
+% ONE MODEL FAMILY, ONE BASE.  The mission profile used to build
+% 'regfm_b1_dual' on ibr_Mbase = [140 100 100 100] -- a REGFM_B1 nameplate
+% proxy.  That family was retired on 2026-09-26 (the owner's call: the older
+% families predate corrections applied only to the production path), so every
+% profile now builds 'eecon49_dual' on the same 100-MVA base the EECON49
+% figure-4 profile uses, where ibr_Mbase == Sbase and kappa == 1.
+%
+% This is a MODEL CHANGE for the mission profile, not a rename: its devices go
+% from the 20-state (WECC GFL) / 23-state (RMS10 GFL) regfm_b1_dual shell to
+% the 16-state eecon49_dual shell, and IBR2's rating drops from 140 MVA to
+% 100 MVA.  Tests that pinned the old state counts or the old base were
+% updated with it; nothing about the network, the dispatch or the SG changed.
+ibr_model_id = 'eecon49_dual';
+ibr_Mbase = [100 100 100 100];
 ibr2 = ibr_entry('IBR2',2,ibr_Mbase(1),'gfl',gfl_family,q_default_MVAr(1),ibr_model_id);
 ibr3 = ibr_entry('IBR3',3,ibr_Mbase(2),'gfl',gfl_family,q_default_MVAr(2),ibr_model_id);
 ibr6 = ibr_entry('IBR6',6,ibr_Mbase(3),'gfl',gfl_family,q_default_MVAr(3),ibr_model_id);
@@ -128,38 +130,21 @@ scenario.resource_schema = schema;
 scenario.scenario_id = 'ieee14_1sg_4ibr';
 if strcmp(case_profile,'eecon49_figure4')
     scenario.scenario_id = 'ieee14_eecon49_1sg_4ibr';
-elseif strcmp(case_profile,'decoupled_figure4')
-    scenario.scenario_id = 'ieee14_decoupled_1sg_4ibr';
 end
-if strcmp(ibr_model_id,'eecon49_dual')
-    ibr_model_label = 'project-owned full-state GFL(PLL) + GFM(VSG without PLL) shared-plant dual';
-    ibr_classification = ['AC/control equations=SOURCE_MAPPED; DC-source regulator, ' ...
-        'fixed superset and transfer=PROJECT_DERIVED; parameters/bases=CASE_DEFINED'];
-elseif strcmp(ibr_model_id,'decoupled_dual')
-    ibr_model_label = ['project-owned full-state GFL(PLL) + GFM(decoupled VSG ' ...
-        'without PLL, independent droop/damping/inertia) shared-plant dual'];
-    ibr_classification = ['GFL and shared-plant AC/control equations=SOURCE_MAPPED; ' ...
-        'GFM swing block (R_droop/D_t/wD washout), DC-source regulator, fixed ' ...
-        'superset and transfer=PROJECT_DERIVED; bases=CASE_DEFINED'];
-else
-    ibr_model_label = sprintf('%s GFL + REGFM_B1 G2 GFM dual-mode superset',gfl_family_label(gfl_family));
-    ibr_classification = ['SG1=CASE_DEFINED (Kodsi); IBR Mbase=CASE_DEFINED nameplate proxy; ' ...
-        'REGFM_B1 Table 1=SOURCE_VERBATIM'];
-end
+% ibr_model_id is always 'eecon49_dual' now, so the label is unconditional.
+% The two former labels were family-specific -- one claimed 'REGFM_B1 Table 1=
+% SOURCE_VERBATIM' for the retired regfm_b1_dual family, the other an
+% independent GFM swing block for the retired decoupled family -- and neither
+% family exists any more, so neither label would be true of what is built here.
+ibr_model_label = 'project-owned full-state GFL(PLL) + GFM(VSG without PLL) shared-plant dual';
+ibr_classification = ['AC/control equations=SOURCE_MAPPED; DC-source regulator, ' ...
+    'fixed superset and transfer=PROJECT_DERIVED; parameters/bases=CASE_DEFINED'];
 scenario.provenance = struct( ...
     'case_source', case_data.reference.network, ...
     'sg_dynamics', case_data.reference.sg_dynamics, ...
     'ibr_model',ibr_model_label, ...
     'classification',ibr_classification, ...
     'note', 'IEEE14 IDs/buses confined to this profile only; engine is case-agnostic');
-end
-
-function label = gfl_family_label(family)
-if strcmpi(family, 'rms10')
-    label = 'GFL-RMS10 (23-state dual)';
-else
-    label = 'WECC REGC_A/REEC_A (20-state dual)';
-end
 end
 
 % =========================================================================
@@ -195,15 +180,22 @@ end
 % =========================================================================
 function r = ibr_entry(rid,bus,Mbase,initial_mode,gfl_family,default_Q_MVAr,model_id)
 %IBR_ENTRY  Build one dual-mode IBR resource table entry (uniform provenance).
-%   Optional GFL_FAMILY (5th arg) selects the GFL branch at construction:
-%     '' | 'wecc_regca_reeca'  -> WECC 7-state (default, 20-state dual)
-%     'rms10'                  -> GFL-RMS10 10-state (23-state dual)
+%   Optional GFL_FAMILY (5th arg) is the legacy construction-time GFL branch
+%   selector.  It is retained for signature compatibility and is INERT on the
+%   only family this project builds: ibr.eecon49_dual_mode_model derives its GFL
+%   branch from the EECON49 source contract and never reads gfl_family, so the
+%   argument is not copied into dynamic_params on that path.  It is still
+%   rejected loudly when combined with a profile that owns its own GFL/GFM
+%   branches (see the profileConflict check in the body).
 %   DEFAULT_Q_MVAR is the case-owned initial GFL reactive-power dispatch.
-%   The family and dispatch flow through the resource table into the generic
-%   builder. Omitting either optional value preserves the historical defaults.
+%   The dispatch flows through the resource table into the generic builder.
 if nargin < 5, gfl_family = ''; end
 if nargin < 6, default_Q_MVAr = 0.0; end
-if nargin < 7, model_id = 'regfm_b1_dual'; end
+% 'eecon49_dual' is the only IBR family this project builds.  Leaving the old
+% default here would not merely be stale text: stability.build_mixed_resource_devices
+% now FAILS CLOSED on an unregistered model_id, so a 6-argument call would
+% throw instead of silently building the retired family.
+if nargin < 7, model_id = 'eecon49_dual'; end
 r = struct();
 r.resource_id = rid;
 r.bus_id = bus;
@@ -218,7 +210,7 @@ r.can_switch_online = true;
 r.has_current_limiter = true;
 r.has_frt = true;
 r.can_black_start = false;
-if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
+if strcmp(model_id,'eecon49_dual')
     ImaxSS=1.2; ImaxF=1.2;
 else
     ImaxSS=1.0; ImaxF=1.5;
@@ -229,11 +221,10 @@ r.limits = struct( ...
     'Emax', 1.2, 'Emin', 0.8);
 r.ratings = struct('Mbase', Mbase, 'Sbase', 100.0, ...
     'default_P_MW', 0.0, 'default_Q_MVAr', default_Q_MVAr);
-% dynamic_params: Mbase is shared at the system/device boundary. WECC and
-% REGFM_B1 parameters otherwise remain owned by their source-model defaults.
-% An optional gfl_family selects the RMS10 opt-in branch (construction-time).
+% dynamic_params: Mbase is shared at the system/device boundary. All other
+% EECON49 parameters remain owned by their source-model defaults.
 r.dynamic_params = struct('Mbase', Mbase);
-if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
+if strcmp(model_id,'eecon49_dual')
     r.dynamic_params.Sbase=100.0;
     r.dynamic_params.fbase=60.0;
     % Converter command/actuation delay (source eq.(20)-(21), first-order lag
@@ -254,7 +245,6 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     r.dynamic_params.gfl_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
         'Vdc_ref',1.0,'Imax',1.2,'kpPLL',1.2,'kiPLL',5.0, ...
         'kpP',0.8,'kiP',2.5,'kpQ',0.8,'kiQ',2.5,'kpI',0.3,'kiI',4.0);
-    if strcmp(model_id,'eecon49_dual')
     r.dynamic_params.gfm_eecon49=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
         'Vdc_ref',1.0,'Imax',1.2,'M',0.08,'Dv',20.0, ...
         'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
@@ -271,46 +261,23 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     % SG-online) Dv=20 gives zeta = 4.22..5.40, i.e. heavily over-damped, and
     % Dv=1.50 gives zeta = 0.41.  Reaching zeta = 1/sqrt(2) here would need
     % Dv = 2.6..3.4, i.e. 30-38 % droop.  Droop and damping therefore cannot
-    % both be placed by this structure; that documented limitation is what
-    % ibr.gfm_decoupled_full_model addresses.  M=0.08 (H_v=0.04 s) unchanged.
+    % both be placed by this structure.  That is a documented limitation of the
+    % VSG form itself, and it is why the project carried a separate decoupled
+    % swing (ibr.gfm_decoupled_full_model, retired 2026-09-26) whose R_droop,
+    % D_t and wD were independent; with that family gone this structure is the
+    % only GFM swing the project builds.  M=0.08 (H_v=0.04 s) unchanged.
     % Derivation and both values side by side:
     % docs/project/EECON49_GFL_GFM_SOURCE_CONTRACT.md, "GFM swing droop and
     % damping".
-    else
-    % Decoupled GFM swing (PROJECT_DERIVED, this project's own model).  Values
-    % corrected 2026-08-13 after the island SSSA surface was measured; the
-    % derivation and the withdrawn earlier basis are in
-    % docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md:
-    %   R_droop=0.05  5 % P-f droop, the same grid-code band and the same static
-    %                 droop as the Dv=20 baseline, so the two structures are
-    %                 compared at equal droop.  Unaffected by D_t and wD.
-    %   M=0.08        unchanged source-printed inertia (H_v=0.04 s), so the
-    %                 comparison is also at equal inertia;
-    %   D_t=0.0       measured result, not an omission: in the authenticated
-    %                 all-four ISLAND every D_t>0 degrades the margin
-    %                 monotonically at every washout corner tested (wD=3..100),
-    %                 and SG-online D_t does not move the dominant mode at all
-    %                 (1e-6 across the same sweep).  No positive value is
-    %                 defensible on this system.  An earlier D_t=20 with wD=3.0
-    %                 put the island at +0.336 (unstable) where the coupled
-    %                 baseline is -0.483;
-    %   wD=50.0       REGFM_B1 Table-1 SOURCE_VERBATIM washout corner, ~13x
-    %                 above this island's slowest mode (3.92 rad/s), so a caller
-    %                 that does enable D_t keeps the washout pole clear of the
-    %                 mode that sets the island margin.
-    r.dynamic_params.gfm_decoupled=struct('Lf',0.15,'Rf',0.015,'Cdc',0.10, ...
-        'Vdc_ref',1.0,'Imax',1.2,'M',0.08, ...
-        'R_droop',0.05,'D_t',0.0,'wD',50.0, ...
-        'tauE',0.05,'kQ',0.25,'kE',8.0,'kpV',1.2,'kiV',4.5, ...
-        'kpI',0.3,'kiI',4.0);
-    end
     % Non-ideal DC source shared by the EECON49 GFL and GFM branches.
     % eps_dc is the declared DC-source regulation at rated converter power;
     % Rdc, Edc, Rch and the DC eigenvalue are derived from it in
     % ibr.dc_source_thevenin_params, which also records why eps_dc=0.10 and
     % proves that the chopper stays inactive while Edc <= Vdc_max.
-    % Tdc is retained only for ibr.gfm_decoupled_full_model, which is off the
-    % EECON49 path and keeps its own earlier closure.
+    % Tdc is retained as the historical name of the retired ideal-link time
+    % constant; it is READ BY NOTHING on this path (the DC link is the Thevenin
+    % source below), and is kept only so existing case structs stay
+    % field-compatible.  Do not treat it as an active parameter.
     % tau_s is the L/R time constant of the DC source circuit and is DERIVED,
     % not guessed: the maximally-flat criterion zeta = 1/sqrt(2) on the L-C pair
     % returns 5.00 ms on this device, and the realised zeta is 0.707 at
@@ -319,29 +286,23 @@ if any(strcmp(model_id,{'eecon49_dual','decoupled_dual'}))
     % ibr.dc_source_thevenin_params. Setting tau_s = [] would take the derived
     % value; it is written out here so the number is visible in the case.
     %
-    % source_state is PER-FAMILY, not shared. The Thevenin source current is a
-    % state only on the EECON49 family, whose two branches (gfl_eecon49 and
-    % gfm_eecon49) both read this struct and both grew the 11th coordinate
-    % together. The decoupled family shares only the GFL adapter with EECON49;
-    % its GFM branch (gfm_decoupled_full_model) keeps its own Cdc closure, so
-    % giving it an 11-state GFL adapter against an 11-state expectation on one
-    % side and a 10-state one on the other broke the family's branch-layout
-    % guard (GATE-2026-08-25-02). Setting source_state=false here leaves the
-    % decoupled family exactly as it was before the DC-source work: 10-state
-    % GFL adapter, 11-state GFM, algebraic Thevenin current on the shared
-    % adapter. The EECON49 branch below re-enables the state.
+    % source_state selects which DC-source closure the device is built with, and
+    % therefore the superset length. true: the Thevenin source current is an
+    % 11th coordinate on BOTH EECON49 branches (gfl_eecon49 and gfm_eecon49 read
+    % this struct and grew that coordinate together), so a branch is 11 states
+    % and the dual superset is 17. false: the source current stays algebraic and
+    % the branches are 10 states. The value written here is overwritten below by
+    % the model_id-keyed assignment, which is the one that decides the closure.
     dc_source_common=struct('Tdc',0.10, ...
         'eps_dc',0.10,'Pr',1.0,'Vdc_max',1.10,'delta_ch',0.02,'Pmax',1.06*1.2, ...
         'tau_s',0.005,'zeta_target',1/sqrt(2));
     r.dynamic_params.dc_source=dc_source_common;
-    % The Thevenin source current is a STATE only on the EECON49 family, whose
-    % two branches (gfl_eecon49 and gfm_eecon49) both read this struct and both
-    % grew the 11th coordinate together. The decoupled family shares only the
-    % GFL adapter with EECON49; its GFM branch (gfm_decoupled_full_model) keeps
-    % its own Cdc closure, so an 11-state GFL adapter there broke the family's
-    % branch-layout guard (GATE-2026-08-25-02). source_state=false leaves the
-    % decoupled family exactly as it was before the DC-source work: 10-state
-    % GFL adapter, 11-state GFM, algebraic Thevenin current on the adapter.
+    % The Thevenin source current is a STATE on the EECON49 family, whose two
+    % branches (gfl_eecon49 and gfm_eecon49) both read this struct and both grew
+    % the 11th coordinate together.  That is what makes the production device a
+    % 17-state superset (16 published coordinates + I_dc at index 17), and it is
+    % load-bearing: the branches size themselves from this flag, so flipping it
+    % would desynchronise the branch layout from the superset.
     r.dynamic_params.dc_source.source_state=strcmp(model_id,'eecon49_dual');
 elseif ~isempty(gfl_family)
     r.dynamic_params.gfl_family = gfl_family;
@@ -353,22 +314,14 @@ if strcmp(model_id,'eecon49_dual')
     details=sprintf(['16-state shared-plant superset; GFL controller owns PLL; ' ...
         'GFM controller owns VSG and no PLL; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s'], ...
         Mbase,default_Q_MVAr);
-elseif strcmp(model_id,'decoupled_dual')
-    source=['GFL branch and shared plant: EECON49-P4 Eqs.(6)-(19); GFM swing: ' ...
-        'PROJECT_DERIVED decoupled droop/damping/inertia (see ' ...
-        'docs/project/DECOUPLED_GFM_SOURCE_CONTRACT.md)'];
-    classification=['GFL and shared-plant AC/control=SOURCE_MAPPED; GFM swing ' ...
-        '(R_droop/D_t/wD)=PROJECT_DERIVED from measured K; base/reference=CASE_DEFINED; ' ...
-        'DC-source regulator and transfer=PROJECT_DERIVED'];
-    details=sprintf(['17-state shared-plant superset; GFL controller owns PLL; ' ...
-        'GFM controller owns the decoupled VSG (no PLL) with washout state ' ...
-        'omega_f last; Mbase=%.0f MVA; default Q=%.9g MVAr; Tdc=0.10 s; ' ...
-        'R_droop=0.05, D_t=0.0, wD=50.0, M=0.08'],Mbase,default_Q_MVAr);
 else
-    source='WECC REGC_A/REEC_A (2014) GFL + REGFM_B1 NREL/TP-5D00-90260 G2 GFM';
-    classification='Mbase and initial Q dispatch=CASE_DEFINED; controller defaults=SOURCE_DEFINED/SOURCE_MAPPED';
-    details=sprintf(['20-state superset (GFM13+GFL7); Mbase=%.0f MVA; ' ...
-        'default Q=%.9g MVAr; kappa=Sbase/Mbase at boundary'],Mbase,default_Q_MVAr);
+    % Unreachable from the production profiles, which all pass 'eecon49_dual'.
+    % Kept as an explicit fail-loud guard rather than a silent default: a caller
+    % reaching here has named a model_id this profile does not describe, and
+    % stability.build_mixed_resource_devices would reject it anyway.
+    error('cases:scenario_ieee14_1sg_4ibr:badIbrModelId', ...
+        ['Unknown ibr model_id "%s". This profile builds only ''eecon49_dual''.'], ...
+        model_id);
 end
 r.provenance = struct( ...
     'model',model_id,'source',source,'classification',classification,'details',details);

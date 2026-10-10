@@ -1,4 +1,6 @@
 function [plot_bus_id, plot_voltage, note_text] = choose_reference_pv_series(cpf)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 plot_bus_id = cpf.target_bus;
 plot_bus_index = cpf.target_bus_index;
 plot_voltage = cpf.target_voltage(:);

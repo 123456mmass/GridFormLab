@@ -1,4 +1,6 @@
 function plot_metric_3d(values, method_labels, case_labels, plot_title)
+%DEPRECATED (Phase C): superseded by the Studio GUI (+studio/launch.m).
+%   Header banner only; behavior unchanged.
 nexttile;
 bar3(pfapp.fillmissing_for_plot(values));
 title(plot_title, 'Interpreter', 'none');

@@ -2,9 +2,9 @@
 
 > ## 2026-10-10 current snapshot — read this first
 >
-> The current worktree state is **not** the `main` branch described below. Actual branch is **`checkpoint/ne39-160s-20261009`**, whose main primitive checkpoint is **committed and remote-verified**: `81462daa643e73de633081e26bbdb1828eeee920` (7 files, 1832+/6-). Everything from the old header down is **historical**, including the old HEAD/main and IEEE14 sections.
+> The current worktree state is **not** the `main` branch described below, and the three checkpoint commits are **complete and push-verified** on **`checkpoint/ne39-160s-20261009`**: main primitive `81462daa643e73de633081e26bbdb1828eeee920` (7 files, 1832+/6-), broad source/tests/docs WIP `67c3a731ef5d967bff528ba60f7ed198000dfadb` (257 files, 18610+/2905-), and DSH installer `1e9b3d6e59b261d3cbc29814cbb4f34e05c0fe50` (2 sources, 151+, never executed). Latest remote hash is exactly `1e9b3d6e…`. Everything from the old header down is **historical**, including the old HEAD/`main` and IEEE14 sections.
 > Current-state documents: [WORKTREE_CHECKPOINT_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/WORKTREE_CHECKPOINT_20261010.md>) (grouping, tested counts, exclusions, next steps) and [NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md>) (NE39 primitive evidence and its limits).
-> A broad source/tests/docs **WIP** commit (which contains these pointer docs) is **prepared, not a release**; the **16 staged deletions are protected**, the old real-160 raw was **not rerun**, and **no new actual SG reclose is validated**.
+> Only **43/43** primitive and **116/116** broader offline contracts were actually run — **not** full-test, reclose, or field success. The **16 staged deletions are protected**, the old real-160 raw was **not rerun**, `.001` is **NOT RUN**, the five wiring core files plus test sit in the broad WIP with reviews **open**, and **no new actual SG reclose is validated**.
 
 Date: 2026-07-17 (Revision 5 corrective closure); 2026-07-18 IBR dynamic-equation contract Phases 0A/1/2/3; 2026-07-18/19 GFL-RMS10 reopening Phases 0/1/2/3/4; 2026-07-19/20 domain-preserving Newton globalization; 2026-07-20 GFM-VSG-no-PLL SMIB-first characterization; 2026-07-21 SSSA load sweep (SMIB loaded-IBR)
 Branch: `main`

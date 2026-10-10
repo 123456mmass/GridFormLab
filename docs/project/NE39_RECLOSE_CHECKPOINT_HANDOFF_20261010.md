@@ -1,6 +1,15 @@
 # NE39 SG reclose — durable checkpoint handoff (2026-10-10)
 
-**Committed session handoff, not a completion certificate.** This document records the task state of the opt-in reduced SG31 reclose primitive at the moment of the main checkpoint commit. It is written to `docs/project/` so a later session can read it from the repository; read `git log` for the commit that contains it. The receipt for the broader commit that adds the separate WIP work is appended by the parent after that commit, at which point the file hash line below becomes historical.
+## Receipt — three commits made and PUSH VERIFIED
+
+- **Main primitive:** `81462daa643e73de633081e26bbdb1828eeee920` (7 files, 1832+/6-).
+- **Broad source/tests/docs WIP:** `67c3a731ef5d967bff528ba60f7ed198000dfadb` (257 files, 18610+/2905-), exact allowlist checked with excluded files preserved.
+- **DSH installer:** `1e9b3d6e59b261d3cbc29814cbb4f34e05c0fe50` (2 sources, 151+), source-only, never executed, no bin/obj payload.
+- All on `checkpoint/ne39-160s-20261009`; latest remote hash exactly `1e9b3d6e…` (**push verified**). The **16 staged deletions matched their saved baseline after every commit**.
+- Pre-checkpoint wording in this document (e.g. §4a "Prepared for committed checkpoint", §7/§8 pending language) is **historical and superseded by this receipt**. This receipt's own commit hash is **unknown here — do not invent it**; read `git log` after `1e9b3d6e…` and the commit that contains this receipt.
+- Evidence limits unchanged: only **43/43** primitive (`pwsh-215`) and **116/116** broader offline contracts (`pwsh-244`) were actually run — the five wiring core files and their test sit in the broad WIP with reviews **open**, the wiring child is **inactive/stopped**, no MATLAB is running, and there is **no actual reclose, no new 160 s run, and `.001` NOT RUN**.
+
+**Committed session handoff, not a completion certificate.** This document records the task state of the opt-in reduced SG31 reclose primitive at the moments of the checkpoint commits. It is written to `docs/project/` so a later session can read it from the repository; read `git log` for the commits that contain it.
 
 Authority: the latest direct human instruction is to **create the checkpoint commit and explain everything plus the next step for another session**. The human's active engineering objective is:
 

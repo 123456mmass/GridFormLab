@@ -1,6 +1,16 @@
 # Worktree checkpoint — global groups and eligibility (2026-10-10)
 
-Purpose: one durable place that tells the next session **what must be saved from this working tree, in which commit group, what is tested, what is known-untested, and what must stay out**. **Snapshot taken before the WIP/broad checkpoint commit** — it is not a claim that the broad group is committed, and it is not in conflict with the already-published main commit. Later sessions should read `git show` on the commits that **contain these two documents** (this global note and the [NE39 reclose checkpoint handoff](<C:/Users/User/Desktop/Power-flow/docs/project/NE39_RECLOSE_CHECKPOINT_HANDOFF_20261010.md>)) for the canonical, exact file list; the main primitive commit hash is `81462daa643e73de633081e26bbdb1828eeee920`. This file asserts no commit hash for itself.
+## 0. Receipt — all three commits made and PUSH VERIFIED (supersedes §1/§8 pending wording)
+
+- **Main primitive:** `81462daa643e73de633081e26bbdb1828eeee920` — 7 files, 1832 insertions / 6 deletions.
+- **Broad source/tests/docs WIP:** `67c3a731ef5d967bff528ba60f7ed198000dfadb` — 257 files, 18610 insertions / 2905 deletions; the exact allowlist was checked and the excluded files are present (not deleted).
+- **DSH installer:** `1e9b3d6e59b261d3cbc29814cbb4f34e05c0fe50` — 2 sources, 151 insertions; source-only, **no execution**, no bin/obj payload.
+- All three are on `checkpoint/ne39-160s-20261009`; the latest remote hash is exactly `1e9b3d6e…` (**push verified**). The **16 staged deletions matched their saved baseline patch after each commit**.
+- §1 and §8 below were written **before** these commits: their "pending"/"prepared"/"before the commit" wording is **historical and explicitly superseded by this receipt**.
+- This receipt document's **own commit hash is unknown here — do not invent it**; the next session reads `git log` after `1e9b3d6e…` and the commit that contains this receipt.
+- Tested basis is only what actually ran: **43/43** primitive (`pwsh-215`) and **116/116** broader offline contracts (`pwsh-244`) — **not** a full-test, reclose, or field result. The five wiring core files plus their test are inside the broad WIP with reviews **open**; the wiring child is **inactive/stopped**, and the last snapshot shows **no MATLAB**.
+
+Purpose: one durable place that tells the next session **what must be saved from this working tree, in which commit group, what is tested, what is known-untested, and what must stay out**. Written at the checkpoint; the receipt above is the authoritative commit state, and later sessions should read `git show` on the commits that **contain these documents** for the canonical, exact file list.
 
 ## 1. State before the checkpoint commits
 

@@ -23,6 +23,22 @@ function init = mixed_ibr_reduced_initialize(dae, eq_context, reference_device_i
 %     device equations/base/signs: SOURCE_TRANSFORMED by their factories;
 %     reduced PV/PQ initialization and one balancing P input: PROJECT_DERIVED;
 %     damped Newton/FD: NUMERICAL_METHOD.  No external solver is used.
+%
+%   Terminal-phase state alignment (opt-in by declared state name):
+%     the solved island voltage fixes every synchronous machine's rotor angle
+%     through its own classical port (delta_local = sg_delta*X'd), and the same
+%     solved voltage is the stationary value of any device-local terminal
+%     estimator whose plant equations are driven by angle(V_bus).  A device that
+%     DECLARES state names theta_hat and nu_hat therefore gets that exact
+%     stationary seed at the post-gauge solved voltage:
+%         theta_hat = angle(V(bus)), nu_hat = 0
+%     (the same convention its own equilibrium initializer uses).  This is a
+%     seed, not a dynamics change: the device closures are untouched and the
+%     full residual remains the acceptance test.  The pair is all-or-nothing
+%     and must be declared exactly once each: a device declaring only one of
+%     the two names, or a name twice, fails closed.  A device that does not
+%     declare either name (the legacy two-state classical machine) is
+%     bit-for-bit unaffected.
 
 arguments
     dae struct
@@ -251,13 +267,39 @@ for isg = 1:numel(sg_idx)
     xr = dae.device_offsets(k)+(1:devk.nx);
     ur = dae.u_offsets(k)+(1:devk.nu);
     % The FULL device state is passed to reconstruct: the opt-in reclose plant
-    % has nx=7 and validates all seven coordinates.  Only the solved rotor angle
+    % has nx=7 and validates all seven coordinates.  The solved rotor angle
     % (local 1, scaled by X'd exactly as in the reduced residual) and omega
-    % (local 2) are overwritten; Psv/Pm/Emag/theta_hat/nu_hat keep their x0
-    % values.  The legacy nx==2 classical machine behaves exactly as before.
+    % (local 2) are overwritten here; Psv/Pm/Emag keep their x0 values, and the
+    % terminal-phase pair is seeded immediately below when the device declares
+    % it.  The legacy nx==2 classical machine behaves exactly as before.
     rec=devk.reconstruct(0,x(xr),y,dae.u0(ur),eq_context);
     x(dae.device_offsets(k)+1) = sg_delta(isg)*max(rec.Xdp,1e-6);
     x(dae.device_offsets(k)+2) = 1;
+end
+% Stationary terminal-phase estimator seed at the SOLVED (post-gauge) voltage.
+% The SG state rewrite above fixes the rotor angle, so a device-local phase
+% estimator must be re-seeded from the same solved voltage or it keeps a
+% pre-gauge value unrelated to the solved terminal phasor.  Applied only to
+% devices that declare BOTH estimator state names; the legacy nx==2 machine
+% declares neither, so its warm start is unchanged.  The pair is all-or-nothing:
+% a device declaring only one of them, or declaring a name ambiguously more than
+% once, fails closed rather than silently leaving one estimator state stale.
+for k = sg_idx(:)'
+    devk = dae.devices(k);
+    theta_local = find(strcmpi(string(devk.state_names),'theta_hat'));
+    nu_local = find(strcmpi(string(devk.state_names),'nu_hat'));
+    if isempty(theta_local) && isempty(nu_local)
+        continue;
+    end
+    if numel(theta_local) ~= 1 || numel(nu_local) ~= 1
+        error('mixed_ibr_reduced_initialize:ambiguousPLLStates', ...
+            ['Device %s must declare exactly one theta_hat and exactly one ' ...
+             'nu_hat to receive the stationary terminal-phase seed (found %d ' ...
+             'and %d).'], devk.device_id, numel(theta_local), numel(nu_local));
+    end
+    V_terminal = y(2*devk.bus_position-1) + 1i*y(2*devk.bus_position);
+    x(dae.device_offsets(k)+theta_local) = angle(V_terminal);
+    x(dae.device_offsets(k)+nu_local) = 0;
 end
 u_eq = dae.u0;
 devices_eq = dae.devices;

@@ -209,7 +209,7 @@ theta_hat_dot=nu_hat+p.pll_Kp_rad_s*e_pll;
 omega_hat=1+nu_hat/w0;
 phase_error=wrap_angle(theta_hat-x(1));
 if online
-    % Ordinary 5% droop while synchronized. Komega remains the offline
+    % Ordinary 20% droop while synchronized. Komega remains the offline
     % capture gain and must not act as online speed feedback.
     raw=P_ref+p.no_load_loss_pu-p.K_online_droop*(omega-1);
     Emag_cmd=Emag_ref;

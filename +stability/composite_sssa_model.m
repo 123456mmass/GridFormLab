@@ -22,6 +22,31 @@ function sssa = composite_sssa_model(devices, x0, y0, case_data, opt)
 %     opt.active_state_indices. It differentiates pure physical KCL (no vcon),
 %     forms fx/fy/gx/gy with the existing fd_eps, applies the in-house Schur
 %     complement, and projects to the supplied active set before eig.
+%
+%   State partition (opt-in, default unchanged):
+%     opt.state_partition selects WHICH authenticated state map
+%     opt.active_state_indices must reproduce exactly.
+%       'equilibrium' (default) keeps the pre-existing device/runtime
+%                     equilibrium partition, where an offline device
+%                     contributes no state and no physical root.
+%       'dynamic'     requires the exact stability.ts_dynamic_state_indices
+%                     runtime TS partition, so the seven states of an offline
+%                     breaker-open machine are differentiated and appear in the
+%                     reported spectrum instead of being frozen out of it.
+%     A 'dynamic' request additionally claims that the SAME operating point is
+%     an equilibrium of that runtime state map, and that claim is verified
+%     fail-closed: norm(f0(active),inf) < 1e-8 and norm(g0,inf) < 1e-6, else
+%     composite_sssa_model:nonstationaryDynamicPartition. Any other
+%     opt.state_partition value fails closed. The FD step, the gy rcond gate and
+%     the reported root sets are NOT changed by this option.
+%
+%   Common-angle gauge:
+%     Exactly one rigid common-network-angle coordinate is quotiented before the
+%     physical eig, and L subtracts that pivot from EVERY rigid phase row. For
+%     the exact declared NE39 SG31 reclose plant (provenance schema
+%     ne39_sg31_classical_reclose_v1) both declared phase coordinates, delta and
+%     theta_hat, rotate with the same network frame, so both are kept rigid;
+%     every other device model keeps its pre-existing single-angle mapping.
 %   Source: execution plan §D; correction 8.
 
 arguments
@@ -126,6 +151,28 @@ for k = 1:numel(required)
     end
 end
 
+% Opt-in authenticated-state-map selection. The default is the pre-existing
+% equilibrium partition, so every legacy caller is byte-for-byte unchanged.
+state_partition = 'equilibrium';
+if isfield(opt,'state_partition') && ~isempty(opt.state_partition)
+    raw_partition = opt.state_partition;
+    if isstring(raw_partition) && isscalar(raw_partition)
+        raw_partition = char(raw_partition);
+    end
+    if ~(ischar(raw_partition) && (isrow(raw_partition) || isempty(raw_partition)))
+        error('composite_sssa_model:badStatePartition', ...
+            ['opt.state_partition must be the character vector ' ...
+             '''equilibrium'' or ''dynamic''.']);
+    end
+    raw_partition = lower(strtrim(raw_partition));
+    if ~ismember(raw_partition,{'equilibrium','dynamic'})
+        error('composite_sssa_model:badStatePartition', ...
+            ['Unsupported opt.state_partition "%s"; only ''equilibrium'' ' ...
+             '(default) and ''dynamic'' are authenticated.'],raw_partition);
+    end
+    state_partition = raw_partition;
+end
+
 % Pure KCL: deliberately omit vcon so no physical algebraic row is replaced.
 dae_opt = struct('load_model','cz_p_cz_q');
 dae = stability.composite_dae(case_data,devices,dae_opt);
@@ -153,11 +200,18 @@ if ~isstruct(event_context) || ~isscalar(event_context)
         'opt.event_context must be the scalar equilibrium context struct.');
 end
 active = validate_active_indices(opt.active_state_indices,nx);
-expected_active = expected_equilibrium_active_indices(dae,event_context);
+if strcmp(state_partition,'dynamic')
+    expected_active = expected_dynamic_active_indices(dae,event_context);
+    partition_map = 'ts_dynamic_state_indices';
+else
+    expected_active = expected_equilibrium_active_indices(dae,event_context);
+    partition_map = 'device_runtime_equilibrium_partition';
+end
 if ~isequal(active(:)',expected_active(:)')
     error('composite_sssa_model:activeStateMismatch', ...
-        ['opt.active_state_indices must exactly match the device/runtime ' ...
-         'equilibrium partition for opt.event_context.']);
+        ['opt.active_state_indices must exactly match the authenticated ' ...
+         '%s partition (%s map) for opt.event_context.'], ...
+        state_partition,partition_map);
 end
 
 % Exact production closures, fixed at the solved u/context/topology.
@@ -168,6 +222,24 @@ if numel(f0) ~= nx || numel(g0) ~= ny || ...
         any(~isfinite(f0)) || any(~isfinite(g0))
     error('composite_sssa_model:nonfiniteOperatingResidual', ...
         'Exact equilibrium closures returned invalid/non-finite f or KCL g.');
+end
+
+% A 'dynamic' request claims this operating point is an equilibrium of the
+% runtime TS state map, i.e. that the states the equilibrium partition freezes
+% are ALSO stationary. That claim is verified here and fails closed. The
+% 'equilibrium' default preserves the pre-existing behaviour exactly.
+partition_f_residual_norm = norm(f0(active),inf);
+partition_kcl_residual_norm = norm(g0,inf);
+if strcmp(state_partition,'dynamic') && ...
+        (~(partition_f_residual_norm < 1e-8) || ...
+         ~(partition_kcl_residual_norm < 1e-6))
+    error('composite_sssa_model:nonstationaryDynamicPartition', ...
+        ['opt.state_partition=''dynamic'' requires a stationary operating ' ...
+         'point on the full runtime-dynamic state map, but ' ...
+         'norm(f0(active),inf)=%.6e must be < 1e-8 and norm(g0,inf)=%.6e ' ...
+         'must be < 1e-6. Supply the actual stationary runtime seed instead ' ...
+         'of a retained shaft-power anchor.'], ...
+        partition_f_residual_norm,partition_kcl_residual_norm);
 end
 
 % Existing NUMERICAL_METHOD: one-sided forward FD with fd_eps=3e-6 default.
@@ -238,6 +310,10 @@ sssa.reduction_method = 'full_kcl_schur_active_state_galerkin_before_eig';
 sssa.linearization_method = 'forward_fd_exact_composite_f_g';
 sssa.no_eig_delete = true;
 sssa.full_kcl = true;
+sssa.state_partition = state_partition;
+sssa.active_partition_map = partition_map;
+sssa.partition_f_residual_norm = partition_f_residual_norm;
+sssa.partition_kcl_residual_norm = partition_kcl_residual_norm;
 sssa.kcl_rows_replaced = dae.vcon.rows;
 sssa.gy_rcond = gy_rcond;
 sssa.gy_rcond_min = gy_rcond_min;
@@ -448,44 +524,39 @@ angle_global = zeros(1,0);
 angle_dev = zeros(1,0);
 for dk = 1:numel(dae.devices)
     dev = dae.devices(dk);
-    if ~device_online(dev,event_context)
+    % Offline devices keep the pre-existing skip: in the equilibrium partition
+    % they own no state at all. The ONE admitted exception is the exact declared
+    % NE39 SG31 reclose plant, whose declared phase coordinates stay genuine
+    % rigid coordinates of the runtime-dynamic partition; the ismember gate
+    % below still admits them only when they are actually active.
+    if ~device_online(dev,event_context) && ~is_declared_reclose_plant(dev)
         continue;
     end
-    % The rigid-rotation vector contains exactly one active electrical-angle
-    % coordinate for each online angle-bearing device.  Resolve that state
-    % from the active runtime mode, rather than accepting every name that
-    % happens to contain "delta" (e.g. speed/controller-error states).
-    local = network_angle_local_index(dev,device_mode(dev,event_context));
-    if isempty(local), continue; end
-    gi = dae.device_offsets(dk)+local;
-    if ismember(gi,global_in)
-        angle_global(end+1) = gi; %#ok<AGROW>
-        angle_dev(end+1) = dk; %#ok<AGROW>
+    % The rigid-rotation vector contains the active electrical-angle coordinate
+    % of each angle-bearing device, resolved from the active runtime mode rather
+    % than by accepting every name that happens to contain "delta" (e.g.
+    % speed/controller-error states). The declared reclose plant owns two such
+    % coordinates (rotor delta and terminal phase estimate theta_hat).
+    local = network_angle_local_indices(dev,device_mode(dev,event_context));
+    for li = local(:)'
+        gi = dae.device_offsets(dk)+li;
+        if ismember(gi,global_in)
+            angle_global(end+1) = gi; %#ok<AGROW>
+            angle_dev(end+1) = dk; %#ok<AGROW>
+        end
     end
 end
 if isempty(angle_global), return; end
 
-ref_dev = [];
-if isfield(opt,'reference_device_index') && ~isempty(opt.reference_device_index)
-    ref_dev = opt.reference_device_index;
-elseif isfield(event_context,'hybrid_state') && ...
-        isfield(event_context.hybrid_state,'reference_resource_index')
-    ref_dev = event_context.hybrid_state.reference_resource_index;
-end
-if isempty(ref_dev)
-    sg_candidates = online_sg_indices(dae,event_context);
-    if numel(sg_candidates) == 1
-        % Backward-compatible SG_ON full-KCL callers may predate the explicit
-        % owner field. A unique online synchronous machine is an unambiguous
-        % physical owner; zero or multiple candidates remain fail-closed.
-        ref_dev = sg_candidates(1);
-    end
-end
+% Reference ownership: explicit option, then the canonical single owner, then
+% the legacy read-only alias, then the backward-compatible unique online SG.
+% There is deliberately NO "first GFM" fallback.
+ref_dev = resolve_reference_device(dae,event_context,opt);
 ref_pick = find(angle_dev == ref_dev,1,'first');
 if isempty(ref_pick)
     error('composite_sssa_model:referenceAngleMissing', ...
-        ['The declared reference device %s has no active network-angle ' ...
-         'coordinate in the full-KCL state partition.'],mat2str(ref_dev));
+        ['The declared reference device %d has no active network-angle ' ...
+         'coordinate in the full-KCL state partition.'],ref_dev);
 end
 ref_global = angle_global(ref_pick);
 ref_pos = find(global_in == ref_global,1,'first');
@@ -499,6 +570,8 @@ for r = 1:numel(retain)
     q = retain(r);
     L(r,q) = 1;
     if ismember(q,angle_pos)
+        % Every retained rigid phase row has the pivot subtracted from it, not
+        % only the rotor-delta rows.
         L(r,ref_pos) = -1;
     end
 end
@@ -506,8 +579,10 @@ Aq = L*A*T;
 global_out = global_in(retain);
 meta.applied = true;
 meta.global_index = ref_global;
-meta.state_name = sprintf('%s/%s',dae.devices(angle_dev(ref_pick)).device_id, ...
-    dae.devices(angle_dev(ref_pick)).state_names{ref_global-dae.device_offsets(angle_dev(ref_pick))});
+meta.state_name = sprintf('%s/%s', ...
+    dae.devices(angle_dev(ref_pick)).device_id, ...
+    local_state_name(dae.devices(angle_dev(ref_pick)), ...
+    ref_global-dae.device_offsets(angle_dev(ref_pick))));
 if contains(lower(meta.state_name),'pll') && ~online_sg_present(dae,event_context)
     meta.method='common_gfm_pll_angle_quotient';
 elseif online_sg_present(dae,event_context)
@@ -519,8 +594,17 @@ meta.L = L;
 meta.T = T;
 end
 
-function local = network_angle_local_index(dev,mode)
-local = [];
+function locals = network_angle_local_indices(dev,mode)
+%NETWORK_ANGLE_LOCAL_INDICES  Local rigid network-frame phase coordinates.
+%   Returns the local indices of the states that rotate with the common network
+%   angle under one rigid frame rotation. For every device model this is exactly
+%   the pre-existing single network-angle mapping, resolved from the active
+%   runtime mode. The ONE additive case is the exact declared NE39 SG31 reclose
+%   plant: its terminal phase estimate theta_hat rotates with the same rigid
+%   angle as the rotor delta, so both declared phase coordinates are rigid and
+%   both must have the pivot subtracted by the quotient. No other model mapping
+%   is changed.
+locals = zeros(1,0);
 names = cellstr(string(dev.state_names));
 dtype = '';
 if isfield(dev,'device_type') && ~isempty(dev.device_type)
@@ -538,15 +622,130 @@ elseif strcmpi(mode,'gfm')
 elseif strcmpi(mode,'gfl')
     candidates = {'gfl_delta_PLL','delta_PLL'};
 else
-    candidates = {};
+    return;
 end
+primary = [];
 for k = 1:numel(candidates)
     pos = find(strcmpi(names,candidates{k}),1,'first');
     if ~isempty(pos)
-        local = pos;
+        primary = pos;
+        break;
+    end
+end
+if isempty(primary), return; end
+locals = primary;
+if is_sg && is_declared_reclose_plant(dev)
+    extra = {'theta_hat'};
+    for k = 1:numel(extra)
+        pos = find(strcmpi(names,extra{k}),1,'first');
+        if ~isempty(pos) && ~ismember(pos,locals)
+            locals(end+1) = pos; %#ok<AGROW>
+        end
+    end
+end
+end
+
+% =========================================================================
+function tf = is_declared_reclose_plant(dev)
+%IS_DECLARED_RECLOSE_PLANT  Exact declared NE39 SG31 reclose provenance gate.
+%   True only for the frozen opt-in record whose declared provenance schema id
+%   is exactly 'ne39_sg31_classical_reclose_v1' AND whose declared state/input
+%   names carry the two phase coordinates (delta, theta_hat) and the two
+%   reference commands (P_ref, Emag_ref).  Nothing else is extended.
+tf = false;
+if ~isfield(dev,'provenance') || ~isstruct(dev.provenance) || ...
+        ~isscalar(dev.provenance)
+    return;
+end
+p = dev.provenance;
+if ~isfield(p,'params') || ~isstruct(p.params) || ~isscalar(p.params) || ...
+        ~isfield(p.params,'schema_id') || ~ischar(p.params.schema_id) || ...
+        ~strcmp(p.params.schema_id,'ne39_sg31_classical_reclose_v1')
+    return;
+end
+names = cellstr(string(dev.state_names));
+if sum(strcmpi(names,'delta')) ~= 1 || sum(strcmpi(names,'theta_hat')) ~= 1
+    return;
+end
+if isfield(dev,'input_names') && ~isempty(dev.input_names)
+    inputs = cellstr(string(dev.input_names));
+    if sum(strcmpi(inputs,'P_ref')) ~= 1 || sum(strcmpi(inputs,'Emag_ref')) ~= 1
         return;
     end
 end
+tf = true;
+end
+
+% =========================================================================
+function ref_dev = resolve_reference_device(dae,event_context,opt)
+%RESOLVE_REFERENCE_DEVICE  Explicit option, canonical unique owner, or alias.
+%   Resolution order, each step validated before it is used so that a malformed
+%   declaration reports composite_sssa_model:referenceAngleMissing instead of
+%   escaping as a MATLAB dimension/shape error:
+%     1. explicit opt.reference_device_index;
+%     2. canonical single reference owner hybrid_state.reference_owner_indices;
+%     3. legacy read-only alias hybrid_state.reference_resource_index;
+%     4. backward-compatible UNIQUE online synchronous machine.
+%   There is deliberately NO first-GFM fallback: an unresolved reference fails
+%   closed with a clear referenceAngleMissing error.
+nd = numel(dae.devices);
+ref_dev = [];
+
+if isfield(opt,'reference_device_index') && ~isempty(opt.reference_device_index)
+    ref_dev = opt.reference_device_index;
+end
+
+if isempty(ref_dev) && isfield(event_context,'hybrid_state') && ...
+        isstruct(event_context.hybrid_state) && ...
+        isscalar(event_context.hybrid_state)
+    hs = event_context.hybrid_state;
+    if isfield(hs,'reference_owner_indices') && ...
+            isnumeric(hs.reference_owner_indices) && ...
+            isreal(hs.reference_owner_indices) && ...
+            isscalar(hs.reference_owner_indices) && ...
+            isfinite(hs.reference_owner_indices)
+        ref_dev = hs.reference_owner_indices;
+    elseif isfield(hs,'reference_resource_index') && ...
+            isnumeric(hs.reference_resource_index) && ...
+            isreal(hs.reference_resource_index) && ...
+            isscalar(hs.reference_resource_index) && ...
+            isfinite(hs.reference_resource_index)
+        ref_dev = hs.reference_resource_index;
+    end
+end
+
+if isempty(ref_dev)
+    sg_candidates = online_sg_indices(dae,event_context);
+    if numel(sg_candidates) == 1
+        % Backward-compatible SG_ON full-KCL callers may predate the explicit
+        % owner field. A unique online synchronous machine is an unambiguous
+        % physical owner; zero or multiple candidates remain fail-closed.
+        ref_dev = sg_candidates(1);
+    end
+end
+
+if isempty(ref_dev) || ~isnumeric(ref_dev) || ~isreal(ref_dev) || ...
+        ~isscalar(ref_dev) || ~isfinite(ref_dev) || ref_dev ~= fix(ref_dev) || ...
+        ref_dev < 1 || ref_dev > nd
+    error('composite_sssa_model:referenceAngleMissing', ...
+        ['No usable common-network-angle reference device is declared for the ' ...
+         'full-KCL gauge. Supply opt.reference_device_index, a canonical ' ...
+         'single owner in event_context.hybrid_state, or the legacy ' ...
+         'single-island reference alias; a unique online SG is accepted. This ' ...
+         'model never falls back to the first GFM device.']);
+end
+end
+
+% =========================================================================
+function name = local_state_name(dev,local)
+%LOCAL_STATE_NAME  Robust single state-name lookup (cell or string storage).
+names = cellstr(string(dev.state_names));
+if local < 1 || local > numel(names)
+    error('composite_sssa_model:badAngleCoordinate', ...
+        'Resolved network-angle coordinate %d is outside device %s.', ...
+        local,char(string(dev.device_id)));
+end
+name = names{local};
 end
 
 % =========================================================================
@@ -628,6 +827,16 @@ for k = 1:numel(dae.devices)
     end
     indices = [indices,dae.device_offsets(k)+local]; %#ok<AGROW>
 end
+end
+
+% =========================================================================
+function indices = expected_dynamic_active_indices(dae,event_context)
+%EXPECTED_DYNAMIC_ACTIVE_INDICES  Authenticated runtime TS state map.
+%   Delegates to the SAME helper the TS routes use, so a dynamic-partition SSSA
+%   and the integrated trajectory cannot disagree about which states are
+%   physical. The returned map is re-validated as a global partition.
+indices = stability.ts_dynamic_state_indices(dae,event_context);
+indices = validate_active_indices(indices,numel(dae.x0));
 end
 
 % =========================================================================

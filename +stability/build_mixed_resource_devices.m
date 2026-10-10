@@ -133,7 +133,12 @@ for k = 1:nr
             % PROJECT_DERIVED design data, not a TAMU controller mapping).  The
             % factory carries that record inside provenance.params, which the
             % uniform copier below preserves.
-            reclose_params = stability.ne39_sg_reclose_plant_params(case_data);
+            reclose_opt = struct();
+            if isstruct(scenario_opt) && isfield(scenario_opt,'sg_reclose_params') && ...
+                    isstruct(scenario_opt.sg_reclose_params)
+                reclose_opt = scenario_opt.sg_reclose_params;
+            end
+            reclose_params = stability.ne39_sg_reclose_plant_params(case_data,reclose_opt);
             dev = stability.sg_classical_reclose_device(case_data, string(rid), ...
                 bus, bp, bus_ids(:)', V0, reclose_params);
             dev.mode = 'synchronous';

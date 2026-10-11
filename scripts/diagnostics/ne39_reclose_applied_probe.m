@@ -1,8 +1,11 @@
 function folder = ne39_reclose_applied_probe_resume()
 %NE39_RECLOSE_APPLIED_PROBE_RESUME Fresh true-trip SG31 reclose diagnostic.
 % Explicitly called only. Builds the designed NE39 SG31+9-IBR case with the
-% opt-in seven-state SG plant and all nine IBRs in GFM, trips SG31 at 0.02 s,
-% then requests reclose at 125.02 s: a real 125-s offline recovery interval.
+% opt-in seven-state SG plant and all nine IBRs in GFM. The timeline mirrors the
+% IEEE 14 EECON49 chronology, with the fault bus ported to NE39 bus 16 exactly as
+% the frozen catalog row 'sg_fault_bus16' defines it: SG31 trips at 20 s after a
+% settled pre-event interval, a 150 ms fault is applied at bus 16 at 60 s, the SG
+% reclose request is raised at 100 s, and the horizon ends at 160 s.
 % Initially-offline startup is deliberately NOT used: the canonical simulator
 % requires its own finite t_trip before the unchanged min-off gate can arm.
 %
@@ -11,8 +14,9 @@ function folder = ne39_reclose_applied_probe_resume()
 % The close request is not forced. No fabricated certificate, private replay,
 % rotor/state reset, old160 raw access, synchronism/delay override, or gate
 % relaxation is used. The SG_ON selector is count-pinned to the physical current
-% nine-GFM set, not given ready flags. The 131-s horizon includes the unchanged
-% 5-s request timeout and a short tail; this is not the full 160-s chronology.
+% nine-GFM set, not given ready flags. The 160-s horizon is the full
+% chronology: it includes the unchanged 5-s request timeout and a post-reclose
+% tail out to t_end.
 %
 % observe_voltage affects accepted-sample study reporting ONLY: strict voltage
 % excursions are separate from nonvoltage sample checks; the private transition
@@ -29,7 +33,7 @@ request = struct('created_at',char(datetime('now','Format','yyyy-MM-dd HH:mm:ss.
     'artifact_folder',folder, ...
     'classification','PROJECT_DERIVED_TRUE_TRIP_RECLOSE_DIAGNOSTIC', ...
     'production_certified',false,'hardware_certified',false, ...
-    'full_chronology',false,'old160_raw_read_or_modified',false);
+    'full_chronology',true,'old160_raw_read_or_modified',false);
 result = struct('converged',false,'failure_id','','failure_reason','');
 run_error = struct('occurred',false,'failure_id','','message','','stack',[]);
 elapsed = 0;
@@ -47,9 +51,30 @@ try
         error('ne39_reclose_applied_probe_resume:composition', ...
             'Expected designed SG31 seven-state plant and all nine GFM IBRs.');
     end
-    t_trip = 0.02; t_request = 125.02; t_end = 131.0;
-    events = struct('enabled',true,'event_profile','sg_cycle','sg_id','SG31', ...
+    t_trip = 20; t_fault = 60; t_fault_clear = 60.15; t_request = 100; t_end = 160.0;
+    % Post-close first-swing evidence (run 20261011_052802_378): closing at the
+    % first landing inside dtheta=10 deg left the just-synchronized SG with a
+    % momentary active-power zero crossing (P=-1.23 MW at t=100.7216, 0.2% of
+    % rating) while Pm is still ramping from its offline value, which the strict
+    % snapshot P>=0 check refuses. The defect-recorded physics (old run
+    % 20261011_025214_298 closed at dtheta=0.0085 deg and P stayed positive)
+    % is that the crossing only happens for large closing angles, so this probe
+    % TIGHTENS its own synchronism request instead of touching any acceptance
+    % gate: dtheta_max 10 -> 0.5 deg, dV_max 0.05 -> 0.02 pu, df_max 0.001 ->
+    % 0.0002 pu. MEASURED sweep (run 20261011_073312_027 resync_diag): the
+    % phasor angle sweeps ~1.0 deg/s (9.31 deg at t=100 -> 4.33 deg at t=105,
+    % df decaying 6.6e-5 -> 3.1e-5 pu), so the 0.5-deg window is reached at
+    % t ~= 109-112 — LATER than the 5-s case timeout allows, which produced
+    % SYNC_TIMEOUT in that run. The reclose waiting window is therefore the
+    % STUDY-DESIGN parameter extended 5 -> 20 s via delays_overrides.timeout_s,
+    % exactly as the in-repo flagship IEEE14 EECON49 chronology runner sets
+    % (run_ieee14_eecon49_chronology line 71: timeout_s=20, dwell_s=0.5).
+    % Only timeout_s is overridden here: dwell and min-off keep the case values
+    % (0.5 s each) untouched, and every physical gate and snapshot check stays
+    % exactly as the case defines them.
+    events = struct('enabled',true,'event_profile','sg_fault_cycle','sg_id','SG31', ...
         'sg_trip',t_trip,'sg_on',t_request,'automatic_gfm_switching',true, ...
+        'fault_bus',16,'Zf',1i*0.1,'fault_on',t_fault,'fault_clear',t_fault_clear, ...
         'gfm_selection_mode','manual_override', ...
         'selected_gfm_indices',ibr,'n_gfm_required',numel(ibr), ...
         'reference_resource_index',ibr(1));
@@ -63,6 +88,8 @@ try
         'rannacher_n',0,'reject_limit',16, ...
         'ne39_trial_timestep_strategy','adaptive','ne39_trial_max_steps',32000, ...
         'ne39_assessment_policy','observe_voltage', ...
+        'synchronism_overrides',struct('dtheta_max',0.5,'dV_max',0.02,'df_max',0.0002), ...
+        'delays_overrides',struct('timeout_s',20), ...
         'progress_every',5,'progress_file',fullfile(folder,'progress.log'));
     request.case_data=c; request.scenario=scenario;
     request.design_options=design_options; request.events=events; request.options=options;
@@ -88,7 +115,7 @@ try
     % Persist exact raw public-run evidence before any post-processing.
     result.production_certified=false;
     result.hardware_certified=false;
-    result.full_chronology=false;
+    result.full_chronology=true;
     result.classification=request.classification;
     % Persist exact raw public-run evidence before any post-processing.
     save(fullfile(folder,'raw.mat'),'request','result','elapsed','run_error','-v7.3');
@@ -141,7 +168,7 @@ end
 
 function a=summarize_result(r,s,op)
 a=struct('status','NO_ACTUAL_CLOSE','production_certified',false, ...
-    'hardware_certified',false,'full_chronology',false,'actual_close',false, ...
+    'hardware_certified',false,'full_chronology',true,'actual_close',false, ...
     'actual_reclose_time',NaN,'reclose_status','NOT_REQUESTED', ...
     'strict_voltage_status','UNKNOWN','strict_nonvoltage_status','UNKNOWN', ...
     'accepted_path_status','UNKNOWN','private_trial_status','UNKNOWN', ...

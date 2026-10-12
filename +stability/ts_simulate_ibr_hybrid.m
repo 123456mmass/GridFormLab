@@ -1325,9 +1325,35 @@ while t < settings.t_end-settings.event_tol
                 if settings.ne39_rate_policy_enabled
                     release=current_gfm; % policy ตรวจ continuous safe dwell ครบแล้ว.
                 end
+                % The SG governor handback is a property of the SG PLANT MODEL,
+                % not of the reselection policy. It exists only when
+                % initialize_sync_controller attached the external Sauer-Pai
+                % turbine/governor whose P_ref/Efd commands are walked to their
+                % targets over handback_T. sync_ctl.enabled is exactly that
+                % condition, so an EMF6 six-state SG (IEEE14 chronology) still
+                % requires handback_complete exactly as before.
+                %
+                % A self-governing SG model carries its own prime-mover ramp in
+                % its own equations and has no external handback to await:
+                % stability.sg_classical_reclose_device computes Pc online from
+                % P_ref plus its own 20% droop and ramps Psv/Pm through its own
+                % Tsv_s/Tch_s states, using u=[P_ref,Emag_ref] references that
+                % are NOT EMF6 Tm/Efd. Requiring handback_complete there is
+                % unsatisfiable by construction (initialize_sync_controller
+                % returns early for that model) and blocked every release
+                % forever: measured run ne39_reclose_applied_probe_20261011_121120_812
+                % requested release on 4295 consecutive post-reclose samples
+                % with severity 0.028 << gamma_off 0.35, ROCOF 3.4e-5 << 1 and
+                % handback_status=NOT_STARTED, ending PENDING_SEVERITY.
+                % With no external handback to await, the remaining gates below
+                % are unchanged and still decide alone: the authenticated SG_ON
+                % one-step candidate, T_minimum_hold after the actual reclose,
+                % the severity/ROCOF/ROCOV release dwell, and the transactional
+                % right-limit KCL. Nothing is relaxed for a model that HAS a
+                % governor.
                 hold_ok = isfinite(actual_reclose) && ...
                     t-actual_reclose >= settings.T_minimum_hold-settings.event_tol && ...
-                    sync_ctl.handback_complete;
+                    (~sync_ctl.enabled || sync_ctl.handback_complete);
                 if hold_ok && ~isempty(release)
                     % The scalar AGSI is only a timing predicate.  Authenticate
                     % each one-device target against the immutable SG_ON table

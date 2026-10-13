@@ -37,6 +37,14 @@ function sched = ibr_event_schedule(case_data, devices, ibr_events, t_end, dt)
 %                                 line does NOT come back (no restore_time).
 %                                 Does the island adapt to the reduced network,
 %                                 and do the promoted converters hand back?
+%     fault_load_step             fault_on < fault_clear <= load_step <= t_end
+%                                 A bus fault ridden through on an intact
+%                                 network, then a load step absorbed -- with
+%                                 NO SG breaker events at all. No SG is ever
+%                                 tripped, so the remaining sync machines stay
+%                                 the voltage/frequency reference throughout
+%                                 (an arm that never opens an SG breaker cannot
+%                                 ask the reclose or hand-back question).
 %     sg_trip_then_former_outage  sg_trip < ibr_trip < sg_on
 %                                 The converter that owns the island angle
 %                                 reference is lost, and the machine is offered
@@ -128,7 +136,7 @@ end
 
 PROFILES = {'combined','fault_only','sg_cycle','chronology', ...
     'sg_load_cycle','sg_fault_cycle','line_fault_relay_clear', ...
-    'sg_trip_then_former_outage','load_only','line_cycle'};
+    'sg_trip_then_former_outage','load_only','line_cycle','fault_load_step'};
 event_profile = 'combined';
 if isfield(ibr_events,'event_profile') && ~isempty(ibr_events.event_profile)
     if ~(ischar(ibr_events.event_profile) || isstring(ibr_events.event_profile))
@@ -173,7 +181,8 @@ caps = { ...
     'line_fault_relay_clear',      true,  true,  true,  false, false, false, true,  false, true ; ...
     'sg_trip_then_former_outage',  false, true,  true,  false, false, false, false, true,  true ; ...
     'load_only',                  false, false, false, true,  false, false, false, false, false; ...
-    'line_cycle',                 false, false, false, false, true,  true,  false, false, false};
+    'line_cycle',                 false, false, false, false, true,  true,  false, false, false; ...
+    'fault_load_step',            true,  false, false, true,  false, false, false, false, false};
 crow = find(strcmp(caps(:,1),event_profile),1);
 if isempty(crow)
     error('stability:ibr_event_schedule:badEventProfile', ...
@@ -508,6 +517,16 @@ case 'sg_trip_then_former_outage'
         error('stability:ibr_event_schedule:badOrdering', ...
             ['sg_trip_then_former_outage requires sg_trip < ibr_trip < ' ...
              'sg_on <= t_end.']);
+    end
+case 'fault_load_step'
+    % Fault first, cleared, then the load step -- with no SG breaker events at
+    % all, so the sync machines never leave and stay the reference. The fault
+    % family inequality above already demands fault_on < fault_clear <= t_end;
+    % this rule adds only the load-step placement: cleared fault, then the
+    % step, both within the horizon.
+    if ~(fault_clear + tol < load_step && load_step <= t_end + tol)
+        error('stability:ibr_event_schedule:badOrdering', ...
+            'fault_load_step requires fault_on < fault_clear < load_step <= t_end.');
     end
 end
 

@@ -26,7 +26,9 @@ function note = ne39_replay_cache_write(folder, result, request, elapsed)
 
 traces = struct();
 traces.t = result.t(:).';
-traces.coi_frequency_Hz = result.coi_frequency_Hz(:).';
+if isfield(result,'coi_frequency_Hz')
+    traces.coi_frequency_Hz = result.coi_frequency_Hz(:).';
+end
 if isfield(result,'sg_freq') && numel(result.sg_freq)==numel(result.t)
     traces.sg_freq = result.sg_freq(:).';
 end
@@ -73,20 +75,23 @@ end
 
 head = struct();
 head.converged = result.converged;
-head.reclose_status = char(string(result.reclose_status));
-head.actual_reclose_time = result.actual_reclose_time;
-head.t_sg_trip = result.t_sg_trip;
 head.horizon_reached_s = traces.t(end);
 head.t_end_requested_s = request.options.t_end;
 head.accepted_samples = nt;
-head.rejected_steps = result.rejected_steps;
-head.stepper = char(string(result.stepper));
-head.reselection_status = char(string(result.reselection_status));
-head.actual_mode_reselection_time = result.actual_mode_reselection_time;
-head.handback_status = char(string(result.handback_status));
 head.full_chronology = result.full_chronology;
 head.production_certified = false;
 head.classification = char(string(result.classification));
+% Reclose/scalar fields are copied when present: a non-reclose chronology
+% (fault_load_step runs no SG breaker event) publishes none of them, and the
+% cache writer must not turn their absence into an audience-decode failure.
+if isfield(result,'reclose_status'),    head.reclose_status = char(string(result.reclose_status)); end
+if isfield(result,'actual_reclose_time'), head.actual_reclose_time = result.actual_reclose_time; end
+if isfield(result,'t_sg_trip'),         head.t_sg_trip = result.t_sg_trip; end
+if isfield(result,'rejected_steps'),    head.rejected_steps = result.rejected_steps; end
+if isfield(result,'stepper'),           head.stepper = char(string(result.stepper)); end
+if isfield(result,'reselection_status'), head.reselection_status = char(string(result.reselection_status)); end
+if isfield(result,'actual_mode_reselection_time'), head.actual_mode_reselection_time = result.actual_mode_reselection_time; end
+if isfield(result,'handback_status'),   head.handback_status = char(string(result.handback_status)); end
 % Why a post-reclose release was refused, when one was refused. This is the
 % kernel's own per-candidate audit (every evaluated one-step target with its
 % refusal reason), copied verbatim so the demo can show the actual cause rather
@@ -105,8 +110,12 @@ cfg = struct();
 cfg.events = request.events;
 cfg.options = request.options;
 cfg.declared_synchronism = request.declared_synchronism;
-cfg.declared_minimum_off_s = request.declared_minimum_off_s;
-cfg.sg_plant_state_names = request.sg_plant_state_names;
+if isfield(request,'declared_minimum_off_s')
+    cfg.declared_minimum_off_s = request.declared_minimum_off_s;
+end
+if isfield(request,'sg_plant_state_names')
+    cfg.sg_plant_state_names = request.sg_plant_state_names;
+end
 if isfield(result,'selector_table_fingerprint')
     cfg.selector_table_fingerprint = char(string(result.selector_table_fingerprint));
 end

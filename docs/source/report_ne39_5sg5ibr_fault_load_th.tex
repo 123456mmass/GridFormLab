@@ -1,0 +1,176 @@
+%=============================================================================
+%  report_ne39_5sg5ibr_fault_load_th.tex
+%  รายงานภาษาไทย: NE39 การศึกษาฟอลต์+สเต็ปโหลด 5 SG + 5 IBR (ไม่มีการทริป SG)
+%  ฉบับแปลของ report_ne39_5sg5ibr_fault_load_en.tex
+%  ตัวเลขทุกตัวอ่านจาก CSV ชุดเดียวกับฉบับ EN (figures/ne39_5sg5ibr_fault_load/)
+%
+%  BUILD:  xelatex report_ne39_5sg5ibr_fault_load_th.tex   (3 ครั้ง)
+%          ต้องรันจาก docs/source/ เพราะ path ของฟอนต์เป็น relative
+%=============================================================================
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{fontspec}
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip=0pt plus 1pt
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont[
+  Path={fonts/TH Sarabun PSK V-1/},
+  Extension=.ttf,
+  UprightFont={*},
+  BoldFont={* Bold},
+  ItalicFont={* Italic},
+  BoldItalicFont={* BoldItalic}
+]{THSarabun}
+\setmonofont{Latin Modern Mono}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{geometry,booktabs,array,tabularx,longtable}
+\usepackage{siunitx}
+\usepackage{xcolor,hyperref,fancyhdr,caption,subcaption,float}
+\usepackage{pgfplots,pgfplotstable}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=1.18}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\geometry{margin=1in}
+\setlength{\headheight}{14.5pt}
+\pagestyle{fancy}\fancyhf{}
+\lhead{\small\textbf{รายงานการศึกษา NE39: ฟอลต์+สเต็ปโหลด 5 SG + 5 IBR}}
+\rhead{\small\thepage}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,citecolor=blue!55!black}
+\sisetup{detect-all,round-mode=places,round-precision=5,table-number-alignment=center}
+\renewcommand{\arraystretch}{1.12}
+\captionsetup[table]{skip=7pt}
+\captionsetup[figure]{labelfont=bb}
+\renewcommand{\tablename}{ตารางที่}
+\renewcommand{\figurename}{รูปที่}
+\renewcommand{\contentsname}{สารบัญ}
+\renewcommand{\abstractname}{บทคัดย่อ}
+\renewcommand{\refname}{เอกสารอ้างอิง}
+\emergencystretch=3em
+\sloppy
+\linespread{1.15}
+
+\definecolor{sgblue}{RGB}{0,114,189}
+\definecolor{ibrorange}{RGB}{217,83,25}
+\definecolor{ibryellow}{RGB}{237,177,32}
+\definecolor{ibrpurple}{RGB}{126,47,142}
+\definecolor{ibrgreen}{RGB}{119,172,48}
+
+% สีช่วงการทำงานสำหรับแผนภาพลำดับเหตุการณ์ (ตามฉบับ EN)
+\definecolor{pgreen}{RGB}{41,153,69}
+\definecolor{pred}{RGB}{191,45,45}
+\definecolor{pblue}{RGB}{46,107,191}
+\definecolor{pyellow}{RGB}{199,178,38}
+\definecolor{pgrey}{RGB}{90,90,90}
+
+\newcommand{\datadir}{figures/ne39_5sg5ibr_fault_load}
+% code identifier: monospaced พร้อมปิด hyphenation เพื่อไม่ให้ตัดคำกลาง identifier
+\newcommand{\code}[1]{{\ttfamily\small\hyphenchar\font=-1 #1}}
+\newcommand{\clamp}{\operatorname{clamp}}
+\newcommand{\sat}{\operatorname{sat}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+
+\title{\textbf{การศึกษาฟอลต์และสเต็ปโหลดของระบบ NE39 แบบ 5 SG + 5 IBR:\\ ครอโนโลยีที่ไม่มีการทริป SG}\\[2pt]
+\large เครื่องปั่นคลาสสิกสอง state (Kundur $\delta/\omega$) ห้าเครื่อง และตัวแปลงสองโหมด Dual-mode-IBR สิบเจ็ด state ห้าตัว\\[1mm]
+\normalsize ออกแบบมาเพื่อ comeback ของเส้น... : no SG tripping}
+\author{โครงการ power flow ภายใน}
+\date{13 ตุลาคม 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+รายงานนี้บันทึกการศึกษาลำดับเหตุการณ์ทรัพยากรผสมของระบบ NE39 (New England IEEE 39 บัส)
+ของโครงการ เครือข่าย 39 บัสประกอบด้วยเครื่องกำเนิดซิงโครนัสห้าเครื่องที่บัส 31, 32, 35, 38, 39
+(แต่ละเครื่องเป็นแผนงานคลาสสิกสอง state $\vect x=[\delta,\omega]$) และตัวแปลงสองโหมด Dual-mode-IBR
+ห้าตัวที่บัส 30, 33, 34, 36, 37 (GFM สองตัว, GFL สามตัวตามกฎการออกแบบ deterministic)
+เพราะเครื่องปั่นห้าตัวออนไลน์ตลอดการรัน กองเครื่องปั่นยังคงเป็น reference แรงดัน/ความถี่ของระบบ
+ทุกช่วงเวลา --- ครอโนโลยีจึงไม่มีเหตุการณ์เบรกเกอร์ SG ใดๆ เลย: ไม่มีการทริป SG, ไม่มีการปิดซ้ำ SG,
+และไม่มีคำถามเรื่อง hand-back การรบกวนคือฟอลต์ที่บัส~16 (thแข็ง $Z_f=j0.1$~pu,
+60--60.15~s) ตามด้วยสเต็ปโหลดรวม $+20\%$ ที่ 100~s, เพดาน 160~s, โดยจุดเวลาเหตุการณ์ตรงกับ
+การศึกษา 160~s ที่ส่งมอบแล้วเพื่อให้หน้าต่างฟอลต์เทียบได้ตรง กราฟตัวเลขเรนเดอร์โดย MATLAB จากไฟล์ CSV
+ที่ส่งออกจากชุดผลที่เก็บไว้ การทดลองเปลี่ยนโหมดไปข้างหน้าที่จุดทริป \emph{ยังไม่ได้รับการรับรองเพราะงบหลักฐาน}
+(งบ step ที่แบ่งกันของ mesh ส่วนต้องมี เกณฑ์ทางกายภาพทุกตัวยังเขียว ถึง state ยืนยันสุดท้าย)
+การรันนี้เสร็จสมบูรณ์เฉพาะภายใต้ การประกาศ study continuation อย่างชัดเจน เกณฑ์ที่ไม่ผ่าน
+การปฏิเสธ และใบรับรองที่ยังค้าง ถูกรายงานไว้ ไม่ได้ถูกปรับให้หายไป
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{ขอบเขต แหล่งอ้างอิง และการทำซ้ำได้}\label{sec:scope}
+
+ระบบที่ศึกษาคือเครือข่าย TAMU New England 39 บัส ที่มี SG แบบจำลองห้าเครื่อง
+(บัส 31/32/35/38/39) และ IBR แบบจำลองห้าตัว (บัส 30/33/34/36/37) ระบบทั้งหมด
+ประกอบเป็นระบบ differential--algebraic แบบประกอบ all-KCL ชุดเดียว โดย SG และ IBR
+ทุกตัวส่งบล็อก state เชิงอนุพันธ์ของตัวเองและการฉีดของตัวเอง ไม่มีอุปกรณ์ใดถูกมอบให้
+ตัวแก้ โมเดล หรือโปรแกรมอ้างอิงภายนอก
+
+\paragraph{ทำไมจึงไม่ทริป SG.}
+เมื่อเครื่องปั่นซิงโครนัสห้าเครื่องเชื่อมต่ออยู่ การเปิดเบรกเกอร์ใดเบรกเกอร์หนึ่งยังเหลือ
+เครื่องปั่นสี่เครื่องคอยรักษา reference แรงดัน/ความถี่ของเครือข่าย --- คำถามเชิงกายภาพที่
+การศึกษา 160~s ที่ส่งมอบแล้วตอบไปแล้ว (``ตัวแปลงจะรักษาเกาะหลังเครื่องปั่นออกได้หรือไม่'')
+จึงไม่เกิดขึ้น ครอโนโลยีนี้จึงถามคำถามต่างออกไป: \emph{กองทรัพยากรผสมขี่ฟอลต์ผ่านและ
+ดูดซับสเต็ปโหลดได้หรือไม่ โดยที่ reference ของเครื่องปั่นยังคงอยู่} ตามนั้น โปรไฟล์
+\code{fault_load_step} ที่มี fault + load step (และไม่มีเหตุการณ์เบรกเกอร์ SG) ถูกเพิ่ม
+เข้าไปใน event schedule และแถว catalog \code{fault_load_step20} ตรึงจุดเวลาของมันก่อน
+ที่ผลลัพธ์ใดจะถูกอ่าน
+
+\paragraph{แหล่งกราฟและสัญญาไม่มีสัญญาณสังเคราะห์.}
+กราฟภาคเวลา (ส่วน~\ref{sec:transient}) เรนเดอร์จาก trajectory ที่ยอมรับของชุดผล
+ที่เก็บไว้ โหลดเพียงครั้งเดียวและส่งออกเป็นหลักฐาน CSV เพื่อการนำเสนอ
+ทุกตัวอย่างที่พล็อตเป็นค่าที่ยอมรับดิบ ไม่มีอะไรถูก smooth, filter, decimate,
+clip, offset, interpolate หรือเติมสัญญาณรบกวนสังเคราะห์ ตัวเลขทุกตัวในรายงานนี้
+คัดลอกจากรันที่เก็บไว้หรือคำนวณจากสมดุลที่มันเก็บไว้ ไม่มีเกณฑ์ใดถูกผ่อนและ
+ไม่มีการจำลองซ้ำ
+
+\paragraph{Classification.}
+สมการ SG AC/flux และสมการ IBR AC/control ถูกระบุเป็น
+\textsf{SOURCE\_MAPPED} หรือ \textsf{PROJECT\_DERIVED} ตามฉลากที่ปรากฏครั้งแรก
+พารามิเตอร์เครื่องและตัวแปลง, per-unit bases, และเวลาการรบกวนเป็น
+\textsf{CASE\_DEFINED}; ตัวทำนายและนโยบายแบ่งขั้น step เป็น
+\textsf{NUMERICAL\_METHOD} การจำแนกประเภทของรันและ flag
+\code{production_certified=false} ถูกนำมาจาก manifest ไม่ได้ตัดสินใจซ้ำที่นี่
+
+%=============================================================================
+\section{ลำดับเหตุการณ์}\label{sec:chrono}
+%=============================================================================
+เวลาที่กำหนดไว้เป็นค่าคงที่ \textsf{CASE\_DEFINED} ของโครงสร้างเหตุการณ์
+รูป~\ref{fig:periods} แสดงสี่ช่วงการทำงานและเวลาเปลี่ยนผ่าน ฟอลต์ที่บัส~16 ถูกใส่
+ที่ $t=60.000\second$ และตัดออกที่ $t=60.150\second$ (ฟอลต์ $0.150$\second, อิมพีแดนซ์
+$Z_f=j0.1\pu$); สเต็ปโหลดรวมใส่ที่ $t=100\second$ (ทุกโหลดบัสคูณ $1+0.2$);
+เพดานจบที่ $t=160\second$ SG ทั้งห้าออนไลน์ทุกช่วงเวลา
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\normalsize,
+  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
+    align=center,text=white,font=\bfseries},
+  tlab/.style={midway,above=1mm,font=\footnotesize},
+  tlabb/.style={midway,below=1mm,font=\footnotesize},
+  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
+
+\node[per,fill=pgreen] (p1) at (0,0)     {Period 1\\ normal\\ operation};
+\node[per,fill=pred]   (p3) at (5.4,0)  {Period 2\\ bus-16 fault\\ $Z_f{=}j0.1\pu$};
+\node[per,fill=pyellow](p4) at (10.8,0) {Period 3\\ load step\\ $+20\%$};
+\node[per,fill=pblue]  (p5) at (5.4,-4.8){Period 4\\ absorbed\\ operation};
+
+\draw[arr] (-3.6,0) -- node[tlab]{$t=0\second$} (p1);
+\draw[arr] (p1) -- node[tlab]{$t=60.000$--$60.150\second$} (p3);
+\draw[arr] (p3) -- node[tlab]{$150~\mathrm{ms}$} (p4);
+\draw[arr] (p3) -- node[tlab]{$t=100\second$} (p4);
+\draw[arr] (p3) to[bend left=40] node[tlab]{$t\to160\second$} (p5);
+\draw[arr] (p3) to[bend right=40] node[tlabb]{$t\to160\ p4\to160\second$} ++(3.6,0);
+
+\end{tikzpicture}
+\caption{สี่ช่วงการทำงาน: เขียว = ปกติ; แดง = ฟอลต์บัส 16 ที่ขี่ผ่านโดยเครื่องปั่นทั้งห้าออนไลน์
+เหลือง = สเต็ปโหลด $+20\%$; น้ำเงิน = การดูดซับหลังสเต็ปถึงเพดาน ไม่มีการทริป SG, คำขอ reclose,
+หรือช่วง hand-back ในครอโนโลยีนี้}
+\label{fig:periods}
+\enumerate ...
+\end{figure}
+
+\end{document}
+%\enumerate is not a command; the figure environment closes above.

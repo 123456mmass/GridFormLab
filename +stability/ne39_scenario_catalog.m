@@ -37,6 +37,14 @@ e.fault_on=85; e.fault_clear=85.15; e.line_trip=110;
 e.line_from_bus=16; e.line_to_bus=17; e.restore_time=145; e.sg_on=145;
 rows(end+1)=row('chronology',e,160,'topology_restore', ...
     'CHRONOLOGY_SEPARATE_FROM_SUITE');
+% No sg_id here: the profile arms no SG breaker event, has_sg_cycle stays
+% false, and the schedule never asks for an SG identity -- so this row runs
+% against any composition, including five SGs where the ambiguousSg gate
+% would refuse a default.
+e=struct('enabled',true,'event_profile','fault_load_step','fault_bus',16, ...
+    'Zf',1i*.1,'fault_on',60,'fault_clear',60.15,'load_step',100, ...
+    'load_step_factor',.2,'automatic_gfm_switching',false);
+rows(end+1)=row('fault_load_step20',e,160,'load_step','FAULT_LOAD_NO_SG_TRIP');
 end
 
 function r=row(id,e,T,defining,scope)

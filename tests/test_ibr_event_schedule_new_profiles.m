@@ -241,6 +241,65 @@ tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:missingField');
 end
 
 % =========================================================================
+% 1b. The fault_load_step profile: a fault and a load step with NO SG breaker
+%     events at all -- five sync machines stay the reference throughout.
+% =========================================================================
+function test_fault_load_step_accepts_its_order_and_publishes_its_events(tc)
+s = sched(tc,fault_load_step_events());
+tc.verifyEqual({s.events.type},{'fault_on','fault_clear','load_step'});
+tc.verifyEqual([s.events.t],[50 50.15 100],'AbsTol',0);
+tc.verifyTrue(s.has_fault);
+tc.verifyTrue(s.has_load_step);
+% The whole point of the profile: NO SG breaker capability, so the schedule
+% never asks for an SG identity and runs against any composition.
+tc.verifyFalse(s.has_sg_trip);
+tc.verifyFalse(s.has_sg_reclose);
+tc.verifyFalse(s.has_sg_cycle);
+tc.verifyFalse(s.has_sync_controller);
+tc.verifyFalse(s.has_line_trip);
+tc.verifyFalse(s.has_restore);
+tc.verifyFalse(s.has_line_fault_clear);
+tc.verifyFalse(s.has_ibr_trip);
+tc.verifyFalse(s.has_chronology);
+tc.verifyFalse(s.needs_line_stamp);
+% The factor must reach the output, or the load stamp is zero.
+tc.verifyEqual(s.load_step,100,'AbsTol',0);
+tc.verifyEqual(s.load_step_factor,0.20,'AbsTol',0);
+end
+
+function test_fault_load_step_refuses_a_load_step_inside_the_fault(tc)
+ev = fault_load_step_events(); ev.load_step = ev.fault_on;   % == fault_on = 50
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_fault_load_step_refuses_a_load_step_before_the_clearing(tc)
+ev = fault_load_step_events(); ev.load_step = 50.05;   % inside the fault
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_fault_load_step_refuses_a_load_step_past_the_horizon(tc)
+ev = fault_load_step_events(); ev.load_step = 130;     % t_end = 120
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:badOrdering');
+end
+
+function test_fault_load_step_refuses_a_missing_factor(tc)
+% load_step arms the factor: without it the stamp would be zero and the event
+% would report applied=true while changing nothing.
+ev = fault_load_step_events(); ev = rmfield(ev,'load_step_factor');
+tc.verifyError(@() sched(tc,ev),'stability:ibr_event_schedule:missingField');
+end
+
+function test_fault_load_step_refuses_a_coincident_step(tc)
+% A 1e-13 gap after fault_clear: this profile's rule demands a gap STRICTLY
+% GREATER than tol and therefore fires as badOrdering first -- the stricter
+% gate, exactly as the note in section 3 states for the added profiles. What
+% matters is that a sub-tol gap cannot reach the solver.
+ev = fault_load_step_events(); ev.load_step = ev.fault_clear + 1e-13;
+tc.verifyError(@() sched(tc,ev), ...
+    'stability:ibr_event_schedule:badOrdering');
+end
+
+% =========================================================================
 % 2. The four delivered profiles are unchanged.
 %    Every published result comes from 'chronology'. The capability table
 %    replaced a three-flag scheme, so this is the regression that matters most
@@ -409,7 +468,7 @@ FLAGS = {'has_fault','has_sg_cycle','has_chronology','has_sg_trip', ...
     'needs_line_stamp'};
 all_ev = {chronology_events(),combined_events(),fault_only_events(), ...
     sg_cycle_events(),sg_load_cycle_events(),sg_fault_cycle_events(), ...
-    line_fault_events(),former_outage_events()};
+    line_fault_events(),former_outage_events(),fault_load_step_events()};
 for k = 1:numel(all_ev)
     s = sched(tc,all_ev{k});
     for j = 1:numel(FLAGS)
@@ -431,12 +490,13 @@ tc.verifyTrue(sched(tc,chronology_events()).needs_line_stamp);   % line_trip
 tc.verifyTrue(sched(tc,line_fault_events()).needs_line_stamp);   % line_fault_clear
 tc.verifyFalse(sched(tc,sg_load_cycle_events()).needs_line_stamp);
 tc.verifyFalse(sched(tc,former_outage_events()).needs_line_stamp);
+tc.verifyFalse(sched(tc,fault_load_step_events()).needs_line_stamp);
 end
 
 function test_events_are_sorted_by_time_on_every_profile(tc)
 all_ev = {chronology_events(),combined_events(),fault_only_events(), ...
     sg_cycle_events(),sg_load_cycle_events(),sg_fault_cycle_events(), ...
-    line_fault_events(),former_outage_events()};
+    line_fault_events(),former_outage_events(),fault_load_step_events()};
 for k = 1:numel(all_ev)
     s = sched(tc,all_ev{k});
     tc.verifyTrue(issorted([s.events.t]), ...
@@ -572,4 +632,18 @@ ev = base_events();
 ev.event_profile = 'sg_cycle';
 ev.sg_trip = 20;
 ev.sg_on = 80;
+end
+
+function ev = fault_load_step_events()
+% The 5SG+5IBR study's arm: fault at 50-50.15 s, load step at 100 s, horizon
+% 120 s -- and NO sg_trip/sg_on anywhere, so the machines never leave.
+ev = base_events();
+ev.event_profile = 'fault_load_step';
+ev.automatic_gfm_switching = false;
+ev.fault_bus = 9;
+ev.Zf = 0.01+0.01i;
+ev.fault_on = 50;
+ev.fault_clear = 50.15;
+ev.load_step = 100;
+ev.load_step_factor = 0.20;
 end

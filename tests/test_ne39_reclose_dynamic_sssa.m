@@ -32,7 +32,7 @@ tc.verifyEqual(numel(model.physical_eigenvalues), 105);
 assert_gauge(tc, model, eq);
 lam = model.physical_eigenvalues(:);
 zeta = min(-real(lam)./abs(lam));
-tc.verifyGreaterThanOrEqual(zeta, 0.02);
+tc.verifyGreaterThanOrEqual(zeta, tc.TestData.c.selector.zeta_min_damping);
 end
 
 function test_dynamic_partition_requires_stationary_seed(tc)

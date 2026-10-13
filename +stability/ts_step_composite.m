@@ -60,12 +60,30 @@ if ~isscalar(fd_y_grouping) || ~ismember(fd_y_grouping,["auto","off"])
         'fd_y_grouping must be auto or off.');
 end
 verbose = logical(option_value(opt,'verbose',false));
+% Chord-reuse ratio (0<r<1) is validated inside stability.composite_newton;
+% here it is only forwarded when set so an omitted option is byte-identical.
+if isfield(opt,'jacobian_reuse_ratio') && ~isempty(opt.jacobian_reuse_ratio)
+    jacobian_reuse_ratio = opt.jacobian_reuse_ratio;
+else
+    jacobian_reuse_ratio = [];
+end
 full_kcl = logical(option_value(opt,'full_kcl',true));
 t_now = option_value(opt,'t_now',0.0);
 % Domain-preserving line search is opt-in. Only the hybrid IBR TS caller
 % sets this flag; ts_simulate_composite, equilibrium, and SSSA callers use
 % the default-off path so their behavior is unchanged.
 domain_preserving = logical(option_value(opt,'domain_preserving_trials',false));
+% Within-step Jacobian reuse is opt-in and threaded to
+% stability.composite_newton unmodified (validation lives there). A reused
+% Jacobian supplies only the chord direction: the true residual, the
+% convergence test, the rcond/finite gates and the line search are unchanged,
+% and a poor reduction / backtracked step / rejected chord forces a fresh
+% Jacobian. Absent (every historical caller) = false = byte-identical.
+if isfield(opt,'jacobian_reuse') && ~isempty(opt.jacobian_reuse)
+    jacobian_reuse = opt.jacobian_reuse;
+else
+    jacobian_reuse = false;
+end
 integration_method=lower(string(option_value(opt,'integration_method','trapezoidal')));
 state_predictor=lower(string(option_value(opt,'state_predictor','hold')));
 if ~isscalar(integration_method) || ...
@@ -209,7 +227,7 @@ else
 end
 jacobian_fn = make_jacobian(residual_fn);
 make_newton_opt = @(ec) newton_options(domain_preserving,active_indices, ...
-    free_vars,vcon_vars,vcon_ref,ny,dae,ec);
+    free_vars,vcon_vars,vcon_ref,ny,dae,ec,jacobian_reuse,jacobian_reuse_ratio);
 newton_opt = make_newton_opt(event_context);
 na = numel(active_indices);
 if ~limiter_freeze_enabled
@@ -236,7 +254,8 @@ else
     newton_info = struct('domain_rejected_trials',0,'line_search_exhausted',false, ...
         'residual_before_line_search',inf,'final_tested_alpha',NaN, ...
         'minimum_trial_voltage',NaN,'final_domain_violation',[], ...
-        'minimum_voltage_violation',[]);
+        'minimum_voltage_violation',[], ...
+        'jacobian_evaluations',0,'jacobian_reused',0,'jacobian_rebuilds',0);
     for outer = 1:limiter_freeze_max_outer
         frz = freeze_from_regime(limiter_regime_at(dae,t_now+h,x0,z_c, ...
             active_indices,vcon_vars,vcon_ref,free_vars,ny,u,event_context), ...
@@ -303,7 +322,7 @@ step.terminal_candidate_y=candidate_y;
 end
 
 function opt_out = newton_options(domain_preserving,active_indices,free_vars, ...
-    vcon_vars,vcon_ref,ny,dae,event_context)
+    vcon_vars,vcon_ref,ny,dae,event_context,jacobian_reuse,jacobian_reuse_ratio)
 %NEWTON_OPTIONS  The composite_newton option struct for one event context.
 %   Factored out so the frozen-branch solves build it exactly as the live solve
 %   does, with the domain diagnostics bound to the SAME context the residual
@@ -314,6 +333,15 @@ if domain_preserving
     opt_out.trial_exception_diagnostic = @(z_trial,me) ...
         trial_domain_diagnostic(z_trial,me,active_indices,free_vars, ...
         vcon_vars,vcon_ref,ny,dae,event_context);
+end
+% Within-step Jacobian reuse (opt-in). Forwarded unmodified; validation and
+% the forced-refresh policy live in stability.composite_newton. Absent = the
+% legacy byte-identical loop.
+if jacobian_reuse
+    opt_out.jacobian_reuse = true;
+end
+if ~isempty(jacobian_reuse_ratio)
+    opt_out.jacobian_reuse_ratio = jacobian_reuse_ratio;
 end
 end
 

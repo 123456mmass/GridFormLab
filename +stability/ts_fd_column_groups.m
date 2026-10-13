@@ -73,7 +73,8 @@ groups = num2cell(1:nz);
 rowsets = repmat({{}},1,nz);
 info = struct('grouped',false,'n_groups',nz,'n_state_groups',na, ...
     'n_state_columns',na,'fallback_reason','', ...
-    'n_y_groups',ny,'n_y_columns',ny,'y_grouping',false,'y_locality_reason','');
+    'n_y_groups',ny,'n_y_columns',ny,'y_grouping',false,'y_locality_reason','', ...
+    'cache_hit',false,'probe_evaluations',0);
 
 if ~full_kcl
     info.fallback_reason = 'reduced_kcl_rows';
@@ -185,6 +186,12 @@ if isfield(opts,'y_grouping') && logical(opts.y_grouping) && ...
     if isequal(size(Ynet),[dae.nb dae.nb])
         loc = y_locality_cached(dae,opts);
         info.y_locality_reason = loc.reason;
+        % DIAGNOSTIC ONLY counters from the cache (no numerical effect): the
+        % caller/test can see whether the locality decision came from the
+        % persistent cache and how many probes ran. Also published on the
+        % early-return paths below so the shape stays stable.
+        info.cache_hit = loc.cache_hit;
+        info.probe_evaluations = loc.probe_evaluations;
         if loc.local
             y_local = true;
             cnb = false(dae.nb,dae.nb);
@@ -281,14 +288,26 @@ end
 
 % =========================================================================
 function loc = y_locality_cached(dae, opts)
-%Y_LOCALITY_CACHED เทียบ device/context จริง ไม่ hash สรุป captured workspace.
+%Y_LOCALITY_CACHED เทียบ device/context/Ynet จริง ไม่ hash สรุป captured workspace.
 % เก็บเพียง entry ล่าสุด; closure ใหม่ต้อง re-probe แม้ข้อความ function เหมือนกัน.
-persistent previous_key previous_loc
+% Ynet อยู่ใน key: โทโพโลยี/layout ที่เปลี่ยน (fault/outage/line open) ต้อง
+% invalidates cache และ re-probe ไม่ใช้ row set เก่า. ค่า physical snapshot
+% (t/x/u) ยังไม่อยู่ใน key — อาศัย structural declaration เป็น global proof,
+% probe เป็น negative cross-check เท่านั้น.
+%
+% DIAGNOSTIC ONLY (ไม่มีผล numerical): loc.cache_hit บอกว่าผลลัพธ์มาจาก
+% persistent cache หรือไม่, loc.probe_evaluations นับจำนวน probe ที่รันจริง
+% ตลอดอายุ cache. ทั้งสองถูกเขียนทับหลัง serve/collect เสมอ จึงไม่มีผลต่อ
+% การตัดสิน probe และไม่ถูกเทียบใน key.
+persistent previous_key previous_loc probe_evaluations
+if isempty(probe_evaluations), probe_evaluations=0; end
 key=struct('devices',dae.devices,'nb',dae.nb,'bus_map',dae.bus_map, ...
     'device_offsets',dae.device_offsets,'u_offsets',dae.u_offsets, ...
-    'event_context',opts.event_context);
+    'event_context',opts.event_context,'Ynet',opts.Ynet);
 if ~isempty(previous_key) && isequaln(key,previous_key)
     loc=previous_loc;
+    loc.cache_hit=true;
+    loc.probe_evaluations=probe_evaluations;
     return;
 end
 t=0;
@@ -296,6 +315,9 @@ if isfield(opts,'t') && isnumeric(opts.t) && isscalar(opts.t) && isfinite(opts.t
     t=double(opts.t);
 end
 loc=stability.ts_fd_y_locality(dae,opts.x,opts.u,opts.event_context,t);
+probe_evaluations=probe_evaluations+1;
+loc.cache_hit=false;
+loc.probe_evaluations=probe_evaluations;
 previous_key=key;
 previous_loc=loc;
 end

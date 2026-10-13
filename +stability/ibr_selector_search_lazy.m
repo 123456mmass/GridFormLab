@@ -293,6 +293,27 @@ if sg_online
     end
 end
 initial_pending = ~isempty(initial_spec);
+priority_specs={};
+if sg_online && isfield(opt,'sg_on_candidate_sets')
+    sets=opt.sg_on_candidate_sets;
+    if ~iscell(sets)
+        error('stability:ibr_lazy_search:candidateSets','SG_ON candidate sets must be a cell array.');
+    end
+    for q=1:numel(sets)
+        selected=sets{q};
+        if ~isnumeric(selected) || ~isreal(selected) || ...
+                (~isvector(selected) && ~isempty(selected)) || ...
+                any(~isfinite(selected)) || numel(unique(selected))~=numel(selected) || ...
+                ~all(ismember(selected,eligible)) || ~ismember(numel(selected),counts)
+            error('stability:ibr_lazy_search:candidateSets','Invalid SG_ON candidate subset.');
+        end
+        selected=sort(reshape(selected,1,[]));
+        priority_specs{end+1}=struct('selected_gfm_indices',selected, ...
+            'n_gfm_required',numel(selected)); %#ok<AGROW>
+    end
+end
+priority_cursor=1;
+seen_sets={};
 drained = false;
 % Accumulate evaluated candidates in a cell array. The evaluator may SURFACE
 % extra fields (e.g. an evidence record array) and a struct-array append
@@ -305,17 +326,20 @@ budget_exhausted = false;
 while true
     if initial_pending
         spec = initial_spec; initial_pending = false; done = false;
+    elseif priority_cursor<=numel(priority_specs)
+        spec=priority_specs{priority_cursor};
+        priority_cursor=priority_cursor+1;
+        done=false;
     else
         [spec, cursor, done] = stability.ibr_lazy_priority(cursor, ctx_gen);
-        if ~done && ~isempty(initial_spec) && ...
-                isequal(spec.selected_gfm_indices,initial_spec.selected_gfm_indices)
-            continue;
-        end
     end
     if done
         drained = true;
         break;
     end
+    selected=sort(reshape(spec.selected_gfm_indices,1,[]));
+    if any(cellfun(@(a)isequal(a,selected),seen_sets)), continue; end
+    seen_sets{end+1}=selected; %#ok<AGROW>
     n_generated = n_generated + 1;
     if isfinite(budget.max_generated) && n_generated > budget.max_generated
         budget_exhausted = true;

@@ -243,9 +243,20 @@ for afield = {'stepper','dt_min','dt_max','dt_max_armed', ...
     end
 end
 % Private NE39 trial เลือก mesh/budget/policy แบบ explicit; default strict คงเดิม.
-for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps','ne39_assessment_policy'}
+for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps','ne39_assessment_policy', ...
+        'ne39_trial_adaptive_dt_max','ne39_trial_screen_horizon_s', ...
+        'ne39_trial_global_refinement_max_retries','ne39_transition_study_continuation'}
     if isfield(opt,tfield{1}) && ~isempty(opt.(tfield{1}))
         ts_opt_base.(tfield{1})=opt.(tfield{1});
+    end
+end
+% Within-step Jacobian reuse (opt-in, NUMERICAL_METHOD, 2026-10-12). Forwarded
+% only when the caller sets each; an omitted option is byte-identical to the
+% legacy loop (no chord reuse). Validation and the forced-refresh policy live
+% in stability.composite_newton via stability.ts_step_composite.
+for jfield={'jacobian_reuse','jacobian_reuse_ratio'}
+    if isfield(opt,jfield{1}) && ~isempty(opt.(jfield{1}))
+        ts_opt_base.(jfield{1})=opt.(jfield{1});
     end
 end
 % Reference-AGSI in-band overlay (opt-in, DIAGNOSTIC ONLY, 2026-08-13). The
@@ -398,7 +409,8 @@ if isfield(opt,'automatic_support_supervision')
     ts_opt_ibr.automatic_support_supervision = opt.automatic_support_supervision;
 end
 for rate_field={'online_rate_measurement','online_rate_options', ...
-        'ne39_rate_policy','ne39_policy'}
+        'ne39_rate_policy','ne39_policy','ne39_weighted_severity', ...
+        'ne39_severity_weights','ne39_severity_bases'}
     name=rate_field{1};
     if isfield(opt,name), ts_opt_ibr.(name)=opt.(name); end
 end
@@ -511,7 +523,7 @@ try
         % opt.cache contract, not an unverified table.)
         table_opt.lazy_gfm_search = true;
         forward = {'certificate','budget','candidate_evaluator','state_validity', ...
-            'gamma_req'};
+            'gamma_req','sg_on_candidate_sets'};
         for fi = 1:numel(forward)
             f = forward{fi};
             if isfield(opt,f) && ~isempty(opt.(f)), table_opt.(f) = opt.(f); end

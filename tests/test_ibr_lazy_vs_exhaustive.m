@@ -179,6 +179,22 @@ end
 % =========================================================================
 % 3. A stand-in evaluator CANNOT mint a certificate by default
 % =========================================================================
+function test_priority_sets_are_evaluated_before_count_scan(testCase)
+resources=make_resources(); case_data=make_case(); opt=base_opt();
+opt.budget=struct('max_full_evaluations',2,'stop_on_first_certified',false);
+opt.candidate_evaluator=@synth_eval_full;
+opt.cheap_provider=@always_unknown_cheap;
+opt.sg_on_candidate_sets={[2 3 4]};
+t=stability.ibr_selector_search_lazy(case_data,resources,struct(),opt);
+c=t.sg_on.configurations;
+testCase.assertGreaterThanOrEqual(numel(c),2);
+testCase.verifyEqual(c(2).selected_gfm_indices,[2 3 4]);
+testCase.verifyFalse(t.sg_on.universe_complete);
+opt.sg_on_candidate_sets={[999]};
+testCase.verifyError(@()stability.ibr_selector_search_lazy(case_data,resources,struct(),opt), ...
+    'stability:ibr_lazy_search:candidateSets');
+end
+
 function test_injected_evaluator_cannot_certify(testCase)
 resources = make_resources();
 case_data = make_case();

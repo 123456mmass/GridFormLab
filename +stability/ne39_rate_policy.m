@@ -44,6 +44,9 @@ decision=struct('augment',false,'release',false,'valid',false, ...
     'si_trigger',false,'rocof_trigger',false,'rocov_trigger',false, ...
     'prediction_trigger',false,'projected_v',[],'projected_f',[], ...
     'reason','NONADVANCING_TIME');
+if isfield(policy,'per_device_release') && isequal(policy.per_device_release,true)
+    decision.release_eligible=false(n,1);
+end
 % duplicate time ไม่กิน dwell และไม่สร้าง proposal ซ้ำ.
 if t<=state.last_t, return; end
 state.last_t=t;
@@ -55,6 +58,7 @@ valid=n>0 && all(sample.valid(:)==1) && ...
 decision.valid=valid;
 if ~valid
     state.up_since=NaN; state.down_since=NaN;
+    if isfield(state,'release_since'), state.release_since(:)=NaN; end
     decision.reason='EVIDENCE_UNAVAILABLE'; return;
 end
 decision.si_trigger=any(s>=policy.si_on);
@@ -71,7 +75,31 @@ up=decision.si_trigger || decision.rocof_trigger || ...
 safe=all(v>=policy.v_min & v<=policy.v_max & ...
     f>=policy.f_min & f<=policy.f_max & ...
     abs(rf)<=policy.rocof_max & abs(rv)<=policy.rocov_max);
-down=all(s<policy.si_off) && safe && ~decision.prediction_trigger;
+per_device=isfield(policy,'per_device_release') && isequal(policy.per_device_release,true);
+if per_device
+    if ~isfield(state,'release_since') || numel(state.release_since)~=n
+        state.release_since=nan(n,1);
+    end
+    eligible=s<policy.si_off;
+    if isfield(sample,'release_capable')
+        if numel(sample.release_capable)~=n
+            error('stability:ne39_rate_policy:shape','Release mask has wrong size.');
+        end
+        eligible=eligible & sample.release_capable(:)==1;
+    end
+    if ~safe || decision.prediction_trigger || up
+        eligible(:)=false;
+    end
+    state.release_since(~eligible)=NaN;
+    fresh=eligible & ~isfinite(state.release_since);
+    state.release_since(fresh)=t;
+    decision.release_eligible=isfinite(state.release_since) & ...
+        t-state.release_since>=policy.off_dwell;
+    decision.release=any(decision.release_eligible);
+    down=any(eligible) && safe && ~decision.prediction_trigger;
+else
+    down=all(s<policy.si_off) && safe && ~decision.prediction_trigger;
+end
 if up
     if ~isfinite(state.up_since), state.up_since=t; end
     state.down_since=NaN;
@@ -80,7 +108,9 @@ if up
 elseif down
     state.up_since=NaN;
     if ~isfinite(state.down_since), state.down_since=t; end
-    decision.release=t-state.down_since>=policy.off_dwell;
+    if ~per_device
+        decision.release=t-state.down_since>=policy.off_dwell;
+    end
     decision.reason='RELEASE_PENDING_CERTIFICATE';
 else
     state.up_since=NaN; state.down_since=NaN;

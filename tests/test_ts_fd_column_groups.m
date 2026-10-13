@@ -278,3 +278,119 @@ end
 
 
 
+
+function test_y_cache_hit_on_same_key(testCase)
+% DIAGNOSTIC counter check: a second call with the SAME device tables,
+% context and Ynet must be served from the persistent cache (cache_hit=true)
+% without running another probe (probe_evaluations unchanged), and the
+% served locality decision must be identical.
+eq = testCase.TestData.eq;
+dae = testCase.TestData.dae;
+active = testCase.TestData.active;
+ny = numel(dae.y0);
+probe_opt = struct('y_grouping',true,'Ynet',dae.Ynet,'x',eq.x0, ...
+    'u',eq.u_eq,'event_context',eq.equilibrium_context,'t',0);
+
+[~,~,info1] = stability.ts_fd_column_groups(dae,active,ny,true,probe_opt);
+[~,~,info2] = stability.ts_fd_column_groups(dae,active,ny,true,probe_opt);
+
+testCase.verifyEqual(info1.y_locality_reason,info2.y_locality_reason);
+testCase.verifyEqual(info2.y_grouping,info1.y_grouping);
+% When this case proves y-locality the cache is actually populated, so the
+% second identical lookup must be a HIT and must not run another probe
+% evaluation. info1.cache_hit itself is NOT asserted: the persistent cache may
+% already be warm from an earlier test that probed the same shared fixture.
+if info1.y_grouping
+    testCase.verifyTrue(info2.cache_hit, ...
+        'Second identical lookup must be served from the cache.');
+    testCase.verifyEqual(info2.probe_evaluations, ...
+        info1.probe_evaluations,'AbsTol',0);
+end
+end
+
+function test_y_cache_miss_on_ynet_change(testCase)
+% Ynet is part of the cache key: a call with a CHANGED topology (here the
+% same Ynet with one branch zeroed, shape unchanged) must invalidate the
+% cache and re-run the probe (cache_hit=false, probe_evaluations advances).
+eq = testCase.TestData.eq;
+dae = testCase.TestData.dae;
+active = testCase.TestData.active;
+ny = numel(dae.y0);
+Y_a = dae.Ynet;
+Y_b = Y_a;
+[maxval, maxidx] = max(Y_b(:));
+Y_b(maxidx) = 0;   % cut the one strongest branch (shape unchanged)
+probe_a = struct('y_grouping',true,'Ynet',Y_a,'x',eq.x0, ...
+    'u',eq.u_eq,'event_context',eq.equilibrium_context,'t',0);
+probe_b = probe_a; probe_b.Ynet = Y_b;
+
+[~,~,info1] = stability.ts_fd_column_groups(dae,active,ny,true,probe_a);
+[~,~,info2] = stability.ts_fd_column_groups(dae,active,ny,true,probe_b);
+
+testCase.verifyFalse(info2.cache_hit, ...
+    'A changed Ynet must invalidate the cache and re-probe.');
+testCase.verifyEqual(info2.probe_evaluations, ...
+    info1.probe_evaluations+1,'AbsTol',0);
+% And a third call on the ORIGINAL topology re-misses again (the LRU entry
+% now holds the cut topology), proving the key actually distinguishes them.
+[~,~,info3] = stability.ts_fd_column_groups(dae,active,ny,true,probe_a);
+testCase.verifyFalse(info3.cache_hit);
+end
+
+function test_y_cache_miss_on_mode_change(testCase)
+% The event context (modes/freeze/hybrid state) is part of the key: a call
+% whose context differs in an ACTUAL device mode (gfl<->gfm) must re-run the
+% probe, never reuse the decision. The mode contract is what changes here —
+% hs.device_modes flips one device's mode value — so this exercises the real
+% mode/layout invalidation, not just an unrelated added field.
+eq = testCase.TestData.eq;
+dae = testCase.TestData.dae;
+active = testCase.TestData.active;
+ny = numel(dae.y0);
+ec = eq.equilibrium_context;
+ec_mode = ec;
+if isfield(ec,'hybrid_state') && isstruct(ec.hybrid_state) && ...
+        isfield(ec.hybrid_state,'device_modes') && ...
+        isstruct(ec.hybrid_state.device_modes)
+    dm = ec.hybrid_state.device_modes;
+    keys = fieldnames(dm);
+    testCase.verifyGreaterThan(numel(keys), 0, ...
+        'Fixture must carry at least one device mode to flip.');
+    if strcmpi(char(dm.(keys{1})), 'gfm')
+        dm.(keys{1}) = 'gfl';
+    else
+        dm.(keys{1}) = 'gfm';
+    end
+    ec_mode.hybrid_state.device_modes = dm;
+else
+    % No device_modes in this context: switch the whole hybrid_state to the
+    % other mode family so the context genuinely differs.
+    ec_mode.hybrid_state = struct('device_modes', ...
+        {struct('probe_device','gfl')});
+end
+probe_a = struct('y_grouping',true,'Ynet',dae.Ynet,'x',eq.x0, ...
+    'u',eq.u_eq,'event_context',ec,'t',0);
+probe_b = probe_a; probe_b.event_context = ec_mode;
+
+[~,~,info1] = stability.ts_fd_column_groups(dae,active,ny,true,probe_a);
+[~,~,info2] = stability.ts_fd_column_groups(dae,active,ny,true,probe_b);
+testCase.verifyFalse(info2.cache_hit, ...
+    'A changed device mode (gfl<->gfm) must re-probe.');
+testCase.verifyEqual(info2.probe_evaluations, ...
+    info1.probe_evaluations+1,'AbsTol',0);
+end
+
+function test_grouping_still_bit_exact_with_cache_fields(testCase)
+% The new diagnostic fields must not perturb the numerics: a completed
+% production step with fd_structure_check still proves the grouped Jacobian
+% is bit-identical to the per-column build.
+eq = testCase.TestData.eq;
+dae = testCase.TestData.dae;
+active = testCase.TestData.active;
+opt = struct('newton_tol',1e-8,'max_iter',50,'fd_eps',3e-6, ...
+    'full_kcl',true,'t_now',0,'fd_structure_check',true);
+step = stability.ts_step_composite(eq.x0,eq.y0,0.01,dae,dae.Ynet, ...
+    eq.u_eq,eq.equilibrium_context,active,opt);
+testCase.verifyTrue(step.converged);
+testCase.verifyTrue(step.fd_column_groups.grouped);
+end

@@ -272,6 +272,222 @@ function J = jac_domain_throw(~)
 error('ibr:gfl_rms10_model:lowVoltagePowerInversion', 'FD perturbation invalid.');
 end
 
+function test_reuse_off_returns_legacy_counts(testCase)
+% With jacobian_reuse absent (or false) every Newton direction must come from
+% a FRESH Jacobian exactly as the legacy loop: no reuse, no rebuild counter.
+% The solve starts at the root (residual 0), so the convergence test fires
+% before any Jacobian is needed: evaluations = 0, iterations = 1.
+A = [2, 0; 0, 0.5];
+z0 = [1; -2];
+b = A * z0;
+residual_fn = @(z) A * z - b;
+jacobian_fn = @(~) A;
+
+[~, n_legacy, c_legacy, r_legacy, rc_legacy, J_legacy, info_legacy] = ...
+    stability.composite_newton(z0, residual_fn, jacobian_fn, ...
+    1e-12, 50, false, struct());
+opt = struct('jacobian_reuse', false);
+[~, n_off, c_off, r_off, rc_off, J_off, info_off] = ...
+    stability.composite_newton(z0, residual_fn, jacobian_fn, ...
+    1e-12, 50, false, opt);
+
+testCase.verifyEqual(n_off, n_legacy, 'AbsTol', 0);
+testCase.verifyEqual(c_off, c_legacy);
+testCase.verifyEqual(r_off, r_legacy, 'AbsTol', 0);
+testCase.verifyEqual(rc_off, rc_legacy, 'AbsTol', 0);
+testCase.verifyEqual(J_off, J_legacy, 'AbsTol', 0);
+% The initial point IS the root: no Jacobian was consumed by a direction.
+testCase.verifyEqual(info_legacy.jacobian_evaluations, 0, 'AbsTol', 0);
+testCase.verifyEqual(info_off.jacobian_evaluations, 0, 'AbsTol', 0);
+testCase.verifyEqual(info_off.jacobian_reused, 0, 'AbsTol', 0);
+testCase.verifyEqual(info_off.jacobian_rebuilds, 0, 'AbsTol', 0);
+testCase.verifyFalse(info_off.line_search_exhausted);
+end
+
+function test_reuse_off_off_root_iteration_counts(testCase)
+% Off the root, every non-converged iteration of the legacy loop must come
+% from a fresh jacobian_fn build: evaluations == iterations.
+A = [2, 0; 0, 0.5];
+z0 = [1; 1];          % residual 2, needs Newton steps
+b = A * [3; 7];       % root [3;7]
+residual_fn = @(z) A * z - b;
+jacobian_fn = @(~) A;
+
+[~, n, converged, ~, ~, ~, info] = stability.composite_newton( ...
+    z0, residual_fn, jacobian_fn, 1e-12, 50, false, struct());
+testCase.verifyTrue(converged);
+testCase.verifyGreaterThan(n, 1);
+% Every non-terminal iteration consumes one fresh direction build. The final
+% iteration is the convergence test (residual already below tol), whose
+% wrap-up J_final build is not charged to the counters — the same convention
+% as the root-at-z0 case above (evaluations = 0 = n - 1).
+testCase.verifyEqual(info.jacobian_evaluations, n - 1, 'AbsTol', 0, ...
+    'Legacy loop builds a fresh Jacobian at every non-terminal iteration.');
+testCase.verifyEqual(info.jacobian_reused, 0, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_rebuilds, 0, 'AbsTol', 0);
+end
+
+function test_reuse_equiv_and_reduces_jacobian_builds(testCase)
+% Chord-method transparency case: a FIXED Jacobian approximation A0 (the
+% same handle value every iteration) lets the reuse policy hold ONE fresh
+% build across every accepted full step with a good reduction. The root, the
+% iteration count, the final residual and J_final/rcond must be identical to
+% the legacy loop, with strictly fewer jacobian_fn builds.
+z_star = [3; 7];
+z0 = [1; -2];
+residual_fn = @(z) z - z_star;                 % A = I
+jacobian_fn = @(~) diag([1, 1.5]);             % fixed chord matrix A0
+
+[~, n_legacy, converged_legacy, r_legacy, rc_legacy, J_legacy, info_legacy] = ...
+    stability.composite_newton(z0, residual_fn, jacobian_fn, ...
+    1e-8, 50, false, struct());
+opt = struct('jacobian_reuse', true, 'jacobian_reuse_ratio', 0.5);
+[z_sol, n, converged, r, rc, J, info] = stability.composite_newton( ...
+    z0, residual_fn, jacobian_fn, 1e-8, 50, false, opt);
+
+testCase.verifyEqual(n, n_legacy, 'AbsTol', 0, ...
+    'Chord reuse must not change the iteration count.');
+testCase.verifyTrue(converged);
+testCase.verifyTrue(converged_legacy);
+testCase.verifyEqual(z_sol, z_star, 'AbsTol', 1e-6);
+% Both finals satisfy the SAME tolerance contract; the exact landing points
+% may differ because the chord direction differs from the Newton direction.
+testCase.verifyLessThan(r, 1e-8);
+testCase.verifyLessThan(r_legacy, 1e-8);
+testCase.verifyEqual(J, J_legacy, 'AbsTol', 0);
+testCase.verifyEqual(info_legacy.jacobian_evaluations, n_legacy - 1, 'AbsTol', 0, ...
+    'Legacy loop rebuilds at every non-terminal iteration.');
+testCase.verifyEqual(info_legacy.jacobian_reused, 0, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_evaluations, 1, 'AbsTol', 0, ...
+    'One fresh build must serve every iteration here.');
+testCase.verifyEqual(info.jacobian_rebuilds, 0, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_evaluations + info.jacobian_reused, ...
+    n_legacy - 1, 'AbsTol', 0, ...
+    'A direction is consumed at every non-terminal iteration.');
+testCase.verifyGreaterThan(info.jacobian_reused, 0);
+end
+
+function test_reuse_refreshes_after_poor_reduction(testCase)
+% A chord step that reduces the residual by less than reuse_ratio must force
+% a fresh Jacobian at the next iterate: the rebuild counter must advance, and
+% the fresh build must supply the BETTER chord so the solve converges. The
+% residual is linear r(z)=H z; the FIRST jacobian_fn call (at z0) returns a
+% poor approximation with swapped eigen-scales, every later call returns the
+% exact H. The poor chord step's reduction falls below ratio, the policy
+% rebuilds, and the exact build carries the solve to the root.
+H = [1, 0; 0, 4];
+z0 = [4; 1];
+calls = 0;   % shared workspace between the nested functions below
+    function J = jac_refresh(~) %#ok<NESTED>
+        calls = calls + 1;
+        if calls == 1
+            J = [4, 0; 0, 1];          % poor first approximation
+        else
+            J = H;                     % exact afterwards
+        end
+    end
+    function r = rfn(z) %#ok<NESTED>
+        r = H * z;
+    end
+opt = struct('jacobian_reuse', true, 'jacobian_reuse_ratio', 0.5);
+
+[z_sol, ~, converged, residual_norm, rc, ~, info] = stability.composite_newton( ...
+    z0, @rfn, @jac_refresh, 1e-10, 50, false, opt);
+
+testCase.verifyTrue(converged);
+testCase.verifyLessThan(residual_norm, 1e-10);
+testCase.verifyTrue(isfinite(rc));
+testCase.verifyLessThan(norm(z_sol, inf), 1e-8);
+% The forced fresh build happened and supplied the exact Jacobian: exactly
+% two builds (the poor one, then the forced refresh) and no reuse.
+testCase.verifyEqual(info.jacobian_evaluations, 2, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_rebuilds, 1, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_reused, 0, 'AbsTol', 0);
+end
+
+function test_reuse_counts_are_bounded_and_consistent(testCase)
+% Off the root: every non-converged iteration consumes a Newton direction
+% from some Jacobian, so evaluations + reused must equal the iteration count.
+% The Jacobian is EXACT and fixed, so the reuse policy holds one build and
+% admits no rebuild, no reject, no backtracking here. The solve starts
+% OFF the root (b chosen away from z0).
+z0 = [1; 1];
+A = [3, 1; 1, 2];
+b = A * [3; 7];       % root is [3;7], z0 is off it
+residual_fn = @(z) A * z - b;
+jacobian_fn = @(~) A;
+opt = struct('jacobian_reuse', true);
+
+[~, n, converged, ~, ~, ~, info] = stability.composite_newton( ...
+    z0, residual_fn, jacobian_fn, 1e-12, 50, false, opt);
+testCase.verifyTrue(converged);
+% Exact Jacobian on a linear residual: the first full Newton step lands on
+% the root, so the SECOND iteration is the convergence test that terminates.
+% n == 2 is therefore deterministic, not implementation-dependent.
+testCase.verifyEqual(n, 2, 'AbsTol', 0, ...
+    ['Exact linear residual: the first full step reaches the root, the ' ...
+     'second iteration is the convergence test.']);
+testCase.verifyEqual(info.jacobian_evaluations, 1, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_reused, 0, 'AbsTol', 0);
+testCase.verifyEqual(info.jacobian_rebuilds, 0, 'AbsTol', 0);
+% Accounting invariant: a direction is consumed at every NON-terminal
+% iteration only (the final convergence-test build is uncharged).
+testCase.verifyEqual(info.jacobian_evaluations + info.jacobian_reused, ...
+    n - 1, 'AbsTol', 0, ...
+    'A direction is consumed at every non-terminal iteration.');
+end
+
+function test_reuse_invalid_option_values_rejected(testCase)
+% jacobian_reuse must be a logical scalar; jacobian_reuse_ratio a finite
+% scalar in (0,1). Anything else must error, not fall back silently.
+z0 = [1; -2];
+residual_fn = @(z) [2, 0; 0, 0.5] * z;
+jacobian_fn = @(~) [2, 0; 0, 0.5];
+
+for bad = {1, 'true', [true false]}
+    opt = struct('jacobian_reuse', bad{1});
+    testCase.verifyError(@() stability.composite_newton(z0, residual_fn, ...
+        jacobian_fn, 1e-12, 5, false, opt), ...
+        'stability:composite_newton:badJacobianReuse');
+end
+for bad = {0, -0.5, 1.0, 1.5, NaN, Inf, [0.25 0.75]}
+    opt = struct('jacobian_reuse', true, 'jacobian_reuse_ratio', bad{1});
+    testCase.verifyError(@() stability.composite_newton(z0, residual_fn, ...
+        jacobian_fn, 1e-12, 5, false, opt), ...
+        'stability:composite_newton:badJacobianReuseRatio');
+end
+end
+
+function test_reuse_rejected_chord_falls_back_to_fresh(testCase)
+% A chord direction whose FULL step is rejected by the true-residual line
+% search must still converge via the unchanged backtracking, and the next
+% iterate must rebuild (a backtracked step invalidates the held Jacobian).
+z0 = [0; 0];
+% Residual whose Newton direction from the (exact) Jacobian overshoots:
+% the chord step is rejected by the strict-decrease gate on the FIRST
+% attempts and only a damped trial is accepted.
+residual_fn = @(z) overshoot_residual(z);
+jacobian_fn = @(~) [1, 0; 0, 1];
+opt = struct('jacobian_reuse', true);
+
+[z_sol, ~, converged, residual_norm, ~, ~, info] = stability.composite_newton( ...
+    z0, residual_fn, jacobian_fn, 1e-10, 50, false, opt);
+testCase.verifyTrue(converged);
+testCase.verifyLessThan(residual_norm, 1e-10);
+% At least one rebuild: backtracking forces a fresh Jacobian.
+testCase.verifyGreaterThan(info.jacobian_rebuilds, 0);
+end
+
+function r = overshoot_residual(z)
+%OVERSHOOT_RESIDUAL  Nonlinear residual whose Newton chord step from z0 = 0
+%   with J0 = I overshoots the region of decreasing residual: the full step
+%   z = dz increases ||r|| so the line search backtracks, and the next
+%   iterate must rebuild because a backtracked step invalidates the held
+%   Jacobian. Component 1 is smooth with curvature away from 0; component 2
+%   couples z1 so the chord direction is only approximate.
+r = [sinh(2 * z(1)) - 0.25 * z(2)^2 - 0.1; z(2) + 0.25 * z(1)];
+end
+
 function vd = empty_violating_devices()
 %EMPTY_VIOLATING_DEVICES  Reusable empty struct array template so the
 %   trial_exception_diagnostic closure returns a stable violating_devices

@@ -121,6 +121,8 @@ if settings.ne39_rate_policy_enabled || ...
         samples.ne39_policy_state=struct();
         samples.ne39_epoch=[];
         samples.ne39_decision_log={};
+        samples.ne39_weighted_enabled=settings.ne39_weighted_enabled;
+        samples.ne39_weighted=settings.ne39_weighted;
     end
     samples = record_accepted_rates(samples,0,x,y,u,ec);
 end
@@ -298,6 +300,8 @@ while t < settings.t_end-settings.event_tol
             'limiter_regime_freeze',settings.limiter_regime_freeze, ...
             'limiter_regime_max_outer',settings.limiter_regime_max_outer, ...
             'state_predictor',predictor);
+        if isfield(settings,'jacobian_reuse'), step_opt.jacobian_reuse=settings.jacobian_reuse; end
+        if isfield(settings,'jacobian_reuse_ratio'), step_opt.jacobian_reuse_ratio=settings.jacobian_reuse_ratio; end
         if isfield(opt,'ne39_assessment_policy'), step_opt.ne39_observe_midpoint=true; end
         % NOTE: the linear predictor is rebuilt per ATTEMPT below, because it
         % scales with the trial step. Building it once from the nominal h and
@@ -523,6 +527,8 @@ while t < settings.t_end-settings.event_tol
             'limiter_regime_freeze',settings.limiter_regime_freeze, ...
             'limiter_regime_max_outer',settings.limiter_regime_max_outer, ...
             'state_predictor',predictor);
+        if isfield(settings,'jacobian_reuse'), step_opt.jacobian_reuse=settings.jacobian_reuse; end
+        if isfield(settings,'jacobian_reuse_ratio'), step_opt.jacobian_reuse_ratio=settings.jacobian_reuse_ratio; end
         if support_predictor_active && strcmpi(predictor,'linear_kcl') && ...
                 ~isempty(predictor_prev_x) && isfinite(predictor_prev_t) && ...
                 t>predictor_prev_t+settings.event_tol
@@ -921,6 +927,12 @@ while t < settings.t_end-settings.event_tol
     if settings.severity_support_enabled && ~sg_online_state(dae,ec)
         [sev_ok, online_ibr, sev_values] = online_ibr_severity( ...
             t,x,y,u,ec,dae,settings);
+        if settings.ne39_weighted_enabled
+            pd=samples.ne39_decision_log{end};
+            online_ibr=pd.device_indices;
+            sev_values=pd.sample.severity;
+            sev_ok=pd.valid;
+        end
         current_modes=current_mode_vector(dae,ec);
         current_gfm=online_ibr(strcmpi(current_modes(online_ibr),'gfm'));
         current_gfl=online_ibr(strcmpi(current_modes(online_ibr),'gfl'));
@@ -978,16 +990,31 @@ while t < settings.t_end-settings.event_tol
             up_due=hold_ok && pd.augment && ~isempty(current_gfl);
             down_due=hold_ok && pd.release && ~isempty(current_gfm);
         end
+        support_table=opt.selector_table;
+        if settings.ne39_weighted_enabled
+            eligible_release=pd.device_indices(pd.release_eligible);
+            cfgs=support_table.sg_off.configurations;
+            keep=false(size(cfgs));
+            for q=1:numel(cfgs)
+                selected=cfgs(q).selected_gfm_indices;
+                added=setdiff(selected,current_gfm);
+                removed=setdiff(current_gfm,selected);
+                keep(q)=(isempty(removed) && numel(added)==1) || ...
+                    (isempty(added) && numel(removed)==1 && ...
+                    all(ismember(removed,eligible_release)));
+            end
+            support_table.sg_off.configurations=cfgs(keep);
+        end
         if t>=support_retry_after-settings.event_tol && up_due
             direction='augment';
             [candidate,found,selection_audit]= ...
                 stability.select_support_augmentation_candidate( ...
-                opt.selector_table,current_gfm,online_ibr);
+                support_table,current_gfm,online_ibr);
         elseif t>=support_retry_after-settings.event_tol && down_due
             direction='release';
             [candidate,found,selection_audit]= ...
                 stability.select_support_release_candidate( ...
-                opt.selector_table,current_gfm);
+                support_table,current_gfm);
         end
 
         if ~isempty(direction) && found
@@ -1293,12 +1320,24 @@ while t < settings.t_end-settings.event_tol
         target_selected = [];
         authority = '';
         attempt_transaction = false;
+        transition_candidate=struct();
 
         if severity_enabled
             [sev_ok, current_gfm, sev_values] = post_reclose_severity( ...
                 t, x, y, u, ec, dae, settings);
+            if settings.ne39_weighted_enabled
+                pd=samples.ne39_decision_log{end};
+                modes=current_mode_vector(dae,ec);
+                mask=strcmpi(modes(pd.device_indices),'gfm');
+                current_gfm=pd.device_indices(mask);
+                sev_values=pd.sample.severity(mask);
+                sev_ok=pd.valid;
+            end
             severity_release_since(setdiff(1:numel(dae.devices),current_gfm)) = NaN;
-            if settings.ne39_rate_policy_enabled && ...
+            if settings.ne39_weighted_enabled && isempty(current_gfm) && sev_ok
+                pending_reselection=false;
+                reselection_status='SUCCESS';
+            elseif settings.ne39_rate_policy_enabled && ...
                     ~samples.ne39_decision_log{end}.release
                 severity_release_since(:)=NaN;
                 reselection_status='RATE_OR_PREDICTION_RELEASE_HOLD';
@@ -1322,8 +1361,12 @@ while t < settings.t_end-settings.event_tol
                 release = current_gfm(isfinite(severity_release_since(current_gfm)) & ...
                     t-severity_release_since(current_gfm) >= ...
                     settings.severity_T_d_off-settings.event_tol);
-                if settings.ne39_rate_policy_enabled
-                    release=current_gfm; % policy ตรวจ continuous safe dwell ครบแล้ว.
+                if settings.ne39_weighted_enabled
+                    pd=samples.ne39_decision_log{end};
+                    release=pd.device_indices(pd.release_eligible);
+                    release=intersect(current_gfm,release,'stable');
+                elseif settings.ne39_rate_policy_enabled
+                    release=current_gfm; % legacy policy ตรวจ continuous safe dwell.
                 end
                 % The SG governor handback is a property of the SG PLANT MODEL,
                 % not of the reselection policy. It exists only when
@@ -1362,7 +1405,7 @@ while t < settings.t_end-settings.event_tol
                     if isfield(opt,'selector_table') && isstruct(opt.selector_table)
                         selector_table_live = opt.selector_table;
                     end
-                    [target_selected, release_audit, release_ok] = ...
+                    [target_selected, release_audit, release_ok, transition_candidate] = ...
                         choose_sg_online_one_step( ...
                         selector_table_live, dae, sched, ec, Ycurr, t, case_data, ...
                         current_gfm, release);
@@ -1422,6 +1465,7 @@ while t < settings.t_end-settings.event_tol
                     t-reselection_good_since >= settings.T_guard-settings.event_tol;
                 if hold_ok && guard_ok
                     target_selected = sg_on_cand.selected_gfm_indices;
+                    transition_candidate=sg_on_cand;
                     target_modes = build_target_modes_frozen(sg_on_cand,dae);
                     authority = 'selector';
                     attempt_transaction = true;
@@ -1438,13 +1482,16 @@ while t < settings.t_end-settings.event_tol
             [ok, x_new, y_new, u_new, ec_new, rsel_log, reason, right_norm, ...
                 no_mode_change] = reselection_transaction( ...
                 t, x, y, Ycurr, u, ec, dae, settings, target_modes, ...
-                target_selected, authority, case_data);
+                target_selected, authority, case_data, transition_candidate);
             log = new_event_log('sg_reselection',t);
             log.transaction_id = reselection_tx_id;
             log.pre_kcl_norm = kcl_norm(dae,t,x,y,Ycurr,u,ec);
             log.right_kcl_norm = right_norm;
             log.input_before = u; log.input_after = u_new;
             log.selected_gfm_indices = target_selected;
+            if isfield(rsel_log,'private_transition_trial')
+                log.status.private_transition_trial=rsel_log.private_transition_trial;
+            end
             if ok
                 x=x_new; y=y_new; u=u_new; ec=ec_new;
                 active=stability.ts_dynamic_state_indices(dae,ec);
@@ -1713,9 +1760,18 @@ s=struct('t_end',option(opt,'t_end',5.0),'dt',option(opt,'dt',0.01), ...
 s.progress_every = option(opt,'progress_every',0);
 s.progress_file  = char(option(opt,'progress_file',''));
 s.progress_last  = -Inf;
-for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps','ne39_assessment_policy'}
+for tfield={'ne39_trial_timestep_strategy','ne39_trial_max_steps','ne39_assessment_policy', ...
+        'ne39_trial_screen_horizon_s','ne39_trial_global_refinement_max_retries'}
     if isfield(opt,tfield{1}) && ~isempty(opt.(tfield{1}))
         s.(tfield{1})=opt.(tfield{1});
+    end
+end
+% Within-step Jacobian reuse (opt-in, NUMERICAL_METHOD). Forwarded to
+% stability.ts_step_composite only when the caller sets each; an omitted
+% option is byte-identical to the legacy loop (no chord reuse).
+for jfield={'jacobian_reuse','jacobian_reuse_ratio'}
+    if isfield(opt,jfield{1}) && ~isempty(opt.(jfield{1}))
+        s.(jfield{1})=opt.(jfield{1});
     end
 end
 s.state_predictor = char(option(opt,'state_predictor','hold'));
@@ -1827,6 +1883,17 @@ s.ne39_study=isfield(case_data,'study_capability') && ...
 s.resources=option(opt,'resources',struct([]));
 s.ne39_rate_policy_enabled = logical(option(opt,'ne39_rate_policy',false));
 s.ne39_policy = option(opt,'ne39_policy',struct());
+% Caller-supplied policy spelling, kept before defaults are merged so the
+% threshold/dwell pair resolver can detect a conflict with the severity spelling.
+s.ne39_policy_caller = s.ne39_policy;
+% Weighted four-term supervisor is opt-in and exists only inside the NE39 rate
+% policy. Default false keeps the legacy two-term COI scalar byte-identical.
+s.ne39_weighted = stability.ne39_weighted_options(opt);
+s.ne39_weighted_enabled = s.ne39_weighted.enabled;
+if ~s.ne39_rate_policy_enabled && s.ne39_weighted_enabled
+    error('ts_simulate_ibr_hybrid:ne39WeightedWithoutPolicy', ...
+        'ne39_weighted_severity requires ne39_rate_policy=true; it is never applied silently.');
+end
 if s.ne39_rate_policy_enabled
     if ~isfield(case_data,'source_variant') || ...
             ~strcmp(case_data.source_variant.id,'TAMU_LEDESMA_2016') || ...
@@ -1846,6 +1913,26 @@ if s.ne39_rate_policy_enabled
             error('ts_simulate_ibr_hybrid:ne39PolicyOption','ไม่รู้จัก policy.%s',name{1});
         end
         defaults.(name{1})=s.ne39_policy.(name{1});
+    end
+    % Opt-in weighted supervisor: the SI threshold/dwell pairs are resolved as
+    % one contract. An explicit conflict between the policy spelling and the
+    % severity spelling is an error, never a silent choice. Omitting the
+    % weighted opt-in keeps the legacy two-term COI scalar and the defaults above.
+    s.ne39_weighted = stability.ne39_weighted_options(opt);
+    s.ne39_weighted_enabled = s.ne39_weighted.enabled;
+    if s.ne39_weighted_enabled
+        pair=stability.ne39_resolve_threshold_pairs(opt,s.ne39_policy_caller, ...
+            s.severity_gamma_on,s.severity_gamma_off, ...
+            s.severity_T_d_on,s.severity_T_d_off);
+        for name={'si_on','si_off','on_dwell','off_dwell'}
+            defaults.(name{1})=pair.(name{1});
+        end
+        s.ne39_threshold_source=pair.source;
+        s.severity_gamma_on=pair.si_on;
+        s.severity_gamma_off=pair.si_off;
+        s.severity_T_d_on=pair.on_dwell;
+        s.severity_T_d_off=pair.off_dwell;
+        defaults.per_device_release=true;
     end
     s.ne39_policy=defaults;
     empty=struct('severity',[],'v_pu',[],'f_hz',[], ...
@@ -2411,14 +2498,40 @@ if automatic_gfm_switching
             t,xr,yr,ur,ecr,Y,dae,case_data,cand,opt,kcl_tol);
         controller_audit.ne39_transition=trial_audit;
         if ~trial_ok
-            ok=false; stage='transitionTrial';
-            reason=trial_reason;
-            handler_log=auth_fail_log( ...
-                'stability:gfm_selection:transitionEvidenceMissing',trial_reason);
-            handler_log.selected_gfm_indices=cand_sel;
-            handler_log.n_gfm_required=cand_n;
-            handler_log.reference_resource_index=cand_ref;
-            xr=x; yr=y; ur=u; ecr=ec; active=[]; return;
+            % Opt-in study continuation (2026-10-13): a refinement-evidence
+            % refusal (status UNKNOWN, reason DT_REFINEMENT_NOT_RESOLVED)
+            % does not reject the breaker action itself — the trip is the
+            % scheduled protection fact and the right-limit state is
+            % KCL-solved. When the caller opts in, the transaction completes
+            % and the event log carries the refusal; the forward trajectory
+            % is uncertified (transition_certified=false) and
+            % production_certified stays false. A physical FAIL (lost
+            % synchronism, KCL, snapshot rejection) never continues: the
+            % fail-closed abort below is unchanged for every other status.
+            study_continue=false;
+            if isfield(opt,'ne39_transition_study_continuation') && ...
+                    ~isempty(opt.ne39_transition_study_continuation) && ...
+                    logical(opt.ne39_transition_study_continuation) && ...
+                    isstruct(trial_audit) && isfield(trial_audit,'status') && ...
+                    strcmp(char(string(trial_audit.status)),'UNKNOWN') && ...
+                    isfield(trial_audit,'reason') && ...
+                    strcmp(char(string(trial_audit.reason)),'DT_REFINEMENT_NOT_RESOLVED')
+                study_continue=true;
+            end
+            if ~study_continue
+                ok=false; stage='transitionTrial';
+                reason=trial_reason;
+                handler_log=auth_fail_log( ...
+                    'stability:gfm_selection:transitionEvidenceMissing',trial_reason);
+                handler_log.selected_gfm_indices=cand_sel;
+                handler_log.n_gfm_required=cand_n;
+                handler_log.reference_resource_index=cand_ref;
+                xr=x; yr=y; ur=u; ecr=ec; active=[]; return;
+            end
+            handler_log.transition_certified=false;
+            handler_log.transition_refusal=trial_reason;
+            handler_log.details=sprintf(['%s; applied under study continuation: ' ...
+                'forward trial uncertified (%s)'],handler_log.details,trial_reason);
         end
     end
     if ok, active=stability.ts_dynamic_state_indices(dae,ecr); end
@@ -2960,7 +3073,7 @@ end
     table, req, dae, sched, 'sg_on', Ytopo, runtime_context);
 end
 
-function [target_selected, audit, ok] = choose_sg_online_one_step( ...
+function [target_selected, audit, ok, authenticated_candidate] = choose_sg_online_one_step( ...
     table, dae, sched, ec, Y, t, case_data, current_gfm, release_candidates)
 %CHOOSE_SG_ONLINE_ONE_STEP  Authenticate exactly one staged GFM release.
 %   The live AGSI scalar decides when a release may be considered.  This
@@ -2970,6 +3083,7 @@ function [target_selected, audit, ok] = choose_sg_online_one_step( ...
 %   contracts.  No TS-step equilibrium or eigenvalue solve occurs here.
 target_selected = [];
 ok = false;
+authenticated_candidate=struct();
 % rejection_detail records WHY each evaluated one-step target was refused. Every
 % `continue` below previously discarded the validator's structured err_id, so the
 % audit could only ever report the generic NO_FEASIBLE_SG_ON_ONE_STEP and an
@@ -3136,6 +3250,7 @@ if numel(ord)>1
     end
 end
 chosen = accepted(ord(1));
+authenticated_candidate=chosen;
 target_selected = reshape(chosen.selected_gfm_indices,1,[]);
 audit.reason = 'AUTHENTICATED_ONE_STEP';
 audit.failure_id = '';
@@ -3240,9 +3355,55 @@ trial_opt=struct('dt',trial_dt,'max_steps',trial_steps, ...
     'kcl_tol',kcl_tol,'energy_tol_pu_s',1e-6, ...
     'refinement_tol',1e-5,'slip_limit_deg',180, ...
     'assessment_policy',option(opt,'ne39_assessment_policy','strict'));
+% Opt-in larger adaptive proposal cap for the private trial mesh (2026-10-12).
+% Forwarded only when set; an omitted option leaves trial_opt without the
+% field, which certify_ne39_transition reads as cap=trial_dt (legacy). The
+% pass-2 refinement still halves every ACTUAL coarse interval and hits every
+% coarse accepted time, so tolerances and gates are unchanged.
+if isfield(opt,'ne39_trial_adaptive_dt_max') && ~isempty(opt.ne39_trial_adaptive_dt_max)
+    trial_opt.adaptive_dt_max=opt.ne39_trial_adaptive_dt_max;
+end
+% Opt-in SCREEN horizon for the private trial walk (speed only; 2026-10-13).
+% The full derived horizon stays in the audit (audit.horizon_s holds the FULL
+% value before the screen is applied); a screen PASS names itself
+% (PASS_SCREEN_HORIZON) and commit_authorized stays false, so a screen never
+% reads as a full-horizon commitment. Absent = full walk.
+if isfield(opt,'ne39_trial_screen_horizon_s') && ~isempty(opt.ne39_trial_screen_horizon_s)
+    trial_opt.screen_horizon_s=opt.ne39_trial_screen_horizon_s;
+end
+% Opt-in retry cap for unresolved global refinement (2026-10-13). Absent leaves
+% the kernel default (6 for adaptive strategy).
+if isfield(opt,'ne39_trial_global_refinement_max_retries') && ...
+        ~isempty(opt.ne39_trial_global_refinement_max_retries)
+    trial_opt.global_refinement_max_retries=...
+        opt.ne39_trial_global_refinement_max_retries;
+end
+% Resume-from-mid-window override: the trial's own audit stores the FULL
+% horizon it was built for (horizon_s, or horizon_screened_s when the screen
+% bounded the walk). A windowed re-mesh of the tail must walk exactly the
+% remaining horizon, so the wrapper forwards override=full_remaining. Present
+% only when the caller knows the stored window; never set on attempt 0.
+if isfield(candidate,'horizon_override_s') && ~isempty(candidate.horizon_override_s)
+    trial_opt.horizon_override_s=candidate.horizon_override_s;
+end
+% Within-step Jacobian reuse for the private trial's ts_step_composite calls
+% (opt-in, NUMERICAL_METHOD). Forwarded only when set; absent = legacy loop.
+if isfield(opt,'jacobian_reuse') && ~isempty(opt.jacobian_reuse)
+    trial_opt.jacobian_reuse=opt.jacobian_reuse;
+end
+if isfield(opt,'jacobian_reuse_ratio') && ~isempty(opt.jacobian_reuse_ratio)
+    trial_opt.jacobian_reuse_ratio=opt.jacobian_reuse_ratio;
+end
 try
-    [ok,audit]=stability.certify_ne39_transition(t,x,y,u,ec,Y,dae, ...
+    [ok,audit,private_final]=stability.certify_ne39_transition(t,x,y,u,ec,Y,dae, ...
         resources,case_data,bounds,candidate,trial_opt);
+    if ok && isstruct(private_final) && ~isempty(fieldnames(private_final))
+        % Continuation state at t+horizon (screen horizon when screened):
+        % recorded for a later FULL-horizon certification that resumes from
+        % here instead of re-simulating. Diagnostic continuation only;
+        % commit_authorized stays false inside.
+        audit.private_final_state=private_final;
+    end
 catch me
     reason=sprintf('%s: %s',me.identifier,me.message); return;
 end
@@ -3755,7 +3916,7 @@ end
 
 function [ok, x_right, y_right, u_right, ec_right, handler_log, reason, right_norm, no_mode_change] = ...
     reselection_transaction(t, x, y, Y, u, ec, dae, settings, target_modes, ...
-    target_selected, authority, case_data)
+    target_selected, authority, case_data, candidate)
 %RESELECTION_TRANSACTION  Commit an already-authorized Phase-2 target.
 %   Authority is established outside the transaction by either the dynamic
 %   severity supervisor or the legacy authenticated SG_ON selector.  This
@@ -3795,6 +3956,29 @@ if isempty(changing)
     return;
 end
 if nargin<12, case_data=struct(); end
+if isfield(case_data,'study_capability')
+    required={'ready_to_commit','feasible','selected_gfm_indices','eq_u_eq', ...
+        'omega','physical_eigenvalues'};
+    if nargin<13 || ~isstruct(candidate) || ~isscalar(candidate) || ...
+            ~all(isfield(candidate,required)) || ...
+            ~isequal(candidate.ready_to_commit,true) || ~isequal(candidate.feasible,true) || ...
+            ~isequal(sort(candidate.selected_gfm_indices(:)),sort(target_selected(:))) || ...
+            isempty(candidate.eq_u_eq) || ~isscalar(candidate.omega) || ...
+            ~isreal(candidate.omega) || ~isfinite(candidate.omega) || candidate.omega>=0 || ...
+            ~isnumeric(candidate.physical_eigenvalues) || isempty(candidate.physical_eigenvalues) || ...
+            any(~isfinite(candidate.physical_eigenvalues(:))) || ...
+            any(real(candidate.physical_eigenvalues(:))>=0) || ...
+            candidate.omega<max(real(candidate.physical_eigenvalues(:)))
+        reason='NE39 reselection lacks an authenticated transition spectrum (transitionEvidenceMissing).';
+        return;
+    end
+    try
+        u_right=apply_authenticated_candidate_inputs(u,candidate.eq_u_eq,dae);
+    catch me
+        reason=sprintf('Certified reselection input rejected: %s: %s',me.identifier,me.message);
+        return;
+    end
+end
 ec_right=ec;
 ec_right.hybrid_state=stability.ts_hybrid_state_snapshot(ec.hybrid_state);
 for k=1:numel(changing)
@@ -3803,7 +3987,7 @@ for k=1:numel(changing)
     ec_right.hybrid_state.device_modes.(key)=target_modes{idx};
 end
 try
-    x_right=apply_device_transfers(x,y,u,ec,ec_right,dae);
+    x_right=apply_device_transfers(x,y,u_right,ec,ec_right,dae);
 catch me
     reason=sprintf('transfer map failed: %s: %s',me.identifier,me.message);
     return;
@@ -3828,12 +4012,15 @@ ec_right.hybrid_state=hs;
 [ok,y_right,reason,right_norm]=right_limit( ...
     x_right,y,Y,dae,u_right,ec_right,t,settings.kcl_tol);
 if ok && isfield(case_data,'study_capability')
-    % target ของ reselection ไม่มี omega/spectrum ที่ authenticate แล้ว
-    % จึงยังไม่มี private trial ให้เรียก. ไม่ publish จาก right-limit อย่างเดียว.
-    ok=false;
-    reason='NE39 reselection lacks an authenticated transition spectrum (transitionEvidenceMissing).';
-    x_right=x; y_right=y; u_right=u; ec_right=ec;
-    return;
+    % The authenticated destination spectrum and certified input must pass a
+    % private SG_ON trial; right-limit KCL alone never authorizes publication.
+    [ok,reason,trial_audit]=ne39_private_transition_trial( ...
+        t,x_right,y_right,u_right,ec_right,Y,dae,case_data,candidate,settings,settings.kcl_tol);
+    handler_log.private_transition_trial=trial_audit;
+    if ~ok
+        x_right=x; y_right=y; u_right=u; ec_right=ec;
+        return;
+    end
 end
 if ok
     handler_log.details=sprintf('%s reselection committed at t=%.3f; %d device(s) transitioned.', ...
@@ -4517,6 +4704,42 @@ if isfield(s,'ne39_policy')
         input.rocof_hz_s=[staged(found).rocof_hz_s];
         input.rocov_pu_s=[staged(found).rocov_pu_s];
         input.valid=[staged(found).valid];
+    end
+    % Opt-in four-term severity (PROJECT_DERIVED, unvalidated). It consumes the
+    % SAME aligned canonical sample as the policy: device-local f/ROCOF/ROCOV from
+    % the accepted staged record and the healthy-PF reference per bus. Omission
+    % keeps the two-term COI scalar in `sev` above, unchanged.
+    if isfield(s,'ne39_weighted_enabled') && s.ne39_weighted_enabled && aligned_ok
+        % Healthy-PF reference per device must be a unique bus match, exactly as
+        % online_ibr_severity requires. Otherwise the weighted sample is refused
+        % (invalid), never silently given a guessed reference.
+        ref_idx=zeros(1,numel(idx));
+        for q=1:numel(idx)
+            m=find(s.ne39_settings.healthy_pf_bus_ids==s.rate_devices(idx(q)).bus_id);
+            if numel(m)==1, ref_idx(q)=m; end
+        end
+        % A sample whose device-local measurements are not all finite is
+        % INVALID evidence (warmup, rejected echo, or missing frequency). It is
+        % marked invalid so the policy holds and resets the dwell, and the
+        % weighted helper is not called on NaN input.
+        measured_finite=all(isfinite([input.v_pu input.f_hz input.rocof_hz_s input.rocov_pu_s]));
+        if all(ref_idx>0) && measured_finite && all(input.valid)
+            vref=s.ne39_settings.healthy_pf_V(ref_idx);
+            [sev_w,comp_w]=stability.ne39_weighted_severity(struct( ...
+                'V_pu',input.v_pu,'V_ref_pu',vref,'f_hz',input.f_hz, ...
+                'rocof_hz_s',input.rocof_hz_s,'rocov_pu_s',input.rocov_pu_s, ...
+                'f0_Hz',s.ne39_settings.severity_f0_Hz), ...
+                s.ne39_weighted.weights,s.ne39_weighted.bases);
+            input.severity=sev_w;
+            components=comp_w;
+        else
+            input.valid=false(size(idx));
+            input.severity=nan(size(idx));
+        end
+    end
+    if s.ne39_weighted_enabled
+        modes=current_mode_vector(s.ne39_dae,ec);
+        input.release_capable=strcmpi(modes(idx),'gfm');
     end
     [decision,s.ne39_policy_state]=stability.ne39_rate_policy( ...
         t,input,s.ne39_policy_state,s.ne39_policy);

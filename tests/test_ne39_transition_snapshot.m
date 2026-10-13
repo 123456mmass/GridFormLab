@@ -84,9 +84,16 @@ function test_private_trial_runs_and_does_not_mutate_inputs(tc)
 [s,candidate,opt]=trial_inputs(tc);
 eq=tc.TestData.eq; d=tc.TestData.dae;
 x=eq.x0; y=eq.y0; u=eq.u_eq; ec=eq.equilibrium_context;
-[ok,a]=stability.certify_ne39_transition(0,x,y,u,ec,d.Ynet,d,s.resources, ...
+[ok,a,final]=stability.certify_ne39_transition(0,x,y,u,ec,d.Ynet,d,s.resources, ...
     s.case_data,tc.TestData.bounds,candidate,opt);
 tc.verifyTrue(ok,a.reason);
+tc.verifyEqual(final.t,a.horizon_s,'AbsTol',1e-12);
+tc.verifySize(final.x,size(x)); tc.verifySize(final.y,size(y));
+tc.verifyTrue(all(isfinite([final.x;final.y])));
+tc.verifyEqual(final.u,u); tc.verifyEqual(final.event_context,ec);
+tc.verifyFalse(final.commit_authorized);
+tc.verifyLessThanOrEqual(norm(d.dae_g(final.t,final.x,final.y,d.Ynet, ...
+    final.u,final.event_context),inf),opt.kcl_tol);
 tc.verifyEqual(numel(a.passes),2);
 tc.verifyGreaterThan(a.passes{2}.steps,0);
 tc.verifyEqual(a.refinement_scope,'ALL_COARSE_ACCEPTED_TIMES');
@@ -113,6 +120,24 @@ tc.verifyGreaterThan(a.passes{1}.min_dt,0);
 tc.verifyLessThanOrEqual(a.passes{1}.max_dt,opt.dt);
 tc.verifyGreaterThanOrEqual(a.passes{1}.step_attempts,3*a.passes{1}.steps);
 tc.verifyFalse(a.commit_authorized);
+end
+
+function test_private_final_can_continue_at_nonzero_time(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae; t=7;
+[ok,a,final]=stability.certify_ne39_transition(t,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.assertTrue(ok,a.reason);
+tc.verifyEqual(final.t,t+a.horizon_s,'AbsTol',1e-12);
+[ok2,b,continued]=stability.certify_ne39_transition(final.t,final.x,final.y, ...
+    final.u,final.event_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok2,b.reason);
+tc.verifyEqual(b.trial_initial_conditions.x,final.x);
+tc.verifyEqual(b.trial_initial_conditions.y,final.y);
+tc.verifyEqual(continued.t,final.t+b.horizon_s,'AbsTol',1e-12);
+tc.verifyFalse(continued.commit_authorized);
 end
 
 function test_fixed_strategy_matches_default(tc)
@@ -198,11 +223,12 @@ end
 function test_budget_is_unknown_not_pass(tc)
 [s,candidate,opt]=trial_inputs(tc); opt.max_steps=1;
 eq=tc.TestData.eq; d=tc.TestData.dae;
-[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+[ok,a,final]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
     eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
     tc.TestData.bounds,candidate,opt);
 tc.verifyFalse(ok); tc.verifyEqual(a.status,'UNKNOWN');
 tc.verifyEqual(a.reason,'TRIAL_BUDGET_EXHAUSTED');
+tc.verifyEmpty(fieldnames(final));
 end
 
 function test_voltage_only_policy_keeps_strict_evidence(tc)
@@ -247,6 +273,142 @@ r=s.resources; k=find(strcmp({r.resource_type},'ibr'),1); r(k).limits.ImaxF=.001
 [ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
     eq.equilibrium_context,d.Ynet,d,r,s.case_data,b,candidate,opt);
 tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+end
+
+function test_adaptive_dt_max_omitted_is_legacy(tc)
+% Omitted adaptive_dt_max must be the legacy mesh: cap=dt, same coarse grid,
+% same evidence, and trial_opt without the field at all.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok,a.reason);
+tc.verifyFalse(isfield(opt,'adaptive_dt_max'),'fixture must omit the field');
+tc.verifyLessThanOrEqual(a.passes{1}.max_dt,opt.dt);
+end
+
+function test_adaptive_dt_max_larger_cap_full_coverage(tc)
+% A larger conservative cap must still hit every coarse accepted time: pass 2
+% halves EACH actual pass-1 interval and the refinement samples must equal the
+% pass-1 step count. The physical gates and tolerances are unchanged.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+opt.adaptive_dt_max=0.05;
+eq=tc.TestData.eq; d=tc.TestData.dae;
+[ok,a]=stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok,a.reason);
+tc.verifyEqual(a.timestep_strategy,'adaptive');
+% Full horizon on both passes.
+tc.verifyEqual(a.passes{1}.t_reached,a.horizon_s,'AbsTol',1e-12);
+tc.verifyEqual(a.passes{2}.t_reached,a.horizon_s,'AbsTol',1e-12);
+% Global refinement: every coarse time covered, error within tol.
+tc.verifyEqual(a.refinement_samples,a.passes{1}.steps);
+tc.verifyLessThanOrEqual(a.refinement_error,opt.refinement_tol);
+% Pass 2 walked exactly double the pass-1 steps (each coarse interval halved).
+tc.verifyEqual(a.passes{2}.steps,2*a.passes{1}.steps);
+% Pass-1 local step-doubling gate unchanged.
+tc.verifyLessThanOrEqual(a.passes{1}.peak_local_refinement_error,opt.refinement_tol/20);
+% The larger cap itself: the biggest proposal may now exceed opt.dt.
+tc.verifyGreaterThan(a.passes{1}.max_dt,0);
+% Energy and KCL gates ran to completion (PASS covers them), and no commit.
+tc.verifyLessThanOrEqual(a.passes{1}.energy_error_pu_s,opt.energy_tol_pu_s);
+tc.verifyFalse(a.commit_authorized);
+end
+
+function test_adaptive_dt_max_adverse_transient_still_gated(tc)
+% The adverse transient fixture (DC current forced to 100) must still FAIL
+% under a larger cap: no physical gate is relaxed by the speedup.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+opt.adaptive_dt_max=0.05;
+eq=tc.TestData.eq; d=tc.TestData.dae; x=eq.x0;
+i=find(strcmp({s.resources.resource_type},'ibr'),1); x(d.device_offsets(i)+17)=100;
+[ok,a]=stability.certify_ne39_transition(0,x,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+tc.verifyFalse(a.commit_authorized);
+end
+
+function test_adaptive_dt_max_nonzero_time_continuation(tc)
+% The private_final continuation chain must stay consistent when the mesh used
+% the larger cap: full horizon, finite right state, restart at final.t.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+opt.adaptive_dt_max=0.05;
+eq=tc.TestData.eq; d=tc.TestData.dae; t=7;
+[ok,a,final]=stability.certify_ne39_transition(t,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.assertTrue(ok,a.reason);
+tc.verifyEqual(final.t,t+a.horizon_s,'AbsTol',1e-12);
+[ok2,b,continued]=stability.certify_ne39_transition(final.t,final.x,final.y, ...
+    final.u,final.event_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyTrue(ok2,b.reason);
+tc.verifyEqual(continued.t,final.t+b.horizon_s,'AbsTol',1e-12);
+end
+
+function test_adaptive_dt_max_below_dt_is_rejected(tc)
+% adaptive_dt_max < dt contradicts "cap at least the base dt" and must error.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+opt.adaptive_dt_max=0.001;
+eq=tc.TestData.eq; d=tc.TestData.dae;
+tc.verifyError(@() stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt), ...
+    'stability:certify_ne39_transition:options');
+end
+
+function test_adaptive_dt_max_invalid_values_rejected(tc)
+% Non-positive / non-numeric / non-finite adaptive_dt_max must all be rejected.
+% validateattributes raises its own MATLAB identifier, the <dt case raises the
+% structured options error; both are failures the caller must see.
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae;
+for bad={0,-0.01,NaN,Inf,[0.05 0.05]}
+    opt.adaptive_dt_max=bad{1};
+    threw=false;
+    try
+        stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+            eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+            tc.TestData.bounds,candidate,opt);
+    catch
+        threw=true;
+    end
+    tc.verifyTrue(threw,sprintf('adaptive_dt_max=%s must be rejected.',mat2str(bad{1})));
+end
+end
+
+function test_global_refinement_retry_does_not_retry_physical_failure(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+opt.global_refinement_max_retries=3;
+eq=tc.TestData.eq; d=tc.TestData.dae; x=eq.x0;
+i=find(strcmp({s.resources.resource_type},'ibr'),1);
+x(d.device_offsets(i)+17)=100;
+[ok,a,final]=stability.certify_ne39_transition(0,x,eq.y0,eq.u_eq, ...
+    eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+    tc.TestData.bounds,candidate,opt);
+tc.verifyFalse(ok); tc.verifyEqual(a.status,'FAIL');
+tc.verifyEqual(a.global_refinement_retries,0);
+tc.verifyEqual(numel(a.global_refinement_attempts),1);
+tc.verifyEmpty(fieldnames(final));
+end
+
+function test_global_refinement_retry_limit_validated(tc)
+[s,candidate,opt]=trial_inputs(tc); opt.timestep_strategy='adaptive';
+eq=tc.TestData.eq; d=tc.TestData.dae;
+for bad={-1,0.5,9,NaN,Inf}
+    opt.global_refinement_max_retries=bad{1}; threw=false;
+    try
+        stability.certify_ne39_transition(0,eq.x0,eq.y0,eq.u_eq, ...
+            eq.equilibrium_context,d.Ynet,d,s.resources,s.case_data, ...
+            tc.TestData.bounds,candidate,opt);
+    catch
+        threw=true;
+    end
+    tc.verifyTrue(threw);
+end
 end
 
 function [s,candidate,opt]=trial_inputs(tc)

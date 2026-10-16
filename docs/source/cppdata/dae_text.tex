@@ -1,0 +1,34 @@
+% DAE text -- cloned from reference :414-437 plus the C++ implementation
+% mapping paragraph (integration disclosure at section head per the spec).
+Every device supplies a differential right-hand side and a positive complex
+current injection.  The composite equations are
+\begin{align}
+\dot{\vect x}&=\vect f(\vect x,\vect y,\vect u;\sigma),\\
+\vect 0&=\vect g(\vect x,\vect y,\vect u;\sigma)
+          =\mathcal R\!\left(Y(\sigma)V-I_{bus}(\vect x,\vect y,\vect u;\sigma)\right),
+\end{align}
+each on its own numbered line, where
+$\mathcal R(z)=[\Re z_1,\Im z_1,\ldots]^{\mathsf T}$ and $\sigma$
+contains topology, breaker status, and device mode.  The network admittance
+stamps each branch as
+\[
+Y_{ii}\mathrel{+}=y_s/(a a^*)+jb_c/2,\quad
+Y_{jj}\mathrel{+}=y_s+jb_c/2,\quad
+Y_{ij}\mathrel{-}=y_s/a^*,\quad
+Y_{ji}\mathrel{-}=y_s/a,
+\]
+with $y_s=1/(r+jx)$, off-nominal ratio $a=\tau e^{j\phi}$, plus the load
+admittance fold $Y_{\rm load}=\operatorname{diag}(\overline{\vect S_0}/|\vect V_{pf}|^2)$
+from the PF seed.  At the declared reference bus (SG31), the appropriate KCL
+rows are replaced by explicit voltage constraints; the replacement is
+metadata-driven.
+
+\paragraph{C++ implementation of the same system.}
+The C++ engine assembles the same composite system of the same stamped
+admittance and the same metadata-driven slack replacement --- the
+implementation is carved from this documented equation set, not from the
+MATLAB code text.  The v0 integration mode (\intmodes) replays the frozen
+event schedule with a fixed-step solver; the equation set above is
+unchanged between v0 and the full adaptive engine (v2), which is why the
+v0 parity evidence remains meaningful for the equation system while v2
+carries the full event-engine claim.

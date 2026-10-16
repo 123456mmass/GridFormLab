@@ -1,0 +1,96 @@
+% SG text -- cloned from reference :439-523 (state order, electrical port,
+% rotor dynamics, actuator chain, field tracker, local estimator), with the
+% C++ mapping paragraph.  Equations verbatim; classification unchanged.
+\subsection{State order and meaning}
+
+\[
+\vect x_{SG}=[\delta,\ \omega,\ P_{sv},\ P_m,\ E_{mag},\ \hat\theta]^{\mathsf T},
+\qquad \vect u_{SG}=[P_{\rm ref},E_{mag,\rm ref}]^{\mathsf T}.
+\]
+where $\delta$ is the rotor angle, $\omega$ the per-unit speed deviation (slip)
+in the Kundur notation, $P_{sv},P_m$ the governor-valve and steam-chest powers,
+$E_{mag}$ the reduced classical internal-EMF magnitude, and $\hat\theta$ the
+local terminal phase estimate.
+\begin{center}\footnotesize
+\begin{tabularx}{\textwidth}{c l l X}
+\toprule
+Local & State & Unit & Physical meaning\\\midrule
+1 & $\delta$ & rad & rotor angle (Kundur) --- electrical internal-EMF angle in the network frame\\
+2 & $\omega$ & pu & per-unit speed deviation (slip); the plant integrates the \emph{absolute} speed ($1.0$ at nominal)\\
+3 & $P_{sv}$ & pu & governor valve power (actual, nonnegative)\\
+4 & $P_m$ & pu & steam-chest mechanical power (actual, nonnegative)\\
+5 & $E_{mag}$ & pu & reduced classical internal-EMF magnitude\\
+6 & $\hat\theta$ & rad & terminal phase estimate (local PLL)\\
+\bottomrule
+\end{tabularx}
+\end{center}
+This is a PROJECT\_DERIVED opt-in plant: H, D, X$'$ and the classical
+stator-port equation pass through from the source reduction unchanged, while
+every governor/excitation/PLL parameter is a declared project design
+assumption --- not TAMU machine data and not a certified synchronizer.
+
+\subsection{Electrical port and rotor dynamics}
+
+With the series reactance $X'$ and internal EMF
+$E=E_{mag}e^{j\delta}$, the injection is
+\begin{align}
+I&=\frac{E-V}{jX'},\\
+P_e&=\operatorname{Re}(V I^*),\\
+Q_e&=\operatorname{Im}(V I^*),
+\end{align}
+and zero injection with the breaker open.  The rotor power balance is
+energy-consistent in positive speed,
+\[
+2H_{sys}\,\omega\,\dot\omega
+   =P_m-P_e-L_0\omega^2-D_{sys}\,\omega(\omega-1),
+\]
+with separate no-load shaft loss $L_0>0$ (declared project assumption) and the
+unchanged source damping $D_{sys}=0$ for SG31.  The actuator chain is
+\begin{align}
+T_{sv}\dot P_{sv}&=P_c-P_{sv},\\
+T_{ch}\dot P_m&=P_{sv}-P_m,\\
+P_c&=\clamp(P_{\rm raw},0,P_{max}),
+\end{align}
+\[
+P_{\rm raw}=
+\begin{cases}
+P_{\rm ref}+L_0-K_{\rm droop}(\omega-1), & \text{online (20\% droop)},\\[2pt]
+L_0\hat\omega^2+K_\omega(\hat\omega-\omega)+K_\theta\hat\theta_{\rm err}, & \text{offline capture},
+\end{cases}
+\]
+where $\hat\omega=1+\hat\nu/\omega_b$ and
+$\hat\theta_{\rm err}=\operatorname{wrap}(\hat\theta-\delta)$.  The reduced
+field-magnitude tracker is
+\begin{align}
+T_{emag}\dot E_{mag}&=E_{mag,\rm cmd}-E_{mag},\\
+E_{mag,\rm cmd}&=
+\begin{cases}
+E_{mag,\rm ref}, & \text{online},\\
+\clamp(|V|,E_{min},E_{max}), & \text{offline}.
+\end{cases}
+\end{align}
+No negative mechanical power, rotor reset, or state jump occurs at a breaker
+transition.
+
+\subsection{Local terminal estimator}
+
+The offline phase/frequency estimator is a bounded type-II PLL:
+\begin{align}
+e_{\rm pll}&=\clamp(\operatorname{wrap}(\angle V-\hat\theta),\pm\hat\theta_{\rm lim}),\\
+\dot{\hat\nu}&=K_{i,\rm pll}e_{\rm pll}\ \text{(bounded)},\\
+\dot{\hat\theta}&=\hat\nu+K_{p,\rm pll}e_{\rm pll}.
+\end{align}
+Its two states belong to the plant DAE.  The estimator is declared a
+reduced subsystem, not an authenticated relay: the existing strict
+prospective current/MVA, $dV$/$df$/$d\theta$, dwell, timeout, and right-limit
+KCL checks remain mandatory, and this plant alone never authorises a close.
+
+\paragraph{C++ implementation of the SG block.}
+The C++ engine implements this six-state plant as a unit of the same state
+order, the same equations, and the same declared assumptions --- the parity
+of the SG block is covered by the DECISION fields
+(\code{t\_sg\_trip}, \code{actual\_reclose\_time}, \code{reclose\_status})
+and the trajectory comparisons at the SG terminal in
+Table~\ref{tab:trajdiff}.  The estimator's non-authority carries over
+unchanged: no C++ code path authorises a close outside the strict
+transactions.

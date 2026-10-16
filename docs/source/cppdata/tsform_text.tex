@@ -1,0 +1,40 @@
+% TS-form text -- cloned from reference :596-642 with the integration-mode
+% disclosure as the opening paragraph (this section is where the two
+% engines' stepping policies differ by design).
+\subsection{Power flow and the accepted equilibrium}
+
+The source-case PSSE PF is used only to derive the composition's operating
+point.  The reported equilibrium instead solves the coupled physical system
+\[
+\vect f_A(\vect x_0,\vect y_0,\vect u_0)=0,\qquad
+\vect g(\vect x_0,\vect y_0,\vect u_0)=0
+\]
+by Newton on active states plus free algebraic variables, with the physical
+all-row KCL gate enforced at $10^{-6}$~pu.
+
+\subsection{Time-domain simulation --- two stepping policies under one contract}
+
+\paragraph{MATLAB reference.}
+Between event transactions the implicit trapezoidal step solves
+\begin{align}
+0&=x_{n+1}-x_n-\frac{h}{2}\left[f(x_n,y_n)+f(x_{n+1},y_{n+1})\right],\\
+0&=g(x_{n+1},y_{n+1};\sigma_{n+1}),
+\end{align}
+on the \code{adaptive} stepper with strict LTE control
+($\varepsilon_x=2\times10^{-8}$, $\varepsilon_y=2\times10^{-8}$, relative
+$10^{-7}$), Newton tolerance $10^{-10}$, step bounds
+$dt\in[(0.0025/4096),0.05]$~s, reject limit 16, and no Rannacher arcs.
+Events are strict transactions: the handler commits a candidate only after
+its guard and KCL checks, and every applied event's pre/right KCL residual
+is logged.
+
+\paragraph{C++ engine (v0).}
+\intmodes{} \vscopecite.  The C++ engine replays the frozen event schedule
+with a fixed-step solver over the same composite system (previous section):
+the case, the event instants, the device equations, and the KCL gate are
+identical; what differs is the step control.  The consequence for this
+report's tables: trajectory comparisons run on a common output grid
+(Table~\ref{tab:trajdiff}), DECISION fields must hold
+(Table~\ref{tab:decision}), counters are reported but not comparable
+(Table~\ref{tab:counters}), and the timing comparison is the measured
+speedup of \S\ref{sec:speeduptable} --- all within the v0 scope.

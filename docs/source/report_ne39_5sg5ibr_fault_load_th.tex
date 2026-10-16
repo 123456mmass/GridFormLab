@@ -40,7 +40,7 @@
 \sisetup{detect-all,round-mode=places,round-precision=5,table-number-alignment=center}
 \renewcommand{\arraystretch}{1.12}
 \captionsetup[table]{skip=7pt}
-\captionsetup[figure]{labelfont=bb}
+\captionsetup[figure]{labelfont=bf}
 \renewcommand{\tablename}{ตารางที่}
 \renewcommand{\figurename}{รูปที่}
 \renewcommand{\contentsname}{สารบัญ}
@@ -64,15 +64,17 @@
 \definecolor{pgrey}{RGB}{90,90,90}
 
 \newcommand{\datadir}{figures/ne39_5sg5ibr_fault_load}
-% code identifier: monospaced พร้อมปิด hyphenation เพื่อไม่ให้ตัดคำกลาง identifier
+% code identifier: monospaced ปิด hyphenation กันตัดคำกลาง identifier
 \newcommand{\code}[1]{{\ttfamily\small\hyphenchar\font=-1 #1}}
 \newcommand{\clamp}{\operatorname{clamp}}
 \newcommand{\sat}{\operatorname{sat}}
 \newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\pu}{\ifmmode\,\mathrm{p.u.}\else\ p.u.\fi}
+\newcommand{\second}{\ifmmode\,\mathrm{s}\else\ s\fi}
 
 \title{\textbf{การศึกษาฟอลต์และสเต็ปโหลดของระบบ NE39 แบบ 5 SG + 5 IBR:\\ ครอโนโลยีที่ไม่มีการทริป SG}\\[2pt]
 \large เครื่องปั่นคลาสสิกสอง state (Kundur $\delta/\omega$) ห้าเครื่อง และตัวแปลงสองโหมด Dual-mode-IBR สิบเจ็ด state ห้าตัว\\[1mm]
-\normalsize ออกแบบมาเพื่อ comeback ของเส้น... : no SG tripping}
+\normalsize ฟอลต์บัส 16 (60--60.15~s) ตามด้วยสเต็ปโหลด $+20\%$ (100~s) เพดาน 160~s โดย SG ทั้งห้าออนไลน์ตลอดการรัน}
 \author{โครงการ power flow ภายใน}
 \date{13 ตุลาคม 2026}
 
@@ -81,18 +83,19 @@
 
 \begin{abstract}
 รายงานนี้บันทึกการศึกษาลำดับเหตุการณ์ทรัพยากรผสมของระบบ NE39 (New England IEEE 39 บัส)
-ของโครงการ เครือข่าย 39 บัสประกอบด้วยเครื่องกำเนิดซิงโครนัสห้าเครื่องที่บัส 31, 32, 35, 38, 39
-(แต่ละเครื่องเป็นแผนงานคลาสสิกสอง state $\vect x=[\delta,\omega]$) และตัวแปลงสองโหมด Dual-mode-IBR
-ห้าตัวที่บัส 30, 33, 34, 36, 37 (GFM สองตัว, GFL สามตัวตามกฎการออกแบบ deterministic)
-เพราะเครื่องปั่นห้าตัวออนไลน์ตลอดการรัน กองเครื่องปั่นยังคงเป็น reference แรงดัน/ความถี่ของระบบ
-ทุกช่วงเวลา --- ครอโนโลยีจึงไม่มีเหตุการณ์เบรกเกอร์ SG ใดๆ เลย: ไม่มีการทริป SG, ไม่มีการปิดซ้ำ SG,
-และไม่มีคำถามเรื่อง hand-back การรบกวนคือฟอลต์ที่บัส~16 (thแข็ง $Z_f=j0.1$~pu,
-60--60.15~s) ตามด้วยสเต็ปโหลดรวม $+20\%$ ที่ 100~s, เพดาน 160~s, โดยจุดเวลาเหตุการณ์ตรงกับ
-การศึกษา 160~s ที่ส่งมอบแล้วเพื่อให้หน้าต่างฟอลต์เทียบได้ตรง กราฟตัวเลขเรนเดอร์โดย MATLAB จากไฟล์ CSV
-ที่ส่งออกจากชุดผลที่เก็บไว้ การทดลองเปลี่ยนโหมดไปข้างหน้าที่จุดทริป \emph{ยังไม่ได้รับการรับรองเพราะงบหลักฐาน}
-(งบ step ที่แบ่งกันของ mesh ส่วนต้องมี เกณฑ์ทางกายภาพทุกตัวยังเขียว ถึง state ยืนยันสุดท้าย)
-การรันนี้เสร็จสมบูรณ์เฉพาะภายใต้ การประกาศ study continuation อย่างชัดเจน เกณฑ์ที่ไม่ผ่าน
-การปฏิเสธ และใบรับรองที่ยังค้าง ถูกรายงานไว้ ไม่ได้ถูกปรับให้หายไป
+เครือข่าย 39 บัสประกอบด้วยเครื่องกำเนิดซิงโครนัสห้าเครื่องที่บัส 31, 32, 35, 38, 39
+(แต่ละเครื่องเป็นแผนงานคลาสสิกสอง state $\vect x=[\delta,\omega]$)
+และตัวแปลงสองโหมด Dual-mode-IBR ห้าตัวที่บัส 30, 33, 34, 36, 37
+(GFM สองตัวและ GFL สามตัวตามกฎการออกแบบที่กำหนดได้แน่นอน)
+เพราะเครื่องปั่นทั้งห้าออนไลน์ตลอดการรัน กองเครื่องปั่นจึงยังคงเป็น reference
+แรงดันและความถี่ของระบบทุกช่วงเวลา ครอโนโลยีนี้จึงไม่ติดอาวุธเหตุการณ์เบรกเกอร์ SG ใดๆ เลย
+ไม่มีการทริป SG ไม่มีการปิดซ้ำ SG และไม่มีคำถาม hand-back
+การรบกวนคือฟอลต์ที่ประกาศตรึงไว้ที่บัส 16 ($Z_f=j0.1$~pu, 60--60.15~s)
+ตามด้วยสเต็ปโหลดรวม $+20\%$ ที่ 100~s เพดาน 160~s
+โดยจุดเวลาเหตุการณ์ตรงกับการศึกษา 160~s ที่ส่งมอบแล้ว เพื่อให้หน้าต่างฟอลต์เทียบกันได้ตรง
+รูปเวกเตอร์เรนเดอร์ด้วย MATLAB และตารางเรียงด้วย \LaTeX{} จากไฟล์ CSV ชุดเดียวกัน
+ที่ส่งออกจากชุดผลที่เก็บไว้ เกณฑ์ที่ไม่ผ่าน การปฏิเสธ และใบรับรองที่ยังค้าง
+ถูกรายงานไว้ ไม่ได้ถูกปรับให้หายไป
 \end{abstract}
 
 \newpage
@@ -103,44 +106,43 @@
 
 ระบบที่ศึกษาคือเครือข่าย TAMU New England 39 บัส ที่มี SG แบบจำลองห้าเครื่อง
 (บัส 31/32/35/38/39) และ IBR แบบจำลองห้าตัว (บัส 30/33/34/36/37) ระบบทั้งหมด
-ประกอบเป็นระบบ differential--algebraic แบบประกอบ all-KCL ชุดเดียว โดย SG และ IBR
-ทุกตัวส่งบล็อก state เชิงอนุพันธ์ของตัวเองและการฉีดของตัวเอง ไม่มีอุปกรณ์ใดถูกมอบให้
-ตัวแก้ โมเดล หรือโปรแกรมอ้างอิงภายนอก
+ประกอบเป็นระบบ differential--algebraic แบบ all-KCL ชุดเดียว โดย SG และ IBR ทุกตัว
+ส่งบล็อก state เชิงอนุพันธ์ของตัวเองและการฉีดของตัวเอง ไม่มีอุปกรณ์ใดถูกมอบให้ตัวแก้
+โมเดล หรือโปรแกรมอ้างอิงภายนอก
 
 \paragraph{ทำไมจึงไม่ทริป SG.}
-เมื่อเครื่องปั่นซิงโครนัสห้าเครื่องเชื่อมต่ออยู่ การเปิดเบรกเกอร์ใดเบรกเกอร์หนึ่งยังเหลือ
-เครื่องปั่นสี่เครื่องคอยรักษา reference แรงดัน/ความถี่ของเครือข่าย --- คำถามเชิงกายภาพที่
-การศึกษา 160~s ที่ส่งมอบแล้วตอบไปแล้ว (``ตัวแปลงจะรักษาเกาะหลังเครื่องปั่นออกได้หรือไม่'')
-จึงไม่เกิดขึ้น ครอโนโลยีนี้จึงถามคำถามต่างออกไป: \emph{กองทรัพยากรผสมขี่ฟอลต์ผ่านและ
-ดูดซับสเต็ปโหลดได้หรือไม่ โดยที่ reference ของเครื่องปั่นยังคงอยู่} ตามนั้น โปรไฟล์
-\code{fault_load_step} ที่มี fault + load step (และไม่มีเหตุการณ์เบรกเกอร์ SG) ถูกเพิ่ม
-เข้าไปใน event schedule และแถว catalog \code{fault_load_step20} ตรึงจุดเวลาของมันก่อน
-ที่ผลลัพธ์ใดจะถูกอ่าน
+เมื่อเครื่องปั่นซิงโครนัสห้าเครื่องเชื่อมต่ออยู่ การเปิดเบรกเกอร์ใดๆ ก็ยังเหลือเครื่องปั่น
+สี่เครื่องที่รักษา reference แรงดันและความถี่ของเครือข่าย คำถามเชิงกายภาพที่การศึกษา
+160~s ที่ส่งมอบแล้วตอบไปแล้ว (ตัวแปลงจะรักษาเกาะหลังจากเครื่องปั่นออกได้หรือไม่)
+จึงไม่เกิดขึ้น ครอโนโลยีนี้ถามคำถามต่างออกไป: \emph{กองทรัพยากรผสมขี่ฟอลต์ผ่านและ
+ดูดซับสเต็ปโหลดได้หรือไม่ โดยที่ reference ของเครื่องปั่นยังอยู่ครบ}
+โปรไฟล์ \code{fault\_load\_step} ที่ติดอาวุธเฉพาะ fault และ load step
+(และไม่มีเหตุการณ์เบรกเกอร์ SG เลย) จึงถูกเพิ่มเข้าใน event schedule
+และแถว catalog \code{fault\_load\_step20} ตรึงจุดเวลาไว้ก่อนที่ผลใดจะถูกอ่าน
 
 \paragraph{แหล่งกราฟและสัญญาไม่มีสัญญาณสังเคราะห์.}
-กราฟภาคเวลา (ส่วน~\ref{sec:transient}) เรนเดอร์จาก trajectory ที่ยอมรับของชุดผล
-ที่เก็บไว้ โหลดเพียงครั้งเดียวและส่งออกเป็นหลักฐาน CSV เพื่อการนำเสนอ
-ทุกตัวอย่างที่พล็อตเป็นค่าที่ยอมรับดิบ ไม่มีอะไรถูก smooth, filter, decimate,
-clip, offset, interpolate หรือเติมสัญญาณรบกวนสังเคราะห์ ตัวเลขทุกตัวในรายงานนี้
-คัดลอกจากรันที่เก็บไว้หรือคำนวณจากสมดุลที่มันเก็บไว้ ไม่มีเกณฑ์ใดถูกผ่อนและ
-ไม่มีการจำลองซ้ำ
+กราฟภาคเวลา (ส่วน~\ref{sec:transient}) เรนเดอร์จาก trajectory ที่ยอมรับแล้วของชุดผลที่เก็บไว้
+โหลดเพียงครั้งเดียวและส่งออกเป็นหลักฐาน CSV เพื่อนำเสนอ ทุกตัวอย่างที่พล็อตเป็นค่าที่ยอมรับดิบ
+ไม่มีสิ่งใดถูก smooth, filter, decimate, clip, offset, interpolate หรือเติมสัญญาณรบกวนสังเคราะห์
+ตัวเลขทุกตัวคัดลอกจากรันที่เก็บไว้หรือคำนวณจากสมดุลที่มันเก็บไว้ ไม่มีเกณฑ์ใดถูกผ่อน
+และไม่มีการจำลองซ้ำ
 
-\paragraph{Classification.}
-สมการ SG AC/flux และสมการ IBR AC/control ถูกระบุเป็น
-\textsf{SOURCE\_MAPPED} หรือ \textsf{PROJECT\_DERIVED} ตามฉลากที่ปรากฏครั้งแรก
-พารามิเตอร์เครื่องและตัวแปลง, per-unit bases, และเวลาการรบกวนเป็น
-\textsf{CASE\_DEFINED}; ตัวทำนายและนโยบายแบ่งขั้น step เป็น
-\textsf{NUMERICAL\_METHOD} การจำแนกประเภทของรันและ flag
-\code{production_certified=false} ถูกนำมาจาก manifest ไม่ได้ตัดสินใจซ้ำที่นี่
+\paragraph{การจำแนกประเภท.}
+สมการ SG และสมการ IBR ถูกระบุเป็น \textsf{SOURCE\_MAPPED} หรือ \textsf{PROJECT\_DERIVED}
+ตามฉลากที่ปรากฏครั้งแรก พารามิเตอร์เครื่องและตัวแปลง per-unit bases และเวลาการรบกวน
+เป็น \textsf{CASE\_DEFINED}; ตัวทำนายและนโยบายแบ่งขั้นเป็น \textsf{NUMERICAL\_METHOD}
+การจำแนกของรันและ flag \code{production\_certified=false} ถูกนำมาจาก manifest
+ไม่ได้ตัดสินใจซ้ำที่นี่
 
 %=============================================================================
 \section{ลำดับเหตุการณ์}\label{sec:chrono}
 %=============================================================================
 เวลาที่กำหนดไว้เป็นค่าคงที่ \textsf{CASE\_DEFINED} ของโครงสร้างเหตุการณ์
-รูป~\ref{fig:periods} แสดงสี่ช่วงการทำงานและเวลาเปลี่ยนผ่าน ฟอลต์ที่บัส~16 ถูกใส่
-ที่ $t=60.000\second$ และตัดออกที่ $t=60.150\second$ (ฟอลต์ $0.150$\second, อิมพีแดนซ์
-$Z_f=j0.1\pu$); สเต็ปโหลดรวมใส่ที่ $t=100\second$ (ทุกโหลดบัสคูณ $1+0.2$);
-เพดานจบที่ $t=160\second$ SG ทั้งห้าออนไลน์ทุกช่วงเวลา
+รูป~\ref{fig:periods} แสดงสี่ช่วงการทำงานและเวลาเปลี่ยนผ่าน ฟอลต์ที่บัส 16 ถูกใส่
+ที่ $t=60.000\second$ และตัดออกที่ $t=60.150\second$ (ฟอลต์ $0.150$\second,
+อิมพีแดนซ์ $Z_f=j0.1\pu$) สเต็ปโหลดรวมใส่ที่ $t=100\second$
+(ทุกโหลดบัสคูณด้วย $1+0.2$) และเพดานจบที่ $t=160\second$
+SG ทั้งห้าออนไลน์ทุกช่วงเวลา
 
 \begin{figure}[H]
 \centering
@@ -152,25 +154,691 @@ $Z_f=j0.1\pu$); สเต็ปโหลดรวมใส่ที่ $t=100\se
   tlabb/.style={midway,below=1mm,font=\footnotesize},
   arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
 
-\node[per,fill=pgreen] (p1) at (0,0)     {Period 1\\ normal\\ operation};
-\node[per,fill=pred]   (p3) at (5.4,0)  {Period 2\\ bus-16 fault\\ $Z_f{=}j0.1\pu$};
-\node[per,fill=pyellow](p4) at (10.8,0) {Period 3\\ load step\\ $+20\%$};
-\node[per,fill=pblue]  (p5) at (5.4,-4.8){Period 4\\ absorbed\\ operation};
+\node[per,fill=pgreen] (p1) at (0,0)     {ช่วง 1\\ ปกติ};
+\node[per,fill=pred]   (p3) at (5.4,0)  {ช่วง 2\\ ฟอลต์บัส 16\\ $Z_f{=}j0.1\pu$};
+\node[per,fill=pyellow](p4) at (10.8,0) {ช่วง 3\\ สเต็ปโหลด\\ $+20\%$};
+\node[per,fill=pblue]  (p5) at (5.4,-4.8){ช่วง 4\\ ดูดซับแล้ว};
 
 \draw[arr] (-3.6,0) -- node[tlab]{$t=0\second$} (p1);
 \draw[arr] (p1) -- node[tlab]{$t=60.000$--$60.150\second$} (p3);
-\draw[arr] (p3) -- node[tlab]{$150~\mathrm{ms}$} (p4);
 \draw[arr] (p3) -- node[tlab]{$t=100\second$} (p4);
-\draw[arr] (p3) to[bend left=40] node[tlab]{$t\to160\second$} (p5);
-\draw[arr] (p3) to[bend right=40] node[tlabb]{$t\to160\ p4\to160\second$} ++(3.6,0);
+\draw[arr] (p4) -- node[tlabb]{$t\to160\second$} ++(3.6,0);
 
+\node[font=\footnotesize,below=3pt of p4,align=center,text=black]
+  {SG ทั้งห้าออนไลน์ตลอดการรัน\\ โหมดคงที่ตามการออกแบบ};
 \end{tikzpicture}
-\caption{สี่ช่วงการทำงาน: เขียว = ปกติ; แดง = ฟอลต์บัส 16 ที่ขี่ผ่านโดยเครื่องปั่นทั้งห้าออนไลน์
-เหลือง = สเต็ปโหลด $+20\%$; น้ำเงิน = การดูดซับหลังสเต็ปถึงเพดาน ไม่มีการทริป SG, คำขอ reclose,
-หรือช่วง hand-back ในครอโนโลยีนี้}
+\caption{สี่ช่วงการทำงาน เขียว: สภาวะปกติ แดง: ฟอลต์บัส 16 ที่ขี่ผ่านโดยเครื่องปั่น
+ทั้งห้าออนไลน์ เหลือง: สเต็ปโหลดรวม $+20\%$ น้ำเงิน: การดูดซับหลังสเต็ปถึงเพดาน
+ไม่มีการทริป SG คำขอปิดซ้ำ หรือช่วง hand-back ในครอโนโลยีนี้}
 \label{fig:periods}
-\enumerate ...
 \end{figure}
 
+ผลิตภัณฑ์ในรายการนี้ถูกแยกออกจากกันอย่างตั้งใจ:
+\begin{enumerate}
+  \item ค่าป้อนเข้าของเคส (ตาราง dispatch ของบัส อิมพีแดนซ์สาย) และสมดุลเริ่มต้น
+        ที่ยอมรับแล้ว (SG ห้าตัวซิงโครนัส, IBR สองตัว GFM, สามตัว GFL);
+  \item ครอโนโลยีเหตุการณ์ 160 วินาที (ฟอลต์ 60--60.15~s, สเต็ปโหลด 100~s)
+        โดย \emph{ไม่มี} เหตุการณ์เปลี่ยนโหมดติดอาวุธ โหมดเริ่มต้นคงที่ตามการออกแบบ;
+  \item พฤติกรรมการขี่ผ่านที่สังเกตได้: เส้นรายอุปกรณ์และบัญชีโหมด/ความถี่
+        ที่อ่านจากประวัติจริง
+\end{enumerate}
+
+\subsection{สถานะตรงไปตรงมาของการรันนี้}
+\begin{itemize}
+\item สถานะเส้นทางที่ยอมรับ จำนวนตัวอย่าง และปริพันธ์พลังงานผิดพลาด
+      อ่านจากชุดผลที่เก็บไว้และรายงานในส่วน~\ref{sec:transient}
+      ค่าเหล่านี้มาจากการรันจริง ไม่ใช่การอ้าง
+\item supervisor สนับสนุนเป็น no-op \emph{โดยการตั้งค่า}
+      (\code{automatic\_support\_supervision=false}): เมื่อ
+      \code{automatic\_gfm\_switching=false} และไม่มีเหตุการณ์เบรกเกอร์ SG
+      ไม่มีสิ่งใดในการรันที่เปลี่ยนโหมด IBR ได้ จึงไม่มีอะไรให้กำกับ
+      หลักฐาน severity/policy ยังถูกบันทึกผ่าน \code{online\_rate\_measurement}
+      ร่วมกับ \code{ne39\_rate\_policy} และถูกรายงาน
+\item กฎการออกแบบ GFM ที่กำหนดได้แน่นอน (PROJECT\_DERIVED): IBR สองตัวที่มี
+      กำลังไฟฟ้าจริงตามกำหนดมากที่สุดรัน GFM (IBR33 ที่ 632~MW, IBR36 ที่ 560~MW)
+      ที่เหลือสามตัว GFL (IBR30, IBR34, IBR37) กฎนี้ตรึงไว้ก่อนอ่านผลใดๆ
+      และเป็นทางเลือกการออกแบบการศึกษา ไม่ใช่นโยบาย dispatch ที่ได้รับการรับรอง
+\item ไม่มีการสร้างตาราง selector: เมื่อมี IBR ที่ทำ GFM ได้ห้าตัว
+      การแจกแจงแบบ exhaustive เกินขอบเขตที่ประกาศไว้ และ lazy search
+      เป็นภารกิจแยกที่ไม่มีใครสั่ง การรันจึงอยู่ในเส้นทาง
+      เหตุการณ์เครือข่ายที่ไม่เปลี่ยนโหมด
+      (\code{NETWORK\_EVENT\_NO\_MODE\_CHANGE\_AUTHORISED})
+\end{itemize}
+
+\section{การเลือก GFL/GFM อัตโนมัติ: ดัชนีความรุนแรง}\label{sec:sev}
+
+IBR แต่ละตัวมีดีไซน์ supervisor สองสถานะที่ตัดสินว่าควรทำตัวเป็นแหล่งกระแส
+ที่ตามกริด (GFL) หรือเป็นแหล่งแรงดันที่สร้างกริด (GFM) การตัดสินขับเคลื่อนด้วย
+สเกลาร์ความรุนแรง $S(t)\in[0,1]$ ที่สร้างจากดัชนีย่อยปกติ: ดัชนีเบี่ยงเบนแรงดัน
+$J_V$ และดัชนีเบี่ยงเบนความถี่ $J_f$ เสริมได้ด้วยดัชนีอัตราการเปลี่ยนแปลง
+ในครอโนโลยีนี้ \emph{ผลการตัดสิน} ของ supervisor ไม่ถูกใช้ตามการออกแบบ
+(ไม่มีการติดอาวุธการสลับโหมด) แต่ดัชนียังถูกคำนวณและบันทึกทุกตัวอย่างที่ยอมรับ
+มันคือหลักฐานความรุนแรงของการขี่ผ่านที่รายงานในการศึกษานี้
+
+\paragraph{ดัชนีย่อย.}
+ให้ $|V_i(t)|$ เป็นขนาดแรงดันปลายของ IBR~$i$ และ $V_i^{\star}$ เป็นขนาด
+power flow ที่แข็งแรงของบัสนั้น ณ จุดทำงานห้าเครื่อง (ส่วน~\ref{sec:pf})
+ให้ $f_{\rm coi}(t)$ เป็นความถี่ศูนย์กลางความเฉื่อย ถ่วงด้วยความเฉื่อยของ
+อุปกรณ์ออนไลน์แต่ละตัว ด้วยฐาน $\Delta V_{\rm base}=0.10\pu$ และ
+$\Delta f_{\rm base}=0.50$~Hz
+\begin{equation}
+  J_V(t)=\frac{\bigl|\,|V_i(t)|-V_i^{\star}\,\bigr|}{\Delta V_{\rm base}},
+  \qquad
+  J_f(t)=\frac{\bigl|\,f_{\rm coi}(t)-f_0\,\bigr|}{\Delta f_{\rm base}},
+  \qquad f_0=60~\mathrm{Hz}.
+  \label{eq:jvjf}
+\end{equation}
+
+\paragraph{ความรุนแรงสองพจน์ (AGSI).}
+ความรุนแรงที่รายงานคือค่าเฉลี่ยอิ่มตัวน้ำหนักเท่ากัน
+\begin{equation}
+  S(t)=\sat_{[0,1]}\!\Bigl(\tfrac12 J_V(t)+\tfrac12 J_f(t)\Bigr),
+  \qquad
+  \sat_{[0,1]}(z)=\min\{1,\max\{0,z\}\}.
+  \label{eq:agsi}
+\end{equation}
+$J_V$ ตอบสนองการยุบหรือเกินแรงดันเฉพาะที่ ส่วน $J_f$ ตอบสนองการแกว่งความถี่
+ระดับระบบ เช่นที่ฟอลต์บัส 16 และสเต็ปโหลดกระตุ้น การถ่วงน้ำหนักเท่ากันเป็น
+ทางเลือก \textsf{PROJECT\_DERIVED} ที่ตรึงไว้ก่อนอ่านผลใดๆ
+
+\paragraph{ตัวแปรถ่วงน้ำหนักสี่พจน์ (เลือกเปิด).}
+ดีไซน์การศึกษายังนิยามส่วนขยายแบบเลือกเปิดด้วยดัชนีอัตราเฉพาะอุปกรณ์
+ให้ $f_i(t)$ เป็นความถี่เฉพาะอุปกรณ์ ROCOF $\dot f_i(t)$ และ ROCOV
+$\dot\nu_i(t)$ ด้วยฐาน
+$[\Delta V_{\rm base},\Delta f_{\rm base},\Delta r_{f},\Delta r_{\nu}]
+=[0.10\pu,\,0.50~\mathrm{Hz},\,1~\mathrm{Hz/s},\,1~\mathrm{pu/s}]$
+\begin{equation}
+\begin{aligned}
+  J_{\dot f}(t)&=\frac{|\dot f_i(t)|}{\Delta r_{f}},&
+  J_{\dot\nu}(t)&=\frac{|\dot\nu_i(t)|}{\Delta r_{\nu}},\\
+  S_{w}(t)&=\sat_{[0,1]}\!\bigl(
+      0.35\,J_V+0.35\,J_f+0.15\,J_{\dot f}+0.15\,J_{\dot\nu}\bigr).&&
+\end{aligned}
+\label{eq:weighted}
+\end{equation}
+น้ำหนัก $[0.35,0.35,0.15,0.15]$ และฐานข้างต้นเป็นดีไซน์การศึกษา
+\textsf{PROJECT\_DERIVED, UNVALIDATED}: ตัวแปรถ่วงน้ำหนักจะติดอาวุธเมื่อเปิด
+อย่างชัดเจนเท่านั้น และการไม่ระบุจะคงสเกลาร์ COI สองพจน์~\eqref{eq:agsi}
+ตามเดิม น้ำหนักและฐานถูกตรวจสอบตอนแก้ตัวเลือก (ไม่เป็นลบ น้ำหนักรวมหนึ่ง
+ฐานเป็นบวก) และ reference healthy PF ต้องจับคู่บัสของแต่ละอุปกรณ์ได้ไม่ซ้ำ
+มิฉะนั้นตัวอย่างถ่วงน้ำหนักจะถูกปฏิเสธเป็นหลักฐานไม่ถูกต้อง ไม่ถูกเติมค่าเดา
+
+\paragraph{ทำไม $[0.35,0.35,0.15,0.15]$.}
+ส่วนเบี่ยงเบนแรงดันและความถี่ $J_V,J_f$ คือสองปริมาณที่ supervisor ไว้ใจได้
+ทุกช่วงเวลา: แต่ละตัวถูกทำให้เป็นปกติด้วยฐานที่ประกาศไว้
+($\Delta V_{\rm base}=0.10$~pu, $\Delta f_{\rm base}=0.50$~Hz)
+จากดีไซน์เดียวกัน จึงเข้าสู่ความรุนแรงด้วยสถานะเท่ากันและแบ่งน้ำหนักรวมกัน
+$0.35+0.35=0.70$ ดัชนีอัตรา $J_{\dot f}, J_{\dot\nu}$ เป็นหลักฐานสนับสนุนเท่านั้น:
+ฐานของมัน ($1$~Hz/s, $1$~pu/s) เป็นอันดับขนาดเชิงออกแบบไม่ใช่ซองที่วัดได้
+สัญญาณดิบมีสัญญาณรบกวนมากกว่า (ผลต่างจำกัดของตัวอย่างที่ยอมรับ) และไม่มีตัวใด
+ตรงกับเกณฑ์ที่ supervisor เป็นเจ้าของ จึงรับน้ำหนักที่เหลือ $0.15+0.15=0.30$
+พอที่จะ sharpen ตัวกระตุ้นช่วงทรานเซียนต์เร็วโดยไม่เคยมีน้ำหนักเกินสองส่วนเบี่ยงเบนหลัก
+การแบ่ง 70/30 ระหว่างข้อมูลระดับและอัตราเป็นทางเลือกการศึกษา
+\textsf{PROJECT\_DERIVED} ที่ตรึงก่อนอ่านผล และไม่ใช่การถ่วงน้ำหนักที่ได้รับ
+การรับรองหรือตาม grid code
+
+\paragraph{ฮิสเทอรีซิส เวลาคงอยู่ และเกณฑ์ที่ดัชนีไม่ทดแทน.}
+เกณฑ์เปล่าบน $S$ จะสั่นไปมา ดีไซน์ supervisor จึงใช้ตัวเปรียบเทียบสองระดับ
+แบบอสมมาตรพร้อมเวลาคงอยู่ต่ำสุด
+\begin{equation}
+  \begin{aligned}
+    \text{GFL}\to\text{GFM}:&\quad S\ge\Gamma_{\rm on}=0.65
+       \ \text{คงอยู่}\ T_{d,\rm on}=0.10\second,\\
+    \text{GFM}\to\text{GFL}:&\quad S\le\Gamma_{\rm off}=0.35
+       \ \text{คงอยู่}\ T_{d,\rm off}=1.00\second.
+  \end{aligned}
+  \label{eq:hyst}
+\end{equation}
+ช่องว่าง $\Gamma_{\rm on}>\Gamma_{\rm off}$ คือแถบฮิสเทอรีซิส เกณฑ์และเวลาคงอยู่
+แก้เป็นสัญญาเดียว: เมื่อสเกลาร์เดียวกันถูกส่งมาสองสะกดและไม่ตรงกัน การรันจะ
+fail closed แทนการหยิบอันใดอันหนึ่ง ในครอโนโลยีนี้ตัวเปรียบเทียบถูก \emph{บันทึก
+แต่ไม่ถูกนำไปใช้} ไม่มีเหตุการณ์สลับโหมดติดอาวุธ ดัชนีความรุนแรงและฮิสเทอรีซิส
+ของมันจึงไม่เคย gate ธุรกรรมใด และ SCR วินิจฉัยในส่วน~\ref{sec:transient}
+ก็ไม่เข้าสู่มันเช่นกัน
+
+\section{ข้อมูลเคสและแผนที่ดัชนี}
+
+\subsection{แผนที่ระบบและทรัพยากร}
+
+เครือข่ายคือชุดข้อมูล TAMU New England 39 บัส 100~MVA 60~Hz
+ไฟล์ต้นทางถูกถอดความพร้อมบันทึก SHA-256 ไว้ใน struct ของเคส
+โครงการเพิ่มองค์ประกอบ (SG คลาสสิกห้าเครื่อง, ตัวแปลง Dual-mode-IBR ห้าตัว,
+slack ที่บัส 31 ตรึง $V=1\angle 0^\circ$~pu) และพิกัดของตัวแปลง แผนที่ทรัพยากรผสมคือ
+\begin{center}\footnotesize
+\begin{tabular}{ccllc}
+\toprule
+ดัชนีอุปกรณ์ & บัส & อุปกรณ์ & โมเดล & โหมดเริ่มต้น\\
+\midrule
+1--5  & 31, 32, 35, 38, 39 & SG31--SG39 & \code{sg\_classical} (2 state) & ซิงโครนัส\\
+6--10 & 30, 33, 34, 36, 37 & IBR30--IBR37 & \code{Dual-mode-IBR} (17 state) & 2 GFM / 3 GFL\\
+\midrule
+\multicolumn{4}{r}{บัญชีพลวัตขณะรัน} & \multicolumn{1}{c}{$5(2)+5(17)=95$}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{พารามิเตอร์ IBR ที่แต่ละบัส.}
+ตัวแปลงทั้งห้าใช้ค่าคงที่ของพืช Dual-mode-IBR ร่วมกัน ($L_f=0.15$~pu, $R_f=0.015$~pu,
+$C_{dc}=0.0237216$~pu, $V_{dc,\rm ref}=1$~pu, $M=3.3209$~s,
+$D_v=33.2095$~pu, $\tau_E=0.4$~s, $k_Q=0.2$, $k_E=8$, $k_{pV}=1.2$,
+$k_{iV}=3.2587$; GFL PLL $k_p=1.2$, $k_i=5$) และต่างกันเฉพาะพิกัดพอร์ตและหน้าที่:
+\begin{center}\footnotesize
+\begin{tabular}{crrrrr}
+\toprule
+อุปกรณ์ & บัส & $S_{\rm rating}$ pu & กำหนดการ $P$ pu & \multicolumn{2}{c}{โหมดเริ่มต้น}\\
+\midrule
+IBR30 & 30 & 44.000 & 2.500 & GFL & (250~MW)\\
+IBR33 & 33 & 36.700 & 6.320 & \textbf{GFM} & (632~MW)\\
+IBR34 & 34 & 11.800 & 5.080 & GFL & (508~MW)\\
+IBR36 & 36 & 35.300 & 5.600 & \textbf{GFM} & (560~MW)\\
+IBR37 & 37 & 18.200 & 5.400 & GFL & (540~MW)\\
+\midrule
+\multicolumn{3}{r}{รวมกำหนดการ $P$ ของคอนเวอร์เตอร์} & \multicolumn{2}{c}{24.900}\\
+\bottomrule
+\end{tabular}
+\end{center}
+กำหนดการ $P$ คือ dispatch ตามสัดส่วนพิกัดของสัญญาองค์ประกอบ
+ขีดจำกัดกระแสคือ $I_{max}^{SS}=I_{max}^{F}=1.2\pu$ ฐานอุปกรณ์
+พร้อม $E_{\rm max}=1.2$, $E_{\rm min}=0.8\pu$ และสัญญาฟอลต์เป็น balanced
+positive-sequence RMS พร้อมวงกลมกระแส GFM
+
+\paragraph{กอง SG.}
+เครื่องจักรคลาสสิกห้าเครื่องคงรูปคลาสสิกจาก TAMU GENROU: แต่ละเครื่องมี
+$x=[\delta,\omega]$ พร้อมอินพุต $[P_m,E_{mag}]$ ค่า $H$ และ $D$ มาจาก
+การลดลงบนฐานระบบ $X'$ มาจากข้อมูลเครื่องต้นทาง บัส 31 เป็น slack ที่ประกาศ
+($V=1$~pu, $0^\circ$); บัส 32, 35, 38, 39 เป็น PV ในจุดทำงานขององค์ประกอบ
+เพราะเครื่องจักรไม่ทริปในครอโนโลยีนี้ พืชคลาสสิกไม่ต้องมี state governor/excitation/PLL
+reclose — รูปสอง state คือโมเดลที่ศึกษาประกาศ ไม่ใช่การลดรูปที่ซ่อนอยู่ของโมเดลใหญ่กว่า
+
+ลำดับแรงดันพีชคณิตคือ
+\[
+\vect y=[V_{x,1},V_{y,1},V_{x,2},V_{y,2},\ldots,V_{x,39},V_{y,39}]^{\mathsf T},
+\qquad V_k=V_{x,k}+jV_{y,k},
+\]
+ตัวแปรพีชคณิต 78 ตัวสำหรับ 39 บัส
+
+\subsection{ข้อมูลบัสขาเข้า}
+
+\begin{table}[H]\centering\footnotesize
+\caption{ข้อมูลบัสของเคส ค่าเหล่านี้เป็นอินพุต ไม่ใช่ผล PF ที่แก้แล้ว:
+กำหนดการโหลด $P_d$/$Q_d$ และ admittance shunt $G_s$/$B_s$ ตรงจากองค์ประกอบ per unit บนฐาน 100~MVA}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,type,Pd_pu,Qd_pu,Gs_pu,Bs_pu},
+ columns/bus_id/.style={column name=Bus},columns/type/.style={column name=บทบาท,string type},
+ columns/Pd_pu/.style={column name=$P_L$ pu,fixed,fixed zerofill,precision=3},
+ columns/Qd_pu/.style={column name=$Q_L$ pu,fixed,fixed zerofill,precision=3},
+ columns/Gs_pu/.style={column name=$G_s$ pu,fixed,fixed zerofill,precision=3},
+ columns/Bs_pu/.style={column name=$B_s$ pu,fixed,fixed zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/case_bus_data.csv}
+\end{table}
+
+\begin{table}[H]\centering\footnotesize
+\caption{ข้อมูลอนุกรมและประจุของสายในลำดับแถวต้นทาง (46 สาย, per unit บนฐาน 100~MVA)}
+\pgfplotstabletypeset[col sep=comma,
+ columns={branch_index,from_bus,to_bus,r_pu,x_pu,b_pu},
+ columns/branch_index/.style={column name=Index},columns/from_bus/.style={column name=From},
+ columns/to_bus/.style={column name=To},columns/r_pu/.style={column name=$r$ pu},
+ columns/x_pu/.style={column name=$x$ pu},columns/b_pu/.style={column name=$b_c$ pu},
+ columns/r_pu/.append style={fixed,fixed zerofill,precision=3},
+ columns/x_pu/.append style={fixed,fixed zerofill,precision=3},
+ columns/b_pu/.append style={fixed,fixed zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/case_line_data.csv}
+\end{table}
+
+ต้นทาง TAMU ไม่ระบุ base kV ของบัส (ทั้งคอลัมน์ต้นทางและค่าคงที่ของ recorder ดิบ)
+รายงานนี้จึงไม่ตีพิมพ์คอลัมน์ kV แทนที่จะประดิษฐ์ขึ้นมา
+ปริมาณ per unit ทั้งหมดใช้ฐานระบบ 100~MVA
+
+\section{กรอบร่วม เครื่องหมาย และการแปลง per unit}
+
+ทุกอุปกรณ์ใช้เครื่องหมาย generator: กำลังเชิงซ้อนบวกคือการฉีดเข้าสู่เครือข่าย
+\[
+S=P+jQ=V I^*,\qquad I_{bus}=\sum_{d\in bus} I_d.
+\]
+ตัวแปลง Dual-mode-IBR แต่ละตัวมี reference ท้องถิ่นของตัวเอง (\S\ref{sec:ibr});
+การแปลงเครือข่ายเป็นอุปกรณ์คือ
+\begin{align}
+v_d&=V_x\cos\delta_{PLL}+V_y\sin\delta_{PLL},\\
+v_q&=-V_x\sin\delta_{PLL}+V_y\cos\delta_{PLL},
+\end{align}
+กระแสอุปกรณ์หมุนกลับเป็น
+$i_x=i_d\cos\delta_{PLL}-i_q\sin\delta_{PLL}$ และ
+$i_y=i_d\sin\delta_{PLL}+i_q\cos\delta_{PLL}$ ค่า per unit ของตัวแปลงและ SG
+ใช้ฐานระบบ 100~MVA ร่วมกัน ($\kappa=S_{base}/M_{base}$ โดย
+$M_{base}=S_{base}$ สำหรับพืช Dual-mode-IBR ที่นี่)
+
+\section{DAE เครือข่ายแบบประกอบ}
+
+ทุกอุปกรณ์ให้ RHS เชิงอนุพันธ์และการฉีดกระแสเชิงซ้อนบวก สมการประกอบคือ
+\begin{align}
+\dot{\vect x}&=\vect f(\vect x,\vect y,\vect u;\sigma),\\
+\vect 0&=\vect g(\vect x,\vect y,\vect u;\sigma)
+          =\mathcal R\!\left(Y(\sigma)V-I_{bus}(\vect x,\vect y,\vect u;\sigma)\right),
+\end{align}
+โดย $\mathcal R(z)=[\Re z_1,\Im z_1,\ldots]^{\mathsf T}$ และ $\sigma$
+บรรจุโทโพโลยี สถานะเบรกเกอร์ และโหมดอุปกรณ์ เครือข่ายประทับแต่ละสายเป็น
+\[
+Y_{ii}\mathrel{+}=y_s/(a a^*)+jb_c/2,\quad
+Y_{jj}\mathrel{+}=y_s+jb_c/2,\quad
+Y_{ij}\mathrel{-}=y_s/a^*,\quad
+Y_{ji}\mathrel{-}=y_s/a,
+\]
+ด้วย $y_s=1/(r+jx)$ อัตราส่วน off-nominal $a=\tau e^{j\phi}$
+บวกการพับโหลด $Y_{\rm load}=\operatorname{diag}(\overline{\vect S_0}/|\vect V_{pf}|^2)$
+จากเมล็ด PF ที่บัสอ้างอิงที่ประกาศ (บัส 31) แถว KCL ที่เหมาะสมถูกแทนด้วย
+ข้อจำกัดแรงดันชัดเจน การแทนเป็น metadata-driven ที่จุดสเต็ปโหลดที่ประกาศ
+ตัวสร้างเดียวกันประทับ delta admittance
+$Y_{\rm step}=0.2\,\operatorname{diag}(\overline{\vect S_0}/|\vect V_{pf}|^2)$:
+สเต็ปเป็นการเปลี่ยนเครือข่ายจริง ไม่ใช่บรรทัดใน event log
+
+\section{เครื่องกำเนิดซิงโครนัส: พืชคลาสสิกสอง state ห้าเครื่อง}
+
+\subsection{ลำดับ state และความหมาย}
+
+\[
+\vect x_{SG}=[\delta,\ \omega]^{\mathsf T},
+\qquad \vect u_{SG}=[P_m,E_{mag}]^{\mathsf T}.
+\]
+โดย $\delta$ คือมุมโรเตอร์และ $\omega$ คือความเร็ว per unit ในสัญกรณ์ Kundur
+($1.0$ ที่ nominal, สัมบูรณ์) ตามการลดรูปคลาสสิกสอง state
+\begin{center}\footnotesize
+\begin{tabularx}{\textwidth}{c l l X}
+\toprule
+ตำแหน่ง & state & หน่วย & ความหมายทางกายภาพ\\\midrule
+1 & $\delta$ & rad & มุมโรเตอร์ (Kundur) — มุม EMF ภายในในกรอบเครือข่าย\\
+2 & $\omega$ & pu & ความเร็วโรเตอร์ per unit (สัมบูรณ์; $f=f_0\,\omega$, $1.0$ ที่ nominal)\\
+\bottomrule
+\end{tabularx}
+\end{center}
+นี่คือการลดรูปคลาสสิกที่องค์ประกอบประกาศ: $H$, $D$, $X'$ และสมการพอร์ตสเตเตอร์
+คลาสสิกส่งผ่านมาจากการลดต้นทาง เครื่องจักรไม่ทริปในครอโนโลยีนี้ จึงไม่มี state
+governor/excitation/PLL reclose ที่นี่
+
+\subsection{พอร์ตไฟฟ้าและพลวัตโรเตอร์}
+
+ด้วยรีแอกแตนซ์อนุกรม $X'$ และ EMF ภายใน $E=E_{mag}e^{j\delta}$ การฉีดคือ
+\begin{align}
+I&=\frac{E-V}{jX'},\\
+P_e&=\operatorname{Re}(V I^*),\\
+Q_e&=\operatorname{Im}(V I^*),
+\end{align}
+และสมดุลกำลังโรเตอร์สอดคล้องพลังงานที่ความเร็วบวก
+\[
+2H\,\omega\,\dot\omega
+   =P_m-P_e-D\,\omega(\omega-1),
+\]
+โดย $H$ เป็นค่าคงที่ความเฉื่อยบนฐานระบบ และ $D$ การหน่วงต้นทางของการลดคลาสสิก
+$P_m$ และ $E_{mag}$ เป็นอินพุตคงที่ระหว่างครอโนโลยี: ดีไซน์การศึกษาตรึง
+prime-mover และ excitation ของเครื่องไว้ เพื่อให้การขี่ผ่านที่สังเกตได้เป็นคำตอบ
+ของเครือข่าย ไม่ใช่ของคอนโทรลเลอร์
+
+\section{สมการตัวแปลง Dual-mode-IBR}
+\label{sec:ibr}
+
+IBR ห้าตัวแต่ละตัวเป็นอุปกรณ์ superset Dual-mode-IBR GFL/GFM แบบผังคงที่
+ที่มีพืชไฟฟ้าร่วมและสองสาขาคอนโทรลเลอร์ต่างกัน เวกเตอร์สถานะ superset
+(17 พิกัดเมื่อเปิดแหล่ง DC):
+\[
+\vect x_{IBR}=[\,i_d,\ i_q,\ V_{dc},\;
+\underbrace{\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{id},\xi_{iq}}_{\rm GFL\ controller},\;
+\underbrace{\delta_{VSG},\omega_{VSG},E,\xi_{Vd},\xi_{Vq},\xi_{id}^{g},\xi_{iq}^{g}}_{\rm GFM\ controller}\,]^{\mathsf T}
+\]
+โดยชุด active 10 state ใน GFL (9 คอนโทรลเลอร์ + แหล่ง DC) และ 10 ใน GFM
+อินพุตคือ $\vect u=[P_{\rm ref},Q_{\rm ref},E_{\rm ref}]$ state ของความหน่วงคำสั่ง
+ถูกกำจัดด้วย singular perturbation: ความหน่วงกายภาพ $T_d=1.5/f_{sw}\approx0.3$~ms
+ที่ $f_{sw}=5$~kHz ต่ำกว่าขั้นจำลองมากกว่า $300\times$ ดังนั้น $v_{del}=v_{cmd}$
+เชิงพีชคณิต
+
+\subsection{พืชร่วม: ตัวกรอง L, DC link และการจ่ายโหมด}
+
+ทั้งสองสาขาขับ state กระแสและ DC link ทางกายภาพเดียวกัน:
+\begin{align}
+\dot i_d&=\frac{\omega_{PLL,pu}L i_q-R i_d+v_{td}-v_d}{L/\omega_b},\\
+\dot i_q&=\frac{-\omega_{PLL,pu}L i_d-R i_q+v_{tq}-v_q}{L/\omega_b},\\
+P_{ac}&=v_{cd}i_d+v_{cq}i_q,&& \text{(กำลังฝั่งคอนเวอร์เตอร์)}\\
+\dot V_{dc}&=I_{dc,\rm law}(V_{dc},I_{dc},P_{ac}),&& \text{(แหล่ง DC เธเวนิน)}
+\end{align}
+โดยแหล่ง DC ไม่อุดมคติเป็น EMF หลังความต้านทานภายในพร้อม chopper กันเกินแรงดัน
+$I_{dc}=(E_{dc}-V_{dc})/R_{dc}$
+
+\subsection{สาขา GFL (state คอนโทรลเลอร์ active 9 ตัว)}
+
+ใน GFL พิกัด VSG ไม่ active ด้วย $D_V=v_d^2+v_q^2$
+\begin{align}
+\dot\xi_{PLL}&=v_q,\\
+\Delta\omega_{PLL}&=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},\\
+\dot\delta_{PLL}&=\omega_b\Delta\omega_{PLL},\\
+i_{d,r}^{\rm raw}&=k_{pP}(P_{\rm ref}-k P_{\rm meas})+k_{iP}\xi_P,\\
+i_{q,r}^{\rm raw}&=-(k_{pQ}(Q_{\rm ref}-k Q_{\rm meas})+k_{iQ}\xi_Q),
+\end{align}
+จำกัดแบบวงกลมที่ $I_{max}$ ด้วย P-priority จากนั้น PI ภายในขับแรงดันสั่ง
+\begin{align}
+v_{cd}&=v_d+R i_d-\omega_{PLL,pu}L i_q+k_{pI}e_d+k_{iI}\xi_{id},\\
+v_{cq}&=v_q+R i_q+\omega_{PLL,pu}L i_d+k_{pI}e_q+k_{iI}\xi_{iq}.
+\end{align}
+
+\subsection{สาขา GFM (state คอนโทรลเลอร์ active 10 ตัว)}
+
+ใน GFM พลวัต swing ของ VSG และการสร้างแรงดัน Q--V คือ
+\begin{align}
+\dot\omega_{VSG}&=\frac{k P_{\rm ref}-P_{\rm meas}-D_v(\omega_{VSG}-1)}{M},\\
+\dot\delta_{VSG}&=\omega_b(\omega_{VSG}-1),\\
+\dot E&=\frac{k_Q(k Q_{\rm ref}-Q_{\rm meas})-k_E(E-E_{\rm ref})}{\tau_E},
+\end{align}
+โดย $E$ เองเป็น reference แอมพลิจูดของลูปแรงดัน อินทิเกรเตอร์ PI แรงดัน
+$\xi_{Vd},\xi_{Vq}$ สร้าง reference กระแสจาก $(E-v_d,\,0-v_q)$
+จำกัดแบบวงกลมที่ $I_{max}$ จากนั้นใช้ PI กระแสภายในและตัวกรอง L ร่วมกันปิดลูป
+anti-windup บนตัวจำกัดกระแสคือกฎ conditional-hold: อินทิเกรเตอร์จะคงค่าไว้
+เมื่อตัวจำกัด active และ error ดันออกนอกเพิ่ม ขณะที่การฟื้นตัวเข้าด้านใน active เสมอ
+
+\subsection{โหมดคงที่ในครอโนโลยีนี้}
+
+โหมดเริ่มต้นตรึงที่ $t=0$ และไม่มีเหตุการณ์ใดเปลี่ยน: ตัวแปลงสองตัวรัน GFM
+(IBR33, IBR36) และสามตัวรัน GFL (IBR30, IBR34, IBR37) ทุกช่วงเวลาของการรัน
+อ่านจากประวัติโหมดจริง กลไกถ่ายโอนโหมดของพืช (รักษา $V/I/P/Q$ และ $V_{dc}$
+ขณะรัน) ไม่ถูกใช้ที่นี่
+
+\section{PF, สมดุล และ TS ใช้สมการอย่างไร}\label{sec:tsform}
+
+\subsection{Power flow และสมดุลที่ยอมรับ}
+
+PF ของเคสต้นทาง (PSSE) ถูกใช้เฉพาะหาจุดทำงานขององค์ประกอบ
+สมดุลที่รายงานแทนการแก้ระบบกายภาพควบคู่
+\[
+\vect f_A(\vect x_0,\vect y_0,\vect u_0)=0,\qquad
+\vect g(\vect x_0,\vect y_0,\vect u_0)=0
+\]
+ด้วยนิวตันบน state active บวกตัวแปรพีชคณิตอิสระ พร้อมเกณฑ์ KCL ทุกแถวที่
+$10^{-6}$~pu สมดุลที่ยอมรับที่นี่คือองค์ประกอบห้าเครื่อง: สถานะ converged,
+residual, KCL กายภาพ และ $rcond$ อ่านจากชุดผลที่เก็บไว้และรายงานใน
+ส่วน~\ref{sec:pf} ตารางบัส โหลด สาย และอุปกรณ์ทั้งหมดด้านล่างใช้เวกเตอร์แรงดัน
+ชุดนี้ชุดเดียว สมดุลที่ยอมรับเป็น \emph{การวินิจฉัยอยู่กับที่} ขององค์ประกอบ
+\code{case\_ne39\_5sg\_5ibr}: สัญญาความสามารถ TAMU ไม่รับรองการแก้ Newton
+ที่ลู่เข้าสำหรับองค์ประกอบนี้ (\code{eq.converged=false} เป็นสถานะที่เคสประกาศ)
+และระดับ residual/KCL คือความจริงที่รายงาน
+
+\subsection{การจำลองภาคเวลา}
+
+ระหว่างธุรกรรมเหตุการณ์ ขั้น implicit trapezoidal แก้
+\begin{align}
+0&=x_{n+1}-x_n-\frac{h}{2}\left[f(x_n,y_n)+f(x_{n+1},y_{n+1})\right],\\
+0&=g(x_{n+1},y_{n+1};\sigma_{n+1}),
+\end{align}
+อย่างละหนึ่งสมการต่อบรรทัด กำกับเลขทุกบรรทัด บน stepper \code{adaptive}
+พร้อมการควบคุม LTE เข้ม ($\varepsilon_x=2\times10^{-8}$,
+$\varepsilon_y=2\times10^{-8}$, relative $10^{-7}$), tolerance นิวตัน
+$10^{-10}$, ขอบเขตขั้น $dt\in[(0.0025/4096),0.025]$~s, reject limit 16
+และไม่มีส่วนโค้ง Rannacher การสุ่มรายงานสาธารณะตามขั้น adaptive ที่ยอมรับ
+เหตุการณ์เป็นธุรกรรมเข้ม: handler commit candidate หลังผ่าน guard และ KCL
+และ KCL ก่อน/ขวาของทุกเหตุการณ์ที่.apply ถูกบันทึก (ตาราง~\ref{tab:events})
+
+\begin{table}[H]\centering\footnotesize
+\caption{ธุรกรรมเหตุการณ์ที่ apply แล้วพร้อม residual KCL กายภาพ}
+\label{tab:events}
+\pgfplotstabletypeset[col sep=comma,
+ columns={event_type,t_s,applied,pre_kcl_norm,right_kcl_norm},
+ columns/event_type/.style={column name=เหตุการณ์,string type,string replace*={_}{\_}},
+ columns/t_s/.style={column name=$t$ (s),fixed,fixed zerofill,precision=3},
+ columns/applied/.style={column name=Applied},
+ columns/pre_kcl_norm/.style={column name=pre-KCL (pu),sci,sci zerofill,precision=3},
+ columns/right_kcl_norm/.style={column name=right-KCL (pu),sci,sci zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/event_marks.csv}
+\end{table}
+
+\section{ผลสมดุลที่ยอมรับ}\label{sec:pf}
+
+\subsection{ตัวเลข PF ที่แก้แล้ว}
+
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{\datadir/matlab_5sg5ibr_pf.pdf}
+\caption{ขนาดและมุมแรงดันบัสที่แก้แล้วทั้ง 39 บัส บัส 31 เป็น slack ที่ประกาศ
+$V=1\angle 0^\circ$~pu; บัส IBR (30, 33, 34, 36, 37) และบัส SG ที่ไม่ใช่ slack
+ทั้งสี่ตามจุดทำงานที่แก้แล้วขององค์ประกอบ}
+\end{figure}
+
+\subsection{แรงดันและกำลังบัสที่สมดุลที่ยอมรับ}
+
+\begin{table}[H]\centering\footnotesize
+\caption{แรงดันบัสและกำลังบัสที่แก้แล้ว ณ สมดุลห้า SG + สอง GFM ที่ยอมรับ
+(per unit บนฐานระบบ; มุมเป็นองศา)}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,V_pu,angle_deg},
+ columns/bus_id/.style={column name=Bus},
+ columns/V_pu/.style={column name=$|V|$ pu,fixed,fixed zerofill,precision=4},
+ columns/angle_deg/.style={column name=$\theta$ deg,fixed,fixed zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_bus.csv}
+\end{table}
+
+\begin{table}[H]\centering\footnotesize
+\caption{กำลังผลิต โหลด และการฉีดสุทธิบัส ณ สมดุล (per unit);
+คอลัมน์ $Q_{shunt}$ รวมประจุบวกเครื่องปฏิกรณ์พอร์ตคงที่ถ้ามี}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,P_gen_pu,Q_gen_pu,P_load_pu,Q_load_pu,P_net_pu},
+ columns/bus_id/.style={column name=Bus},
+ columns/P_gen_pu/.style={column name=$P_g$ pu,fixed,fixed zerofill,precision=4},
+ columns/Q_gen_pu/.style={column name=$Q_g$ pu,fixed,fixed zerofill,precision=4},
+ columns/P_load_pu/.style={column name=$P_L$ pu,fixed,fixed zerofill,precision=4},
+ columns/Q_load_pu/.style={column name=$Q_L$ pu,fixed,fixed zerofill,precision=4},
+ columns/P_net_pu/.style={column name=$P_{net}$ pu,fixed,fixed zerofill,precision=4},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_power.csv}
+\end{table}
+
+\subsection{การไหลและความสูญเสียปลายส่งของสาย}
+
+\begin{table}[H]\centering\footnotesize
+\caption{การไหลปลายส่งและความสูญเสียของสาย ณ สมดุลที่ยอมรับ}
+\pgfplotstabletypeset[col sep=comma,
+ columns={line,from_bus,to_bus,P_from_pu,Q_from_pu,P_loss_pu},
+ columns/line/.style={column name=Line},columns/from_bus/.style={column name=From},
+ columns/to_bus/.style={column name=To},
+ columns/P_from_pu/.style={column name=$P_{from}$ pu,fixed,fixed zerofill,precision=4},
+ columns/Q_from_pu/.style={column name=$Q_{from}$ pu,fixed,fixed zerofill,precision=4},
+ columns/P_loss_pu/.style={column name=$P_{loss}$ pu,fixed,fixed zerofill,precision=4},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_pf_line_flow.csv}
+\end{table}
+
+\subsection{การฉีดของอุปกรณ์}
+
+\begin{table}[H]\centering\footnotesize
+\caption{การฉีดรายอุปกรณ์ ณ สมดุลที่ยอมรับ จาก \code{current\_injection}
+ของแต่ละอุปกรณ์เองที่ state ที่เก็บไว้ (per unit บนฐานระบบ)}
+\pgfplotstabletypeset[col sep=comma,
+ columns={device_id,bus_id,mode,P_pu,Q_pu,V_pu},
+ columns/device_id/.style={column name=Device,string type},
+ columns/bus_id/.style={column name=Bus},
+ columns/mode/.style={column name=Mode,string type},
+ columns/P_pu/.style={column name=$P_{inj}$ pu,fixed,fixed zerofill,precision=4},
+ columns/Q_pu/.style={column name=$Q_{inj}$ pu,fixed,fixed zerofill,precision=4},
+ columns/V_pu/.style={column name=$|V|$ pu,fixed,fixed zerofill,precision=4},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/normal_resource_pf.csv}
+\end{table}
+
+\section{ผลภาคเวลารอบรั้วเหตุการณ์}\label{sec:transient}
+
+\subsection{การฉีดรายอุปกรณ์และตัววินิจฉัยความแข็งแรงกริด}
+
+ที่สมดุลที่ยอมรับ การฉีดของแต่ละอุปกรณ์คือ \code{current\_injection}
+ของตัวเองที่ state ที่เก็บไว้ $S=V\,i^*$; การฉีดสุทธิรายอุปกรณ์
+($P_{\rm inj}$, $Q_{\rm inj}$) คือคอลัมน์ของตารางการฉีดอุปกรณ์ด้านบน ไม่เปลี่ยน
+
+การคัดกรองความแข็งแรงกริดที่สมดุลเดียวกันคือ
+\textbf{ASSUMED\_DIAGNOSTIC} short-circuit ratio
+\begin{equation}
+{\rm SCR}_i=\frac{|V_i|^2}{|Z_{th,ii}|\,S_{{\rm rated},i}},\qquad
+Z_{th}=Y^{-1}\ \text{(passive pre-fault network)},
+\label{eq:scr}
+\end{equation}
+โดย admittance พาสซีฟพับอนุกรมสาย ประจุ shunt บัส และ admittance โหลดเมล็ด PF
+และ $S_{\rm rated}$ เป็นพิกัดตัวแปลง PROJECT\_DERIVED ขององค์ประกอบ
+(ต้นทาง TAMU ไม่ทิ้งพิกัด IBR) การคำนวณเป็นการแก้คอลัมน์ของ $Y$ ที่ PCC ของ
+IBR ทุกตัว ตีพิมพ์ที่นี่เพียงเป็นตัววินิจฉัยความแข็งแรงกริดทางกายภาพ และไม่เคย
+เป็นผลของ gate ด้วยเครื่องซิงโครนัสสี่เครื่องที่อยู่หลังเครือข่ายทุกบัส IBR
+(ห้าเครื่องลบส่วนร่วม slack ที่ PCC แต่ละจุด) SCR ขององค์ประกอบนี้จึงสูงกว่า
+การศึกษา 160~s ที่ส่งมอบแล้ว โดยเชิงโครงสร้าง เพราะที่นั่นกอง GFM
+เป็นแหล่งเดียว
+
+\begin{table}[H]\centering\footnotesize
+\caption{การคัดกรองความแข็งแรงกริด ASSUMED\_DIAGNOSTIC ต่อบัส IBR
+อ่านจากหลักฐาน CSV ที่ส่งออกจากรันที่เก็บไว้ (ฐาน MVA ของระบบ)}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,abs_Zth_pu,Ssc_MVA,rating_MVA,SCR},
+ columns/bus_id/.style={column name=Bus},
+ columns/abs_Zth_pu/.style={column name=$|Z_{th}|$ pu,fixed,fixed zerofill,precision=4},
+ columns/Ssc_MVA/.style={column name=$S_{sc}$ MVA,fixed,fixed zerofill,precision=1},
+ columns/rating_MVA/.style={column name=$S_{\rm rating}$ MVA,fixed,fixed zerofill,precision=1},
+ columns/SCR/.style={column name=SCR,fixed,fixed zerofill,precision=2},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/scr_diagnostic.csv}
+\end{table}
+
+\subsection{ผลภาคเวลาเป็นตัวเลข}
+
+ชุดที่วัดได้ของการรันจริงคือหลักฐาน CSV ที่ส่งออกอ่านไม่เปลี่ยน:
+กำลังรายอุปกรณ์ (\code{ts\_device\_power.csv}), กระแสรายอุปกรณ์
+(\code{ts\_device\_current.csv}), เส้นความถี่
+(\code{ts\_device\_frequency.csv}, \code{ts\_coi\_frequency.csv}),
+ความเร็วโรเตอร์ SG ห้าตัว (\code{ts\_sg\_frequency.csv}) และซองแรงดันเครือข่าย
+(\code{ts\_bus\_vmin\_vmax.csv}) กราฟของส่วนนี้เรนเดอร์ชุดเหล่านั้นโดยไม่ดัดแปลง
+ทุกตัวอย่างที่พล็อตเป็นค่าที่ยอมรับดิบของ trajectory 160~s ที่เก็บไว้
+และหน้าต่างฟอลต์ ($60\le t<60.15$~s) ตรงกับการศึกษา 160~s ที่ส่งมอบแล้ว
+ที่เหตุการณ์เดียวกัน
+
+\subsection{เส้นโหมด กำลัง และแรงดันรายอุปกรณ์}
+
+รูป~\ref{fig:modepq} แสดงสถานะกำกับและกำลังจริง/รีแอกทีฟรายอุปกรณ์
+ตลอดครอโนโลยี $0\text{--}160\second$: แถบบนคือโหมด grid-forming/grid-following
+ของ IBR แต่ละตัว (คงที่ตามการออกแบบ — ไม่มีเหตุการณ์เปลี่ยนโหมด)
+แถวที่สองคือความเร็วโรเตอร์ SG ห้าตัว (ทั้งห้าเครื่องถือ reference ตลอด)
+และ panel (a)--(b) คือตัวอย่างกำลังที่ยอมรับดิบใน per unit บนฐานระบบ
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.94\textwidth]{\datadir/matlab_5sg5ibr_mode_pq.pdf}
+\caption{แถบบน: โหมด grid-forming/grid-following ของ IBR ห้าตัว
+(คงที่ตามการออกแบบ) แถวที่สอง: ความเร็วโรเตอร์ SG ห้าตัว (ทั้งห้าออนไลน์
+ทุกตัวอย่าง) (a) กำลังจริง $P_i$ pu รายอุปกรณ์ (b) กำลังรีแอกทีฟ $Q_i$ pu
+รายอุปกรณ์ ตัวอย่างที่ยอมรับดิบของ trajectory 160~s ที่เก็บไว้;
+$t\in[0,160]\second$ หน้าต่างเต็ม}
+\label{fig:modepq}
+\end{figure}
+
+รูป~\ref{fig:elec} เป็นแผงไฟฟ้าแปดช่อง: (a) กำลังจริง $P_i$; (b) กำลังรีแอกทีฟ $Q_i$;
+(c) กระแสแกน $d$; (d) กระแสแกน $q$; (e) ความถี่อุปกรณ์/COI;
+(f) แรงดันปลายอุปกรณ์; (g) แรงดันสูงสุดเครือข่าย; (h) แรงดันต่ำสุดเครือข่าย
+ทั้งหมด per unit ทั้งหมดเป็นตัวอย่างที่ยอมรับดิบ
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.86\textwidth]{\datadir/matlab_5sg5ibr_electrical.pdf}
+\caption{แผงไฟฟ้าแปดช่อง (ตัวอย่างที่ยอมรับดิบ, trajectory 160~s ที่เก็บไว้,
+$t\in[0,160]\second$ หน้าต่างเต็ม) (a) กำลังจริง $P_i$; (b) กำลังรีแอกทีฟ $Q_i$;
+(c) กระแสแกน $d$; (d) กระแสแกน $q$; (e) ความถี่อุปกรณ์/COI; (f) แรงดันปลายอุปกรณ์;
+(g) แรงดันสูงสุดเครือข่าย; (h) แรงดันต่ำสุดเครือข่าย legend ร่วมหนึ่งอันที่ด้านบน
+ของรูประบุทุกเส้นอุปกรณ์}
+\label{fig:elec}
+\end{figure}
+
+รูป~\ref{fig:env}--\ref{fig:dqiq} รวมกลุ่มมุมมองที่เหลือเรนเดอร์จากหลักฐาน CSV ชุดเดียวกัน
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_envelope.pdf}
+\caption{ซองแรงดันบัส ($\min_k|V_k|$ ถึง $\max_k|V_k|$) ตลอดครอโนโลยี 160~s
+พร้อมเครื่องหมายเหตุการณ์ที่ apply ที่ 60, 60.15 และ 100~s}
+\label{fig:env}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.86\textwidth]{\datadir/matlab_5sg5ibr_envelope_fault.pdf}
+\caption{รายละเอียดซองแรงดันช่วงฟอลต์ $t\in[59.4,60.8]\second$}
+\label{fig:envfault}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_ts_pages.pdf}
+\caption{หน้ากลุ่มอนุกรมเวลา: (a) ความถี่อุปกรณ์และ COI; (b) กำลังจริงอุปกรณ์ (MW);
+(c) กำลังรีแอกทีฟอุปกรณ์ (MVAr); (d) ขนาดกระแสอุปกรณ์;
+(e) ความถี่โรเตอร์ SG ห้าตัว ($f_0\cdot\omega$); (f) ระดับโหมดอุปกรณ์
+(0 open / 1 GFL / 2 VF, คงที่ที่นี่ — ไม่มีเหตุการณ์เปลี่ยนโหมด)}
+\label{fig:tspages}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_sg_frequency.pdf}
+\caption{พืชคลาสสิกสอง state ห้าเครื่องผ่านฟอลต์และสเต็ป: ความถี่โรเตอร์
+$f_0\cdot\omega$ (บน) และความเร็วโรเตอร์สัมบูรณ์ (ล่าง) อ่านไม่เปลี่ยนจาก
+บล็อก state ของแต่ละพืชเอง}
+\label{fig:sgf}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_dq_id.pdf}
+\caption{state กระแสแกน $d$ ของตัวแปลง $i_d$ (ฐาน MVA อุปกรณ์) ของพืช
+Dual-mode-IBR ห้าตัว ตัวอย่างที่ยอมรับดิบ}
+\label{fig:dqid}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_dq_iq.pdf}
+\caption{state กระแสแกน $q$ ของตัวแปลง $i_q$ (ฐาน MVA อุปกรณ์) ของพืช
+Dual-mode-IBR ห้าตัว ตัวอย่างที่ยอมรับดิบ}
+\label{fig:dqiq}
+\end{figure}
+
+\section{ข้อจำกัดและการตีความ}
+
+\begin{itemize}
+\item \code{production\_certified=false}: ไม่มีข้ออ้างใดในรายงานนี้เป็น
+      ใบรับรองการผลิตหรือฮาร์ดแวร์ การจำแนกของรันเป็นการศึกษา PROJECT\_DERIVED
+\item สมดุลที่ยอมรับขององค์ประกอบห้าเครื่องเป็นตัววินิจฉัยอยู่กับที่
+      ที่ \code{eq.converged=false} (สถานะความสามารถ TAMU ที่เคสประกาศ);
+      ระดับ residual และ KCL กายภาพรายงานตามที่วัดได้
+\item supervisor สนับสนุนปิดโดยการตั้งค่า ดัชนีความรุนแรงและตัวเปรียบเทียบ
+      ฮิสเทอรีซิสถูกบันทึกแต่ไม่เคยถูกนำไปใช้ ไม่สามารถอนุมานพฤติกรรมการสลับ
+      จากรันนี้ได้
+\item สเต็ปโหลดเป็นแบบรวม ($+20\%$ ทุกโหลดบัส) ไม่ใช่สเต็ปทีละบัส
+      — ขอบเขตที่ดีไซน์การศึกษาประกาศ
+\item การแบ่ง GFM/GFL (สองตัวที่มีกำหนดการ $P$ มากสุด) เป็นกฎการออกแบบที่
+      กำหนดได้แน่นอน ไม่ใช่นโยบาย dispatch ที่ได้รับการรับรอง
+\item สัญญาฟอลต์ของตัวแปลงเป็น balanced positive-sequence RMS พร้อมวงกลม
+      กระแส GFM ไม่ใช่โมเดล EMT, negative-sequence หรือ zero-voltage
+      และไม่ reproduce รูปคลื่นกระแสฟอลต์ของ GENROU ต้นทาง
+\item ไม่ตีพิมพ์คอลัมน์ kV: ต้นทาง TAMU ไม่ระบุ base kV ของบัส
+      และการประดิษฐ์ขึ้นมาจะเป็นการกุขึ้น
+\item เมื่อเครื่องจักรห้าตัวออนไลน์ การศึกษานี้ตอบคำถามเรื่อง mode transfer
+      หรือ islanding ที่การศึกษา 160~s ตอบไปแล้วไม่ได้ — นั่นคือการออกแบบ
+      ไม่ใช่ช่องว่าง
+\end{itemize}
+
+\section{บทสรุป}
+
+รายงานนี้เปิดโซ่ที่ตรวจสอบได้จากอินพุตเคส TAMU ผ่านสมดุลองค์ประกอบห้าเครื่อง
+ที่ยอมรับ DAE แบบประกอบ ครอโนโลยีเหตุการณ์ฟอลต์+สเต็ปโหลดแบบเข้ม และ
+พฤติกรรมการขี่ผ่านที่สังเกตได้ สมการอุปกรณ์ชุดเดียวกันกำหนดสมดุลเริ่มต้นและ
+ถูกอินทิเกรตสำหรับ TS residual เครือข่ายถูกบังคับทุกแถวในทั้งสอง
+และบัญชีสุดท้าย (SG ห้าตัวซิงโครนัส, GFM สอง, GFL สาม — ไม่เปลี่ยนจาก $t=0$)
+อ่านจากประวัติโหมดจริงไม่ใช่จากเป้าหมาย เพราะเครื่องจักรห้าตัวยังเป็น reference
+จึงไม่มีเหตุการณ์เบรกเกอร์ SG ติดอาวุธที่ใดในครอโนโลยี ตารางและรูปเวกเตอร์
+มาจากหลักฐาน CSV ชุดเดียว และทุกการปฏิเสธ — supervisor ที่ไม่ถูกใช้
+สถานะสมดุลที่ยังไม่ลู่เข้า — ยังคงอยู่ในรายงานตรงจุดที่มันถูกผลิต
+
+\begin{thebibliography}{9}
+\bibitem{athay} T. Athay, R. Podmore, and S. Virmani,
+``A Practical Method for the Direct Analysis of Transient Stability,''
+IEEE Transactions on Power Apparatus and Systems, PAS-98(2), 1979;
+attribution follows the TAMU distribution metadata.
+\bibitem{pai} M. A. Pai, \emph{Energy Function Analysis for Power System
+Stability}, Springer, 1989.
+\bibitem{tamu} Texas A\&M University, \emph{New England IEEE 39-Bus System}
+distribution, \url{https://electricgrids.engr.tamu.edu/electric-grid-test-cases/new-england-ieee-39-bus-system/}.
+\bibitem{eecon49} EECON49 course material, converter block diagram and
+parameter table, Eqs.~(6)--(29), Figs.~1--2.
+\bibitem{ledesma} Source transcription provenance:
+\code{docs/project/NE39\_TAMU\_MIGRATION.md}.
+\end{thebibliography}
+
 \end{document}
-%\enumerate is not a command; the figure environment closes above.

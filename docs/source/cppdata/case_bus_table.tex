@@ -1,0 +1,12 @@
+% Case bus table -- verbatim clone from reference :361-374.  This is an
+% INPUT shared by both engines (no comparison columns by design -- the
+% case is the constant of the whole verification).
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,type,Pd_pu,Qd_pu,Gs_pu,Bs_pu},
+ columns/bus_id/.style={column name=Bus},columns/type/.style={column name=Role,string type},
+ columns/Pd_pu/.style={column name=$P_L$ pu,fixed,fixed zerofill,precision=3},
+ columns/Qd_pu/.style={column name=$Q_L$ pu,fixed,fixed zerofill,precision=3},
+ columns/Gs_pu/.style={column name=$G_s$ pu,fixed,fixed zerofill,precision=3},
+ columns/Bs_pu/.style={column name=$B_s$ pu,fixed,fixed zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/case_bus_data.csv}

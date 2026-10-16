@@ -1,0 +1,6 @@
+event_type,t_s,applied,pre_kcl_norm,right_kcl_norm
+sg_trip,20,1,n/e,n/e
+fault_on,60,1,n/e,n/e
+fault_clear,60.15,1,n/e,n/e
+sg_on,100,1,n/e,n/e
+sg_reclose,100.499,1,n/e,n/e

@@ -1,0 +1,30 @@
+% Scope text -- mirrors the reference :76-107 adapted to the flagship's
+% subject (C++ engine under test, MATLAB reference record as basis).
+The study system is the TAMU New England 39-bus network with one modelled SG at
+the slack bus and nine modelled IBRs at buses 30, 32--39, run on two
+independent engines that consume one identical case: the \textbf{MATLAB
+reference engine} (the delivered 160-s record, \code{report_port_engine_en.pdf})
+and the \textbf{C++ standalone engine} --- the subject of this report, the
+first deliverable of the C++ flagship track (full engine, GUI-distributed,
+no MATLAB licence at runtime).
+
+The whole system is assembled as a single all-KCL composite
+differential--algebraic system in which the SG and every IBR contribute their
+own differential state block and their own injection; no device is delegated
+to an external solver, model, or reference program --- in either engine.  The
+C++ implementation was carved from the documented equation set
+(\S\ref{sec:dae}--\S\ref{sec:ibr}), not from the MATLAB code text.
+
+\paragraph{What this report verifies.}
+The C++ run is verified against the MATLAB reference record on three layers:
+(1)~DECISION fields (Table~\ref{tab:decision}), (2)~trajectory parity in the
+D5 frame on the common grid (Table~\ref{tab:trajdiff}, figures
+\ref{fig:periods}--last), and (3)~the measured wall-clock speedup
+(\S\ref{sec:speeduptable}) --- all within the disclosed integration mode
+(\intmodes, \vscopecite).
+
+\paragraph{Reproduction.}
+Every C++ run persists its own record folder (case/request snapshot, raw
+trajectory, counters/DECISION, summary, manifest with sha256) per the
+run-cache convention --- run history is the provenance source of this
+report, and re-plotting or re-comparison requires no re-run.

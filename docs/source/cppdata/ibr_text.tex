@@ -1,0 +1,78 @@
+% IBR text -- cloned from reference :525-594 (superset state vector, shared
+% plant, GFL branch, GFM branch, runtime transfer), plus the C++ mapping.
+Each of the nine IBRs is a fixed-layout Dual-mode-IBR GFL/GFM superset device with a
+shared electrical plant and two distinct controller branches.  The superset
+state vector is (17 coordinates when the DC-source current is enabled)
+\[
+\vect x_{IBR}=[\,i_d,\ i_q,\ V_{dc},\;
+\underbrace{\delta_{PLL},\xi_{PLL},\xi_P,\xi_Q,\xi_{id},\xi_{iq}}_{\rm GFL\ controller},\;
+\underbrace{\delta_{VSG},\omega_{VSG},E,\xi_{Vd},\xi_{Vq},\xi_{id}^{g},\xi_{iq}^{g}}_{\rm GFM\ controller}\,]^{\mathsf T}
+\]
+with the active set 9 states in GFL and 10 in GFM (plus the shared DC-source
+current at superset index 17 for all devices in this run).  Inputs are
+$\vect u=[P_{\rm ref},Q_{\rm ref},E_{\rm ref}]$.  The source command-delay
+states are removed by singular perturbation: the physical actuation delay
+$T_d=1.5/f_{sw}\approx0.3$~ms at $f_{sw}=5$~kHz is more than $300\times$ below
+the simulation step, so $v_{del}=v_{cmd}$ algebraically.
+
+\subsection{Shared plant: L-filter, DC link, and mode dispatch}
+
+Both branches drive the same physical current and DC-link states:
+\begin{align}
+\dot i_d&=\frac{\omega_{PLL,pu}L i_q-R i_d+v_{td}-v_d}{L/\omega_b},\\
+\dot i_q&=\frac{-\omega_{PLL,pu}L i_d-R i_q+v_{tq}-v_q}{L/\omega_b},\\
+P_{ac}&=v_{cd}i_d+v_{cq}i_q,&& \text{(converter-side power)}\\
+\dot V_{dc}&=I_{dc,\rm law}(V_{dc},I_{dc},P_{ac}),&& \text{(Thevenin DC source)}
+\end{align}
+with the non-ideal DC source an EMF behind its internal resistance and an
+overvoltage chopper, $I_{dc}=(E_{dc}-V_{dc})/R_{dc}$, shared by both branches
+so a runtime transfer preserves $dV_{dc}/dt$ as well as $V_{dc}$ itself.
+
+\subsection{GFL branch (9 active states)}
+
+In GFL the VSG coordinates are inactive.  With $D_V=v_d^2+v_q^2$,
+\begin{align}
+\dot\xi_{PLL}&=v_q,\\
+\Delta\omega_{PLL}&=k_{p,PLL}v_q+k_{i,PLL}\xi_{PLL},\\
+\dot\delta_{PLL}&=\omega_b\Delta\omega_{PLL},\\
+i_{d,r}^{\rm raw}&=k_{pP}(P_{\rm ref}-k P_{\rm meas})+k_{iP}\xi_P,\\
+i_{q,r}^{\rm raw}&=-(k_{pQ}(Q_{\rm ref}-k Q_{\rm meas})+k_{iQ}\xi_Q),
+\end{align}
+circularly limited at $I_{max}$ with P-priority, then the inner PI drives the
+commanded voltage
+\begin{align}
+v_{cd}&=v_d+R i_d-\omega_{PLL,pu}L i_q+k_{pI}e_d+k_{iI}\xi_{id},\\
+v_{cq}&=v_q+R i_q+\omega_{PLL,pu}L i_d+k_{pI}e_q+k_{iI}\xi_{iq}.
+\end{align}
+
+\subsection{GFM branch (10 active states)}
+
+In GFM the VSG swing and Q--V voltage-forming dynamics are
+\begin{align}
+\dot\omega_{VSG}&=\frac{k P_{\rm ref}-P_{\rm meas}-D_v(\omega_{VSG}-1)}{M},\\
+\dot\delta_{VSG}&=\omega_b(\omega_{VSG}-1),\\
+\dot E&=\frac{k_Q(k Q_{\rm ref}-Q_{\rm meas})-k_E(E-E_{\rm ref})}{\tau_E},
+\end{align}
+where $E$ is itself the voltage-loop amplitude reference.  The voltage PI
+integrators $\xi_{Vd},\xi_{Vq}$ build the current reference from
+$(E-v_d,\,0-v_q)$, circularly limited at $I_{max}$, then the same shared
+inner current PI and L-filter close the loop.  The anti-windup on the current
+clamps is the conditional-hold rule: the integrator holds only when the
+limiter is active and its error drives farther outward, with inward recovery
+always active.
+
+\subsection{Runtime mode transfer}
+
+The transfer preserves terminal $V/I/P/Q$ and $V_{dc}$, initialises only the
+target controller from the same terminal port, and verifies current
+continuity before the event transaction may proceed.  GFM current limits are
+$I_{max}^{SS}=I_{max}^{F}=1.2$~pu machine base.
+
+\paragraph{C++ implementation of the IBR blocks.}
+All nine converters are implemented in C++ as instances of the same
+superset layout, the same branch equations, and the same runtime transfer
+rules documented above.  Their parity is covered by the per-device
+trajectory comparisons ($i_d$, $i_q$, $P$, $Q$, terminal $V$ at buses
+30, 32--39) in Table~\ref{tab:trajdiff}, and their GFM/GFL mode history by
+the DECISION field \code{device\_modes\_history} in
+Table~\ref{tab:decision}.

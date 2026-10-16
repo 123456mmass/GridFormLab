@@ -61,8 +61,9 @@ system voltage/frequency reference at every instant --- so the chronology arms
 question.  The disturbance is the frozen bus-16 fault ($Z_f=j0.1$~pu,
 60--60.15~s) followed by a global $+20\%$ load step at 100~s, horizon 160~s, with
 event instants aligned to the delivered 160-s study so the fault windows compare
-directly.  Numerical plots are rendered natively by \LaTeX{} from CSV files exported
-from the stored run artifact, so plot typography matches the report.  Failed gates,
+directly.  MATLAB renders the vector figures and \LaTeX{} typesets the tables, both from
+CSV files exported from the stored run artifact, so report tables and figures
+share one evidence source.  Failed gates,
 refusals, and pending certifications are reported rather than tuned away.
 \end{abstract}
 
@@ -687,23 +688,30 @@ as a physical grid-strength diagnostic and never a gate outcome.  With four
 synchronous machines behind the network at every IBR bus (five minus the slack
 contribution at each PCC), the SCR of this composition is structurally higher
 than the delivered 160-s study, where the GFM fleet was the only source:
-\begin{center}\footnotesize
-\begin{tabular}{crrrr}
-\toprule
-Bus & $|Z_{th}|$ pu & $S_{sc}$ pu & $S_{\rm rating}$ pu & SCR\\
-\midrule
-\multicolumn{5}{c}{\emph{read from \code{scr_diagnostic.csv} of the stored run}}\\
-\bottomrule
-\end{tabular}
-\end{center}
+\begin{table}[H]\centering\footnotesize
+\caption{ASSUMED\_DIAGNOSTIC grid-strength screen per IBR bus, read from the
+stored run's exported evidence (system MVA base).}
+\pgfplotstabletypeset[col sep=comma,
+ columns={bus_id,abs_Zth_pu,Ssc_MVA,rating_MVA,SCR},
+ columns/bus_id/.style={column name=Bus},
+ columns/abs_Zth_pu/.style={column name=$|Z_{th}|$ pu,fixed,fixed zerofill,precision=4},
+ columns/Ssc_MVA/.style={column name=$S_{sc}$ MVA,fixed,fixed zerofill,precision=1},
+ columns/rating_MVA/.style={column name=$S_{\rm rating}$ MVA,fixed,fixed zerofill,precision=1},
+ columns/SCR/.style={column name=SCR,fixed,fixed zerofill,precision=2},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/scr_diagnostic.csv}
+\end{table}
 
 \subsection{Time-domain result in numbers}
 
-The measured series of the actual run across the three windows of the chronology
-(prefault $t<60$~s, the fault window $60\le t<60.15$~s, and the post-fault
-$t\ge60.15$~s including the 100~s load step), read unchanged from the exported
-CSV evidence, are summarized in Table~\ref{tab:tsstats}.  All values are read
-from the stored artifact and reported as measured --- never asserted.
+The measured series of the actual run are the exported CSV evidence read
+unchanged: per-device power (\code{ts_device_power.csv}), per-device current
+(\code{ts_device_current.csv}), frequency traces (\code{ts_device_frequency.csv},
+\code{ts_coi_frequency.csv}), the five SG rotor speeds (\code{ts_sg_frequency.csv}),
+and the network voltage envelope (\code{ts_bus_vmin_vmax.csv}).  The figures of
+this section render those series without modification; every plotted sample is a
+raw accepted value of the stored 160-s trajectory, and the fault window
+($60\le t<60.15$~s) aligns with the delivered 160-s study at the same instant.
 
 \subsection{Per-device mode, power, and voltage traces}
 
@@ -738,6 +746,53 @@ trajectory, $t\in[0,160]\second$ full window).  (a) active power $P_i$;
 voltage; (h) network minimum voltage.  One common legend at the top of the
 figure identifies every device trace.}
 \label{fig:elec}
+\end{figure}
+
+Figures~\ref{fig:env}--\ref{fig:dqiq} collect the remaining view families
+rendered from the same CSV evidence.
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_envelope.pdf}
+\caption{Bus-voltage envelope ($\min_k|V_k|$ to $\max_k|V_k|$) over the full
+160-s chronology, with the applied event marks at 60, 60.15, and 100~s.}
+\label{fig:env}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.86\textwidth]{\datadir/matlab_5sg5ibr_envelope_fault.pdf}
+\caption{Voltage-envelope detail of the fault window, $t\in[59.4,60.8]\second$.}
+\label{fig:envfault}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_ts_pages.pdf}
+\caption{Time-series family page: (a) device and COI frequency; (b) device
+active power (MW); (c) device reactive power (MVAr); (d) device current
+magnitude; (e) the five SG rotor frequencies ($f_0\cdot\omega$); (f) device mode
+level (0 open / 1 GFL / 2 VF, static here --- no mode-change event exists).}
+\label{fig:tspages}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_sg_frequency.pdf}
+\caption{The five two-state classical SG plants through fault and step: rotor
+frequencies $f_0\cdot\omega$ (top) and absolute rotor speed (bottom), read
+unchanged from each plant's own state block.}
+\label{fig:sgf}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_dq_id.pdf}
+\caption{Converter $d$-axis current states $i_d$ (device MVA base) of the five
+Dual-mode-IBR plants, raw accepted samples.}
+\label{fig:dqid}
+\end{figure}
+
+\begin{figure}[H]\centering
+\includegraphics[width=0.96\textwidth]{\datadir/matlab_5sg5ibr_dq_iq.pdf}
+\caption{Converter $q$-axis current states $i_q$ (device MVA base) of the five
+Dual-mode-IBR plants, raw accepted samples.}
+\label{fig:dqiq}
 \end{figure}
 
 \section{Limitations and interpretation}

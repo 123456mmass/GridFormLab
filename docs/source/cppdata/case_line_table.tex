@@ -1,0 +1,12 @@
+% Case line table -- verbatim clone from reference :376-389.  INPUT shared
+% by both engines (no comparison columns by design).
+\pgfplotstabletypeset[col sep=comma,
+ columns={branch_index,from_bus,to_bus,r_pu,x_pu,b_pu},
+ columns/branch_index/.style={column name=Index},columns/from_bus/.style={column name=From},
+ columns/to_bus/.style={column name=To},columns/r_pu/.style={column name=$r$ pu},
+ columns/x_pu/.style={column name=$x$ pu},columns/b_pu/.style={column name=$b_c$ pu},
+ columns/r_pu/.append style={fixed,fixed zerofill,precision=3},
+ columns/x_pu/.append style={fixed,fixed zerofill,precision=3},
+ columns/b_pu/.append style={fixed,fixed zerofill,precision=3},
+ every head row/.style={before row=\toprule,after row=\midrule},every last row/.style={after row=\bottomrule}]
+{\datadir/case_line_data.csv}

@@ -1,0 +1,40 @@
+% Limits text -- the flagship's own limitation set.  Standing rules carry
+% over from the reference record (+ counter conventions, machine-load
+% variance, no near-success phrasing, criteria evolution noted).
+\begin{itemize}
+\item \textbf{v0 scope --- full event engine parity = v2 (deferred, not
+      cut).}  The C++ engine in this report runs in fixed-step
+      schedule-replay mode (\intmodes).  The adaptive strict-LTE stepping,
+      the full event-engine transaction logic, and the private-trial
+      machinery of the MATLAB reference are not part of the v0 claim; the
+      v2 scope carries them.
+\item \textbf{Machine-load variance is the standing caveat of every
+      cross-session ratio.}  Same-day A/B-style pairs on an idle machine
+      are the only directly comparable timings (the reference record's
+      \S9 methodology note carries the $3$--$4\times$ morning-session
+      evidence).  Cross-session ratios in this report are contextual
+      only.
+\item \textbf{Counter conventions are frozen.}  Rejected steps are always
+      attempts minus accepted on the public accepted path; the
+      \code{progress.log} \code{rejects=} column is never used; the
+      \code{jacobian\_evaluations} convention is unchanged.
+\item \textbf{The historical 2026-10-11 baseline cannot be decomposed}
+      into early-phase vs remainder (no per-line timestamps in its
+      \code{progress.log}); unsigned smoke-horizon ratios are never used.
+\item \textbf{No near-success phrasing.}  Where a measured result is
+      unwelcome (slow, overhead-dominated, or delayed), this report states
+      it with the number and the identified follow-up work --- never as
+      ``nearly successful'' or ``promising''.
+\item \textbf{Criteria evolution is traceable.}  The MATLAB reference
+      record was accepted under D1--D5 (D5 Tier~2 DECISION-exact); the
+      user's later ruling relaxed DECISION equality to ``different +
+      physical reason in the divergence ledger'' with reclose SUCCESS as
+      the only absolute gate.  Both frames are documented; every
+      comparison in this report states which frame it uses.
+\item \textbf{Counter conventions and raw-sample contract.}  Every plotted
+      sample in the figures is a raw accepted value of the C++ run record;
+      nothing is smoothed, filtered, decimated, clipped, offset,
+      interpolated, or augmented with synthetic noise.  Douglas-Peucker
+      simplification exists only in GUI previews, never in report
+      figures.
+\end{itemize}

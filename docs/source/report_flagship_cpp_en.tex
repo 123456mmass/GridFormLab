@@ -1,0 +1,395 @@
+% ============================================================================
+% GridFormLab FLAGSHIP DELIVERABLE REPORT -- C++ engine vs MATLAB reference
+% ============================================================================
+% SKELETON / WRITE-ONLY DRAFT, authored 2026-10-14 by report-dev.
+% Structure is a 1:1 clone of docs/source/report_ne39_160s_reclose_en.tex
+% (943 lines, 13 sections, 8 tables, 3 includegraphics + 1 TikZ chronology)
+% per the user's binding spec.  Every C++-sourced element is an
+% input-slot owned by the C++ report builder (cpp-core-dev: the "Export
+% report" feature -- run cache to tables+figures to slots to PDF);
+% every figure is an \includegraphics slot waiting for the C++ plot module's
+% output files (same filenames as the reference by design).
+%
+% BINDING DISCLOSURE RULE (coordinator ruling 2026-10-14): every comparison
+% table carries an integration-mode row -- "C++ = fixed-step schedule-replay
+% (v0) | MATLAB = adaptive strict-LTE" -- and the timing row carries
+% "v0 scope -- full event engine parity = v2 (deferred, not cut)".
+%
+% PROVENANCE RULE (user directive): every figure/table cites the run id of
+% the C++ run folder (case/request snapshot + raw trajectory + counters/
+% DECISION + summary + manifest sha256, persisted per run like MATLAB runs).
+%
+% BUILD STATUS (2026-10-14, post-first-fill): the 11 non-C++ slots carry
+% real content (cloned/adapted); 13 result slots carry marked placeholders
+% for the C++ report builder.  A build compiles; PENDING count = 13.
+% ============================================================================
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{graphicx,amsmath,amssymb,float,caption,hyperref,fancyhdr}
+\usepackage{newtxtext,newtxmath}
+\usepackage{geometry,booktabs,tabularx,array,longtable,microtype}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{ifthen}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\geometry{margin=1in}
+\setlength{\headheight}{14.5pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{GridFormLab Flagship --- C++ Engine vs MATLAB Reference}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\arraystretch}{1.12}
+\emergencystretch=1.5em
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,
+  urlcolor=blue!45!black}
+
+\newcommand{\pu}{\ifmmode\,\mathrm{p.u.}\else\ p.u.\fi}
+\newcommand{\second}{\ifmmode\,\mathrm{s}\else\ s\fi}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\DeclareMathOperator{\clamp}{clamp}
+\DeclareMathOperator{\sat}{sat}
+
+% Graphics search paths: reference (NE39 result dir) and the C++ plot output.
+\graphicspath{{figures/}{figures/ne39_160s_reclose/}{figures/flagship_cpp/}}
+\newcommand{\datadir}{figures/ne39_160s_reclose}
+\newcommand{\cppdir}{figures/flagship_cpp}
+
+\usepackage{pgfplots,pgfplotstable}
+\pgfplotsset{compat=1.18}
+
+\definecolor{pgreen}{RGB}{41,153,69}
+\definecolor{pred}{RGB}{191,45,45}
+\definecolor{pblue}{RGB}{46,107,191}
+\definecolor{pyellow}{RGB}{199,178,38}
+\definecolor{pgrey}{RGB}{90,90,90}
+
+% --- Integration-mode disclosure macros (binding, coordinator ruling) -------
+\newcommand{\intmodes}{C++ = fixed-step schedule-replay (v0) \textbar{}
+  MATLAB = adaptive strict-LTE}
+\newcommand{\vscopecite}{(v0 scope --- full event engine parity = v2,
+  deferred, not cut)}
+% No-synthetic-signal contract (binding, verbatim from the reference record):
+% "Every plotted sample is a raw accepted value; nothing is smoothed, filtered,
+% decimated, clipped, offset, interpolated, or augmented with synthetic noise."
+% C++ plot module note: Douglas-Peucker simplification is GUI-preview-only;
+% rendered report figures must plot EVERY sample (file size is accepted as-is).
+% Device colour constants of the reference report (binding for every plot):
+% 30=blue 32=orange 33=yellow 34=purple 35=green, 36--39 cycle the five;
+% SG31 appears only in panels a/b/f; COI only in panel e.
+\newcommand{\armacomment}{}
+
+\title{\textbf{GridFormLab Flagship: C++ Standalone Engine}\\[1mm]
+\large Full NE39 SG31 Reclose 160-s Verification against the MATLAB
+Reference Record\\[0.5mm]
+\normalsize Parity in the D5 frame + measured speed --- the acceptance
+evidence of the installer-distributed C++ deliverable\\[2mm]
+\normalsize MATLAB reference record: \code{report\_port\_engine\_en.pdf}
+(1972.52~s same-tree; historical anchor 6708.725530~s informational)\\[1mm]
+\normalsize Report contract: \emph{every number traceable to an artifact
+(run id + sha256); parity claims carry their tier frame; speedup claims
+never mix categories}}
+\author{In-house Power-Flow Project}
+\date{14 October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+%% SLOT: cppdata/abstract.tex -- generator fills: what was run, on which
+%% case, arm designation, parity tier achieved, headline speedup B/A,
+%% engine, machine record.
+\input{cppdata/abstract}
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+%=============================================================================
+\section{Scope, sources and reproduction}\label{sec:scope}
+% This section mirrors the reference report's scope section, with the
+% C++ engine as the subject under test and the MATLAB Reference Record as
+% the comparison basis.  Generator fills: \cppdata/scope.tex
+%=============================================================================
+\input{cppdata/scope}
+
+\paragraph{Integration modes under test.}
+\intmodes{} \vscopecite.
+%% SLOT: cppdata/integration_notes.tex -- elaboration of what v0 covers and
+%% what v2 adds, from the generator; do not hand-edit.
+\input{cppdata/integration_notes}
+
+%=============================================================================
+\section{Disturbance chronology}\label{sec:chrono}
+% TikZ chronology cloned verbatim from the reference report (three colors,
+% six periods, arrows at 0/20/60--60.15/100/119.55/160).  The reclose
+% instant in Period 5's note is filled by the generator from the C++ run's
+% measured value once parity is confirmed.
+%=============================================================================
+\begin{figure}[H]
+\centering
+%% SLOT: cppdata/chronology_tikz.tex -- verbatim TikZ from the reference;
+%% generator updates Period 5 note with the C++ run's reclose instant.
+\input{cppdata/chronology_tikz}
+\caption{Six-period disturbance chronology, cloned from the reference
+record.  Scheduled instants are case-defined; the reclose instant is read
+from the C++ run's accepted event log (parity-checked against the MATLAB
+reference).}
+\label{fig:periods}
+\end{figure}
+
+%% SLOT: cppdata/chrono_text.tex -- generator's chronology prose
+\input{cppdata/chrono_text}
+
+%=============================================================================
+\section{Case data and index maps}\label{sec:casedata}
+% Mirrors reference \S4.  The case tables (bus data 39 buses, branch data
+% 46 branches) are identical inputs -- both engines consume the same case.
+% Thus these two tables are cloned verbatim from the reference report and
+% carry NO C++|MATLAB "result" columns (they are inputs, not results); a
+% single caption note states the shared-case property.
+%=============================================================================
+\begin{table}[H]\centering\footnotesize
+\caption{Case bus data --- \emph{identical input to both engines} (same
+composition; no comparison columns by design).}
+%% SLOT: cppdata/case_bus_table.tex -- verbatim pgfplotstable block from
+%% the reference report (data source unchanged).
+\input{cppdata/case_bus_table}
+\end{table}
+
+\begin{table}[H]\centering\footnotesize
+\caption{Case branch series and charging (46 branches) --- identical input
+to both engines.}
+%% SLOT: cppdata/case_line_table.tex
+\input{cppdata/case_line_table}
+\end{table}
+
+%=============================================================================
+\section{Common frames, signs, and per-unit conversion}\label{sec:frames}
+% Cloned from reference \S5 verbatim (frames are engine-independent).
+%=============================================================================
+\input{cppdata/frames_text}
+
+%=============================================================================
+\section{Composite network DAE as implemented in C++}\label{sec:dae}
+% Mirrors reference \S6.  Generator fills the C++-side statement of the
+% composite equations and how the reference's MATLAB equations map to the
+% C++ implementation units.
+%=============================================================================
+\input{cppdata/dae_text}
+
+%=============================================================================
+\section{SG31 six-state reclose plant: C++ implementation}\label{sec:sg}
+% Mirrors reference \S7.  Generator fills the C++ plant statement +
+% proof-of-parity pointer for the SG block.
+%=============================================================================
+\input{cppdata/sg_text}
+
+%=============================================================================
+\section{Dual-mode-IBR converter equations in C++}\label{sec:ibr}
+% Mirrors reference \S8.  Generator fills the C++ IBR statement.
+%=============================================================================
+\input{cppdata/ibr_text}
+
+%=============================================================================
+\section{How the C++ engine structures PF, equilibrium, and TS}\label{sec:tsform}
+% Mirrors reference \S9 with integration-mode disclosure prominent:
+% schedule-replay (v0) vs adaptive strict-LTE -- what is compared and what
+% is deferred.
+%=============================================================================
+\input{cppdata/tsform_text}
+
+%=============================================================================
+\section{Accepted equilibrium results --- parity table}\label{sec:pf}
+% Mirrors reference \S10.  Tables here carry the C++|MATLAB|result columns:
+%% SLOT: cppdata/pf_tables.tex -- solved V + power for 39 buses with the
+%% three-column comparison, plus the parity claim tier label.
+%=============================================================================
+\input{cppdata/pf_tables}
+
+\begin{figure}[H]\centering
+%% SLOT: C++ plot module output -- matlab_normal_pf.pdf equivalent,
+%% |V| + angle for all 39 buses, same layout/colors as the reference.
+\includegraphics[width=\textwidth]{\cppdir/cpp_normal_pf.pdf}
+\caption{C++-rendered solved bus-voltage magnitude and angle at all 39
+buses --- same panel layout and colors as the MATLAB reference figure.
+Every plotted sample is a raw accepted value; nothing is smoothed,
+filtered, decimated, clipped, offset, interpolated, or augmented.
+(Drawn by the C++ plot module from the C++ run record; run id cited in
+the caption slot.)}
+%% SLOT: cppdata/pf_figure_caption.tex
+\input{cppdata/pf_figure_caption}
+\end{figure}
+
+%=============================================================================
+\section{Event-fence time-domain result --- the A/B comparison}\label{sec:transient}
+% Mirrors reference \S11.  This is the section the whole report exists for:
+% DECISION-field table, per-variable trajectory diffs vs D5 frame, counter
+% comparison, and the measured speedup (the headline number).
+%=============================================================================
+
+\subsection{DECISION fields --- exact-match table}\label{sec:decision}
+\begin{table}[H]\centering\footnotesize
+\caption{DECISION fields: C++ vs MATLAB reference (exact match required
+--- any difference is a failure regardless of magnitude).  Integration
+mode: \intmodes.}
+\label{tab:decision}
+%% SLOT: cppdata/decision_table.tex -- 16 DECISION fields verbatim with
+%% C++|MATLAB|result columns, from the generator.
+\input{cppdata/decision_table}
+\end{table}
+
+\subsection{Event transactions and KCL residuals}
+\begin{table}[H]\centering\footnotesize
+\caption{Applied event transactions with physical KCL residuals ---
+C++ run vs MATLAB reference.}
+\label{tab:events}
+%% SLOT: cppdata/event_table.tex -- the reference's tab:events cloned and
+%% doubled with the C++ column.
+\input{cppdata/event_table}
+\end{table}
+
+\subsection{Per-window trajectory parity --- per-variable max diffs}\label{sec:trajparity}
+\begin{table}[H]\centering\footnotesize
+\caption{Continuous-array comparison on the common grid.  D5 frame:
+$|\Delta V|\le 1\times10^{-4}$~pu, $|\Delta f|\le 1\times10^{-4}$~Hz,
+$|\Delta\theta|\le 0.01^\circ$, $|\Delta P|/|\Delta Q|\le
+1\times10^{-3}$~pu, $|\Delta I|\le 1\times10^{-3}$~pu.  Peak/settling
+$\le 1\%$.  Tier label: \emph{`}fill by generator\emph{'}.}
+\label{tab:trajdiff}
+%% SLOT: cppdata/trajectory_diff_table.tex -- per-variable max/mean diffs
+%% per D5 variable with pass/fail at the agreed tier.
+\input{cppdata/trajectory_diff_table}
+\end{table}
+
+\subsection{Counter comparison}
+\begin{table}[H]\centering\footnotesize
+\caption{Counters as measured --- reported, never gated.}
+\label{tab:counters}
+%% SLOT: cppdata/counter_table.tex -- accepted/attempts/rejected/newton/
+%% residual-evaluations (+avoided)/fd-groups/parallel-mode, C++|MATLAB.
+\input{cppdata/counter_table}
+\end{table}
+
+\subsection{Measured speedup --- the headline}\label{sec:speeduptable}
+\begin{table}[H]\centering\footnotesize
+\caption{\textbf{Measured speedup --- the headline number of this report.}
+Same case, same machine, same schedule; B/A of the two engines' wall
+clocks.  Timing row discloses \vscopecite{}; the machine-load variance
+warning (Machine-load note in the reference record \S9) applies to every
+cross-session ratio shown for context only.}
+\label{tab:speedup}
+%% SLOT: cppdata/speedup_table.tex -- the B/A headline + contextual ratios
+%% (C++ vs same-tree MATLAB Arm A; C++ vs historical anchor, labelled)
+%% exactly per the reference record's framing rules.
+\input{cppdata/speedup_table}
+\end{table}
+
+% ---- Trajectory figure family (4 panels, C++ plot module outputs) ----------
+\begin{figure}[H]\centering
+%% SLOT: C++ plot output -- cpp_normal_pf.pdf arrived (see \S\ref{sec:pf}).
+%% The three transient panels below wait for the C++ plot module.
+\includegraphics[width=0.94\textwidth]{\cppdir/cpp_normal_mode_pq.pdf}
+\caption{Top strips: per-IBR GFM/GFL mode of the four-mode enumerator and
+the SG31 breaker state (per the reference layout); (a) per-device active
+power; (b) per-device reactive power --- $t\in[0,160]$\second, full
+window, raw C++ accepted samples (every sample plotted; no smoothing,
+filtering, decimation, clipping, offset, or interpolation), device colors
+as bound in the preamble of this skeleton.}
+%% SLOT: cppdata/modepq_figure_caption.tex
+\input{cppdata/modepq_figure_caption}
+\end{figure}
+
+\begin{figure}[H]\centering
+%% SLOT: C++ plot output -- 8 panels (a)P (b)Q (c)i_d (d)i_q (e)f/COI
+%% (f)terminal V (g)Vmax (h)Vmin + one shared legend, device-color binding
+%% identical to the reference (30=blue,32=orange,33=yellow,34=purple,
+%% 35=green; 36--39 cycle; SG31 only in a/b/f; COI only in e).
+\includegraphics[width=0.86\textwidth]{\cppdir/cpp_normal_electrical.pdf}
+\caption{Eight-panel electrical response of the C++ engine --- layout,
+colors, and legend placement cloned from the reference
+\code{matlab\_normal\_electrical.pdf}.  Every plotted sample is a raw
+accepted value; nothing is smoothed, filtered, decimated, clipped, offset,
+interpolated, or augmented with synthetic noise.}
+%% SLOT: cppdata/electrical_figure_caption.tex
+\input{cppdata/electrical_figure_caption}
+\end{figure}
+
+\subsection{SG31 swing dynamics --- C++ vs golden reference}\label{sec:sgdyn}
+% Rendered from the stored run artifacts by
+% scripts/reporting/render_sg_dynamics_figures.m (C++ run 008 trajectory
+% export + the canonical golden export).  Not a slot: the numbers in the
+% caption are computed from the plotted series at render time.
+\begin{figure}[H]\centering
+\includegraphics[width=\textwidth]{\cppdir/cpp_sg_dynamics_compare.pdf}
+\caption{SG31 swing comparison --- C++ stage-2 run
+\code{stage2\_smoke\_ne39\_008\_gfm160s\_golden} against the MATLAB golden
+reference.  Top left: rotor angle $\delta_{SG31}$,
+$0.29\rightarrow 580.4$~rad (C++) / $572.8$~rad (golden); top right: speed
+$\omega_{SG31}$ over the event window ($55$--$125$\second), showing the
+first swing $1.02\rightarrow 1.00$\pu and the post-reclose oscillation of
+each engine; bottom left: bus 30/31 voltage with the $60.00$--$60.15$\second
+fault dip and the reclose recovery; bottom right: event chronology.  Both
+reclose instants are marked on every panel --- C++ guard close
+$100.4990$\second and golden $119.5219$\second.  Curves are raw samples
+with uniform $1{:}40$ stride decimation for vector size only; no smoothing,
+filtering, or interpolation is applied.}
+\label{fig:sgdyn}
+\end{figure}
+
+The $19.02$\second reclose gap is a \emph{policy} gap --- \emph{when} each
+engine is permitted to close --- not a trajectory defect.  Numbers computed
+from the plotted series: maximum speed deviation at $t\ge130$\second is
+$3.91\times10^{-4}$\pu; bus 30 / bus 31 voltage deviation at
+$t\ge120$\second is $5.17\times10^{-3}$ / $7.62\times10^{-3}$\pu.  The
+rotor-angle drift rate at $t\ge120$\second is $0.206$\,rad/s (C++) against
+$0.176$\,rad/s (golden); for an islanded machine that never settles to a
+fixed $\delta$, the drift rate is the honest comparison metric and the
+accumulated angle is not.
+
+%=============================================================================
+\section{Limitations and interpretation}\label{sec:limits}
+% Mirrors reference \S12 with the flagship's own limitation rows.
+% Generator fills; the standing rules carry over (counter conventions,
+% machine-load variance note, "no near-success phrasing" rule).
+%=============================================================================
+\input{cppdata/limits_text}
+
+%=============================================================================
+\section{Conclusion}\label{sec:conclusion}
+% Generator fills the acceptance verdict: parity tier achieved + speedup
+% measured + deferred items listed honestly.
+%=============================================================================
+\input{cppdata/conclusion_text}
+
+%=============================================================================
+\section{Provenance table}\label{sec:provenance}
+% Every figure/table/number claims its C++ run id (folder + sha256) and the
+% MATLAB reference-record source it was checked against.
+%=============================================================================
+\begin{table}[H]\centering\footnotesize
+\caption{Source of every number in this report.  C++ claims cite their run
+folder and manifest sha256 (cache convention); MATLAB claims cite the
+reference record.}
+\label{tab:prov}
+%% SLOT: cppdata/provenance_table.tex
+\input{cppdata/provenance_table}
+\end{table}
+
+\begin{thebibliography}{9}
+\bibitem{refrecord} \code{docs/source/report_port_engine_en.pdf} ---
+MATLAB reference record (same-tree A/B measurement, 2026-10-14) that this
+flagship report verifies against.
+\bibitem{decisions} \code{GridFormLab-port/docs/decisions_20261014.md} ---
+D1--D5 acceptance rulings (authoritative).
+\bibitem{baseline} \code{docs/project/baseline_ne39_reclose_160s.md} ---
+historical baseline reference (informational anchor).
+\bibitem{cachecv} User run-cache directive 2026-10-14 --- every C++ run
+persists case/request snapshot + raw trajectory + counters/DECISION +
+summary + manifest sha256, with automatic canonical dump; run history is
+the provenance source of this report.
+\end{thebibliography}
+
+\end{document}

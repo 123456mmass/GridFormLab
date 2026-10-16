@@ -1,0 +1,17 @@
+% Chronology prose -- cloned from the reference report (:109-118) with the
+% source attribution switched to the C++ engine and the reclose instant
+% pending C++ parity.
+The scheduled disturbance times are \textsf{CASE\_DEFINED} constants of the
+event structure; the reclose instant is an outcome read from the accepted
+event log.  Figure~\ref{fig:periods} shows the six operating periods and the
+transition instants.  The bus-16 fault is applied at $t=60.000\second$ and
+cleared at $t=60.150\second$ (a $0.150$\second fault, impedance
+$Z_f=j0.1\pu$); the reclose request is armed at $t=100\second$ and the SG31
+close is committed at the instant the C++ engine's accepted event log
+records (the MATLAB reference measured $119.521920776\second$; the C++ value
+is asserted equal in Table~\ref{tab:decision}).
+
+Both engines consume an identical event schedule and an identical case; the
+chronology in this figure therefore differs between the reports only in
+\emph{which engine produced the reclose instant}, not in what the schedule
+demands.

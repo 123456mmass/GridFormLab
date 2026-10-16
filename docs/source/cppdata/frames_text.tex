@@ -1,0 +1,27 @@
+% Frames text -- cloned from reference :395-412 (engine-independent frames),
+% with one added paragraph mapping the frames to the C++ implementation
+% (coordinator's spec: each section names its integration-mode disclosure).
+Every device uses generator sign: positive complex power is injected into the
+network,
+\[
+S=P+jQ=V I^*,\qquad I_{bus}=\sum_{d\in bus} I_d.
+\]
+Each Dual-mode-IBR converter carries its own local reference; the
+network-to-device transform is
+\begin{align}
+v_d&=V_x\cos\delta_{PLL}+V_y\sin\delta_{PLL},\\
+v_q&=-V_x\sin\delta_{PLL}+V_y\cos\delta_{PLL},
+\end{align}
+so device currents rotate back as
+$i_x=i_d\cos\delta_{PLL}-i_q\sin\delta_{PLL}$ and
+$i_y=i_d\sin\delta_{PLL}+i_q\cos\delta_{PLL}$.  Converter and SG per-unit
+values share the 100-MVA system base ($\kappa=S_{base}/M_{base}$ with
+$M_{base}=S_{base}$ for the Dual-mode-IBR plant here).
+
+\paragraph{Frame parity across engines.}
+These frames are definitions, not results --- they are identical in the C++
+engine and the MATLAB reference by construction, and the C++
+implementation units were written against this documented frame set
+(set-by-set).  Any frame discrepancy would surface as a DECISION or
+trajectory mismatch in Table~\ref{tab:decision}/\ref{tab:trajdiff}, not as
+a silent convention change.

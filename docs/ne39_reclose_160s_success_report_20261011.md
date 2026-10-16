@@ -19,8 +19,8 @@ Branch: `checkpoint/ne39-160s-20261009`, base HEAD `3cbb7ea`, MATLAB R2026b
 | guard dtheta | 0.4627 / เพดานเคส 10° | ✅ |
 | `right_KCL < 1e-8` | **4.775e-10** (recompute อิสระจาก accepted right sample = ค่าเดียวกัน) | ✅ |
 | continuity | `PASS_NO_STATE_OR_INPUT_RESET` x_exact=1 u_exact=1 online left=0 right=1 | ✅ |
-| accepted path | `NUMERICAL_HORIZON_COMPLETE` (160 s ครบ, 10,004+ samples) | ✅ |
-| private trial | `STUDY_TRIAL_COMPLETE`, global refinement ผ่าน, rejects=0 ตลอด | ✅ |
+| accepted path | `NUMERICAL_HORIZON_COMPLETE` (160 s ครบ, 18,852 samples ตาม `audit.accepted_sample_count`) | ✅ |
+| private trial | `STUDY_TRIAL_COMPLETE`, global refinement ผ่าน (`refinement_samples=4292`, `refinement_error=5.52e-06`); artifact ไม่มีตัวนับ rejection ของ trial | ✅ |
 | SELECTOR SG_OFF | CERTIFIED, exact9Spectrum=1 | ✅ |
 | SELECTOR SG_ON | CERTIFIED, exact9Spectrum=1 | ✅ |
 | SG bounds | `PASS_ACCEPTED_STATES` Psv/Pm/Emag ในช่วงตลอด | ✅ |
@@ -40,7 +40,7 @@ Branch: `checkpoint/ne39-160s-20261009`, base HEAD `3cbb7ea`, MATLAB R2026b
 
 ### 1. dt=0.001 (คงเพดานความละเอียดเดิม, ไม่ใช่เกณฑ์ใหม่)
 - **หลักฐาน:** dt=0.0025 ปฏิเสธที่ `DT_REFINEMENT_NOT_RESOLVED` **สองจุด** — จุดเดิม (ramp หลังตัดเครื่อง, run 20261010_200626) และจุดใหม่ที่ trial `sg_trip` ที่ t=20 (run 20261011_043054: จบใน 568 s แต่ trial refused UNKNOWN)
-- **วัดจริง:** ที่ dt=0.001 trial ผ่านทั้งสองจุด (rejects=0), mesh dt vs dt/2 path difference ≤ tolerance
+- **วัดจริง:** ที่ dt=0.001 trial ผ่านทั้งสองจุด, mesh dt vs dt/2 path difference ≤ tolerance
 - **เวลา:** 4728 s (79 นาที) สำหรับ 160 s horizon
 - **ผลการทดสอบ adaptivity (มีประโยชน์ต่อการศึกษา):** adaptive stepper **เปิดอยู่แล้วเต็มรูปแบบ** — dt ตั้งต้น 0.001 แล้วโตเองเป็น 0.025 ตอน smooth (เห็นใน progress.log ทั้งสอง run), หดเอง 7.6e-4 ตอน fault clear และ 1.5e-4 ตอน post-trial swing การ "ไม่ใช้ adaptive" จะยิ่งช้าลง ~10 เท่า (fixed 0.001 = 160k steps)
 

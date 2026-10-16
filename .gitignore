@@ -89,3 +89,4 @@ docs/source/fonts/
 scripts/psat-2.1.11-mat/
 pdf_*.txt
 *.exe
+.mcp.json

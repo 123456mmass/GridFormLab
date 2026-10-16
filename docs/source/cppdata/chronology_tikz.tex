@@ -1,0 +1,30 @@
+% Chronology TikZ -- verbatim clone from the reference report
+% (report_ne39_160s_reclose_en.tex :120-155), one content change: the
+% Period 5 note carries the C++ run's reclose instant once parity is
+% confirmed (placeholder marker below; generator replaces 119.550).
+\begin{tikzpicture}[
+  font=\normalsize,
+  per/.style={circle,draw,thick,minimum size=2.5cm,inner sep=2pt,
+    align=center,text=white,font=\bfseries},
+  tlab/.style={midway,above=1mm,font=\footnotesize},
+  tlabb/.style={midway,below=1mm,font=\footnotesize},
+  arr/.style={-{Latex[length=3mm]},very thick,color=blue!60!black}]
+
+\node[per,fill=pgreen] (p1) at (0,0)     {Period 1\\ normal\\ operation};
+\node[per,fill=pred]   (p2) at (5.4,0)   {Period 2\\ $SG_{31}$ tripped\\ (slack lost)};
+\node[per,fill=pred]   (p3) at (10.8,0)  {Period 3\\ bus-16 fault\\ $Z_f{=}j0.1\pu$};
+\node[per,fill=pyellow](p4) at (10.8,-4.8){Period 4\\ reclose request\\ armed};
+\node[per,fill=pblue]  (p5) at (5.4,-4.8){Period 5\\ $SG_{31}$\\ reclosed};
+\node[per,fill=pblue]  (p6) at (0,-4.8)  {Period 6\\ restored\\ operation};
+
+\draw[arr] (-3.6,0) -- node[tlab]{$t=0\second$} (p1);
+\draw[arr] (p1) -- node[tlab]{$t=20\second$} (p2);
+\draw[arr] (p2) -- node[tlab]{$t=60.000$--$60.150\second$} (p3);
+\draw[arr] (p3) -- node[tlabb]{$t=100\second$} (p4);
+\draw[arr] (p4) -- node[tlabb]{$t=119.521920776\second$ (pending C++ parity)} (p5);
+\draw[arr] (p5) -- (p6);
+\draw[arr] (p6) -- node[tlabb,pos=0.62]{$t\to160\second$} ++(-3.6,0);
+
+\node[font=\footnotesize,below=3pt of p5,align=center,text=black]
+  {close $119.521920776$\second (pending C++ parity)\\ nine GFM retained};
+\end{tikzpicture}
